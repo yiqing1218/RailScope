@@ -1,0 +1,25 @@
+{
+  "name": "RailScope Workbench",
+  "direction": "Light GIS workstation, restrained teal accents, glass map tools",
+  "colors": {
+    "text": "#20313d", "muted": "#526775", "accent": "#0c776f",
+    "surface": "#ffffff", "workspace": "#edf1f4",
+    "switchOn": "#137c73", "switchOff": "#647985",
+    "construction": "#475569", "vehicle": "#0c9184"
+  },
+  "type": {"display": "Aptos", "chinese": "Microsoft YaHei UI", "bodyPx": 13, "titlePx": 24},
+  "spacing": [4, 8, 12, 16, 24],
+  "radii": {"control": 7, "panel": 12},
+  "motionMs": 160,
+  "pairs": [
+    {"fg":"#20313d","bg":"#ffffff","role":"body","fg_name":"Primary text"},
+    {"fg":"#526775","bg":"#ffffff","role":"body","fg_name":"Secondary text"},
+    {"fg":"#526775","bg":"#edf1f4","role":"body","fg_name":"Status text"},
+    {"fg":"#ffffff","bg":"#0c776f","role":"body","fg_name":"Primary action"},
+    {"fg":"#ffffff","bg":"#137c73","role":"body","fg_name":"ON label"},
+    {"fg":"#ffffff","bg":"#647985","role":"body","fg_name":"OFF label"},
+    {"fg":"#0c776f","bg":"#ffffff","role":"ui","fg_name":"Focus indicator"},
+    {"fg":"#256c77","bg":"#ffffff","role":"ui","fg_name":"Station outline"},
+    {"fg":"#475569","bg":"#f4f7f8","role":"ui","fg_name":"Construction lines"}
+  ]
+}

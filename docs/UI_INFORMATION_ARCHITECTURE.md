@@ -1,35 +1,56 @@
-# RailScope UI information architecture
+# RailScope 桌面工作台
 
-## Scope
+## 单主界面
 
-This desktop UI implements the requested V0 + V1 + V5 product boundary.  It
-does not expose V2/V3 playback, animation, timeline or time-distance diagrams.
+所有功能围绕同一张地图工作，不再打开地图、运行、数据源、拓扑四个独立页面。
 
-## Application shell
+`菜单 → 品牌与搜索 → 固定工具栏 / 左侧控制台 / 地图 / 右侧详情 → 状态栏`
 
-`Top bar → workspace navigation → left context panel → map/content → right
-details/actions → status bar`
+- 文件：实际导入 GeoJSON、导出当前可见图层、退出。
+- 编辑：显示/隐藏所有地铁线路、清除手动导入图层。
+- 地图：打开图层控制、全国视图、上海 1 号线定位。
+- 运行：打开运行控制和主地图下方的运行表/运行图、开始/暂停仿真、保存/导入/导出计划。
+- 数据源：在右侧查看数据概览、导入。
+- 拓扑：在右侧展示本地演示基础设施的校验结果。不是全国 OSM 路网的拓扑证明。
+- 视图：收起/展开左右面板、搜索、全屏。
+- 帮助：数据与图层说明。
 
-## Workspaces
+## 侧栏
 
-1. **Map** — V1 GIS workspace: layers, search, selected-object details and map.
-2. **Operations** — V5 workspace: train runs, blocks, occupancies, conflicts,
-   scenario recalculation and manual dispatch.
-3. **Data sources** — OSM/GeoJSON imports, source attribution, import reports
-   and data readiness.  National metro is shown here as an external GIS source,
-   not as an operations feature.
-4. **Topology** — infrastructure graph validation and topology diagnostics.
+左侧只通过永久窄导航栏切换地图图层与运行控制，不再重复显示「地图图层 / 运行演示」按钮。四个地图模块可折叠：底图、地铁、公路、高铁。运行表/运行图在同一主窗口中展开，不打开另一个页面。
 
-## Menus
+- 开关使用自绘滑动拨片，显示 OFF/ON，支持鼠标与键盘焦点。
+- 地铁按省、市、线路分组，同一线路的多个 OSM 方向关系合并为一个目录项，数据本身不合并、不丢失。
+- 父级开关递归控制所有线路；部分显示的父级使用中间状态标识。
+- 城市归属优先按 OSM 名称匹配，缺失时按线路坐标近邻归类。归类只用于 UI，不覆盖 OSM 属性。
+- 地铁站开关共同控制 POI 点、站名与真实站区面。没有实际面数据的站点不伪造圆形边界。
+- 线路目录过滤同步应用于站点、站名、站区面和车辆；换乘站只要还有任一所属线路开启就保留。站区与线路的空间关联标注为派生数据，不覆盖原始标签；未能关联的站区面不凭空归属某条线路。
+- 在建线路显示为深灰虚线；运营线路保留原始颜色；目录展示对应色块。
+- 在建工程同样进入省市线路目录，优先采用 OSM 的 `project:name`、`construction:name`、`project` 工程名。缺失时显示「已有名称 · 在建工程」或「未分类 · 在建工程」，不编造正式工程名。数据快照只有已标注的在建轨道，不保证所有城市工程完整。
+- 永久保留的左侧窄工具栏提供图层、运行、定位、详情入口，侧栏收起后仍能恢复。
 
-- **Data**: import, data sources, import reports.
-- **Map**: layer visibility, zoom/selection tools.
-- **Operations**: scenario selection, recalculate, dispatch actions.
-- **Topology**: validate and diagnostics.
-- **Help**: about and OSM attribution.
+右侧提供属性概览、完整原始属性、复制按钮。地图点击要素自动展开详情；演示车辆的距离和状态实时刷新。
 
-## Selection rules
+定位工具增加城市定位、上海已导入线路定位、可见线路范围、经纬度定位、跟随首个可见列车、倾斜视图和正北复位。窗口较窄且运行编辑器展开时收起右侧详情，仍可用永久「详情」按钮打开；运行控制支持滚动，不压扁按钮。
 
-- Clicking a map object opens its attributes in the right details panel.
-- Clicking a conflict selects its resource and related trains, then fits the map.
-- Dispatch changes effective scenario data only; scheduled data remains immutable.
+## 底图与地图
+
+标准/行政视图优先使用 OpenFreeMap 矢量图，适配浅灰工作台配色，优先显示中文地名。道路、行政地名、其他文字/POI、建筑分别控制。行政视图默认抑制道路与建筑，不是专用官方行政边界数据集。
+
+卫星问题按用户要求暂缓，未作为本轮验收项。菜单保留影像选项（EOX 10 米、NASA 全球低分辨率）；不宣称其可用性、授权条件或高清效果已经验收。矢量图源连接失败自动回退 OSM 栅格底图，细分类开关禁用，避免无效按钮。在线底图仍需网络，地铁路网与站区面从本地读取。
+
+玻璃地图工具条使用真实 `backdrop-filter` 模糊；原生侧栏使用高可读性浅色面板，不能把半透明背景等同于系统毛玻璃。
+
+地图资源由只绑定 `127.0.0.1` 的本地文件服务提供。开关只更新地图过滤器/可见性，不再反复传输全国 GeoJSON；车辆只更新独立 Point 源。
+
+## 视觉规范与验证
+
+颜色、字阶、间距、圆角、对比度组合记录于 `desktop/assets/design-tokens.json`。克制使用青绿色强调色，避免覆盖线路真实颜色；控件动效 160ms，地图装饰动效支持减少动画偏好。
+
+实机验证入口：
+
+```powershell
+python desktop/launcher.py --screenshot D:\RailScope\data\logs\ui-redesign.png --smoke-report D:\RailScope\data\logs\ui-redesign-smoke.json --verify-interactions
+```
+
+验证主界面、地图加载、开关与父子目录、站点/站区联动、在建工程目录、暂停/继续、左右面板恢复、时刻编辑/撤销/重做和车辆位置联动，并生成地图、运行表、运行图、紧凑窗口截图。测试使用 `python -m pytest -q --basetemp D:/RailScope/data/logs/pytest-workbench`。卫星切换测试须另外显式传入 `--verify-bases`，本轮不执行。

@@ -4,7 +4,9 @@ RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway
 topology, route paths, virtual blocks, occupancy/conflict detection, and manual
 scenario dispatch. It deliberately excludes V2/V3 playback, national train
-animation, timeline and time-distance diagram products.
+animation and real railway control. The native desktop now includes a local,
+editable Shanghai stop-time table and time-distance diagram for simulation,
+not an official timetable or live fleet service.
 
 ## Prerequisites
 
@@ -66,10 +68,22 @@ events and restores the scheduled result.
 
 ## Desktop
 
+首次安装桌面依赖：`python -m pip install -r desktop/requirements.txt`。
+地图使用本地 MapLibre 资源，首次需在 `frontend` 执行 `npm install`；不必启动
+Vite 或单独的 API 服务。全国路网属于可再生导入数据，不随 Git 提交，需按下方
+步骤从已有 PBF 导入。本机已导入的数据会继续使用。
+
 直接运行 `desktop/Run-RailScope.ps1`，或在 PowerShell 中执行
 `python desktop/launcher.py`。它会打开一个原生 Qt 桌面窗口，不会打开
-浏览器，也不依赖网页渲染。窗口直接加载演示铁路、站点、虚拟区段、运行
-任务、冲突列表和人工调度操作。
+外部浏览器。桌面使用 Qt 原生菜单、侧栏与运行表/运行图，地图使用嵌入式
+Qt WebEngine / MapLibre（因此仍需要 WebEngine 支持）。菜单功能集中在一个
+主窗口，地图展示本地 OSM 线路、站点、真实站区多边形与在建工程。
+
+点击最左侧「运行」展开可编辑运行表/运行图。选择线路和方向/支线方案，
+新增车次，编辑到发时刻或拖动运行图节点；「整车平移」可提前/延后整列车。
+地图上的车辆按这些时刻停站和运行。`Ctrl+S` 保存，下次启动恢复，菜单支持
+计划导入/导出。初始 42 列车均为演示数据，**不是上海地铁真实全车队或官方
+运行图**。详见 [车辆与计划约定](docs/VEHICLE_LAYER_CONTRACT.md)。
 
 `desktop/src-tauri` 仍保留为未来 Tauri 打包壳；本机没有 Rust 工具链，当前
 使用已可运行的 Qt WebEngine 壳来提供桌面体验。
