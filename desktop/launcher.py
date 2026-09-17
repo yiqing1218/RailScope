@@ -557,8 +557,21 @@ class Desk(QMainWindow):
         self.map_stack = QSplitter(Qt.Orientation.Vertical)
         self.map.setMinimumHeight(200)
         self.map_stack.addWidget(self.map)
-        self.map_stack.addWidget(self.operations)
-        self.map_stack.addWidget(self.rail_operations)
+        self.editor_hosts = []
+        for editor in (self.operations, self.rail_operations):
+            host = QWidget()
+            row = QHBoxLayout(host)
+            row.setContentsMargins(8, 0, 8, 0)
+            row.addStretch()
+            row.addWidget(editor, 1)
+            row.addStretch()
+            editor.closed.connect(host.hide)
+            host.hide()
+            self.editor_hosts.append(host)
+            self.map_stack.addWidget(host)
+        self.rail_operations.g1_requested.connect(self.open_g1_example)
+        self.operations.workspace_requested.connect(self.open_metro_operations)
+        self.rail_operations.workspace_requested.connect(self.open_rail_operations)
         self.rail_operations.hide()
         self.map_stack.setSizes([350, 500, 0])
         self.operations.expand_requested.connect(
@@ -600,7 +613,7 @@ class Desk(QMainWindow):
         self.add_action(edit, "线路分类整理 / 目录层级设置…", self.edit_hierarchy)
         self.add_action(
             edit,
-            "国铁通道 / 分段分类整理…",
+            "国铁轨道类型 / 通道分类整理…",
             lambda: self.rail_catalog_widget.organize(),
         )
         edit.addSeparator()
@@ -611,43 +624,69 @@ class Desk(QMainWindow):
         self.add_action(map_menu, "地图图层控制", lambda: self.open_sidebar(0))
         self.add_action(map_menu, "查看全国路网", lambda: self.map.call("focusChina"))
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
-        run = bar.addMenu("运行")
+        run_menu = bar.addMenu("运行")
+        run = run_menu.addMenu("地铁 · 交路 / 车辆循环")
         self.add_action(
             run, "地铁 · 大小交路 / 循环与车辆投放…", self.operations.open_cycles
         )
         self.add_action(
             run, "导出地铁线路 / 车站参考目录（供 AI）…", self.export_plan_references
         )
-        self.add_action(run, "运行控制", lambda: self.open_sidebar(1))
-        self.add_action(run, "开始计划仿真", self.play_demo)
+        self.add_action(run, "地铁运行控制", self.open_metro_operations)
+        self.add_action(
+            run,
+            "开始地铁仿真",
+            lambda: (self.open_metro_operations(), self.operations.play()),
+        )
         self.add_action(run, "暂停列车演示", self.pause_demo)
         self.add_action(run, "关闭运行展示", lambda: self.operations.set_enabled(False))
         self.add_action(run, "重新从起点运行", self.reset_demo)
         self.add_action(
             run,
             "打开可编辑运行表 / 运行图",
-            lambda: (self.open_sidebar(1), self.operations.show()),
+            self.open_metro_operations,
         )
-        self.add_action(run, "保存运行计划", self.operations.save, "Ctrl+S")
-        self.add_action(run, "导入运行计划…", self.operations.import_plan)
+        self.add_action(run, "保存地铁计划", self.operations.save)
+        self.add_action(
+            run,
+            "导入地铁计划…",
+            lambda: (self.open_metro_operations(), self.operations.import_plan()),
+        )
         self.add_action(run, "导出运行计划…", self.operations.export_plan)
-        rail_run = run.addMenu("国铁 · 车次 / 跨线运行图")
+        rail_run = run_menu.addMenu("国铁 · 车次 / 跨线运行图")
         self.add_action(rail_run, "打开 G1 参考运行图（7站）…", self.open_g1_example)
         self.add_action(
             rail_run, "打开国铁运行表 / 运行图", lambda: self.open_rail_operations()
         )
-        self.add_action(rail_run, "开始", self.rail_operations.play)
+        self.add_action(
+            rail_run,
+            "开始国铁仿真",
+            lambda: (self.open_rail_operations(), self.rail_operations.play()),
+        )
         self.add_action(rail_run, "暂停", self.rail_operations.pause)
         self.add_action(
             rail_run, "关闭", lambda: self.rail_operations.set_enabled(False)
         )
         self.add_action(
-            rail_run, "导入国铁车次与径路…", self.rail_operations.import_plan
+            rail_run,
+            "导入国铁车次与径路…",
+            lambda: (self.open_rail_operations(), self.rail_operations.import_plan()),
         )
         self.add_action(rail_run, "导出国铁运行计划…", self.rail_operations.export_plan)
         self.add_action(rail_run, "保存国铁计划", self.rail_operations.save)
         self.add_action(
             rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references
+        )
+        run_menu.addSeparator()
+        self.add_action(
+            run_menu,
+            "保存当前运行计划",
+            lambda: (
+                self.rail_operations
+                if self.run_mode.currentIndex() == 1
+                else self.operations
+            ).save(),
+            "Ctrl+S",
         )
         data = bar.addMenu("数据源")
         self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
@@ -1199,11 +1238,31 @@ class Desk(QMainWindow):
         return body
 
     def change_run_mode(self, index):
+        self.operations.pause()
+        self.rail_operations.pause()
         self.run_pages.setCurrentIndex(index)
+        self.map.call("setRunSystem", "rail" if index == 1 else "metro")
+        self.map.call(
+            "setVisibility",
+            "vehicles",
+            index == 0 and self.operations.vehicle_switch.isChecked(),
+        )
+        self.map.call(
+            "setVisibility",
+            "railVehicles",
+            index == 1 and self.rail_operations.vehicle_switch.isChecked(),
+        )
+        self.map.call(
+            "setVisibility",
+            "railPlan",
+            index == 1 and self.rail_operations.route_switch.isChecked(),
+        )
         self.operations.setVisible(self.side_pages.currentIndex() == 1 and index == 0)
         self.rail_operations.setVisible(
             self.side_pages.currentIndex() == 1 and index == 1
         )
+        for i, host in enumerate(self.editor_hosts):
+            host.setVisible(self.side_pages.currentIndex() == 1 and index == i)
         if self.side_pages.currentIndex() == 1:
             self.resize_run_editor(index)
 
@@ -1218,10 +1277,25 @@ class Desk(QMainWindow):
                 ),
             )
 
+            def refocus_rail():
+                if (
+                    self.run_mode.currentIndex() == 1
+                    and self.rail_operations.isVisible()
+                    and self.rail_operations.route_switch.isChecked()
+                ):
+                    self.rail_operations.locate_current_line()
+
+            QTimer.singleShot(150, refocus_rail)
+
     def open_rail_operations(self):
         self.open_sidebar(1)
         self.run_mode.setCurrentIndex(1)
         self.change_run_mode(1)
+
+    def open_metro_operations(self):
+        self.open_sidebar(1)
+        self.run_mode.setCurrentIndex(0)
+        self.change_run_mode(0)
 
     def open_g1_example(self):
         if (
@@ -1386,6 +1460,10 @@ class Desk(QMainWindow):
         self.rail_operations.setVisible(
             index == 1 and self.run_mode.currentIndex() == 1
         )
+        for i, host in enumerate(self.editor_hosts):
+            host.setVisible(index == 1 and self.run_mode.currentIndex() == i)
+        if index == 1:
+            self.resize_run_editor(self.run_mode.currentIndex())
 
     def open_or_toggle(self, index):
         if self.left.isVisible() and self.side_pages.currentIndex() == index:
@@ -2024,6 +2102,7 @@ def main():
                 )
 
                 def finish():
+                    nonlocal state
                     if args.verify_rail and "g1_running_diagram" not in checks:
                         for key in list(window.flags):
                             window.set_flag(key, False)
@@ -2031,6 +2110,34 @@ def main():
                         editor.load_g1_example()
                         window.open_rail_operations()
                         editor.show()
+                        app.processEvents()
+                        checks["g1_timetable_visible"] = (
+                            editor.tabs.currentIndex() == 0
+                            and editor.table.rowCount() == 7
+                            and editor.table.viewport().height() > 160
+                        )
+                        checks["compact_running_workspace"] = (
+                            editor.width() <= 1120
+                            and editor.tabs.height() > editor.height() * 0.40
+                        )
+                        screenshot = Path(args.screenshot)
+                        grab_workspace().save(
+                            str(screenshot.with_name(screenshot.stem + "-g1-table.png"))
+                        )
+                        metro_clock = window.operations.clock
+                        window.open_metro_operations()
+                        checks["metro_and_rail_independent"] = (
+                            window.operations.isVisible()
+                            and not editor.isVisible()
+                            and window.operations.plan.system == "metro"
+                            and editor.plan.system == "rail"
+                        )
+                        window.open_rail_operations()
+                        checks["switching_retains_g1_timetable"] = (
+                            editor.table.rowCount() == 7
+                            and window.operations.clock == metro_clock
+                            and not window.operations.playing
+                        )
                         checks["g1_running_diagram"] = (
                             editor.table.rowCount() == 7 and bool(editor.scene.items())
                         )
@@ -2057,6 +2164,29 @@ def main():
                         return
                     if args.verify_hierarchy and "hierarchy_dialog_saved" not in checks:
                         exercise_hierarchy()
+                        return
+                    if args.verify_rail and "g1_entire_route_in_view" not in checks:
+
+                        def inspect_rail_map(current):
+                            nonlocal state
+                            state = current or state
+                            checks["g1_entire_route_in_view"] = bool(
+                                current and current.get("railPlanInView")
+                            )
+                            checks["national_legend_and_vehicle_source"] = bool(
+                                current
+                                and current.get("legendSystem") == "国铁列车"
+                                and current.get("railVehiclesCount") == 1
+                                and not current.get("visibility", {}).get("vehicles")
+                            )
+                            finish()
+
+                        window.map.page().runJavaScript(
+                            "JSON.stringify(window.railscope.testState())",
+                            lambda value: inspect_rail_map(
+                                json.loads(value) if value else None
+                            ),
+                        )
                         return
                     grab_workspace().save(args.screenshot)
                     if args.verify_rail:

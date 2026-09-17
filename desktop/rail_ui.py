@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton
 
 try:
     from .operating_ui import OperationsEditor
@@ -57,6 +57,16 @@ class RailEditor(OperationsEditor):
                 self.apply_payload(read_plan(path))
             except (ValueError, OSError, KeyError, TypeError) as error:
                 self.message.setText("国铁计划未载入：" + str(error))
+        if not self.plan.trains:
+            self.message.setText(
+                "尚未载入国铁车次。点击「载入 G1 示例」查看七站时刻表，或从国铁运行菜单导入自己的计划。"
+            )
+
+    def play(self):
+        if not self.plan.trains:
+            self.message.setText("请先载入 G1 示例，或在国铁运行菜单导入车次计划。")
+            return
+        super().play()
 
     def apply_payload(self, payload, show_route=False):
         try:
@@ -164,7 +174,9 @@ class RailEditor(OperationsEditor):
             "setRailPlan", {"type": "FeatureCollection", "features": features}
         )
         if hasattr(self, "route_switch"):
+            self.route_switch.blockSignals(True)
             self.route_switch.setChecked(True)
+            self.route_switch.blockSignals(False)
         self.locate_current_line()
 
     def load_g1_example(self):
@@ -174,7 +186,7 @@ class RailEditor(OperationsEditor):
             )
         )
         self.apply_payload(reference["plan"], show_route=True)
-        self.tabs.setCurrentIndex(1)
+        self.tabs.setCurrentIndex(0)
         self.diagram.fitInView(
             self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio
         )
@@ -204,13 +216,26 @@ class RailEditor(OperationsEditor):
             from components import Switch, switch_row
         body = super().sidebar()
         self.route_switch = Switch(False)
-        self.route_switch.toggled.connect(
-            lambda on: self.map.call("setVisibility", "railPlan", on)
-        )
+        self.route_switch.toggled.connect(self.set_reference_visible)
         body.widget().layout().insertWidget(
             2, switch_row("参考径路 / 经停站", self.route_switch)
         )
+        load = QPushButton("载入 G1 演示 · 北京南—上海虹桥")
+        load.setObjectName("primary")
+        load.clicked.connect(self.g1_requested.emit)
+        body.widget().layout().insertWidget(0, load)
         return body
+
+    def set_reference_visible(self, on):
+        if on and self.plan.trains:
+            self.show_reference_route()
+        else:
+            self.map.call("setVisibility", "railPlan", False)
+            if on:
+                self.message.setText("请先载入 G1 示例或导入国铁车次计划。")
+                self.route_switch.blockSignals(True)
+                self.route_switch.setChecked(False)
+                self.route_switch.blockSignals(False)
 
     def document(self):
         if self.rail_payload is None:

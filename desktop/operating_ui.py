@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QInputDialog,
+    QSizePolicy,
 )
 
 try:
@@ -90,10 +91,14 @@ class TimeHandle(QGraphicsEllipseItem):
 class OperationsEditor(QFrame):
     updated = Signal()
     expand_requested = Signal()
+    closed = Signal()
+    g1_requested = Signal()
+    workspace_requested = Signal()
 
     def __init__(self, plan, map_view, lines, path):
         super().__init__()
         self.setObjectName("panel")
+        self.setMaximumWidth(1120)
         self.plan = plan
         self.map = map_view
         self.base_lines = lines
@@ -118,19 +123,36 @@ class OperationsEditor(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
+        chrome = QWidget()
+        chrome.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        controls = QVBoxLayout(chrome)
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(6)
         header = QHBoxLayout()
-        header.addWidget(text_label("运行计划工作台", "panelTitle"))
-        header.addWidget(text_label("非官方演示计划 · 表格与图联动", "muted", True))
+        self.workspace_title = text_label(
+            "国铁 · 车次运行工作台"
+            if plan.system == "rail"
+            else "地铁 · 交路运行工作台",
+            "panelTitle",
+        )
+        header.addWidget(self.workspace_title)
         header.addStretch()
+        if plan.system == "rail":
+            self.g1_button = QPushButton("载入 G1 示例")
+            self.g1_button.setObjectName("primary")
+            self.g1_button.clicked.connect(self.g1_requested.emit)
+            header.addWidget(self.g1_button)
         expand = QPushButton("放大编辑区")
         expand.clicked.connect(self.expand_requested.emit)
         header.addWidget(expand)
         close = QPushButton("收起")
-        close.clicked.connect(self.hide)
+        close.clicked.connect(lambda: (self.hide(), self.closed.emit()))
         header.addWidget(close)
-        layout.addLayout(header)
+        controls.addLayout(header)
         tools = QHBoxLayout()
         self.line_combo = QComboBox()
+        self.line_combo.setMaximumWidth(230)
+        self.line_combo.setMinimumWidth(110)
         for line in lines:
             self.line_combo.addItem(line["name"], line["id"])
         self.line_combo.currentIndexChanged.connect(self.line_changed)
@@ -138,8 +160,10 @@ class OperationsEditor(QFrame):
         self.variant_combo = QComboBox()
         self.variant_combo.setMinimumWidth(230)
         self.variant_combo.currentIndexChanged.connect(self.variant_changed)
+        self.variant_combo.setMaximumWidth(420)
         tools.addWidget(self.variant_combo, 1)
-        layout.addLayout(tools)
+        tools.addStretch()
+        controls.addLayout(tools)
         actions = QHBoxLayout()
         for title, method in [
             ("大小交路 / 车辆循环…", self.open_cycles),
@@ -150,19 +174,26 @@ class OperationsEditor(QFrame):
             ("重做", self.redo),
             ("保存", self.save),
         ]:
+            if plan.system == "rail" and title.startswith("大小交路"):
+                continue
             button = QPushButton(title)
             button.clicked.connect(method)
             actions.addWidget(button)
         actions.addStretch()
-        layout.addLayout(actions)
+        controls.addLayout(actions)
         self.train_combo = QComboBox()
         self.train_combo.currentIndexChanged.connect(self.train_changed)
         selection = QHBoxLayout()
-        selection.addWidget(QLabel("车次"))
-        selection.addWidget(self.train_combo, 1)
+        train_caption = QLabel("车次")
+        train_caption.setFixedWidth(36)
+        selection.addWidget(train_caption)
+        self.train_combo.setMaximumWidth(240)
+        selection.addWidget(self.train_combo)
+        selection.addStretch()
         self.message = text_label("编辑到发时刻；运行图节点可水平拖动。", "muted", True)
-        selection.addWidget(self.message, 3)
-        layout.addLayout(selection)
+        controls.addLayout(selection)
+        controls.addWidget(self.message)
+        layout.addWidget(chrome)
         self.tabs = QTabWidget()
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -173,17 +204,22 @@ class OperationsEditor(QFrame):
         )
         for column, width in enumerate((135, 55, 40, 105, 85, 85, 60)):
             self.table.setColumnWidth(column, width)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.verticalHeader().hide()
         self.table.itemChanged.connect(self.table_changed)
-        self.tabs.addTab(self.table, "运行表")
+        self.tabs.addTab(
+            self.table, "国铁时刻表" if plan.system == "rail" else "地铁运行表"
+        )
         self.scene = QGraphicsScene()
         self.diagram = QGraphicsView(self.scene)
         self.diagram.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.diagram.setBackgroundBrush(QColor("#fbfcfd"))
         self.tabs.addTab(self.diagram, "运行图 · 时间 / 里程")
         layout.addWidget(self.tabs, 1)
-        self.status = text_label("")
+        self.status = text_label("", wrap=True)
+        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.status)
         self.setMinimumHeight(340)
         self.populate_variants()
@@ -280,8 +316,12 @@ class OperationsEditor(QFrame):
         self.marker_size.setAccessibleName("列车图标大小")
         self.marker_size.valueChanged.connect(self.change_appearance)
         layout.addWidget(self.marker_size)
-        show = QPushButton("打开运行表 / 运行图")
-        show.clicked.connect(self.show)
+        show = QPushButton(
+            "打开国铁时刻表 / 运行图"
+            if self.plan.system == "rail"
+            else "打开地铁运行表 / 运行图"
+        )
+        show.clicked.connect(self.workspace_requested.emit)
         layout.addWidget(show)
         locate = QPushButton("定位当前运行线路")
         locate.clicked.connect(self.locate_current_line)
@@ -289,7 +329,9 @@ class OperationsEditor(QFrame):
         layout.addWidget(text_label("计划导入、导出请使用运行菜单。", wrap=True))
         layout.addWidget(
             text_label(
-                "初始列车与时刻为可编辑演示。可添加任意车次及方向，包含 OSM 已导入线路和支线方案；不连接真实地铁调度系统。",
+                "国铁按车次与跨线径路独立建图。G1 为公开时刻与 OSM 几何参考，不代表实际调度进路。"
+                if self.plan.system == "rail"
+                else "地铁按交路与车辆循环独立建图；初始时刻为可编辑演示，不连接真实调度系统。",
                 wrap=True,
             )
         )

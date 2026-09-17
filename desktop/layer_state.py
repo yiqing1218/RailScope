@@ -23,5 +23,13 @@ def initial_visibility():
 
 def editor_sizes(height, index, expanded=False):
     height = max(540, height)
-    editor = height - 200 if expanded else round(height * 0.55)
+    editor = (
+        height - 200
+        if expanded
+        else (
+            min(height - 200, max(540, round(height * 0.65)))
+            if index == 1
+            else round(height * 0.55)
+        )
+    )
     return [height - editor, editor if index == 0 else 0, editor if index == 1 else 0]

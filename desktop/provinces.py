@@ -3,13 +3,16 @@
 import json
 from pathlib import Path
 import sqlite3
+from uuid import uuid4
 
 try:
     from .geometry import distance_m
+    from .rail_categories import track_type, corridor_for
 except ImportError:
     from geometry import distance_m
+    from rail_categories import track_type, corridor_for
 
-VERSION = "geoboundaries-CHN-ADM1-43563684-midpoint-v1"
+VERSION = "geoboundaries-CHN-ADM1-43563684-type-midpoint-v3"
 NAMES = {
     "Hainan": "海南省",
     "Taiwan": "台湾省",
@@ -135,15 +138,20 @@ def add_track(catalog, feature, index):
     tags = props["way_tags"]
     name = tags.get("project:name") or tags.get("name") or "未命名轨道"
     province = index.locate(midpoint(feature["geometry"]["coordinates"]))
-    key = json.dumps([province, name], ensure_ascii=False, separators=(",", ":"))
+    category, evidence = track_type(tags)
+    key = json.dumps(
+        [province, name, category], ensure_ascii=False, separators=(",", ":")
+    )
     record = catalog.setdefault(
         key,
         {
             "name": name,
             "province": province,
             "way_ids": [],
-            "corridor": "未分配通道",
-            "section": "未分配分段",
+            "corridor": corridor_for(name, category),
+            "section": name,
+            "track_type": category,
+            "type_evidence": evidence,
             "classification": VERSION,
         },
     )
@@ -163,7 +171,7 @@ def geographic_catalog(directory):
     with sqlite3.connect(str(directory / "rail.sqlite")) as db:
         for row in db.execute("SELECT data FROM features WHERE kind='rail'"):
             add_track(catalog, json.loads(row[0]), index)
-    temporary = cache.with_suffix(".json.tmp")
+    temporary = cache.with_name(cache.name + "." + uuid4().hex + ".tmp")
     temporary.write_text(
         json.dumps({"version": VERSION, "catalog": catalog}, ensure_ascii=False),
         encoding="utf-8",

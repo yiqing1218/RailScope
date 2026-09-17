@@ -6,6 +6,8 @@
 
 G1 便携示例：**运行 → 国铁 · 车次 / 跨线运行图 → 打开 G1 参考运行图**。无需全国数据即可查看、编辑、导入导出并手动开始/暂停仿真。公开时刻和 OSM 连通几何是参考，不代表实际调度进路。详见 [国铁运行说明](docs/NATIONAL_RAIL_OPERATIONS.md)。
 
+地铁与国铁运行菜单、计划和时钟独立。国铁侧栏/工作台有直接的“载入 G1 示例”入口，默认显示时刻表。铁路目录先分轨道类型，仅高速主线继续按八纵八横参考通道整理；保留按省份查看，编辑菜单可人工核对。
+
 RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway
 topology, route paths, virtual blocks, occupancy/conflict detection, and manual

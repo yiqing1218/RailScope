@@ -52,7 +52,7 @@ def test_all_overlays_are_off_on_every_startup():
 def test_three_pane_splitter_gives_national_editor_visible_space():
     from desktop.layer_state import editor_sizes
 
-    assert editor_sizes(800, 1) == [360, 0, 440]
+    assert editor_sizes(800, 1) == [260, 0, 540]
     assert editor_sizes(800, 0, expanded=True) == [200, 600, 0]
     assert editor_sizes(800, 1, expanded=True) == [200, 0, 600]
 

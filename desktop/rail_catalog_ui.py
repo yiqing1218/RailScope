@@ -25,9 +25,11 @@ from PySide6.QtWidgets import (
 try:
     from .components import Switch, text_label
     from .provinces import geographic_catalog, VERSION
+    from .rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
 except ImportError:
     from components import Switch, text_label
     from provinces import geographic_catalog, VERSION
+    from rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
 
 
 class RailCatalog(QWidget):
@@ -70,7 +72,7 @@ class RailCatalog(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.setMinimumWidth(0)
         self.mode = QComboBox()
-        self.mode.addItems(["按省份", "按规划通道 → 分段"])
+        self.mode.addItems(["轨道类型 → 高速通道 → 省份", "省份 → 轨道类型"])
         self.mode.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -99,7 +101,7 @@ class RailCatalog(QWidget):
         )
         layout.addWidget(self.tree)
         self.note = text_label(
-            "按轨道中点所在省界分类；跨省线路按省分别列出。通道归属可在编辑菜单整理。",
+            "先按轨道用途分类；高速主线再按八纵八横整理。省份保留，未知类型/通道不猜测。",
             wrap=True,
         )
         layout.addWidget(self.note)
@@ -109,7 +111,7 @@ class RailCatalog(QWidget):
         if (Path(directory) / "rail.sqlite").exists() and not all(
             r.get("classification") == VERSION for r in self.catalog.values()
         ):
-            self.note.setText("正在后台按省界整理国铁目录…无需重新导入 PBF。")
+            self.note.setText("正在后台整理轨道类型与省级目录…无需重新导入 PBF。")
 
             def classify():
                 try:
@@ -135,14 +137,24 @@ class RailCatalog(QWidget):
             self.send_visibility(False)
         self.populate()
         self.note.setText(
-            "按轨道中点所在省界分类；省界附近/范围外保留待核对，不按站名猜测。"
+            "轨道类型来自 OSM 标签；仅高速主线列入通道。编辑菜单可核对类型/通道/省份。"
         )
 
     def meta(self, key):
         record = self.catalog[key]
+        legacy = json.dumps(
+            [record["province"], record.get("name", key)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         return {
             **record,
-            **self.overrides.get(key, self.overrides.get(record.get("name", key), {})),
+            **self.overrides.get(
+                key,
+                self.overrides.get(
+                    legacy, self.overrides.get(record.get("name", key), {})
+                ),
+            ),
         }
 
     def populate(self):
@@ -159,11 +171,7 @@ class RailCatalog(QWidget):
         self.members = {}
         for name, record in sorted(self.catalog.items()):
             meta = self.meta(name)
-            parents = (
-                (meta["province"],)
-                if self.mode.currentIndex() == 0
-                else (meta["corridor"], meta["section"])
-            )
+            parents = catalog_parents(meta, self.mode.currentIndex())
             parent = self.tree.invisibleRootItem()
             key = ()
             for label in parents:
@@ -174,7 +182,8 @@ class RailCatalog(QWidget):
             label = record.get("name", name)
             item = QTreeWidgetItem(parent, [label])
             item.setToolTip(
-                0, f"{label}\n{meta['province']} · {len(record['way_ids'])} 个轨道段"
+                0,
+                f"{label}\n{meta['province']} · {meta.get('track_type', '未确认类型')} · {len(record['way_ids'])} 个轨道段\n依据：{meta.get('type_evidence', '待核对')}",
             )
             self.items[name] = item
             self.members[id(item)] = {name}
@@ -256,17 +265,17 @@ class RailCatalog(QWidget):
 
     def organize(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("国铁分类整理 · 省份 / 规划通道 / 分段")
+        dialog.setWindowTitle("国铁分类整理 · 轨道类型 / 省份 / 高速通道")
         dialog.resize(1000, 650)
         layout = QVBoxLayout(dialog)
         layout.addWidget(
             QLabel(
-                "双击修改后三列，保存后立即重建目录；不修改原始 OSM 属性。跨省线路暂未归类时留在未分类。"
+                "修改类型、省份、通道与分段，保存后重建目录；不修改 OSM 原始属性。仅高速主线参加八纵八横。"
             )
         )
-        table = QTableWidget(len(self.catalog), 4)
+        table = QTableWidget(len(self.catalog), 5)
         table.setHorizontalHeaderLabels(
-            ["原始线路 / 工程名称", "省份", "规划通道", "通道分段"]
+            ["原始线路 / 工程名称", "省份", "高速规划通道", "通道分段", "轨道类型"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(table)
@@ -279,12 +288,22 @@ class RailCatalog(QWidget):
                     meta["province"],
                     meta["corridor"],
                     meta["section"],
+                    meta.get("track_type", "未确认类型"),
                 )
             ):
                 item = QTableWidgetItem(value)
                 if col == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 table.setItem(row, col, item)
+            kind = QComboBox()
+            kind.addItems(TRACK_TYPES)
+            kind.setCurrentText(meta.get("track_type", "未确认类型"))
+            table.setCellWidget(row, 4, kind)
+            corridor = QComboBox()
+            corridor.setEditable(True)
+            corridor.addItems(["高速通道待核对", "不适用", *CORRIDORS])
+            corridor.setCurrentText(meta["corridor"])
+            table.setCellWidget(row, 2, corridor)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -296,15 +315,22 @@ class RailCatalog(QWidget):
             return
         overrides = {
             name: {
-                key: table.item(row, col).text().strip()
-                or (
-                    "未分类省份"
-                    if key == "province"
-                    else "未分配通道"
-                    if key == "corridor"
-                    else "未分配分段"
-                )
-                for col, key in enumerate(("province", "corridor", "section"), 1)
+                **{
+                    key: (
+                        table.cellWidget(row, 2).currentText()
+                        if col == 2
+                        else table.item(row, col).text()
+                    ).strip()
+                    or (
+                        "未分类省份"
+                        if key == "province"
+                        else "未分配通道"
+                        if key == "corridor"
+                        else "未分配分段"
+                    )
+                    for col, key in enumerate(("province", "corridor", "section"), 1)
+                },
+                "track_type": table.cellWidget(row, 4).currentText(),
             }
             for row, name in enumerate(names)
         }
