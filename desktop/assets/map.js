@@ -124,7 +124,7 @@ function applyVisibility() { for (const [key, ids] of Object.entries(groups)) fo
 function applyLineFilter() {
   const filter = ['in',['get','route_relation_id'],['literal',visibleIds]];
   for (const id of ['metro','line-labels']) if (map.getLayer(id)) map.setFilter(id,filter);
-  const stationFilter = visibleIds.length ? ['any',...visibleIds.map(id=>['in',id,['coalesce',['get','route_relation_ids'],['literal',[]]]])] : ['==',1,0];
+  const stationFilter = visibleIds.length ? ['any',...visibleIds.map(id=>['in',id,['coalesce',['get','route_relation_ids'],['literal',[]]]])] : ['==',['literal',1],0];
   for (const id of ['stations','station-labels','areas-fill','areas-outline']) if (map.getLayer(id)) map.setFilter(id,stationFilter);
   for (const id of groups.vehicles) if(map.getLayer(id))map.setFilter(id,filter);
   refreshSelection();
