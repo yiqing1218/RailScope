@@ -1499,11 +1499,36 @@ def main():
     parser.add_argument("--verify-interactions", action="store_true")
     parser.add_argument("--verify-bases", action="store_true")
     parser.add_argument("--verify-hierarchy", action="store_true")
+    parser.add_argument("--verify-hefei", action="store_true")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
     app.setStyle("Fusion")
     window = Desk()
     window.show()
+    if args.verify_hefei:
+
+        def show_hefei():
+            features = [
+                f
+                for f in window.construction["features"]
+                if f["properties"]["line_name"] == "合肥轨道交通S1线"
+            ]
+            if not features:
+                return
+            coords = [p for f in features for p in f["geometry"]["coordinates"]]
+            xs, ys = zip(*coords)
+            window.map.call(
+                "fit", [[min(xs), min(ys)], [max(xs), max(ys)]], "合肥 · S1 机场线"
+            )
+            picked = next(
+                (f for f in features if f["properties"]["osm_way_id"] == 859388432),
+                features[0],
+            )
+            window.display_feature(
+                {"layer": "construction", "properties": picked["properties"]}
+            )
+
+        window.map.bridge.initialized.connect(show_hefei)
     if args.screenshot:
 
         def capture():
@@ -1516,6 +1541,27 @@ def main():
                     "switch_has_thumb": isinstance(window.switches["metro"], Switch),
                     "continuous_demo_km": round(window.demo["length_m"] / 1000, 2),
                 }
+                if args.verify_hefei:
+                    from repair_hefei_s1 import component_count
+
+                    features = [
+                        f
+                        for f in window.construction["features"]
+                        if f["properties"]["line_name"] == "合肥轨道交通S1线"
+                    ]
+                    ids = {f["properties"]["osm_way_id"] for f in features}
+                    checks["hefei_s1_gap_ways_imported"] = {
+                        1055692403,
+                        1463181483,
+                        1055692404,
+                        859388432,
+                    } <= ids
+                    checks["hefei_s1_original_geometry_connected"] = (
+                        component_count(features) == 1
+                    )
+                    checks["hefei_s1_directory_controls_all_segments"] = all(
+                        -wid in window.visible_lines for wid in ids
+                    )
                 window.toggle_left()
                 window.open_sidebar(0)
                 window.toggle_right()
