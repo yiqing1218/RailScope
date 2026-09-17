@@ -74,6 +74,14 @@ def viewport(directory, kind, bbox, zoom):
             (kind, west, east, south, north, zoom),
         ).fetchall()
     features = [json.loads(r[0]) for r in rows[:12000]]
+    if kind == "rail":
+        try:
+            from .rail_categories import track_type
+        except ImportError:
+            from rail_categories import track_type
+        for feature in features:
+            props = feature["properties"]
+            props["track_type"] = track_type(props.get("way_tags", props))[0]
     if zoom < 10:
         for feature in features:
             if feature["geometry"]["type"] == "LineString":

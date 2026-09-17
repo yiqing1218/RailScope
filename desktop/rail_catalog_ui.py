@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QComboBox,
-    QTreeWidget,
     QTreeWidgetItem,
     QDialog,
     QLabel,
@@ -19,15 +18,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QMessageBox,
     QLineEdit,
-    QSizePolicy,
 )
 
 try:
-    from .components import Switch, text_label
+    from .components import Switch, text_label, GrowingTree
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
 except ImportError:
-    from components import Switch, text_label
+    from components import Switch, text_label, GrowingTree
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
 
@@ -84,11 +82,9 @@ class RailCatalog(QWidget):
         search.textChanged.connect(self.filter_tree)
         self.search = search
         layout.addWidget(search)
-        self.tree = QTreeWidget()
+        self.tree = GrowingTree()
         self.tree.setColumnCount(2)
         self.tree.setHeaderHidden(True)
-        self.tree.setMinimumHeight(220)
-        self.tree.setMaximumHeight(340)
         self.tree.setIndentation(12)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tree.header().setStretchLastSection(False)
@@ -96,9 +92,6 @@ class RailCatalog(QWidget):
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.tree.setColumnWidth(1, 62)
         self.tree.setMinimumWidth(0)
-        self.tree.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
         layout.addWidget(self.tree)
         self.note = text_label(
             "先按轨道用途分类；高速主线再按八纵八横整理。省份保留，未知类型/通道不猜测。",
@@ -222,6 +215,7 @@ class RailCatalog(QWidget):
 
         for i in range(self.tree.topLevelItemCount()):
             visit(self.tree.topLevelItem(i))
+        self.tree.schedule_height()
 
     def toggle_group(self, keys, on):
         self.visible.update(keys) if on else self.visible.difference_update(keys)

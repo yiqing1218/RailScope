@@ -1,6 +1,14 @@
 """Reusable native controls for the RailScope desktop workbench."""
 
-from PySide6.QtCore import Property, QPropertyAnimation, QRectF, Qt, QEasingCurve
+from PySide6.QtCore import (
+    Property,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    QEasingCurve,
+    QTimer,
+    QEvent,
+)
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -11,6 +19,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QTreeWidget,
 )
 
 THEME = """
@@ -74,6 +83,68 @@ QSlider::handle:horizontal { width: 14px; margin: -5px 0; border-radius: 7px; ba
 QStatusBar { background: #f9fbfc; color: #536875; border-top: 1px solid #dce4ea; font-size: 11px; }
 QSplitter::handle { background: transparent; width: 8px; }
 """
+
+
+class GrowingTree(QTreeWidget):
+    """Content-height tree: scrolling belongs exclusively to the surrounding panel."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self._height_pending = False
+        self._height_timer = QTimer(self)
+        self._height_timer.setSingleShot(True)
+        self._height_timer.timeout.connect(self.fit_content)
+        self.expanded.connect(self.schedule_height)
+        self.collapsed.connect(self.schedule_height)
+        self.model().rowsInserted.connect(self.schedule_height)
+        self.model().rowsRemoved.connect(self.schedule_height)
+        self.model().modelReset.connect(self.schedule_height)
+        self.schedule_height()
+
+    def schedule_height(self, *args):
+        if not self._height_pending:
+            self._height_pending = True
+            self._height_timer.start(0)
+
+    def fit_content(self):
+        self._height_pending = False
+        self.doItemsLayout()
+
+        def height(item):
+            if item.isHidden():
+                return 0
+            value = max(
+                32,
+                self.visualItemRect(item).height(),
+                self.sizeHintForIndex(self.indexFromItem(item)).height(),
+            )
+            if item.isExpanded():
+                value += sum(height(item.child(i)) for i in range(item.childCount()))
+            return value
+
+        total = sum(
+            height(self.topLevelItem(i)) for i in range(self.topLevelItemCount())
+        )
+        self.setFixedHeight(
+            max(
+                32, total + 4 + (0 if self.isHeaderHidden() else self.header().height())
+            )
+        )
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (
+            QEvent.Type.StyleChange,
+            QEvent.Type.FontChange,
+        ) and hasattr(self, "_height_timer"):
+            self.schedule_height()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.schedule_height()
 
 
 class Switch(QAbstractButton):

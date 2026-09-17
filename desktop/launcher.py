@@ -42,13 +42,12 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from components import Fold, Switch, THEME, switch_row, text_label
+from components import Fold, Switch, THEME, switch_row, text_label, GrowingTree
 from geometry import build_demo_path
 from hierarchy import Hierarchy, label_order
 from hierarchy_ui import HierarchyDialog
@@ -58,6 +57,8 @@ from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
 from data_install import active_directory, active_rail_directory
 from rail_ui import RailEditor
+from rail_style_ui import load_styles, RailStyleDialog
+from corridor_ui import CorridorPanel
 from layer_state import initial_visibility, editor_sizes
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
@@ -472,6 +473,23 @@ class Desk(QMainWindow):
                 ),
             )
 
+    def edit_rail_styles(self):
+        path = ROOT / "data/user_settings/rail_styles.json"
+        dialog = RailStyleDialog(load_styles(path), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            value = dialog.value()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".json.tmp")
+                temporary.write_text(
+                    json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                temporary.replace(path)
+                self.config["railStyles"] = value
+                self.map.call("setRailStyles", value)
+            except OSError as error:
+                QMessageBox.warning(self, "铁路样式未保存", str(error))
+
     def make_config(self):
         sources = {
             key: "/" + (DATA / name).relative_to(ROOT).as_posix()
@@ -514,6 +532,7 @@ class Desk(QMainWindow):
         sources["imported"] = EMPTY
         return {
             "sources": sources,
+            "railStyles": load_styles(ROOT / "data/user_settings/rail_styles.json"),
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
@@ -569,7 +588,6 @@ class Desk(QMainWindow):
             host.hide()
             self.editor_hosts.append(host)
             self.map_stack.addWidget(host)
-        self.rail_operations.g1_requested.connect(self.open_g1_example)
         self.operations.workspace_requested.connect(self.open_metro_operations)
         self.rail_operations.workspace_requested.connect(self.open_rail_operations)
         self.rail_operations.hide()
@@ -622,6 +640,18 @@ class Desk(QMainWindow):
         self.add_action(edit, "清除导入图层", self.clear_imported)
         map_menu = bar.addMenu("地图")
         self.add_action(map_menu, "地图图层控制", lambda: self.open_sidebar(0))
+        self.add_action(map_menu, "铁路类型颜色 / 线宽…", self.edit_rail_styles)
+        self.add_action(map_menu, "国铁运行通道管理", lambda: self.open_sidebar(2))
+        self.add_action(
+            self.menuBar().actions()[0].menu(),
+            "导入国铁运行通道…",
+            self.rail_operations.import_corridors,
+        )
+        self.add_action(
+            self.menuBar().actions()[0].menu(),
+            "导出国铁运行通道…",
+            self.rail_operations.export_corridors,
+        )
         self.add_action(map_menu, "查看全国路网", lambda: self.map.call("focusChina"))
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
         run_menu = bar.addMenu("运行")
@@ -654,7 +684,12 @@ class Desk(QMainWindow):
         )
         self.add_action(run, "导出运行计划…", self.operations.export_plan)
         rail_run = run_menu.addMenu("国铁 · 车次 / 跨线运行图")
-        self.add_action(rail_run, "打开 G1 参考运行图（7站）…", self.open_g1_example)
+        self.add_action(
+            rail_run, "批量导入国铁车次表（CSV）…", self.rail_operations.import_table
+        )
+        self.add_action(
+            rail_run, "导出国铁车次表 / CSV 模板…", self.rail_operations.export_table
+        )
         self.add_action(
             rail_run, "打开国铁运行表 / 运行图", lambda: self.open_rail_operations()
         )
@@ -684,6 +719,7 @@ class Desk(QMainWindow):
             lambda: (
                 self.rail_operations
                 if self.run_mode.currentIndex() == 1
+                or self.side_pages.currentIndex() == 2
                 else self.operations
             ).save(),
             "Ctrl+S",
@@ -900,11 +936,10 @@ class Desk(QMainWindow):
         )
         layout.addWidget(self.map_rail)
         layout.addWidget(self.run_rail)
-        layout.addWidget(
-            self.rail_button(
-                "定位", "定位上海 1 号线", lambda: self.map.call("focusDemo"), False
-            )
+        self.corridor_rail = self.rail_button(
+            "通道", "管理国铁单向运行通道", lambda: self.open_or_toggle(2)
         )
+        layout.addWidget(self.corridor_rail)
         layout.addStretch()
         self.detail_rail = self.rail_button(
             "详情", "展开或收起右侧对象详情", self.toggle_right
@@ -955,6 +990,9 @@ class Desk(QMainWindow):
         self.side_pages = QStackedWidget()
         self.side_pages.addWidget(self.map_controls())
         self.side_pages.addWidget(self.run_controls())
+        self.corridor_panel = CorridorPanel(self.rail_operations)
+        self.corridor_panel.selected.connect(self.show_corridor)
+        self.side_pages.addWidget(self.corridor_panel)
         layout.addWidget(self.side_pages, 1)
         return panel
 
@@ -1030,13 +1068,11 @@ class Desk(QMainWindow):
         self.line_search.setPlaceholderText("筛选城市 / 线路")
         self.line_search.textChanged.connect(self.filter_tree)
         layout.addWidget(self.line_search)
-        self.tree = QTreeWidget()
+        self.tree = GrowingTree()
         self.tree.setColumnCount(2)
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(14)
-        self.tree.setMinimumHeight(285)
-        self.tree.setMaximumHeight(410)
         self.tree.setUniformRowHeights(True)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -1172,6 +1208,7 @@ class Desk(QMainWindow):
 
         for index in range(self.tree.topLevelItemCount()):
             match(self.tree.topLevelItem(index))
+        self.tree.schedule_height()
 
     def focus_tree_item(self, item, _column):
         ids = self.item_ids(item)
@@ -1297,23 +1334,6 @@ class Desk(QMainWindow):
         self.run_mode.setCurrentIndex(0)
         self.change_run_mode(0)
 
-    def open_g1_example(self):
-        if (
-            self.rail_operations.plan.trains
-            and QMessageBox.question(
-                self,
-                "切换到 G1 参考示例",
-                "将替换当前内存中的国铁计划，已保存的计划文件不会覆盖。未保存内容请先保存。是否继续？",
-            )
-            != QMessageBox.StandardButton.Yes
-        ):
-            return
-        try:
-            self.rail_operations.load_g1_example()
-            self.open_rail_operations()
-        except (ValueError, KeyError, OSError) as error:
-            QMessageBox.warning(self, "无法打开 G1 示例", str(error))
-
     def rail_controls(self):
         body = QWidget()
         layout = QVBoxLayout(body)
@@ -1411,7 +1431,7 @@ class Desk(QMainWindow):
 
     def connect_map(self):
         bridge = self.map.bridge
-        bridge.selected.connect(self.display_feature)
+        bridge.selected.connect(self.select_map_feature)
         bridge.dataLoaded.connect(
             lambda: self.load_status.setText(
                 "  本地路网已载入 · 地图就绪"
@@ -1447,14 +1467,22 @@ class Desk(QMainWindow):
         else:
             self.base_hint.setText("OSM 栅格底图 · 矢量图源暂不可用")
 
+    def show_corridor(self, corridor_id, train_id):
+        self.run_mode.setCurrentIndex(1)
+        self.change_run_mode(1)
+        self.rail_operations.show_corridor(corridor_id, train_id)
+
     def open_sidebar(self, index):
         self.left.show()
         self.side_pages.setCurrentIndex(index)
         self.map_rail.setChecked(index == 0)
         self.run_rail.setChecked(index == 1)
-        self.side_title.setText("运行控制" if index else "图层控制")
+        self.corridor_rail.setChecked(index == 2)
+        self.side_title.setText(["图层控制", "运行控制", "国铁运行通道"][index])
         self.side_subtitle.setText(
-            "列车展示与车辆图层" if index else "按要素与线路组织地图"
+            ["按要素与线路组织地图", "列车展示与车辆图层", "共享单向径路与股道衔接"][
+                index
+            ]
         )
         self.operations.setVisible(index == 1 and self.run_mode.currentIndex() == 0)
         self.rail_operations.setVisible(
@@ -1478,6 +1506,9 @@ class Desk(QMainWindow):
         )
         self.run_rail.setChecked(
             self.left.isVisible() and self.side_pages.currentIndex() == 1
+        )
+        self.corridor_rail.setChecked(
+            self.left.isVisible() and self.side_pages.currentIndex() == 2
         )
 
     def toggle_right(self):
@@ -1515,9 +1546,39 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.update_count()
 
+    def select_map_feature(self, data):
+        feature = json.loads(data) if isinstance(data, str) else data
+        props = feature.get("properties", {})
+        if feature.get("layer") in (
+            "rail-vehicles",
+            "rail-vehicle-labels",
+        ) and props.get("corridor_id"):
+            self.rail_operations.show_corridor(
+                props["corridor_id"], props.get("trip_id", "")
+            )
+        self.display_feature(feature)
+
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         props = dict(feature.get("properties", {}))
+        if props.get("corridor_id"):
+            route = next(
+                (
+                    r
+                    for r in (self.rail_operations.rail_payload or {}).get("routes", [])
+                    if r["id"] == props["corridor_id"]
+                ),
+                None,
+            )
+            if route:
+                props["corridor_name"] = route.get("name", route["id"])
+                props["shared_trains"] = ", ".join(
+                    t["id"]
+                    for t in self.rail_operations.plan.trains
+                    if self.rail_operations.plan.lines[t["line_id"]].get("corridor_id")
+                    == route["id"]
+                )
+                props["track_changes"] = route.get("track_changes", [])
         relation = props.get("route_relation_id")
         if relation in self.route_lookup:
             route = self.route_lookup[relation]
@@ -1573,6 +1634,9 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
+            "corridor_id": "单向运行通道 ID",
+            "corridor_name": "运行通道",
+            "shared_trains": "共用通道的车次",
             "boundary_kind": "边界类型",
             "mode_source": "关联依据 / 复核状态",
             "retained_previous_snapshot": "保留旧快照（可能过时）",
@@ -2120,6 +2184,17 @@ def main():
                             editor.width() <= 1120
                             and editor.tabs.height() > editor.height() * 0.40
                         )
+                        checks["layer_trees_no_inner_scrollbar"] = all(
+                            t.verticalScrollBarPolicy()
+                            == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                            for t in (window.tree, window.rail_catalog_widget.tree)
+                        )
+                        checks["builtin_g1_no_loader"] = not hasattr(
+                            editor, "g1_button"
+                        )
+                        checks["compact_tool_area_two_rows"] = (
+                            editor.tabs.height() > editor.height() * 0.65
+                        )
                         screenshot = Path(args.screenshot)
                         grab_workspace().save(
                             str(screenshot.with_name(screenshot.stem + "-g1-table.png"))
@@ -2153,6 +2228,33 @@ def main():
                             )
                             >= 30
                         )
+                        window.open_sidebar(2)
+                        app.processEvents()
+                        checks["corridor_navigation_replaces_location"] = (
+                            window.corridor_rail.text() == "通道"
+                            and window.side_pages.currentIndex() == 2
+                        )
+                        root = window.corridor_panel.tree.topLevelItem(0)
+                        root.setExpanded(True)
+                        window.corridor_panel.choose(root, 0)
+                        window.corridor_panel.tree.fit_content()
+                        app.processEvents()
+                        checks["corridor_tree_last_row_not_clipped"] = (
+                            window.corridor_panel.tree.visualItemRect(
+                                root.child(0)
+                            ).bottom()
+                            < window.corridor_panel.tree.viewport().height()
+                        )
+                        checks["shared_corridor_catalog"] = (
+                            len(editor.document()["routes"]) == 1
+                            and root.child(0).text(0) == "G1"
+                        )
+                        grab_workspace().save(
+                            str(
+                                screenshot.with_name(screenshot.stem + "-corridors.png")
+                            )
+                        )
+                        window.open_rail_operations()
                         editor.play()
                         checks["g1_vehicle_on_real_geometry"] = bool(
                             editor.current_vehicle_features

@@ -64,9 +64,7 @@ def test_rail_and_metro_have_separate_models_clocks_and_vehicle_sources(tmp_path
     shared_map = MapStub()
     metro = OperationsEditor(Plan([]), shared_map, [], tmp_path / "metro.json")
     rail = RailEditor(shared_map, tmp_path, tmp_path / "rail.json")
-    rail.play()
-    assert not rail.enabled, "空国铁计划不能假装运行"
-    rail.load_g1_example()
+    assert not rail.enabled and rail.plan.trains[0]["id"] == "G1"
     rail.play()
     assert metro.clock == 25200 and not metro.enabled
     assert not metro.plan.trains and rail.plan.trains[0]["id"] == "G1"
@@ -95,10 +93,7 @@ def test_rail_workspace_is_compact_and_has_direct_g1_entry(tmp_path):
     assert editor.tabs.height() >= editor.height() * 0.60
     assert "国铁" in editor.workspace_title.text()
     assert not any("大小交路" in b.text() for b in editor.findChildren(QPushButton))
-    requests = []
-    editor.g1_requested.connect(lambda: requests.append(True))
-    editor.g1_button.click()
-    assert requests == [True]
+    assert not hasattr(editor, "g1_button")
     editor.load_g1_example()
     app.processEvents()
     assert editor.tabs.currentIndex() == 0 and editor.table.rowCount() == 7

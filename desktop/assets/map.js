@@ -6,6 +6,7 @@ const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
 let followTrain=false;
+let focusedBounds=null;
 const overlays={title:false,tools:true,legend:true,status:true,scale:true};
 let vehicleAppearance={size:14,style:'glow'};
 function setOverlay(key,on){
@@ -94,6 +95,18 @@ async function updateRailViewport(){
   }catch(error){report('mapError',String(error));}
 }
 function addLayer(layer) { if (!map.getLayer(layer.id)) map.addLayer(layer); }
+function applyRailStyles(){
+  const styles=config.railStyles||{};
+  const colors=['match',['get','track_type']],widths=['match',['get','track_type']];
+  for(const [type,style] of Object.entries(styles)){
+    colors.push(type,style.color);widths.push(type,Number(style.width));
+  }
+  colors.push('#667887');widths.push(2);
+  for(const id of ['rail','rail-construction'])if(map.getLayer(id)){
+    map.setPaintProperty(id,'line-color',Object.keys(styles).length?colors:'#667887');
+    map.setPaintProperty(id,'line-width',['interpolate',['linear'],['zoom'],4,['*',.2,Object.keys(styles).length?widths:2],12,Object.keys(styles).length?widths:2,16,['*',1.5,Object.keys(styles).length?widths:2]]);
+  }
+}
 function installLayers() {
   const sources = {...config.sources, vehicles:empty, selection:empty};
   for (const [id, data] of Object.entries(sources)) addSource(id, data);
@@ -139,6 +152,7 @@ function installLayers() {
   for(const [key,on] of Object.entries(overlays))setOverlay(key,on);
   refreshSelection();
   applyRailWays();
+  applyRailStyles();
   updateRailViewport();
 }
 const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail'],railConstruction:['rail-construction'],railPoints:['rail-points'],railPlatforms:['rail-platform-fill','rail-platform-outline'],railVehicles:['rail-vehicles','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
@@ -160,7 +174,7 @@ function applyLineFilter() {
   for (const id of ['metro','line-labels']) if (map.getLayer(id)) map.setFilter(id,filter);
   const stationFilter = visibleIds.length ? ['any',...visibleIds.map(id=>['in',id,['coalesce',['get','route_relation_ids'],['literal',[]]]])] : ['==',['literal',1],0];
   for (const id of ['stations','station-labels','areas-fill','areas-outline']) if (map.getLayer(id)) map.setFilter(id,stationFilter);
-  for (const id of groups.vehicles) if(map.getLayer(id))map.setFilter(id,filter);
+  // Operating visibility is controlled by line/train groups, independently of physical layers.
   refreshSelection();
 }
 function applyConstructionFilter(){if(map.getLayer('construction'))map.setFilter('construction',['in',['get','osm_way_id'],['literal',constructionIds]]);refreshSelection();}
@@ -175,7 +189,14 @@ function applyBaseDetails() {
     map.setLayoutProperty(layer.id,'visibility',on?'visible':'none');
   }
 }
+function fitFocusedBounds(duration=0) {
+  if(!focusedBounds)return;
+  const canvas=map.getCanvas();
+  const padding=Math.max(12,Math.min(48,canvas.clientHeight*.12,canvas.clientWidth*.08));
+  map.fitBounds(focusedBounds,{padding,duration,maxZoom:14,pitch:0,bearing:0});
+}
 function focusDemo() {
+  focusedBounds=null;
   if(!config.demo.coordinates.length)return;
   const bounds=config.demo.coordinates.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds());
   map.fitBounds(bounds,{padding:{top:130,left:80,right:80,bottom:100},duration:700,maxZoom:12.5});
@@ -208,6 +229,15 @@ async function init() {
     standardStyle=styleWorkbench(await response.json());vectorAvailable=true;
   } catch(error) { vectorAvailable=false; }
   map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false});
+  // Keep a selected corridor fully visible when the editor changes map size.
+  // User navigation releases this framing instead of snapping back later.
+  map.on('resize',()=>fitFocusedBounds());
+  map.on('movestart',event=>{if(event.originalEvent)focusedBounds=null;});
+  for(const id of ['map-tools','location-panel']){
+    const element=document.getElementById(id);
+    element.addEventListener('click',()=>{focusedBounds=null;},true);
+    element.addEventListener('change',()=>{focusedBounds=null;},true);
+  }
   report('baseChanged',currentBase,vectorAvailable);
   map.addControl(new maplibregl.ScaleControl({maxWidth:90,unit:'metric'}),'bottom-left');
   map.on('style.load',()=>{
@@ -242,12 +272,13 @@ async function init() {
   window.railscope={
     setRunSystem(system){
       const rail=system==='rail';
-      document.getElementById('legend-line-label').textContent=rail?'国铁参考径路':'运营地铁线路';
+      document.getElementById('legend-line-label').textContent=rail?'单向运行通道':'运营地铁线路';
       document.getElementById('legend-line-swatch').style.backgroundColor=rail?'#466979':'#c82732';
       document.getElementById('legend-station-label').textContent=rail?'经停控制点':'地铁站';
       document.getElementById('legend-vehicle-label').textContent=rail?'国铁列车':'地铁列车';
     },
     setRailWays(ids){railWays=ids;applyRailWays();},
+    setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
     setRailOperatingVehicles(data){config.sources.railVehicles=data;map.getSource('railVehicles')?.setData(data);},
     setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){map.setPaintProperty('rail-vehicles','circle-radius',Number(value.size)/2);map.setPaintProperty('rail-vehicles','circle-opacity',value.style==='ring'?0:1);map.setPaintProperty('rail-vehicles','circle-stroke-color',value.style==='ring'?'#486e9a':'#ffffff');}},
@@ -269,8 +300,8 @@ async function init() {
     setConstruction(ids){constructionIds=ids;applyConstructionFilter();},
     setBaseDetail(key,on){baseDetails[key]=on;applyBaseDetails();},focusDemo,
     focusChina(){document.getElementById('focus-china').click();},
-    focus(lon,lat,zoom=13,title=''){map.flyTo({center:[lon,lat],zoom,duration:700});if(title)document.getElementById('scene-title').textContent=title;},
-    fit(bounds,title=''){map.resize();const canvas=map.getCanvas();const padding=Math.max(12,Math.min(48,canvas.clientHeight*.12,canvas.clientWidth*.08));map.fitBounds(bounds,{padding,duration:600,maxZoom:14,pitch:0,bearing:0});if(title)document.getElementById('scene-title').textContent=title;},
+    focus(lon,lat,zoom=13,title=''){focusedBounds=null;map.flyTo({center:[lon,lat],zoom,duration:700});if(title)document.getElementById('scene-title').textContent=title;},
+    fit(bounds,title=''){focusedBounds=bounds;map.resize();fitFocusedBounds(600);if(title)document.getElementById('scene-title').textContent=title;},
     setOperatingVehicles(data,clock,playing){
       operatingMode=true;operatingVehicles=data;operatingClock=clock;running=playing;
       travelled=data.features[0]?.properties.distance_m||0;

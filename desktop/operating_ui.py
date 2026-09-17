@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from time import monotonic
+from shiboken6 import isValid
 
 from PySide6.QtCore import QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
@@ -31,14 +32,17 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QInputDialog,
     QSizePolicy,
+    QMenu,
+    QToolButton,
+    QTreeWidgetItem,
 )
 
 try:
-    from .components import Switch, switch_row, text_label
+    from .components import Switch, switch_row, text_label, GrowingTree, Fold
     from .geometry import interpolate
     from .operating import parse_time, format_time
 except ImportError:
-    from components import Switch, switch_row, text_label
+    from components import Switch, switch_row, text_label, GrowingTree, Fold
     from geometry import interpolate
     from operating import parse_time, format_time
 
@@ -92,7 +96,6 @@ class OperationsEditor(QFrame):
     updated = Signal()
     expand_requested = Signal()
     closed = Signal()
-    g1_requested = Signal()
     workspace_requested = Signal()
 
     def __init__(self, plan, map_view, lines, path):
@@ -114,6 +117,10 @@ class OperationsEditor(QFrame):
         self.undo_stack = []
         self.redo_stack = []
         self.current_vehicle_features = []
+        self.hidden_trains = set()
+        self._visibility_timer = QTimer(self)
+        self._visibility_timer.setSingleShot(True)
+        self._visibility_timer.timeout.connect(self.refresh_vehicle_tree)
         self._ticks = 0
         self._last_tick = monotonic()
         self.plot_left = 125
@@ -122,7 +129,7 @@ class OperationsEditor(QFrame):
         self.start_time = 24900
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
         chrome = QWidget()
         chrome.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         controls = QVBoxLayout(chrome)
@@ -137,11 +144,6 @@ class OperationsEditor(QFrame):
         )
         header.addWidget(self.workspace_title)
         header.addStretch()
-        if plan.system == "rail":
-            self.g1_button = QPushButton("载入 G1 示例")
-            self.g1_button.setObjectName("primary")
-            self.g1_button.clicked.connect(self.g1_requested.emit)
-            header.addWidget(self.g1_button)
         expand = QPushButton("放大编辑区")
         expand.clicked.connect(self.expand_requested.emit)
         header.addWidget(expand)
@@ -149,25 +151,27 @@ class OperationsEditor(QFrame):
         close.clicked.connect(lambda: (self.hide(), self.closed.emit()))
         header.addWidget(close)
         controls.addLayout(header)
-        tools = QHBoxLayout()
+        tools = header
         self.line_combo = QComboBox()
         self.line_combo.setMaximumWidth(230)
         self.line_combo.setMinimumWidth(110)
         for line in lines:
             self.line_combo.addItem(line["name"], line["id"])
         self.line_combo.currentIndexChanged.connect(self.line_changed)
-        tools.addWidget(self.line_combo)
+        tools.insertWidget(1, self.line_combo)
         self.variant_combo = QComboBox()
-        self.variant_combo.setMinimumWidth(230)
+        self.variant_combo.setMinimumWidth(140)
         self.variant_combo.currentIndexChanged.connect(self.variant_changed)
         self.variant_combo.setMaximumWidth(420)
-        tools.addWidget(self.variant_combo, 1)
-        tools.addStretch()
-        controls.addLayout(tools)
+        tools.insertWidget(2, self.variant_combo, 1)
+        if plan.system == "rail":
+            self.variant_combo.hide()
+            self.line_combo.setAccessibleName("国铁车次：一车次一时刻表与运行图")
         actions = QHBoxLayout()
+        editing = QMenu(self)
         for title, method in [
             ("大小交路 / 车辆循环…", self.open_cycles),
-            ("新增列车", self.add_train),
+            ("新增车次" if plan.system == "rail" else "新增列车", self.add_train),
             ("整车平移", self.shift_train),
             ("删除列车", self.delete_train),
             ("撤销", self.undo),
@@ -176,23 +180,32 @@ class OperationsEditor(QFrame):
         ]:
             if plan.system == "rail" and title.startswith("大小交路"):
                 continue
+            if title in ("整车平移", "删除列车", "撤销", "重做"):
+                editing.addAction(title, method)
+                continue
             button = QPushButton(title)
             button.clicked.connect(method)
             actions.addWidget(button)
-        actions.addStretch()
-        controls.addLayout(actions)
+        more = QToolButton()
+        more.setText("编辑 ▾")
+        more.setMenu(editing)
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        actions.addWidget(more)
         self.train_combo = QComboBox()
         self.train_combo.currentIndexChanged.connect(self.train_changed)
-        selection = QHBoxLayout()
+        selection = actions
         train_caption = QLabel("车次")
         train_caption.setFixedWidth(36)
         selection.addWidget(train_caption)
         self.train_combo.setMaximumWidth(240)
         selection.addWidget(self.train_combo)
         selection.addStretch()
-        self.message = text_label("编辑到发时刻；运行图节点可水平拖动。", "muted", True)
-        controls.addLayout(selection)
-        controls.addWidget(self.message)
+        if plan.system == "rail":
+            train_caption.hide()
+            self.train_combo.hide()
+        self.message = text_label("编辑到发时刻；运行图节点可水平拖动。", "muted")
+        self.message.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        controls.addLayout(actions)
         layout.addWidget(chrome)
         self.tabs = QTabWidget()
         self.table = QTableWidget(0, 7)
@@ -220,7 +233,10 @@ class OperationsEditor(QFrame):
         layout.addWidget(self.tabs, 1)
         self.status = text_label("", wrap=True)
         self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.status)
+        footer = QHBoxLayout()
+        footer.addWidget(self.status, 1)
+        footer.addWidget(self.message, 2)
+        layout.addLayout(footer)
         self.setMinimumHeight(340)
         self.populate_variants()
         self.refresh()
@@ -296,6 +312,25 @@ class OperationsEditor(QFrame):
         )
         layout.addWidget(switch_row("车辆图层", vehicles))
         self.vehicle_switch = vehicles
+        self.vehicle_tree = GrowingTree()
+        self.vehicle_tree.setColumnCount(2)
+        self.vehicle_tree.setHeaderHidden(True)
+        self.vehicle_tree.header().setStretchLastSection(False)
+        self.vehicle_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.vehicle_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.vehicle_tree.setColumnWidth(1, 62)
+        layout.addWidget(
+            Fold(
+                "列车可见性 · 按车次类型"
+                if self.plan.system == "rail"
+                else "列车可见性 · 按线路",
+                self.vehicle_tree,
+                expanded=False,
+            )
+        )
+        self.refresh_vehicle_tree()
         layout.addWidget(text_label("列车标记", "sectionLabel"))
         self.marker_style = QComboBox()
         for label, value in (
@@ -395,6 +430,8 @@ class OperationsEditor(QFrame):
         trains = [t for t in self.plan.trains if t["line_id"] == self.selected_line]
         if self.selected_train not in {t["id"] for t in trains}:
             self.selected_train = None
+        if self.plan.system == "rail" and trains:
+            self.selected_train = trains[0]["id"]
         self.train_combo.blockSignals(True)
         self.train_combo.clear()
         self.train_combo.addItem("全部车次", None)
@@ -408,9 +445,58 @@ class OperationsEditor(QFrame):
         self.refresh_table()
         self.refresh_diagram()
         self.update_sidebar(0)
+        self.refresh_vehicle_tree()
         self.status.setText(
-            f"{len(self.base_lines)} 条目录线路 · 全计划 {len(self.plan.trains)} 列车 · 当前方案 {len(trains)} 列车 · 只校验站序和时刻，不代表信号安全校验通过"
+            f"{len(self.plan.trains)} 车次 · 当前 {len(trains)} 车次 · 未验证联锁"
         )
+
+    def set_trains_visible(self, ids, on):
+        self.hidden_trains.difference_update(ids) if on else self.hidden_trains.update(
+            ids
+        )
+        self._visibility_timer.start(0)
+        self.push_positions()
+
+    def refresh_vehicle_tree(self):
+        if not hasattr(self, "vehicle_tree") or not isValid(self.vehicle_tree):
+            return
+        tree = self.vehicle_tree
+        expanded = {
+            tree.topLevelItem(i).text(0)
+            for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).isExpanded()
+        }
+        tree.clear()
+        groups = {}
+        for train in self.plan.trains:
+            label = (
+                (train["id"][0].upper() + " 字头车次")
+                if self.plan.system == "rail"
+                else self.plan.lines[train["line_id"]]["name"]
+            )
+            groups.setdefault(label, []).append(train)
+        for label, trains in [("全部列车", self.plan.trains), *sorted(groups.items())]:
+            ids = {t["id"] for t in trains}
+            parent = QTreeWidgetItem(tree, [label])
+            control = Switch(bool(ids - self.hidden_trains))
+            control.setMixed(
+                bool(ids & self.hidden_trains) and bool(ids - self.hidden_trains)
+            )
+            control.toggled.connect(
+                lambda on, keys=ids: self.set_trains_visible(keys, on)
+            )
+            tree.setItemWidget(parent, 1, control)
+            parent.setExpanded(label in expanded)
+            if label == "全部列车":
+                continue
+            for train in trains:
+                child = QTreeWidgetItem(parent, [train["id"]])
+                switch = Switch(train["id"] not in self.hidden_trains)
+                switch.toggled.connect(
+                    lambda on, key=train["id"]: self.set_trains_visible({key}, on)
+                )
+                tree.setItemWidget(child, 1, switch)
+        tree.schedule_height()
 
     def displayed_trains(self):
         return [
@@ -471,12 +557,12 @@ class OperationsEditor(QFrame):
             self.refresh_table()
 
     def checkpoint(self):
-        self.undo_stack.append(self.plan.snapshot())
+        self.undo_stack.append(self.snapshot_state())
         self.undo_stack = self.undo_stack[-50:]
         self.redo_stack.clear()
 
     def commit_stop(self, train_id, index, arrival, departure):
-        before = self.plan.snapshot()
+        before = self.snapshot_state()
         try:
             self.plan.edit_stop(train_id, index, int(arrival), int(departure))
             self.undo_stack.append(before)
@@ -490,6 +576,7 @@ class OperationsEditor(QFrame):
     def changed(self, message):
         self.undo_stack = self.undo_stack[-50:]
         self.message.setText(message)
+        self.status.setToolTip(message)
         self.refresh()
         self.push_positions()
         self.updated.emit()
@@ -509,7 +596,7 @@ class OperationsEditor(QFrame):
         )
         if not accepted:
             return
-        before = self.plan.snapshot()
+        before = self.snapshot_state()
         try:
             self.plan.shift_train(self.selected_train, seconds)
             self.undo_stack.append(before)
@@ -548,7 +635,7 @@ class OperationsEditor(QFrame):
         form.addRow(buttons)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        before = self.plan.snapshot()
+        before = self.snapshot_state()
         try:
             train = self.plan.add_train(
                 self.selected_line,
@@ -576,15 +663,21 @@ class OperationsEditor(QFrame):
 
     def undo(self):
         if self.undo_stack:
-            self.redo_stack.append(self.plan.snapshot())
-            self.plan.restore(self.undo_stack.pop())
+            self.redo_stack.append(self.snapshot_state())
+            self.restore_state(self.undo_stack.pop())
             self.changed("已撤销")
 
     def redo(self):
         if self.redo_stack:
-            self.undo_stack.append(self.plan.snapshot())
-            self.plan.restore(self.redo_stack.pop())
+            self.undo_stack.append(self.snapshot_state())
+            self.restore_state(self.redo_stack.pop())
             self.changed("已重做")
+
+    def snapshot_state(self):
+        return self.plan.snapshot()
+
+    def restore_state(self, snapshot):
+        self.plan.restore(snapshot)
 
     def save(self):
         try:
@@ -697,7 +790,7 @@ class OperationsEditor(QFrame):
         for train, position in (
             self.plan.vehicle_positions(self.clock) if self.enabled else []
         ):
-            if position:
+            if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
                 features.append(
                     {
@@ -714,6 +807,11 @@ class OperationsEditor(QFrame):
                             "simulation_time": format_time(self.clock),
                             "source": train["source"],
                             "display_color": line["color"],
+                            **(
+                                {"corridor_id": line["corridor_id"]}
+                                if line.get("corridor_id")
+                                else {}
+                            ),
                         },
                         "geometry": {
                             "type": "Point",
@@ -743,7 +841,7 @@ class OperationsEditor(QFrame):
         CycleDialog(self).exec()
 
     def update_sidebar(self, active):
-        if hasattr(self, "clock_label"):
+        if hasattr(self, "clock_label") and isValid(self.clock_label):
             self.clock_label.setText(format_time(self.clock))
             self.count_label.setText(
                 f"{len(self.base_lines)} 条线路 · {len(self.plan.trains)} 列车计划 · {active} 列车在运行"

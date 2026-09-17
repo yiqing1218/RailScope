@@ -2,16 +2,99 @@
 
 from datetime import date
 import math
+from copy import deepcopy
+import hashlib
+import json
 
 try:
     from .operating import Plan, strict_fields
     from .geometry import distance_m
+    from .operating import parse_time
 except ImportError:
     from operating import Plan, strict_fields
     from geometry import distance_m
+    from operating import parse_time
+
+
+def expanded_document(payload):
+    """Read v1 compatibility plans or strict v2 shared-route references."""
+    if payload.get("schema") != "railscope.rail-plan.v2":
+        return deepcopy(payload)
+    strict_fields(
+        payload,
+        {
+            "schema",
+            "service_date",
+            "timezone",
+            "source",
+            "extensions",
+            "required_capabilities",
+            "routes",
+            "trains",
+        },
+        set(),
+        "国铁共享径路计划",
+    )
+    if not isinstance(payload["routes"], list) or not isinstance(
+        payload["trains"], list
+    ):
+        raise ValueError("径路与车次必须是数组")
+    routes = {}
+    for route in payload["routes"]:
+        strict_fields(
+            route,
+            {"id", "path", "extensions"},
+            {"name", "track_changes"},
+            "单向运行通道",
+        )
+        if (
+            not isinstance(route["id"], str)
+            or not route["id"].strip()
+            or route["id"] in routes
+        ):
+            raise ValueError("径路 ID 无效或重复")
+        if not isinstance(route["extensions"], dict):
+            raise ValueError("径路扩展必须是对象")
+        routes[route["id"]] = route
+    result = deepcopy(payload)
+    result.pop("routes")
+    result["schema"] = "railscope.rail-plan.v1"
+    for train in result["trains"]:
+        strict_fields(
+            train, {"id", "route_id", "stops", "extensions"}, set(), "国铁车次"
+        )
+        if train["route_id"] not in routes:
+            raise ValueError("车次引用的共享径路不存在")
+        train["path"] = deepcopy(routes[train.pop("route_id")]["path"])
+    return result
+
+
+def shared_document(payload):
+    """Geometry belongs to infrastructure; store each directed route once."""
+    if payload.get("schema") == "railscope.rail-plan.v2":
+        expanded_document(
+            payload
+        )  # Validate references without discarding route extensions.
+        return deepcopy(payload)
+    result = expanded_document(payload)
+    result["schema"] = "railscope.rail-plan.v2"
+    result["routes"] = []
+    routes = {}
+    for train in result["trains"]:
+        path = train.pop("path")
+        key = json.dumps(path, sort_keys=True, separators=(",", ":"))
+        ident = "route/" + hashlib.sha256(key.encode()).hexdigest()[:20]
+        if ident not in routes:
+            routes[ident] = path
+            result["routes"].append({"id": ident, "path": path, "extensions": {}})
+        train["route_id"] = ident
+    return result
 
 
 def compile_rail_plan(payload, edges, points, platforms=()):
+    if payload.get("schema") == "railscope.rail-plan.v2":
+        validate_corridors(payload.get("routes", []), edges)
+    payload = expanded_document(payload)
     strict_fields(
         payload,
         {
@@ -45,7 +128,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
         for p in points
     }
     platform_ids = {p["properties"]["osm_way_id"] for p in platforms}
-    lines, trains = [], []
+    lines, trains, paths = [], [], {}
     for train in payload["trains"]:
         strict_fields(train, {"id", "path", "stops", "extensions"}, set(), "国铁车次")
         if (
@@ -85,11 +168,25 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             strict_fields(
                 stop,
                 {"node_id", "arrival_s", "departure_s"},
-                {"platform_id", "extensions"},
+                {"platform_id", "extensions", "track_change"},
                 "国铁经停",
             )
             if type(stop["node_id"]) is not int:
                 raise ValueError("线路所/车站节点必须为整数 OSM ID")
+            if "track_change" in stop:
+                change = stop["track_change"]
+                strict_fields(
+                    change,
+                    {"from_track", "to_track", "via_node", "time"},
+                    set(),
+                    "变道预留信息",
+                )
+                if not all(isinstance(v, str) for v in change.values()):
+                    raise ValueError("变道预留字段须为字符串，未知用空字符串")
+                if change["via_node"] and not change["via_node"].isdigit():
+                    raise ValueError("变道节点须为 OSM 整数 ID 或空")
+                if change["time"]:
+                    parse_time(change["time"])
             try:
                 index = node_ids.index(stop["node_id"], offset)
             except ValueError as error:
@@ -113,6 +210,15 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                     "extensions": {"railscope.org/rail-stop": stop},
                 }
             )
+        path_key = tuple((leg["edge_id"], leg["direction"]) for leg in train["path"])
+        path = paths.setdefault(
+            path_key,
+            {
+                "coordinates": coords,
+                "cumulative": cumulative,
+                "length_m": cumulative[-1],
+            },
+        )
         line_id = "rail/" + train["id"]
         lines.append(
             {
@@ -122,21 +228,26 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 "relation_id": 0,
                 "color": "#466979",
                 "variants": [],
-                "path": {
-                    "coordinates": coords,
-                    "cumulative": cumulative,
-                    "length_m": cumulative[-1],
-                },
+                "path": path,
                 "stations": stations,
             }
         )
         trains.append(
             {
                 "id": train["id"],
+                "vehicle_id": train["id"],
                 "line_id": line_id,
                 "direction": "forward",
                 "enabled": True,
-                "source": payload["source"],
+                "source": (
+                    train["extensions"]
+                    .get("railscope.org/provenance", {})
+                    .get("source", payload["source"])
+                    if isinstance(
+                        train["extensions"].get("railscope.org/provenance", {}), dict
+                    )
+                    else payload["source"]
+                ),
                 "stops": stops,
                 "extensions": train["extensions"],
             }
@@ -146,3 +257,71 @@ def compile_rail_plan(payload, edges, points, platforms=()):
     plan.trains = trains
     plan.extensions = payload["extensions"]
     return plan, lines
+
+
+def validate_corridors(routes, edges):
+    """Validate directed physical connectivity, not unverified dispatch/track assignment."""
+    if not isinstance(routes, list):
+        raise ValueError("通道必须为数组")
+    lookup, seen = {e["id"]: e for e in edges}, set()
+    for route in routes:
+        strict_fields(
+            route,
+            {"id", "path", "extensions"},
+            {"name", "track_changes"},
+            "单向运行通道",
+        )
+        if (
+            not isinstance(route["id"], str)
+            or not route["id"].strip()
+            or route["id"] in seen
+        ):
+            raise ValueError("通道编号为空或重复")
+        seen.add(route["id"])
+        if "name" in route and (
+            not isinstance(route["name"], str) or not route["name"].strip()
+        ):
+            raise ValueError("通道名称为空或无效")
+        if not isinstance(route["path"], list) or not route["path"]:
+            raise ValueError("通道须有明确的单向物理区间组合")
+        nodes = []
+        for leg in route["path"]:
+            strict_fields(leg, {"edge_id", "direction"}, set(), "通道区间")
+            edge = lookup.get(leg["edge_id"])
+            if (
+                not edge
+                or edge["construction"]
+                or leg["direction"] not in ("forward", "reverse")
+            ):
+                raise ValueError("通道区间不存在、在建或方向无效")
+            ids = edge.get("node_ids", [edge["from_node"], edge["to_node"]])
+            if len(ids) != len(edge["coordinates"]):
+                raise ValueError("通道节点与几何数量不一致")
+            ids = ids if leg["direction"] == "forward" else ids[::-1]
+            if nodes and nodes[-1] != ids[0]:
+                raise ValueError("通道区间不连续，必须共享真实 OSM 节点")
+            nodes.extend(ids if not nodes else ids[1:])
+        if nodes[0] == nodes[-1]:
+            raise ValueError("当前仅支持非循环的单向运行通道")
+        changes = route.get("track_changes", [])
+        if not isinstance(changes, list):
+            raise ValueError("通道变道信息必须为数组")
+        node_set = set(nodes)
+        for change in changes:
+            strict_fields(
+                change,
+                {"node_id", "from_track", "to_track", "via_node", "extensions"},
+                set(),
+                "通道变道预留",
+            )
+            if type(change["node_id"]) is not int or change["node_id"] not in node_set:
+                raise ValueError("通道变道控制点必须在通道径路上")
+            if change["via_node"] is not None and (
+                type(change["via_node"]) is not int
+                or change["via_node"] not in node_set
+            ):
+                raise ValueError("通道变道道岔节点必须在通道上，未知用 null")
+            if not isinstance(change["from_track"], str) or not isinstance(
+                change["to_track"], str
+            ):
+                raise ValueError("通道股道标识须为字符串，未知用空字符串")
