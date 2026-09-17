@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -149,6 +150,9 @@ def text_label(text, name="muted", wrap=False):
     label = QLabel(text)
     label.setObjectName(name)
     label.setWordWrap(wrap)
+    if wrap:
+        label.setMinimumWidth(0)
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     return label
 
 
@@ -158,12 +162,14 @@ def switch_row(title, switch, subtitle=""):
     layout.setContentsMargins(0, 4, 0, 4)
     captions = QVBoxLayout()
     captions.setSpacing(2)
-    captions.addWidget(QLabel(title))
+    label = text_label(title, name="", wrap=True)
+    captions.addWidget(label)
     if subtitle:
-        captions.addWidget(text_label(subtitle))
+        captions.addWidget(text_label(subtitle, wrap=True))
     layout.addLayout(captions, 1)
     switch.setAccessibleName(title)
     layout.addWidget(switch)
+    layout.setSpacing(12)
     return row
 
 

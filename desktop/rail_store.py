@@ -1,6 +1,5 @@
 """Viewport index: national data stays on disk, not in the browser at startup."""
 
-from collections import defaultdict
 import json
 from pathlib import Path
 import sqlite3
@@ -12,14 +11,12 @@ def build_index(directory, tracks, points, platforms, edges):
     db.executescript(
         "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT); CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy); CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT);"
     )
-    catalog = defaultdict(
-        lambda: {
-            "way_ids": [],
-            "province": "未分类省份",
-            "corridor": "未分配通道",
-            "section": "未分配分段",
-        }
-    )
+    try:
+        from .provinces import ProvinceIndex, add_track
+    except ImportError:
+        from provinces import ProvinceIndex, add_track
+    provinces = ProvinceIndex()
+    catalog = {}
     number = 0
     for kind, features in [
         ("rail", tracks),
@@ -50,11 +47,7 @@ def build_index(directory, tracks, points, platforms, edges):
                 (number, min(xs), max(xs), min(ys), max(ys)),
             )
             if kind == "rail":
-                tags = props["way_tags"]
-                name = tags.get("project:name") or tags.get("name") or "未命名轨道"
-                record = catalog[name]
-                record["way_ids"].append(props["osm_way_id"])
-                record["province"] = tags.get("addr:province", record["province"])
+                add_track(catalog, feature, provinces)
     db.executemany(
         "INSERT INTO edges VALUES(?,?)",
         ((e["id"], json.dumps(e, ensure_ascii=False)) for e in edges),

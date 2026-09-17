@@ -58,6 +58,7 @@ from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
 from data_install import active_directory, active_rail_directory
 from rail_ui import RailEditor
+from layer_state import initial_visibility, editor_sizes
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
@@ -418,22 +419,8 @@ class Desk(QMainWindow):
                 "relation_id": 199200,
             }
         del features
-        self.visible_lines = {
-            route["osm_relation_id"]
-            for route in [*self.catalog, *self.construction_catalog]
-        }
-        self.flags = {
-            key: True
-            for key in (
-                "metro",
-                "stations",
-                "construction",
-                "rail",
-                "road",
-                "imported",
-                "vehicles",
-            )
-        }
+        self.visible_lines = set()
+        self.flags = initial_visibility()
         self.switches = {}
         self.tree_switches = {}
         self.imported = dict(EMPTY)
@@ -573,11 +560,12 @@ class Desk(QMainWindow):
         self.map_stack.addWidget(self.operations)
         self.map_stack.addWidget(self.rail_operations)
         self.rail_operations.hide()
-        self.map_stack.setSizes([350, 500])
+        self.map_stack.setSizes([350, 500, 0])
         self.operations.expand_requested.connect(
-            lambda: self.map_stack.setSizes(
-                [200, max(340, self.map_stack.height() - 200)]
-            )
+            lambda: self.resize_run_editor(0, expanded=True)
+        )
+        self.rail_operations.expand_requested.connect(
+            lambda: self.resize_run_editor(1, expanded=True)
         )
         self.operations.hide()
         self.splitter.addWidget(self.map_stack)
@@ -644,6 +632,7 @@ class Desk(QMainWindow):
         self.add_action(run, "导入运行计划…", self.operations.import_plan)
         self.add_action(run, "导出运行计划…", self.operations.export_plan)
         rail_run = run.addMenu("国铁 · 车次 / 跨线运行图")
+        self.add_action(rail_run, "打开 G1 参考运行图（7站）…", self.open_g1_example)
         self.add_action(
             rail_run, "打开国铁运行表 / 运行图", lambda: self.open_rail_operations()
         )
@@ -939,6 +928,7 @@ class Desk(QMainWindow):
     def map_controls(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
@@ -1095,7 +1085,10 @@ class Desk(QMainWindow):
 
     def install_tree_switch(self, item, ids):
         item.setData(0, Qt.ItemDataRole.UserRole, sorted(ids))
-        control = Switch(True)
+        control = Switch(bool(ids & self.visible_lines))
+        control.setMixed(
+            bool(ids & self.visible_lines) and not ids <= self.visible_lines
+        )
         control.setAccessibleName(item.text(0) + " 显示开关")
         control.toggled.connect(lambda on, node=item: self.tree_toggled(node, on))
         self.tree.setItemWidget(item, 1, control)
@@ -1107,6 +1100,11 @@ class Desk(QMainWindow):
         self.visible_lines.update(ids) if on else self.visible_lines.difference_update(
             ids
         )
+        if on:
+            if any(i > 0 for i in ids):
+                self.set_flag("metro", True)
+            if any(i < 0 for i in ids):
+                self.set_flag("construction", True)
         self.sync_tree_switches()
         self.send_directory_filter()
         self.update_count()
@@ -1206,26 +1204,54 @@ class Desk(QMainWindow):
         self.rail_operations.setVisible(
             self.side_pages.currentIndex() == 1 and index == 1
         )
+        if self.side_pages.currentIndex() == 1:
+            self.resize_run_editor(index)
+
+    def resize_run_editor(self, index, expanded=False):
+        self.map_stack.setSizes(editor_sizes(self.map_stack.height(), index, expanded))
+        if index == 1:
+            QTimer.singleShot(
+                0,
+                lambda: self.rail_operations.diagram.fitInView(
+                    self.rail_operations.scene.sceneRect(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                ),
+            )
 
     def open_rail_operations(self):
         self.open_sidebar(1)
         self.run_mode.setCurrentIndex(1)
         self.change_run_mode(1)
 
+    def open_g1_example(self):
+        if (
+            self.rail_operations.plan.trains
+            and QMessageBox.question(
+                self,
+                "切换到 G1 参考示例",
+                "将替换当前内存中的国铁计划，已保存的计划文件不会覆盖。未保存内容请先保存。是否继续？",
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        try:
+            self.rail_operations.load_g1_example()
+            self.open_rail_operations()
+        except (ValueError, KeyError, OSError) as error:
+            QMessageBox.warning(self, "无法打开 G1 示例", str(error))
+
     def rail_controls(self):
         body = QWidget()
         layout = QVBoxLayout(body)
+        layout.setContentsMargins(8, 0, 8, 6)
+        layout.setSpacing(5)
         layout.addWidget(self.new_switch("rail", "铁路线路 / 轨道"))
         for key, title in [
             ("railConstruction", "在建铁路"),
             ("railPoints", "车站 / 线路所 / 道岔"),
             ("railPlatforms", "真实站台轮廓"),
         ]:
-            self.flags[key] = True
             layout.addWidget(self.new_switch(key, title))
-        download = QPushButton("从全国 PBF 下载 / 提取国铁…")
-        download.clicked.connect(self.open_rail_download)
-        layout.addWidget(download)
         layout.addWidget(
             text_label("保留每股道的原始属性；几台几线未标注时不猜测。", wrap=True)
         )
@@ -1237,6 +1263,9 @@ class Desk(QMainWindow):
             self.map,
         )
         layout.addWidget(self.rail_catalog_widget)
+        self.rail_catalog_widget.enabled_requested.connect(
+            lambda: self.set_flag("rail", True)
+        )
         return body
 
     def open_rail_download(self):
@@ -1385,6 +1414,18 @@ class Desk(QMainWindow):
             control.setChecked(on)
             control.blockSignals(False)
         self.map.call("setVisibility", key, on)
+        if (
+            on
+            and key in ("metro", "construction", "stations")
+            and not self.visible_lines
+        ):
+            self.set_all_lines(True)
+        if (
+            on
+            and key in ("rail", "railConstruction")
+            and not self.rail_catalog_widget.visible
+        ):
+            self.rail_catalog_widget.set_all(True)
 
     def set_all_lines(self, on):
         self.visible_lines = (
@@ -1437,6 +1478,8 @@ class Desk(QMainWindow):
             "rail-platform-outline": "国铁站台轮廓",
             "rail-construction": "在建国铁轨道",
             "rail-vehicles": "国铁车次",
+            "rail-plan-path": "国铁参考径路（非实际联锁进路）",
+            "rail-plan-stations": "国铁参考经停站",
             "metro": "地铁线路",
             "stations": "地铁站 POI",
             "areas-fill": "地铁站区多边形",
@@ -1740,6 +1783,7 @@ class Desk(QMainWindow):
                 "features": [*self.imported["features"], *payload["features"]],
             }
             self.map.call("imported", self.imported)
+            self.set_flag("imported", True)
             self.load_status.setText(
                 f"  已导入 {len(payload['features']):,} 个要素 · {Path(filename).name}"
             )
@@ -1873,6 +1917,7 @@ def main():
     parser.add_argument("--verify-bases", action="store_true")
     parser.add_argument("--verify-hierarchy", action="store_true")
     parser.add_argument("--verify-hefei", action="store_true")
+    parser.add_argument("--verify-rail", action="store_true")
     args = parser.parse_args()
     ensure_assets(ROOT)
     app = QApplication(sys.argv[:1])
@@ -1929,6 +1974,17 @@ def main():
                     "startup_no_shanghai_card": state and state["titleHidden"],
                     "no_line1_toolbar_button": state and not state["hasLine1Button"],
                     "only_one_satellite_choice": window.base_combo.count() == 3,
+                    "startup_base_map_only": state
+                    and not any(state["visibility"].values())
+                    and not window.visible_lines
+                    and not window.rail_catalog_widget.visible,
+                    "startup_directory_switches_off": not any(
+                        s.isChecked() for s in window.tree_switches.values()
+                    ),
+                    "sidebar_no_horizontal_overflow": window.side_pages.widget(0)
+                    .horizontalScrollBar()
+                    .maximum()
+                    == 0,
                 }
                 screenshot_path = Path(args.screenshot)
                 grab_workspace().save(
@@ -1937,6 +1993,8 @@ def main():
                     )
                 )
                 if args.verify_hefei:
+                    window.set_all_lines(True)
+                    window.set_flag("construction", True)
                     from repair_hefei_s1 import component_count
 
                     features = [
@@ -1966,10 +2024,52 @@ def main():
                 )
 
                 def finish():
+                    if args.verify_rail and "g1_running_diagram" not in checks:
+                        for key in list(window.flags):
+                            window.set_flag(key, False)
+                        editor = window.rail_operations
+                        editor.load_g1_example()
+                        window.open_rail_operations()
+                        editor.show()
+                        checks["g1_running_diagram"] = (
+                            editor.table.rowCount() == 7 and bool(editor.scene.items())
+                        )
+                        checks["g1_does_not_autoplay"] = (
+                            not editor.enabled and not editor.playing
+                        )
+                        checks["rail_classified_by_province"] = (
+                            len(
+                                {
+                                    r["province"]
+                                    for r in window.rail_catalog_widget.catalog.values()
+                                }
+                            )
+                            >= 30
+                        )
+                        editor.play()
+                        checks["g1_vehicle_on_real_geometry"] = bool(
+                            editor.current_vehicle_features
+                        )
+                        editor.pause()
+                        editor.tabs.setCurrentIndex(1)
+                        editor.expand_requested.emit()
+                        QTimer.singleShot(1200, finish)
+                        return
                     if args.verify_hierarchy and "hierarchy_dialog_saved" not in checks:
                         exercise_hierarchy()
                         return
                     grab_workspace().save(args.screenshot)
+                    if args.verify_rail:
+                        checks["g1_diagram_visible_in_workspace"] = (
+                            window.rail_operations.isVisible()
+                            and window.rail_operations.height() > 200
+                        )
+                    if args.verify_rail:
+                        screenshot = Path(args.screenshot)
+                        window._capture_path = str(
+                            screenshot.with_name(screenshot.stem + "-g1.map.png")
+                        )
+                        window.map.call("captureMap")
                     if args.smoke_report:
                         report = {
                             "checks": checks,
@@ -1988,7 +2088,7 @@ def main():
                         or any(value is False for value in checks.values())
                         or window.map.page().console_errors
                     )
-                    app.exit(1 if failed else 0)
+                    QTimer.singleShot(500, lambda: app.exit(1 if failed else 0))
 
                 def exercise_hierarchy():
                     original = window.hierarchy
@@ -2101,6 +2201,8 @@ def main():
                     QTimer.singleShot(200, finish)
                     return
                 initial_distance = state["travelled"]
+                window.set_all_lines(True)
+                window.set_flag("metro", True)
                 window.pause_demo()
                 window.switches["metro"].click()
                 parent = next(
@@ -2135,7 +2237,8 @@ def main():
                     checks["adjustable_vehicle_size_and_style"] = (
                         controls["vehicleAppearance"] == {"size": 28, "style": "train"}
                         and controls["markerRadius"] == 14
-                        and controls["trainIconVisibility"] == "visible"
+                        and controls["trainIconVisibility"]
+                        == ("visible" if controls["vehicleVisible"] else "none")
                     )
                     window.overlay_actions["title"].setChecked(False)
                     for key in ("legend", "tools", "status", "scale"):

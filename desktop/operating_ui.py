@@ -113,6 +113,7 @@ class OperationsEditor(QFrame):
         self._last_tick = monotonic()
         self.plot_left = 125
         self.time_scale = 0.35
+        self.time_grid_s = 300
         self.start_time = 24900
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -199,7 +200,6 @@ class OperationsEditor(QFrame):
 
     def sidebar(self):
         body = QWidget()
-        body.setMinimumHeight(880)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
         layout.setSpacing(12)
@@ -220,11 +220,11 @@ class OperationsEditor(QFrame):
         self.enabled_switch = Switch(False)
         self.enabled_switch.toggled.connect(self.set_enabled)
         cl.addWidget(switch_row("开启运行展示", self.enabled_switch))
-        self.session_label = text_label("已关闭 · 地图浏览模式", "muted")
+        self.session_label = text_label("已关闭 · 地图浏览模式", "muted", True)
         cl.addWidget(self.session_label)
         self.clock_label = text_label(format_time(self.clock), "metricValue")
         cl.addWidget(self.clock_label)
-        self.count_label = text_label("")
+        self.count_label = text_label("", wrap=True)
         cl.addWidget(self.count_label)
         self.play_button = QPushButton("开始仿真")
         self.play_button.setObjectName("primary")
@@ -232,7 +232,9 @@ class OperationsEditor(QFrame):
             lambda: self.pause() if self.playing else self.play()
         )
         cl.addWidget(self.play_button)
-        reset = QPushButton("回到 07:00:00")
+        reset = QPushButton(
+            "回到始发时刻" if self.plan.system == "rail" else "回到 07:00:00"
+        )
         reset.clicked.connect(self.reset)
         cl.addWidget(reset)
         layout.addWidget(card)
@@ -252,7 +254,7 @@ class OperationsEditor(QFrame):
         speed.setValue(30)
         speed.valueChanged.connect(self.set_speed)
         layout.addWidget(speed)
-        vehicles = Switch(True)
+        vehicles = Switch(False)
         vehicles.toggled.connect(
             lambda on: self.map.call("setVisibility", "vehicles", on)
         )
@@ -284,13 +286,7 @@ class OperationsEditor(QFrame):
         locate = QPushButton("定位当前运行线路")
         locate.clicked.connect(self.locate_current_line)
         layout.addWidget(locate)
-        for title, method in [
-            ("导入运行计划…", self.import_plan),
-            ("导出运行计划…", self.export_plan),
-        ]:
-            button = QPushButton(title)
-            button.clicked.connect(method)
-            layout.addWidget(button)
+        layout.addWidget(text_label("计划导入、导出请使用运行菜单。", wrap=True))
         layout.addWidget(
             text_label(
                 "初始列车与时刻为可编辑演示。可添加任意车次及方向，包含 OSM 已导入线路和支线方案；不连接真实地铁调度系统。",
@@ -301,6 +297,7 @@ class OperationsEditor(QFrame):
         self.update_sidebar(0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(body)
         return scroll
 
@@ -598,6 +595,8 @@ class OperationsEditor(QFrame):
         self.enabled = bool(enabled)
         if not self.enabled:
             self.playing = False
+        elif hasattr(self, "vehicle_switch"):
+            self.vehicle_switch.setChecked(True)
         self._last_tick = monotonic()
         if hasattr(self, "enabled_switch"):
             self.enabled_switch.blockSignals(True)
@@ -740,10 +739,17 @@ class OperationsEditor(QFrame):
             self.scene.addLine(
                 self.plot_left, yy, width, yy, QPen(QColor("#e1e8ec"), 1)
             )
-            text = self.scene.addText(station["name"])
+            label = station["name"]
+            if self.plan.system == "rail":
+                label += f"  {station['distance_m'] / 1000:.1f} km"
+            text = self.scene.addText(label)
+            text.setTextWidth(self.plot_left - 5)
             text.setDefaultTextColor(QColor("#536875"))
             text.setPos(0, yy - 10)
-        for time in range(int(self.start_time // 300) * 300, int(latest) + 600, 300):
+        grid = self.time_grid_s
+        for time in range(
+            int(self.start_time // grid) * grid, int(latest) + grid * 2, grid
+        ):
             xx = self.plot_left + (time - self.start_time) * self.time_scale
             if xx < self.plot_left:
                 continue

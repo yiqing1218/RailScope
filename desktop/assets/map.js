@@ -1,7 +1,7 @@
 'use strict';
 let bridge, map, config, standardStyle, currentBase = 'standard', selectedFeature = null, selectedLayer = null;
 let running = false, travelled = 0;
-const visibility = {metro:true, stations:true, construction:true, rail:true, railConstruction:true,railPoints:true,railPlatforms:true,railVehicles:true,road:true, imported:true, vehicles:true};
+const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railPoints:false,railPlatforms:false,railVehicles:false,railPlan:false,road:false, imported:false, vehicles:false};
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
@@ -104,6 +104,10 @@ function installLayers() {
   addLayer({id:'rail-platform-fill',type:'fill',source:'railPlatforms',filter:['==',['geometry-type'],'Polygon'],minzoom:12,paint:{'fill-color':'#466979','fill-opacity':.22}});
   addLayer({id:'rail-platform-outline',type:'line',source:'railPlatforms',minzoom:12,paint:{'line-color':'#466979','line-width':1.5}});
   addLayer({id:'rail-vehicles',type:'circle',source:'railVehicles',paint:{'circle-radius':7,'circle-color':'#486e9a','circle-stroke-color':'#ffffff','circle-stroke-width':2}});
+  if(!map.getSource('railPlan'))map.addSource('railPlan',{type:'geojson',data:config.sources.railPlan||empty});
+  addLayer({id:'rail-plan-path',type:'line',source:'railPlan',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#466979','line-width':3}});
+  addLayer({id:'rail-plan-stations',type:'circle',source:'railPlan',filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':4,'circle-color':'#ffffff','circle-stroke-color':'#466979','circle-stroke-width':2}});
+  addLayer({id:'rail-plan-labels',type:'symbol',source:'railPlan',filter:['==',['geometry-type'],'Point'],layout:{'text-field':['get','name'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2]},paint:{'text-color':'#20313d','text-halo-color':'#ffffff','text-halo-width':2}});
   addLayer({id:'road',type:'line',source:'road',paint:{'line-color':'#8898a4','line-width':2}});
   addLayer({id:'metro',type:'line',source:'metro',paint:{'line-color':['coalesce',['get','display_color'],'#718096'],'line-width':['interpolate',['linear'],['zoom'],4,1.5,8,3,12,5],'line-opacity':.95}});
   addLayer({id:'construction',type:'line',source:'construction',paint:{'line-color':'#475569','line-width':['interpolate',['linear'],['zoom'],4,1.5,10,3.5,14,5],'line-dasharray':[1.6,1.2]}});
@@ -136,7 +140,7 @@ function installLayers() {
   applyRailWays();
   updateRailViewport();
 }
-const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail'],railConstruction:['rail-construction'],railPoints:['rail-points'],railPlatforms:['rail-platform-fill','rail-platform-outline'],railVehicles:['rail-vehicles'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
+const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail'],railConstruction:['rail-construction'],railPoints:['rail-points'],railPlatforms:['rail-platform-fill','rail-platform-outline'],railVehicles:['rail-vehicles'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 function refreshSelection(){
   if(!map.getSource('selection'))return;
   const props=selectedFeature?.properties||{};
@@ -216,7 +220,7 @@ async function init() {
   map.on('error',event=>{const message=String(event.error?.message||event.error);if(!mapErrors.includes(message))mapErrors.push(message);});
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
   map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';report('cameraChanged',p.lng,p.lat,map.getZoom());});
-  map.on('click',event=>{const ids=['rail-vehicles','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-platform-fill','rail-platform-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
+  map.on('click',event=>{const ids=['rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-platform-fill','rail-platform-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
   map.on('mousemove',event=>{const ids=['vehicles-symbol','vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'';});
   const locationButton=document.getElementById('location-menu'), locationPanel=document.getElementById('location-panel');
   locationButton.onclick=()=>{locationPanel.hidden=!locationPanel.hidden;locationButton.setAttribute('aria-expanded',String(!locationPanel.hidden));};
@@ -236,6 +240,7 @@ async function init() {
   document.getElementById('zoom-in').onclick=()=>map.zoomIn();document.getElementById('zoom-out').onclick=()=>map.zoomOut();document.getElementById('north').onclick=()=>map.easeTo({bearing:0,pitch:0});
   window.railscope={
     setRailWays(ids){railWays=ids;applyRailWays();},
+    setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
     setRailOperatingVehicles(data){config.sources.railVehicles=data;map.getSource('railVehicles')?.setData(data);},
     setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){map.setPaintProperty('rail-vehicles','circle-radius',Number(value.size)/2);map.setPaintProperty('rail-vehicles','circle-opacity',value.style==='ring'?0:1);map.setPaintProperty('rail-vehicles','circle-stroke-color',value.style==='ring'?'#486e9a':'#ffffff');}},
     captureMap(){
@@ -275,7 +280,7 @@ async function init() {
         currentBase,visibleLines:visibleIds.length,visibleConstruction:constructionIds.length,
         line1StationsAllowed:allowsLine1('stations'),line1AreasAllowed:allowsLine1('areas-fill'),
         running,travelled,operatingMode,operatingClock,activeVehicles:operatingVehicles.features.length,
-        vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,overlays,vehicleAppearance,
+        visibility:{...visibility},vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,overlays,vehicleAppearance,
         markerRadius:map.getPaintProperty('vehicles','circle-radius'),trainIconVisibility:map.getLayoutProperty('vehicles-symbol','visibility'),
         titleHidden:document.getElementById('map-title').hidden,hasLine1Button:!!document.getElementById('focus-demo'),
         vehicle:operatingVehicles.features[0]?.geometry.coordinates||null,

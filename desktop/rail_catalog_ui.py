@@ -2,14 +2,15 @@
 
 import json
 from pathlib import Path
-from PySide6.QtCore import Qt
+import threading
+import sqlite3
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QComboBox,
     QTreeWidget,
     QTreeWidgetItem,
-    QPushButton,
     QDialog,
     QLabel,
     QTableWidget,
@@ -17,15 +18,23 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QHeaderView,
     QMessageBox,
+    QLineEdit,
+    QSizePolicy,
 )
 
 try:
-    from .components import Switch
+    from .components import Switch, text_label
+    from .provinces import geographic_catalog, VERSION
 except ImportError:
-    from components import Switch
+    from components import Switch, text_label
+    from provinces import geographic_catalog, VERSION
 
 
 class RailCatalog(QWidget):
+    classified = Signal(dict)
+    classification_failed = Signal(str)
+    enabled_requested = Signal()
+
     def __init__(self, directory, settings, map_view, parent=None):
         super().__init__(parent)
         self.map = map_view
@@ -34,8 +43,13 @@ class RailCatalog(QWidget):
         self.catalog = (
             json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
         )
+        cache = Path(directory) / "rail_catalog.provinces.json"
+        if cache.exists():
+            value = json.loads(cache.read_text(encoding="utf-8"))
+            if value.get("version") == VERSION:
+                self.catalog = value["catalog"]
         self.overrides = {}
-        self.visible = {key for key in self.catalog}
+        self.visible = set()
         if self.path.exists():
             try:
                 value = json.loads(self.path.read_text(encoding="utf-8"))
@@ -54,32 +68,97 @@ class RailCatalog(QWidget):
                 QMessageBox.warning(self, "国铁分类设置未载入", str(error))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        self.setMinimumWidth(0)
         self.mode = QComboBox()
         self.mode.addItems(["按省份", "按规划通道 → 分段"])
+        self.mode.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.mode.setMinimumContentsLength(10)
         self.mode.currentIndexChanged.connect(self.populate)
         layout.addWidget(self.mode)
+        search = QLineEdit()
+        search.setPlaceholderText("筛选省份 / 线路 / 工程")
+        search.textChanged.connect(self.filter_tree)
+        self.search = search
+        layout.addWidget(search)
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
         self.tree.setHeaderHidden(True)
         self.tree.setMinimumHeight(220)
         self.tree.setMaximumHeight(340)
-        self.tree.setColumnWidth(1, 60)
-        layout.addWidget(self.tree)
-        edit = QPushButton("整理国铁通道 / 分段…")
-        edit.clicked.connect(self.organize)
-        layout.addWidget(edit)
-        layout.addWidget(
-            QLabel("八纵八横为官方规划骨架；未确认的线路保持未分类，不按站名推测归属。")
+        self.tree.setIndentation(12)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.tree.setColumnWidth(1, 62)
+        self.tree.setMinimumWidth(0)
+        self.tree.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
+        layout.addWidget(self.tree)
+        self.note = text_label(
+            "按轨道中点所在省界分类；跨省线路按省分别列出。通道归属可在编辑菜单整理。",
+            wrap=True,
+        )
+        layout.addWidget(self.note)
         self.populate()
+        self.classified.connect(self.apply_classification)
+        self.classification_failed.connect(self.note.setText)
+        if (Path(directory) / "rail.sqlite").exists() and not all(
+            r.get("classification") == VERSION for r in self.catalog.values()
+        ):
+            self.note.setText("正在后台按省界整理国铁目录…无需重新导入 PBF。")
+
+            def classify():
+                try:
+                    result = geographic_catalog(directory)
+                    self.classified.emit(result)
+                except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
+                    try:
+                        self.classification_failed.emit("省界分类未完成：" + str(error))
+                    except RuntimeError:
+                        pass  # Window was closed; any completed cache remains reusable.
+
+            threading.Thread(target=classify, daemon=True).start()
+
+    def apply_classification(self, catalog):
+        ways = {w for key in self.visible for w in self.catalog[key]["way_ids"]}
+        self.catalog = catalog
+        self.visible = {
+            key
+            for key, record in catalog.items()
+            if ways.intersection(record["way_ids"])
+        }
+        if ways:
+            self.send_visibility(False)
+        self.populate()
+        self.note.setText(
+            "按轨道中点所在省界分类；省界附近/范围外保留待核对，不按站名猜测。"
+        )
+
+    def meta(self, key):
+        record = self.catalog[key]
+        return {
+            **record,
+            **self.overrides.get(key, self.overrides.get(record.get("name", key), {})),
+        }
 
     def populate(self):
         if not hasattr(self, "tree"):
             return
+        expanded = {
+            key
+            for key, item in getattr(self, "groups", {}).items()
+            if item.isExpanded()
+        }
         self.tree.clear()
         groups = {}
+        self.items = {}
+        self.members = {}
         for name, record in sorted(self.catalog.items()):
-            meta = {**record, **self.overrides.get(name, {})}
+            meta = self.meta(name)
             parents = (
                 (meta["province"],)
                 if self.mode.currentIndex() == 0
@@ -92,19 +171,88 @@ class RailCatalog(QWidget):
                 if key not in groups:
                     groups[key] = QTreeWidgetItem(parent, [label])
                 parent = groups[key]
-            item = QTreeWidgetItem(parent, [name])
-            item.setToolTip(0, name)
+            label = record.get("name", name)
+            item = QTreeWidgetItem(parent, [label])
+            item.setToolTip(
+                0, f"{label}\n{meta['province']} · {len(record['way_ids'])} 个轨道段"
+            )
+            self.items[name] = item
+            self.members[id(item)] = {name}
+            ancestor = parent
+            while ancestor is not self.tree.invisibleRootItem():
+                self.members.setdefault(id(ancestor), set()).add(name)
+                ancestor = ancestor.parent() or self.tree.invisibleRootItem()
             switch = Switch(name in self.visible)
             switch.toggled.connect(lambda on, n=name: self.toggle(n, on))
             self.tree.setItemWidget(item, 1, switch)
+        for item in groups.values():
+            keys = self.members[id(item)]
+            item.setText(0, item.text(0) + f" · {len(keys)} 项")
+            control = Switch(bool(keys & self.visible))
+            control.setMixed(bool(keys & self.visible) and not keys <= self.visible)
+            control.toggled.connect(lambda on, k=keys: self.toggle_group(k, on))
+            self.tree.setItemWidget(item, 1, control)
+        for key, item in groups.items():
+            item.setExpanded(key in expanded)
+        self.groups = groups
+        self.filter_tree(self.search.text())
+
+    def filter_tree(self, text):
+        query = text.strip().lower()
+
+        def visit(item, inherited=False):
+            matches = inherited or query in item.text(0).lower()
+            child_matches = [
+                visit(item.child(i), matches) for i in range(item.childCount())
+            ]
+            shown = matches or any(child_matches)
+            item.setHidden(not shown)
+            if query and child_matches and shown:
+                item.setExpanded(True)
+            return shown
+
+        for i in range(self.tree.topLevelItemCount()):
+            visit(self.tree.topLevelItem(i))
+
+    def toggle_group(self, keys, on):
+        self.visible.update(keys) if on else self.visible.difference_update(keys)
+        self.send_visibility(on)
+        QTimer.singleShot(0, self.populate)
+
+    def set_all(self, on):
+        self.visible = set(self.catalog) if on else set()
+        self.send_visibility(False)
+        self.populate()
 
     def toggle(self, name, on):
         if on:
             self.visible.add(name)
         else:
             self.visible.discard(name)
-        ids = [way for name in self.visible for way in self.catalog[name]["way_ids"]]
+        self.send_visibility(on)
+        # Update ancestors without destroying the switch handling the current event.
+        for key, item in self.items.items():
+            control = self.tree.itemWidget(item, 1)
+            control.blockSignals(True)
+            control.setChecked(key in self.visible)
+            control.blockSignals(False)
+        for item in self.groups.values():
+            control = self.tree.itemWidget(item, 1)
+            keys = self.members[id(item)]
+            control.blockSignals(True)
+            control.setChecked(bool(keys & self.visible))
+            control.setMixed(bool(keys & self.visible) and not keys <= self.visible)
+            control.blockSignals(False)
+
+    def send_visibility(self, request_enable):
+        ids = [
+            way
+            for name in sorted(self.visible)
+            for way in self.catalog[name]["way_ids"]
+        ]
         self.map.call("setRailWays", ids)
+        if request_enable:
+            self.enabled_requested.emit()
 
     def organize(self):
         dialog = QDialog(self)
@@ -124,9 +272,14 @@ class RailCatalog(QWidget):
         layout.addWidget(table)
         names = sorted(self.catalog)
         for row, name in enumerate(names):
-            meta = {**self.catalog[name], **self.overrides.get(name, {})}
+            meta = self.meta(name)
             for col, value in enumerate(
-                (name, meta["province"], meta["corridor"], meta["section"])
+                (
+                    self.catalog[name].get("name", name),
+                    meta["province"],
+                    meta["corridor"],
+                    meta["section"],
+                )
             ):
                 item = QTableWidgetItem(value)
                 if col == 0:

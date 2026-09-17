@@ -1,5 +1,11 @@
 # RailScope
 
+桌面端启动默认只显示底图，所有轨道、车站、站台、在建线路与车辆图层关闭；在左侧按需打开。全部数据导入/下载入口在菜单栏。
+
+国铁目录按轨道中点所在省界分类，跨省同名线路分省列出。旧数据自动升级目录，不必重下 PBF；省界附近保留待核对。
+
+G1 便携示例：**运行 → 国铁 · 车次 / 跨线运行图 → 打开 G1 参考运行图**。无需全国数据即可查看、编辑、导入导出并手动开始/暂停仿真。公开时刻和 OSM 连通几何是参考，不代表实际调度进路。详见 [国铁运行说明](docs/NATIONAL_RAIL_OPERATIONS.md)。
+
 RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway
 topology, route paths, virtual blocks, occupancy/conflict detection, and manual
