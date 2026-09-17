@@ -10,14 +10,13 @@
 </head>
 <body>
   <div id="map" aria-label="轨道交通地图"></div>
-  <section class="glass map-title" data-layout="overlay">
+  <section id="map-title" class="glass map-title" data-layout="overlay" hidden>
     <span class="eyebrow" data-role="eyebrow">MAP WORKSPACE</span>
-    <div class="title-row"><strong id="scene-title">上海 · 轨道交通</strong><span class="live-dot"></span></div>
+    <div class="title-row"><strong id="scene-title">全国 · 轨道交通</strong><span class="live-dot"></span></div>
     <span id="scene-subtitle">全国 OSM 路网 · 可编辑计划驱动仿真</span>
   </section>
-  <div class="glass tools" role="toolbar" aria-label="地图视图工具" data-role="nav" data-height-px="46" data-single-line="true" data-layout="toolbar">
+  <div id="map-tools" class="glass tools" role="toolbar" aria-label="地图视图工具" data-role="nav" data-height-px="46" data-single-line="true" data-layout="toolbar">
     <button id="location-menu" title="城市、线路与坐标定位" aria-expanded="false">定位 ▾</button>
-    <button id="focus-demo" title="定位上海 1 号线">1 号线</button>
     <button id="focus-china" title="查看全国">全国</button>
     <span class="divider"></span>
     <button id="zoom-in" title="放大" aria-label="放大">＋</button>
@@ -27,18 +26,18 @@
   </div>
   <div class="glass location-panel" id="location-panel" hidden>
     <label for="city-view">城市定位</label><select id="city-view"><option value="">选择城市</option></select>
-    <label for="line-view">线路范围</label><select id="line-view"><option value="">选择上海线路</option></select>
+    <label for="line-view">全国线路定位</label><select id="line-view"><option value="">选择城市与线路</option></select>
     <label for="coordinate-view">经纬度（WGS84）</label><div class="coordinate-row"><input id="coordinate-view" placeholder="121.47, 31.23"><button id="coordinate-go">定位</button></div>
     <div class="coordinate-row"><button id="fit-visible">适应可见线路</button><button id="follow-train">跟随首列车</button></div>
     <span id="location-message" role="status"></span>
   </div>
-  <div class="glass legend" data-layout="legend">
+  <div id="map-legend" class="glass legend" data-layout="legend">
     <span><i class="swatch red"></i>运营线路</span>
     <span><i class="swatch dashed"></i>在建线路</span>
     <span><i class="station-dot"></i>地铁站</span>
     <span><i class="vehicle-dot"></i>演示列车</span>
   </div>
-  <div class="glass map-status"><span id="base-status">标准地图</span><span class="divider"></span><span id="camera-status">31.23° N · 121.47° E</span></div>
+  <div id="map-status" class="glass map-status"><span id="base-status">标准地图</span><span class="divider"></span><span id="camera-status">全国视图</span></div>
   <div id="loading" class="glass loading"><div class="loader"></div><strong>正在载入轨道地图</strong><span>加载本地路网与站区面数据</span></div>
   <script src="map.js"></script>
 </body>

@@ -16,13 +16,62 @@ class Bridge(QObject):
 
 
 class MapStub:
-    is_ready = False
+    is_ready = True
 
     def __init__(self):
         self.bridge = Bridge()
+        self.calls = []
 
     def call(self, *args):
-        pass
+        self.calls.append(args)
+
+
+def test_simulation_is_opt_in_and_can_pause_disable_and_change_marker(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app
+    line = {
+        "id": "sh-1",
+        "ref": "1",
+        "relation_id": 199200,
+        "name": "1号线",
+        "color": "#c82732",
+        "variants": [],
+        "path": {
+            "coordinates": [[121, 31], [121.01, 31]],
+            "length_m": 1000,
+            "cumulative": [0, 1000],
+        },
+        "stations": [
+            {"id": "a", "name": "A", "distance_m": 0},
+            {"id": "b", "name": "B", "distance_m": 1000},
+        ],
+    }
+    plan = Plan([line])
+    plan.add_train("sh-1", "T1", 25200)
+    map_view = MapStub()
+    editor = OperationsEditor(plan, map_view, [line], tmp_path / "plan.json")
+    sidebar = editor.sidebar()
+    map_view.bridge.initialized.emit()
+    editor.tick()
+    assert not editor.enabled and not editor.playing
+    assert editor.clock == 25200 and editor.current_vehicle_features == []
+    editor.play()
+    assert editor.enabled and editor.playing and editor.current_vehicle_features
+    editor.pause()
+    clock = editor.clock
+    editor.tick()
+    assert editor.enabled and not editor.playing and editor.clock == clock
+    assert editor.current_vehicle_features
+    editor.marker_size.setValue(28)
+    editor.marker_style.setCurrentIndex(2)
+    assert ("setVehicleAppearance", {"size": 28, "style": "train"}) in map_view.calls
+    editor.set_enabled(False)
+    assert not editor.enabled and not editor.playing
+    assert editor.current_vehicle_features == []
+    assert not editor.enabled_switch.isChecked()
+    editor.timer.stop()
+    editor.close()
+    sidebar.close()
 
 
 def test_native_table_and_diagram_drag_edit_same_plan(tmp_path):
@@ -30,6 +79,7 @@ def test_native_table_and_diagram_drag_edit_same_plan(tmp_path):
     assert app is not None
     line = {
         "id": "sh-1",
+        "relation_id": 199200,
         "ref": "1",
         "name": "1号线",
         "color": "#c82732",

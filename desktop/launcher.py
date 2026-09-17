@@ -402,7 +402,7 @@ class Desk(QMainWindow):
         self.tree_switches = {}
         self.imported = dict(EMPTY)
         self.selected_data = {}
-        self.running = bool(self.demo["coordinates"])
+        self.running = False
         self.distance = 0.0
         self._stations_cache = stations
         self.route_lookup = {r["osm_relation_id"]: r for r in self.catalog}
@@ -432,7 +432,6 @@ class Desk(QMainWindow):
         )
         self.operations.updated.connect(self.refresh_operating_selection)
         self.connect_map()
-        self._show_demo_details()
         self.setStyleSheet(THEME)
         if self.hierarchy_load_error:
             QTimer.singleShot(
@@ -482,11 +481,16 @@ class Desk(QMainWindow):
             "routeBounds": self.route_bounds,
             "lineViews": [
                 {
-                    "name": "上海 · " + line["name"],
-                    "coordinates": line["path"]["coordinates"],
+                    "name": self.hierarchy.parent(route)[1]
+                    + " · "
+                    + self.hierarchy.parent(route)[2]
+                    + " · "
+                    + route["name"],
+                    "city": self.hierarchy.parent(route)[1],
+                    "bounds": self.route_bounds[route["osm_relation_id"]],
                 }
-                for line in self.shanghai_lines
-                if line["path"]
+                for route in self.catalog
+                if route["osm_relation_id"] in self.route_bounds
             ],
         }
 
@@ -556,6 +560,7 @@ class Desk(QMainWindow):
         self.add_action(run, "运行控制", lambda: self.open_sidebar(1))
         self.add_action(run, "开始计划仿真", self.play_demo)
         self.add_action(run, "暂停列车演示", self.pause_demo)
+        self.add_action(run, "关闭运行展示", lambda: self.operations.set_enabled(False))
         self.add_action(run, "重新从起点运行", self.reset_demo)
         self.add_action(
             run,
@@ -573,6 +578,24 @@ class Desk(QMainWindow):
         view = bar.addMenu("视图")
         self.add_action(view, "展开 / 收起左侧栏", self.toggle_left)
         self.add_action(view, "展开 / 收起对象详情", self.toggle_right)
+        view.addSeparator()
+        self.overlay_actions = {}
+        for key, title, default in (
+            ("title", "地图标题卡片", False),
+            ("tools", "地图定位与导航工具", True),
+            ("legend", "地图图例", True),
+            ("status", "底图与坐标浮层", True),
+            ("scale", "比例尺", True),
+        ):
+            action = QAction(title, self)
+            action.setCheckable(True)
+            action.setChecked(default)
+            action.toggled.connect(
+                lambda on, key=key: self.map.call("setOverlay", key, on)
+            )
+            view.addAction(action)
+            self.overlay_actions[key] = action
+        view.addSeparator()
         self.add_action(
             view, "搜索线路或站点", lambda: self.search.setFocus(), "Ctrl+F"
         )
@@ -715,12 +738,10 @@ class Desk(QMainWindow):
         layout.setContentsMargins(8, 0, 8, 6)
         layout.setSpacing(5)
         self.base_combo = QComboBox()
-        self.base_combo.addItems(
-            ["标准地图", "卫星影像 · 10 m", "行政区划", "卫星影像 · 轻量 NASA"]
-        )
+        self.base_combo.addItems(["标准地图", "卫星影像 · 10 m", "行政区划"])
         self.base_combo.currentIndexChanged.connect(
             lambda index: self.map.call(
-                "setBase", ("standard", "satellite", "admin", "satellite-lite")[index]
+                "setBase", ("standard", "satellite", "admin")[index]
             )
         )
         layout.addWidget(self.base_combo)
@@ -839,9 +860,7 @@ class Desk(QMainWindow):
                     )
                 )
                 self.install_tree_switch(city_item, ids)
-                if city == "上海":
-                    city_item.setExpanded(True)
-                    province_item.setExpanded(True)
+                city_item.setExpanded(False)
             ids = set().union(
                 *(
                     self.item_ids(province_item.child(i))
@@ -1003,7 +1022,7 @@ class Desk(QMainWindow):
         self.setStatusBar(status)
         self.load_status = text_label("  正在载入地图…")
         status.addWidget(self.load_status, 1)
-        self.camera_status = text_label("上海 · WGS84")
+        self.camera_status = text_label("全国路网 · WGS84")
         status.addPermanentWidget(self.camera_status)
         status.addPermanentWidget(
             text_label(
@@ -1029,16 +1048,14 @@ class Desk(QMainWindow):
         )
 
     def base_changed(self, kind, vector):
-        index = ("standard", "satellite", "admin", "satellite-lite").index(kind)
+        index = ("standard", "satellite", "admin").index(kind)
         self.base_combo.blockSignals(True)
         self.base_combo.setCurrentIndex(index)
         self.base_combo.blockSignals(False)
         enabled = vector and not kind.startswith("satellite")
         for control in self.base_switches.values():
             control.setEnabled(enabled)
-        if kind == "satellite-lite":
-            self.base_hint.setText("NASA 全球卫星影像 · 高层级使用原始影像放大")
-        elif kind == "satellite":
+        if kind == "satellite":
             self.base_hint.setText(
                 "EOX Sentinel-2 · 10 米像素 · 按需加载 · 免费限非商业用途，保留署名；不是亚米级影像"
             )
@@ -1137,6 +1154,7 @@ class Desk(QMainWindow):
             "areas-fill": "地铁站区多边形",
             "construction": "在建线路",
             "vehicles": "演示列车",
+            "vehicles-symbol": "演示列车",
             "rail": "高铁轨道",
             "road": "道路参考",
         }
@@ -1237,7 +1255,10 @@ class Desk(QMainWindow):
         )
 
     def refresh_operating_selection(self):
-        if self.selected_data.get("layer") != "vehicles" or not self.right.isVisible():
+        if (
+            self.selected_data.get("layer") not in ("vehicles", "vehicles-symbol")
+            or not self.right.isVisible()
+        ):
             return
         vehicle_id = self.selected_data["properties"].get("vehicle_id")
         feature = next(
@@ -1260,6 +1281,12 @@ class Desk(QMainWindow):
             self.raw.setPlainText(
                 json.dumps(self.selected_data, ensure_ascii=False, indent=2)
             )
+        elif not self.operations.enabled:
+            self.selected_data = {}
+            self.selected_title.setText("选择地图对象")
+            self.selected_type.setText("运行展示已关闭")
+            self.properties.setRowCount(0)
+            self.raw.clear()
 
     def show_data_summary(self):
         self.display_feature(
@@ -1284,7 +1311,20 @@ class Desk(QMainWindow):
                 ),
                 (
                     "真实站区面",
-                    f"{self.manifest.get('metro_station_area_features_written', 0):,}",
+                    f"{len(self.station_areas['features']):,}",
+                ),
+                (
+                    "已关联线路的站区",
+                    str(
+                        sum(
+                            bool(f["properties"].get("route_relation_ids"))
+                            for f in self.station_areas["features"]
+                        )
+                    ),
+                ),
+                (
+                    "站区缺失说明",
+                    "仅显示 OSM 已绘制的实际多边形；未绘制的车站只显示 POI，不推测边界",
                 ),
                 (
                     "在建轨道",
@@ -1532,6 +1572,10 @@ def main():
     if args.screenshot:
 
         def capture():
+            def grab_workspace():
+                # Never capture desktop pixels: other applications may cover this window.
+                return window.grab()
+
             def complete(payload):
                 state = json.loads(payload) if payload else None
                 # Keep the complete workspace visible in the verification image.
@@ -1540,7 +1584,20 @@ def main():
                     "sidebar_reopen": False,
                     "switch_has_thumb": isinstance(window.switches["metro"], Switch),
                     "continuous_demo_km": round(window.demo["length_m"] / 1000, 2),
+                    "startup_simulation_disabled": not window.operations.enabled
+                    and not window.operations.playing
+                    and state
+                    and state["activeVehicles"] == 0,
+                    "startup_no_shanghai_card": state and state["titleHidden"],
+                    "no_line1_toolbar_button": state and not state["hasLine1Button"],
+                    "only_one_satellite_choice": window.base_combo.count() == 3,
                 }
+                screenshot_path = Path(args.screenshot)
+                grab_workspace().save(
+                    str(
+                        screenshot_path.with_name(screenshot_path.stem + "-startup.png")
+                    )
+                )
                 if args.verify_hefei:
                     from repair_hefei_s1 import component_count
 
@@ -1574,7 +1631,7 @@ def main():
                     if args.verify_hierarchy and "hierarchy_dialog_saved" not in checks:
                         exercise_hierarchy()
                         return
-                    window.grab().save(args.screenshot)
+                    grab_workspace().save(args.screenshot)
                     if args.smoke_report:
                         report = {
                             "checks": checks,
@@ -1683,7 +1740,7 @@ def main():
                             ] == len(window.catalog)
                             state.update(latest)
                             path = Path(args.screenshot)
-                            window.grab().save(
+                            grab_workspace().save(
                                 str(path.with_name(path.stem + "-" + kind + ".png"))
                             )
                             step()
@@ -1714,6 +1771,11 @@ def main():
                 parent_ids = window.item_ids(parent)
                 window.tree_switches[id(parent)].click()
                 window.base_switches["roads"].click()
+                window.overlay_actions["title"].setChecked(True)
+                for key in ("legend", "tools", "status", "scale"):
+                    window.overlay_actions[key].setChecked(False)
+                window.operations.marker_size.setValue(28)
+                window.operations.marker_style.setCurrentIndex(2)
 
                 def inspect_controls(payload):
                     controls = json.loads(payload)
@@ -1721,6 +1783,25 @@ def main():
                         controls["metroVisibility"] == "none"
                     )
                     checks["pause_controls_animation"] = not controls["running"]
+                    checks["view_menu_controls_floaters"] = (
+                        controls["overlays"]
+                        == {
+                            "title": True,
+                            "legend": False,
+                            "tools": False,
+                            "status": False,
+                            "scale": False,
+                        }
+                        and not controls["titleHidden"]
+                    )
+                    checks["adjustable_vehicle_size_and_style"] = (
+                        controls["vehicleAppearance"] == {"size": 28, "style": "train"}
+                        and controls["markerRadius"] == 14
+                        and controls["trainIconVisibility"] == "visible"
+                    )
+                    window.overlay_actions["title"].setChecked(False)
+                    for key in ("legend", "tools", "status", "scale"):
+                        window.overlay_actions[key].setChecked(True)
                     checks["province_controls_children"] = controls[
                         "visibleLines"
                     ] == len(window.catalog) - sum(r > 0 for r in parent_ids)
@@ -1753,8 +1834,9 @@ def main():
                             latest["travelled"] > initial_distance
                         )
                         state.update(latest)
-                        window.grab().save(args.screenshot)
+                        grab_workspace().save(args.screenshot)
                         window.open_sidebar(1)
+                        window.operations.locate_current_line()
 
                         def capture_run():
                             editor = window.operations
@@ -1804,7 +1886,7 @@ def main():
                                 for line in editor.base_lines
                             )
                             path = Path(args.screenshot)
-                            window.grab().save(
+                            grab_workspace().save(
                                 str(path.with_name(path.stem + "-run.png"))
                             )
                             editor.tabs.setCurrentIndex(1)
@@ -1818,7 +1900,7 @@ def main():
 
                         def capture_expanded_diagram():
                             path = Path(args.screenshot)
-                            window.grab().save(
+                            grab_workspace().save(
                                 str(path.with_name(path.stem + "-diagram.png"))
                             )
                             window.operations.tabs.setCurrentIndex(0)
@@ -1827,7 +1909,7 @@ def main():
 
                         def capture_small():
                             path = Path(args.screenshot)
-                            window.grab().save(
+                            grab_workspace().save(
                                 str(path.with_name(path.stem + "-compact.png"))
                             )
                             window.resize(1600, 980)
@@ -1835,9 +1917,23 @@ def main():
                             if not window.right.isVisible():
                                 window.toggle_right()
                             window.operations.clock = 25200
-                            window.operations.play()
+                            window.operations.set_enabled(False)
+
+                            def inspect_disabled(payload):
+                                latest = json.loads(payload)
+                                checks["disable_removes_vehicles"] = (
+                                    not latest["running"]
+                                    and latest["activeVehicles"] == 0
+                                )
+                                state.update(latest)
+                                (exercise_bases if args.verify_bases else finish)()
+
                             QTimer.singleShot(
-                                200, exercise_bases if args.verify_bases else finish
+                                200,
+                                lambda: window.map.page().runJavaScript(
+                                    "JSON.stringify(window.railscope.testState())",
+                                    inspect_disabled,
+                                ),
                             )
 
                         QTimer.singleShot(200, capture_run)

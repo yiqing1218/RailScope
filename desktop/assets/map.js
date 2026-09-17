@@ -1,11 +1,34 @@
 'use strict';
 let bridge, map, config, standardStyle, currentBase = 'standard', selectedFeature = null, selectedLayer = null;
-let running = false, speed = 30, travelled = 0, direction = 1, lastTime = 0, lastReport = 0, vehicleVisible = true;
+let running = false, travelled = 0;
 const visibility = {metro:true, stations:true, construction:true, rail:true, road:true, imported:true, vehicles:true};
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
 let followTrain=false;
+const overlays={title:false,tools:true,legend:true,status:true,scale:true};
+let vehicleAppearance={size:14,style:'glow'};
+function setOverlay(key,on){
+  if(!(key in overlays))return;
+  overlays[key]=!!on;
+  const element=document.getElementById({'title':'map-title','tools':'map-tools','legend':'map-legend','status':'map-status'}[key]);
+  if(element)element.hidden=!on;
+  if(key==='scale')for(const node of document.querySelectorAll('.maplibregl-ctrl-scale'))node.style.display=on?'':'none';
+  if(key==='tools'&&!on)document.getElementById('location-panel').hidden=true;
+}
+function applyVehicleAppearance(){
+  if(!map.getLayer('vehicles'))return;
+  const {size,style}=vehicleAppearance;
+  map.setPaintProperty('vehicles','circle-radius',size/2);
+  map.setPaintProperty('vehicles','circle-opacity',style==='ring'?0:1);
+  map.setPaintProperty('vehicles','circle-stroke-color',style==='ring'?'#0c9184':'#ffffff');
+  map.setPaintProperty('vehicles','circle-stroke-width',style==='ring'?2.5:2);
+  map.setPaintProperty('vehicles-halo','circle-radius',size*.95);
+  map.setPaintProperty('vehicles-halo','circle-opacity',style==='glow'?.16:0);
+  map.setLayoutProperty('vehicles','visibility',visibility.vehicles&&style!=='train'?'visible':'none');
+  map.setLayoutProperty('vehicles-symbol','visibility',visibility.vehicles&&style==='train'?'visible':'none');
+  map.setLayoutProperty('vehicles-symbol','icon-size',size/24);
+}
 function emptyPlaceholder(){return {type:'FeatureCollection',features:[]};}
 const empty = {type:'FeatureCollection',features:[]};
 const detailGroup = layer => {
@@ -43,10 +66,10 @@ function styleWorkbench(style) {
   return style;
 }
 function rasterStyle(type) {
-  const satellite=type.startsWith('satellite'), lite=type==='satellite-lite';
-  const tile=lite?'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg':satellite?'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg':'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const attribution=lite?'NASA GIBS Blue Marble':satellite?'<a href="https://cloudless.eox.at/documentation/license">EOxCloudless © EOX</a> (Contains modified Copernicus Sentinel data 2024) · CC BY-NC-SA 4.0':'© OpenStreetMap contributors';
-  return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{base:{type:'raster',tiles:[tile],maxzoom:lite?8:satellite?14:19,tileSize:256,attribution}},layers:[{id:'base-background',type:'background',paint:{'background-color':'#e8eef1'}},{id:'base-raster',type:'raster',source:'base',paint:{'raster-fade-duration':150}}]};
+  const satellite=type==='satellite';
+  const tile=satellite?'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg':'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const attribution=satellite?'<a href="https://cloudless.eox.at/documentation/license">EOxCloudless © EOX</a> (Contains modified Copernicus Sentinel data 2024) · CC BY-NC-SA 4.0':'© OpenStreetMap contributors';
+  return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{base:{type:'raster',tiles:[tile],maxzoom:satellite?14:19,tileSize:256,attribution}},layers:[{id:'base-background',type:'background',paint:{'background-color':'#e8eef1'}},{id:'base-raster',type:'raster',source:'base',paint:{'raster-fade-duration':150}}]};
 }
 function addSource(id, data) { if (!map.getSource(id)) map.addSource(id,{type:'geojson',data,generateId:true}); }
 function addLayer(layer) { if (!map.getLayer(layer.id)) map.addLayer(layer); }
@@ -69,12 +92,22 @@ function installLayers() {
   addLayer({id:'selection-point',type:'circle',source:'selection',filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':12,'circle-color':'#0c9c90','circle-opacity':.2,'circle-stroke-color':'#0c9c90','circle-stroke-width':2}});
   addLayer({id:'vehicles-halo',type:'circle',source:'vehicles',paint:{'circle-radius':17,'circle-color':'#059b8d','circle-opacity':.18}});
   addLayer({id:'vehicles',type:'circle',source:'vehicles',paint:{'circle-radius':7,'circle-color':'#0c9184','circle-stroke-color':'#ffffff','circle-stroke-width':3}});
+  if(!map.hasImage('train-icon')){
+    const canvas=document.createElement('canvas');canvas.width=48;canvas.height=48;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff';ctx.beginPath();ctx.roundRect(6,2,36,44,10);ctx.fill();
+    ctx.fillStyle='#087e76';ctx.beginPath();ctx.roundRect(10,5,28,38,7);ctx.fill();
+    ctx.fillStyle='#e9ffff';ctx.fillRect(15,12,18,12);ctx.fillRect(16,29,4,4);ctx.fillRect(28,29,4,4);
+    map.addImage('train-icon',ctx.getImageData(0,0,48,48),{pixelRatio:2});
+  }
+  addLayer({id:'vehicles-symbol',type:'symbol',source:'vehicles',layout:{'icon-image':'train-icon','icon-size':14/24,'icon-allow-overlap':true,'icon-ignore-placement':true}});
   addLayer({id:'vehicle-label',type:'symbol',source:'vehicles',minzoom:11,layout:{'text-field':['get','vehicle_id'],'text-font':vectorAvailable?['Noto Sans Bold']:['Open Sans Bold'],'text-size':10,'text-offset':[0,-2]},paint:{'text-color':'#0b6058','text-halo-color':'#ffffff','text-halo-width':2}});
   applyVisibility(); applyLineFilter(); applyConstructionFilter();applyBaseDetails();
-  if(operatingMode)map.getSource('vehicles').setData(visibility.vehicles?operatingVehicles:empty);else updateVehicle();
+  map.getSource('vehicles').setData(visibility.vehicles?operatingVehicles:empty);
+  for(const [key,on] of Object.entries(overlays))setOverlay(key,on);
   refreshSelection();
 }
-const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicle-label']};
+const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 function refreshSelection(){
   if(!map.getSource('selection'))return;
   const props=selectedFeature?.properties||{};
@@ -87,13 +120,13 @@ function refreshSelection(){
     (selectedLayer!=='construction'||constructionIds.includes(props.osm_way_id));
   map.getSource('selection').setData(allowed?{type:'FeatureCollection',features:[selectedFeature]}:empty);
 }
-function applyVisibility() { for (const [key, ids] of Object.entries(groups)) for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id,'visibility',visibility[key]?'visible':'none');refreshSelection(); }
+function applyVisibility() { for (const [key, ids] of Object.entries(groups)) for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id,'visibility',visibility[key]?'visible':'none');applyVehicleAppearance();refreshSelection(); }
 function applyLineFilter() {
   const filter = ['in',['get','route_relation_id'],['literal',visibleIds]];
   for (const id of ['metro','line-labels']) if (map.getLayer(id)) map.setFilter(id,filter);
   const stationFilter = visibleIds.length ? ['any',...visibleIds.map(id=>['in',id,['coalesce',['get','route_relation_ids'],['literal',[]]]])] : ['==',1,0];
   for (const id of ['stations','station-labels','areas-fill','areas-outline']) if (map.getLayer(id)) map.setFilter(id,stationFilter);
-  for (const id of ['vehicles','vehicles-halo','vehicle-label']) if(map.getLayer(id))map.setFilter(id,filter);
+  for (const id of groups.vehicles) if(map.getLayer(id))map.setFilter(id,filter);
   refreshSelection();
 }
 function applyConstructionFilter(){if(map.getLayer('construction'))map.setFilter('construction',['in',['get','osm_way_id'],['literal',constructionIds]]);refreshSelection();}
@@ -107,28 +140,6 @@ function applyBaseDetails() {
     if (currentBase === 'admin' && (layer['source-layer']==='poi' || layer['source-layer']==='aeroway')) on = false;
     map.setLayoutProperty(layer.id,'visibility',on?'visible':'none');
   }
-}
-function demoPosition() {
-  const data=config.demo, total=data.length_m;
-  if(data.coordinates.length<2)return null;
-  travelled=Math.max(0,Math.min(total,travelled));
-  let low=0, high=data.cumulative.length-1;
-  while(low+1<high){const mid=(low+high)>>1;if(data.cumulative[mid]<=travelled)low=mid;else high=mid;}
-  const a=data.coordinates[low], b=data.coordinates[Math.min(low+1,data.coordinates.length-1)];
-  const span=data.cumulative[Math.min(low+1,data.cumulative.length-1)]-data.cumulative[low];
-  const t=span?(travelled-data.cumulative[low])/span:0;
-  return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
-}
-function updateVehicle() {
-  if (!config.demo.coordinates.length || !map.getSource('vehicles')) return;
-  const feature={type:'Feature',properties:{vehicle_id:'SHM1-DEMO-001',name:'上海 1 号线 · SH-01',line_ref:'1',state:running?'演示运行':'已暂停',source:'线路几何演示',distance_km:(travelled/1000).toFixed(2),speed_multiplier:speed},geometry:{type:'Point',coordinates:demoPosition()}};
-  map.getSource('vehicles').setData(visibility.vehicles?{type:'FeatureCollection',features:[feature]}:empty);
-}
-function frame(time) {
-  const dt=lastTime?Math.min(.1,(time-lastTime)/1000):0;lastTime=time;
-  if(running&&!operatingMode){travelled+=direction*18*speed*dt;if(travelled>=config.demo.length_m){travelled=config.demo.length_m;direction=-1;}if(travelled<=0){travelled=0;direction=1;}updateVehicle();}
-  if(time-lastReport>500&&!operatingMode){report('demoProgress',travelled,config.demo.length_m,running);lastReport=time;}
-  requestAnimationFrame(frame);
 }
 function focusDemo() {
   if(!config.demo.coordinates.length)return;
@@ -146,7 +157,7 @@ async function setBase(type) {
   if(type.startsWith('satellite')){vectorAvailable=false;map.setStyle(rasterStyle(type),{diff:false});}
   else if(standardStyle){vectorAvailable=true;map.setStyle(structuredClone(standardStyle),{diff:false});}
   else {vectorAvailable=false;map.setStyle(rasterStyle(type),{diff:false});}
-  document.getElementById('base-status').textContent={standard:'标准地图',satellite:'卫星影像 · 10 m',admin:'行政区划','satellite-lite':'卫星影像 · NASA'}[type];
+  document.getElementById('base-status').textContent={standard:'标准地图',satellite:'卫星影像 · 10 m',admin:'行政区划'}[type];
   report('baseChanged',type,vectorAvailable);
 }
 function selectFeature(feature) {
@@ -162,35 +173,30 @@ async function init() {
     if(!response.ok)throw new Error('Vector style request failed');
     standardStyle=styleWorkbench(await response.json());vectorAvailable=true;
   } catch(error) { vectorAvailable=false; }
-  map=new maplibregl.Map({container:'map',center:[121.44,31.22],zoom:11,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false});
+  map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false});
   report('baseChanged',currentBase,vectorAvailable);
   map.addControl(new maplibregl.ScaleControl({maxWidth:90,unit:'metric'}),'bottom-left');
   map.on('style.load',()=>{
     installLayers();
     if (!animationStarted) {
       animationStarted=true;running=false;
-      if(config.demo.coordinates.length>1)focusDemo();
-      else {
-        map.fitBounds([[73,18],[135,54]],{padding:80});
-        document.getElementById('scene-title').textContent='中国 · 城市轨道交通';
-        document.getElementById('scene-subtitle').textContent='未加载上海 1 号线演示几何';
-      }
-      requestAnimationFrame(frame);report('ready');report('demoState',running);
+      map.fitBounds([[73,18],[135,54]],{padding:60,duration:0});
+      report('ready');report('demoState',running);
     }
   });
   map.on('error',event=>{const message=String(event.error?.message||event.error);if(!mapErrors.includes(message))mapErrors.push(message);});
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
-  map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;report('cameraChanged',p.lng,p.lat,map.getZoom());});
-  map.on('click',event=>{const ids=['vehicles','stations','areas-fill','metro','construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
-  map.on('mousemove',event=>{const ids=['vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'';});
-  document.getElementById('focus-demo').onclick=focusDemo;
+  map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';report('cameraChanged',p.lng,p.lat,map.getZoom());});
+  map.on('click',event=>{const ids=['vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
+  map.on('mousemove',event=>{const ids=['vehicles-symbol','vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'';});
   const locationButton=document.getElementById('location-menu'), locationPanel=document.getElementById('location-panel');
   locationButton.onclick=()=>{locationPanel.hidden=!locationPanel.hidden;locationButton.setAttribute('aria-expanded',String(!locationPanel.hidden));};
   const citySelect=document.getElementById('city-view'), lineSelect=document.getElementById('line-view');
   for(const [index,city] of config.cities.entries()){const option=new Option(city.name,String(index));citySelect.add(option);}
-  for(const [index,line] of config.lineViews.entries()){const option=new Option(line.name,String(index));lineSelect.add(option);}
-  citySelect.onchange=()=>{if(citySelect.value==='')return;const city=config.cities[Number(citySelect.value)];map.flyTo({center:city.center,zoom:11});document.getElementById('scene-title').textContent=city.name+' · 轨道交通';locationPanel.hidden=true;};
-  lineSelect.onchange=()=>{if(lineSelect.value==='')return;const line=config.lineViews[Number(lineSelect.value)], bounds=line.coordinates.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds());map.fitBounds(bounds,{padding:80,maxZoom:13});document.getElementById('scene-title').textContent=line.name;locationPanel.hidden=true;};
+  function populateLocationLines(city=''){lineSelect.replaceChildren(new Option(city?city+' · 选择线路':'选择城市与线路',''));for(const [index,line] of config.lineViews.entries())if(!city||line.city===city)lineSelect.add(new Option(line.name,String(index)));}
+  populateLocationLines();
+  citySelect.onchange=()=>{if(citySelect.value===''){populateLocationLines();return;}const city=config.cities[Number(citySelect.value)];populateLocationLines(city.name);map.flyTo({center:city.center,zoom:11});document.getElementById('scene-title').textContent=city.name+' · 轨道交通';};
+  lineSelect.onchange=()=>{if(lineSelect.value==='')return;const line=config.lineViews[Number(lineSelect.value)], b=line.bounds;map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:80,maxZoom:13});document.getElementById('scene-title').textContent=line.name;locationPanel.hidden=true;};
   document.getElementById('coordinate-go').onclick=()=>{const values=document.getElementById('coordinate-view').value.split(/[,，\s]+/).filter(Boolean).map(Number);if(values.length!==2||!values.every(Number.isFinite)||Math.abs(values[0])>180||Math.abs(values[1])>85){document.getElementById('location-message').textContent='请输入合法经纬度，如 121.47, 31.23';return;}map.flyTo({center:values,zoom:14});locationPanel.hidden=true;};
   document.getElementById('fit-visible').onclick=()=>{const bounds=new maplibregl.LngLatBounds();for(const id of visibleIds){const b=config.routeBounds[id];if(b){bounds.extend([b[0],b[1]]);bounds.extend([b[2],b[3]]);}}if(!bounds.isEmpty())map.fitBounds(bounds,{padding:80,maxZoom:13});};
   document.getElementById('follow-train').onclick=()=>{followTrain=!followTrain;document.getElementById('follow-train').textContent=followTrain?'停止跟随':'跟随首列车';};
@@ -199,7 +205,9 @@ async function init() {
   document.getElementById('focus-china').onclick=()=>{map.fitBounds([[73,18],[135,54]],{padding:80,duration:700});document.getElementById('scene-title').textContent='中国 · 城市轨道交通';};
   document.getElementById('zoom-in').onclick=()=>map.zoomIn();document.getElementById('zoom-out').onclick=()=>map.zoomOut();document.getElementById('north').onclick=()=>map.easeTo({bearing:0,pitch:0});
   window.railscope={
-    setVisibility(key,on){visibility[key]=on;applyVisibility();if(key==='vehicles'){if(operatingMode)map.getSource('vehicles')?.setData(on?operatingVehicles:empty);else updateVehicle();}},
+    setVisibility(key,on){visibility[key]=on;applyVisibility();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);},
+    setOverlay,
+    setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVehicleAppearance();},
     setLines(ids){visibleIds=ids;applyLineFilter();},setBase,
     setConstruction(ids){constructionIds=ids;applyConstructionFilter();},
     setBaseDetail(key,on){baseDetails[key]=on;applyBaseDetails();},focusDemo,
@@ -210,12 +218,9 @@ async function init() {
       operatingMode=true;operatingVehicles=data;operatingClock=clock;running=playing;
       travelled=data.features[0]?.properties.distance_m||0;
       map.getSource('vehicles')?.setData(visibility.vehicles?data:empty);
-      if(selectedLayer==='vehicles'&&selectedFeature){selectedFeature=data.features.find(f=>f.properties.vehicle_id===selectedFeature.properties.vehicle_id)||null;refreshSelection();}
+      if(['vehicles','vehicles-symbol'].includes(selectedLayer)&&selectedFeature){selectedFeature=data.features.find(f=>f.properties.vehicle_id===selectedFeature.properties.vehicle_id)||null;refreshSelection();}
       if(followTrain){const vehicle=data.features.find(f=>visibleIds.includes(f.properties.route_relation_id));if(vehicle)map.jumpTo({center:vehicle.geometry.coordinates,zoom:Math.max(map.getZoom(),13)});}
     },
-    play(){running=true;visibility.vehicles=true;applyVisibility();updateVehicle();report('demoState',true);},
-    pause(){running=false;updateVehicle();report('demoState',false);},
-    reset(){travelled=0;direction=1;updateVehicle();},setSpeed(value){speed=value;},
     imported(data){config.sources.imported=data;map.getSource('imported').setData(data);},
     testState(){
       const baseSource=vectorAvailable?'openmaptiles':'base';
@@ -226,8 +231,10 @@ async function init() {
         currentBase,visibleLines:visibleIds.length,visibleConstruction:constructionIds.length,
         line1StationsAllowed:allowsLine1('stations'),line1AreasAllowed:allowsLine1('areas-fill'),
         running,travelled,operatingMode,operatingClock,activeVehicles:operatingVehicles.features.length,
-        vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,
-        vehicle:operatingMode?operatingVehicles.features[0]?.geometry.coordinates:demoPosition(),
+        vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,overlays,vehicleAppearance,
+        markerRadius:map.getPaintProperty('vehicles','circle-radius'),trainIconVisibility:map.getLayoutProperty('vehicles-symbol','visibility'),
+        titleHidden:document.getElementById('map-title').hidden,hasLine1Button:!!document.getElementById('focus-demo'),
+        vehicle:operatingVehicles.features[0]?.geometry.coordinates||null,
         metroVisibility:map.getLayer('metro')?map.getLayoutProperty('metro','visibility'):null,
         roadBaseVisibility:map.getLayer('road_motorway')?map.getLayoutProperty('road_motorway','visibility'):null};
     }

@@ -39,6 +39,44 @@ def test_unmatched_areas_do_not_invent_route_membership():
     )
 
 
+def test_all_multipolygon_parts_are_associated_and_holes_are_excluded():
+    def ring(x):
+        return [[x, 31], [x + 0.02, 31], [x + 0.02, 31.02], [x, 31.02], [x, 31]]
+
+    area = {
+        "properties": {},
+        "geometry": {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [
+                    ring(121),
+                    [
+                        [121.004, 31.004],
+                        [121.016, 31.004],
+                        [121.016, 31.016],
+                        [121.004, 31.016],
+                        [121.004, 31.004],
+                    ],
+                ],
+                [ring(122)],
+            ],
+        },
+    }
+    stations = [
+        {
+            "properties": {"name": "B", "route_relation_ids": [2]},
+            "geometry": {"coordinates": [122.01, 31.01]},
+        },
+        {
+            "properties": {"name": "courtyard", "route_relation_ids": [3]},
+            "geometry": {"coordinates": [121.01, 31.01]},
+        },
+    ]
+    assert associate_station_areas([area], stations)[0]["properties"][
+        "route_relation_ids"
+    ] == [2]
+
+
 def test_graph_reorders_osm_ways_without_drawing_missing_links():
     def way(coords):
         return {"geometry": {"coordinates": coords}}

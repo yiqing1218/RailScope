@@ -101,6 +101,8 @@ class OperationsEditor(QFrame):
         self.path = path
         self.clock = 25200.0
         self.playing = False
+        self.enabled = False
+        self.appearance = {"size": 14, "style": "glow"}
         self.speed = 30
         self.loading = False
         self.selected_line = "sh-1"
@@ -189,11 +191,15 @@ class OperationsEditor(QFrame):
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.tick)
         self.timer.start()
-        map_view.bridge.initialized.connect(self.play)
+        map_view.bridge.initialized.connect(self.map_ready)
+
+    def map_ready(self):
+        self.map.call("setVehicleAppearance", self.appearance)
+        self.push_positions()
 
     def sidebar(self):
         body = QWidget()
-        body.setMinimumHeight(620)
+        body.setMinimumHeight(880)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
         layout.setSpacing(12)
@@ -201,8 +207,13 @@ class OperationsEditor(QFrame):
         card.setObjectName("demoCard")
         cl = QVBoxLayout(card)
         cl.setContentsMargins(14, 16, 14, 16)
-        cl.addWidget(text_label("上海城市轨道运行计划", "panelTitle", True))
-        cl.addWidget(text_label("以各站到发时刻驱动，不再按点匀速循环", wrap=True))
+        cl.addWidget(text_label("计划仿真", "panelTitle", True))
+        cl.addWidget(text_label("当前方案：上海城市轨道 · 非官方演示", "muted", True))
+        self.enabled_switch = Switch(False)
+        self.enabled_switch.toggled.connect(self.set_enabled)
+        cl.addWidget(switch_row("开启运行展示", self.enabled_switch))
+        self.session_label = text_label("已关闭 · 地图浏览模式", "muted")
+        cl.addWidget(self.session_label)
         self.clock_label = text_label(format_time(self.clock), "metricValue")
         cl.addWidget(self.clock_label)
         self.count_label = text_label("")
@@ -239,9 +250,30 @@ class OperationsEditor(QFrame):
         )
         layout.addWidget(switch_row("车辆图层", vehicles))
         self.vehicle_switch = vehicles
+        layout.addWidget(text_label("列车标记", "sectionLabel"))
+        self.marker_style = QComboBox()
+        for label, value in (
+            ("光晕圆点", "glow"),
+            ("空心圆环", "ring"),
+            ("列车图标", "train"),
+        ):
+            self.marker_style.addItem(label, value)
+        self.marker_style.currentIndexChanged.connect(self.change_appearance)
+        layout.addWidget(self.marker_style)
+        self.marker_size_label = text_label("图标大小  14 px", "muted")
+        layout.addWidget(self.marker_size_label)
+        self.marker_size = QSlider(Qt.Orientation.Horizontal)
+        self.marker_size.setRange(8, 40)
+        self.marker_size.setValue(14)
+        self.marker_size.setAccessibleName("列车图标大小")
+        self.marker_size.valueChanged.connect(self.change_appearance)
+        layout.addWidget(self.marker_size)
         show = QPushButton("打开运行表 / 运行图")
         show.clicked.connect(self.show)
         layout.addWidget(show)
+        locate = QPushButton("定位当前运行线路")
+        locate.clicked.connect(self.locate_current_line)
+        layout.addWidget(locate)
         for title, method in [
             ("导入运行计划…", self.import_plan),
             ("导出运行计划…", self.export_plan),
@@ -289,6 +321,9 @@ class OperationsEditor(QFrame):
         self.selected_line = self.variant_combo.currentData()
         self.selected_train = None
         self.refresh()
+        self.locate_current_line()
+
+    def locate_current_line(self):
         line = self.current_line()
         if line and line["path"]:
             coords = line["path"]["coordinates"]
@@ -530,6 +565,7 @@ class OperationsEditor(QFrame):
                 QMessageBox.warning(self, "导出失败", str(error))
 
     def play(self):
+        self.set_enabled(True)
         self.playing = True
         self._last_tick = monotonic()
         self.update_sidebar(0)
@@ -539,6 +575,28 @@ class OperationsEditor(QFrame):
         self.playing = False
         self.update_sidebar(0)
         self.push_positions()
+
+    def set_enabled(self, enabled):
+        self.enabled = bool(enabled)
+        if not self.enabled:
+            self.playing = False
+        self._last_tick = monotonic()
+        if hasattr(self, "enabled_switch"):
+            self.enabled_switch.blockSignals(True)
+            self.enabled_switch.setChecked(self.enabled)
+            self.enabled_switch.blockSignals(False)
+        self.push_positions()
+        self.updated.emit()
+
+    def change_appearance(self):
+        if not hasattr(self, "marker_size"):
+            return
+        self.appearance = {
+            "size": self.marker_size.value(),
+            "style": self.marker_style.currentData(),
+        }
+        self.marker_size_label.setText(f"图标大小  {self.appearance['size']} px")
+        self.map.call("setVehicleAppearance", self.appearance)
 
     def reset(self):
         self.clock = 25200
@@ -561,7 +619,7 @@ class OperationsEditor(QFrame):
         now = monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
-        if self.playing:
+        if self.enabled and self.playing:
             self.clock = min(172799, self.clock + self.speed * elapsed)
         if self.clock >= 172799:
             self.playing = False
@@ -577,7 +635,7 @@ class OperationsEditor(QFrame):
         if not self.map.is_ready:
             return
         features = []
-        for train in self.plan.trains:
+        for train in self.plan.trains if self.enabled else []:
             position = self.plan.position(train["id"], self.clock)
             if position:
                 line = self.plan.lines[train["line_id"]]
@@ -620,6 +678,13 @@ class OperationsEditor(QFrame):
                 f"{len(self.base_lines)} 条线路 · {len(self.plan.trains)} 列车计划 · {active} 列车在运行"
             )
             self.play_button.setText("暂停仿真" if self.playing else "开始仿真")
+            self.session_label.setText(
+                "运行中 · 按运行表推进"
+                if self.playing
+                else "已暂停 · 保留列车位置"
+                if self.enabled
+                else "已关闭 · 地图浏览模式"
+            )
 
     def refresh_diagram(self):
         self.scene.clear()

@@ -16,31 +16,43 @@ def associate_station_areas(areas, stations):
         x, y = station["geometry"]["coordinates"]
         grid[int(x / 0.005), int(y / 0.005)].append(station)
     for area in areas:
-        ring = area["geometry"]["coordinates"][0]
-        if area["geometry"]["type"] == "MultiPolygon":
-            ring = ring[0]
-        xs, ys = zip(*ring)
-        center = [(min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2]
-        gx, gy = int(center[0] / 0.005), int(center[1] / 0.005)
-        nearby = [
-            s
-            for a in range(gx - 1, gx + 2)
-            for b in range(gy - 1, gy + 2)
-            for s in grid[a, b]
-        ]
-        inside = [s for s in nearby if contains(ring, s["geometry"]["coordinates"])]
-        if not inside and nearby:
-            nearest = min(
-                nearby, key=lambda s: distance_m(center, s["geometry"]["coordinates"])
-            )
-            if distance_m(center, nearest["geometry"]["coordinates"]) <= 150:
-                name = nearest["properties"].get("name")
-                inside = [
-                    s
-                    for s in nearby
-                    if s["properties"].get("name") == name
-                    and distance_m(center, s["geometry"]["coordinates"]) <= 250
-                ]
+        geometry = area["geometry"]
+        polygons = (
+            geometry["coordinates"]
+            if geometry["type"] == "MultiPolygon"
+            else [geometry["coordinates"]]
+        )
+        inside = []
+        for polygon in polygons:
+            ring, holes = polygon[0], polygon[1:]
+            xs, ys = zip(*ring)
+            center = [(min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2]
+            nearby = [
+                s
+                for a in range(int(min(xs) / 0.005) - 1, int(max(xs) / 0.005) + 2)
+                for b in range(int(min(ys) / 0.005) - 1, int(max(ys) / 0.005) + 2)
+                for s in grid[a, b]
+                if not any(
+                    contains(hole, s["geometry"]["coordinates"]) for hole in holes
+                )
+            ]
+            matched = [
+                s for s in nearby if contains(ring, s["geometry"]["coordinates"])
+            ]
+            if not matched and nearby:
+                nearest = min(
+                    nearby,
+                    key=lambda s: distance_m(center, s["geometry"]["coordinates"]),
+                )
+                if distance_m(center, nearest["geometry"]["coordinates"]) <= 150:
+                    name = nearest["properties"].get("name")
+                    matched = [
+                        s
+                        for s in nearby
+                        if s["properties"].get("name") == name
+                        and distance_m(center, s["geometry"]["coordinates"]) <= 250
+                    ]
+            inside.extend(matched)
         ids = sorted(
             {r for s in inside for r in s["properties"].get("route_relation_ids", [])}
         )
