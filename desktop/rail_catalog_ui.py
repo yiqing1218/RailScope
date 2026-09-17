@@ -38,6 +38,7 @@ class RailCatalog(QWidget):
     def __init__(self, directory, settings, map_view, parent=None):
         super().__init__(parent)
         self.map = map_view
+        self.directory = Path(directory).resolve()
         self.path = Path(settings)
         source = Path(directory) / "rail_catalog.json"
         self.catalog = (
@@ -92,6 +93,7 @@ class RailCatalog(QWidget):
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.tree.setColumnWidth(1, 62)
         self.tree.setMinimumWidth(0)
+        self.tree.itemDoubleClicked.connect(self.focus_item)
         layout.addWidget(self.tree)
         self.note = text_label(
             "先按轨道用途分类；高速主线再按八纵八横整理。省份保留，未知类型/通道不猜测。",
@@ -256,6 +258,48 @@ class RailCatalog(QWidget):
         self.map.call("setRailWays", ids)
         if request_enable:
             self.enabled_requested.emit()
+
+    def focus_item(self, item, column):
+        if column != 0:
+            return  # The switch column only controls visibility.
+        keys = self.members.get(id(item), set())
+        ways = sorted({w for key in keys for w in self.catalog[key]["way_ids"]})
+        database = self.directory / "rail.sqlite"
+        if not ways or not database.exists():
+            self.note.setText("无法定位：该目录没有可用的铁路几何数据。")
+            return
+        bounds = []
+        try:
+            # Use the complete disk index, not the currently loaded viewport.
+            with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
+                for start in range(0, len(ways), 500):
+                    batch = ways[start : start + 500]
+                    row = db.execute(
+                        "SELECT min(b.minx),min(b.miny),max(b.maxx),max(b.maxy) "
+                        "FROM features f JOIN bounds b ON f.id=b.id "
+                        "WHERE f.kind='rail' AND "
+                        "json_extract(f.data,'$.properties.osm_way_id') IN ("
+                        + ",".join("?" for _ in batch)
+                        + ")",
+                        batch,
+                    ).fetchone()
+                    if row and row[0] is not None:
+                        bounds.append(row)
+        except sqlite3.Error as error:
+            self.note.setText("无法定位：" + str(error))
+            return
+        if not bounds:
+            self.note.setText("无法定位：索引中没有找到该线路的轨道段。")
+            return
+        self.map.call(
+            "fit",
+            [
+                [min(b[0] for b in bounds), min(b[1] for b in bounds)],
+                [max(b[2] for b in bounds), max(b[3] for b in bounds)],
+            ],
+            item.text(0),
+        )
+        self.note.setText("已定位：" + item.text(0) + "；显示开关保持不变。")
 
     def organize(self):
         dialog = QDialog(self)
