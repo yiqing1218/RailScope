@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCompleter,
+    QDialog,
     QFileDialog,
     QFrame,
     QHeaderView,
@@ -47,7 +48,9 @@ from PySide6.QtWidgets import (
 )
 
 from components import Fold, Switch, THEME, switch_row, text_label
-from geometry import build_demo_path, distance_m
+from geometry import build_demo_path
+from hierarchy import Hierarchy, label_order
+from hierarchy_ui import HierarchyDialog
 from metro_data import associate_station_areas, build_shanghai_lines
 from operating import Plan
 from operating_ui import OperationsEditor
@@ -403,6 +406,17 @@ class Desk(QMainWindow):
         self.distance = 0.0
         self._stations_cache = stations
         self.route_lookup = {r["osm_relation_id"]: r for r in self.catalog}
+        self.hierarchy = Hierarchy(
+            [*self.catalog, *self.construction_catalog],
+            self.route_centers,
+            REGIONS,
+            ROOT / "data/user_settings/layer_hierarchy.json",
+        )
+        self.hierarchy_load_error = ""
+        try:
+            self.hierarchy.load()
+        except (ValueError, OSError) as error:
+            self.hierarchy_load_error = str(error)
         self.config = self.make_config()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), LocalHandler)
         self.server.config = self.config
@@ -420,6 +434,15 @@ class Desk(QMainWindow):
         self.connect_map()
         self._show_demo_details()
         self.setStyleSheet(THEME)
+        if self.hierarchy_load_error:
+            QTimer.singleShot(
+                0,
+                lambda: QMessageBox.warning(
+                    self,
+                    "目录设置未载入",
+                    "已使用自动归类，原设置文件未覆盖。\n" + self.hierarchy_load_error,
+                ),
+            )
 
     def make_config(self):
         sources = {
@@ -520,6 +543,8 @@ class Desk(QMainWindow):
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
         edit = bar.addMenu("编辑")
+        self.add_action(edit, "目录层级设置…", self.edit_hierarchy)
+        edit.addSeparator()
         self.add_action(edit, "显示全部地铁线路", lambda: self.set_all_lines(True))
         self.add_action(edit, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
         self.add_action(edit, "清除导入图层", self.clear_imported)
@@ -747,6 +772,7 @@ class Desk(QMainWindow):
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.tree.setColumnWidth(1, 62)
         self.populate_tree()
+        self.tree.itemDoubleClicked.connect(self.focus_tree_item)
         layout.addWidget(self.tree)
         self.line_count = text_label("")
         layout.addWidget(self.line_count)
@@ -754,32 +780,36 @@ class Desk(QMainWindow):
         return body
 
     def route_city(self, route):
-        tags = route.get("relation_tags", {})
-        description = (
-            " ".join(
-                str(route.get(key) or "") for key in ("network", "operator", "name")
-            )
-            + " "
-            + str(tags.get("name:zh", ""))
-        )
-        for city, province, lon, lat in sorted(REGIONS, key=lambda row: -len(row[0])):
-            if city in description:
-                return province, city
-        point = self.route_centers.get(route["osm_relation_id"])
-        if point:
-            nearest = min(REGIONS, key=lambda row: distance_m(point, [row[2], row[3]]))
-            if distance_m(point, [nearest[2], nearest[3]]) < 95000:
-                return nearest[1], nearest[0]
-        return "未归类地区", route.get("network") or "未归类城市"
+        return self.hierarchy.parent(route)[:2]
+
+    def edit_hierarchy(self):
+        selected = self.tree.currentItem()
+        ids = self.item_ids(selected) if selected else set()
+        dialog = HierarchyDialog(self.hierarchy, self, ids)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.hierarchy.overrides = dialog.model.overrides
+        self.refresh_hierarchy(ids)
+        self.load_status.setText("  目录层级已保存 · 原始 OSM 数据与显示开关保持不变")
+
+    def refresh_hierarchy(self, selected_ids=None):
+        expanded = {item.text(0) for item in self.tree_items if item.isExpanded()}
+        self.populate_tree()
+        self.sync_tree_switches()
+        for item in self.tree_items:
+            if item.text(0) in expanded:
+                item.setExpanded(True)
+            if not item.childCount() and set(selected_ids or []) & self.item_ids(item):
+                self.tree.setCurrentItem(item)
+                item.parent().setExpanded(True)
+                item.parent().parent().setExpanded(True)
+        self.filter_tree(self.line_search.text())
+        self.update_count()
 
     def populate_tree(self):
-        groups = {}
-        for route in [*self.catalog, *self.construction_catalog]:
-            province, city = self.route_city(route)
-            ref = str(route.get("ref") or route["name"].split("：")[0])
-            groups.setdefault(province, {}).setdefault(city, {}).setdefault(
-                ref, []
-            ).append(route)
+        groups = self.hierarchy.grouped()
+        self.tree.clear()
+        self.tree_switches.clear()
         self.tree_items = []
         self.leaf_count = 0
         for province, cities in sorted(groups.items()):
@@ -788,14 +818,10 @@ class Desk(QMainWindow):
             for city, lines in sorted(cities.items()):
                 city_item = QTreeWidgetItem([f"{city}  ·  {len(lines)} 线", ""])
                 province_item.addChild(city_item)
-                for ref, routes in sorted(
+                for title, routes in sorted(
                     lines.items(),
-                    key=lambda item: (
-                        not item[0].isdigit(),
-                        int(item[0]) if item[0].isdigit() else item[0],
-                    ),
+                    key=lambda item: label_order(item[0]),
                 ):
-                    title = f"{ref} 号线" if ref.isdigit() else ref
                     leaf = QTreeWidgetItem([title, ""])
                     swatch = QPixmap(12, 12)
                     swatch.fill(QColor(routes[0].get("display_color") or "#718096"))
@@ -823,7 +849,6 @@ class Desk(QMainWindow):
                 )
             )
             self.install_tree_switch(province_item, ids)
-        self.tree.itemDoubleClicked.connect(self.focus_tree_item)
 
     def item_ids(self, item):
         return set(item.data(0, Qt.ItemDataRole.UserRole) or [])
@@ -1473,6 +1498,7 @@ def main():
     parser.add_argument("--smoke-report")
     parser.add_argument("--verify-interactions", action="store_true")
     parser.add_argument("--verify-bases", action="store_true")
+    parser.add_argument("--verify-hierarchy", action="store_true")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
     app.setStyle("Fusion")
@@ -1499,6 +1525,9 @@ def main():
                 )
 
                 def finish():
+                    if args.verify_hierarchy and "hierarchy_dialog_saved" not in checks:
+                        exercise_hierarchy()
+                        return
                     window.grab().save(args.screenshot)
                     if args.smoke_report:
                         report = {
@@ -1519,6 +1548,64 @@ def main():
                         or window.map.page().console_errors
                     )
                     app.exit(1 if failed else 0)
+
+                def exercise_hierarchy():
+                    original = window.hierarchy
+                    snapshot = set(window.visible_lines)
+                    kunming_ids = {7957933, 11645555}
+                    checks["kunming_4_correctly_classified"] = all(
+                        original.parent(original.lookup[rid])[:2] == ("云南省", "昆明")
+                        for rid in kunming_ids
+                    )
+                    test_model = original.clone()
+                    test_model.path = ROOT / "data/logs/hierarchy-smoke.json"
+                    dialog = HierarchyDialog(test_model, window, kunming_ids)
+                    dialog.show()
+
+                    def edit_preview():
+                        dialog.province.setCurrentText("云南省")
+                        dialog.city.setCurrentText("昆明")
+                        dialog.label.setText("4号线 · 自定义目录")
+                        dialog.apply_button.click()
+                        path = Path(args.screenshot)
+                        dialog.grab().save(
+                            str(path.with_name(path.stem + "-hierarchy.png"))
+                        )
+                        dialog.save_and_accept()
+                        test_model.load()
+                        checks["hierarchy_dialog_saved"] = all(
+                            test_model.parent(test_model.lookup[rid])
+                            == ("云南省", "昆明", "4号线 · 自定义目录")
+                            for rid in kunming_ids
+                        )
+                        window.hierarchy = test_model
+                        window.refresh_hierarchy(kunming_ids)
+                        leaf = next(
+                            i
+                            for i in window.tree_items
+                            if not i.childCount() and kunming_ids <= window.item_ids(i)
+                        )
+                        checks["hierarchy_main_tree_updates"] = (
+                            leaf.text(0) == "4号线 · 自定义目录"
+                            and leaf.parent().text(0).startswith("昆明")
+                            and leaf.parent().parent().text(0) == "云南省"
+                        )
+                        checks["hierarchy_keeps_visibility"] = (
+                            window.visible_lines == snapshot
+                            and window.tree_switches[id(leaf)].isChecked()
+                            == bool(snapshot & kunming_ids)
+                        )
+                        checks["hierarchy_keeps_osm_tags"] = (
+                            original.lookup[7957933]["network"] == "昆明地铁"
+                            and original.lookup[7957933]["operator"]
+                            == "云南京建轨道交通投资建设有限公司"
+                        )
+                        window.hierarchy = original
+                        window.refresh_hierarchy(kunming_ids)
+                        dialog.deleteLater()
+                        QTimer.singleShot(250, finish)
+
+                    QTimer.singleShot(300, edit_preview)
 
                 def exercise_bases():
                     kinds = iter(("satellite", "admin", "standard"))

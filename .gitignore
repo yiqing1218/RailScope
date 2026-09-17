@@ -13,4 +13,5 @@ data/processed/osm/*.geojson
 data/processed/osm/*.json
 data/processed/osm/*.log
 data/logs/
+data/user_settings/
 backend/*.egg-info/
