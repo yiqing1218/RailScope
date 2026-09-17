@@ -1,0 +1,5 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"id":"station-a","name":"Station A","code":"A","mode":"rail","anchor_node_id":"node-a"},"geometry":{"type":"Point","coordinates":[116.380,39.900]}},
+{"type":"Feature","properties":{"id":"station-b","name":"Station B","code":"B","mode":"rail","anchor_node_id":"node-b"},"geometry":{"type":"Point","coordinates":[116.430,39.920]}},
+{"type":"Feature","properties":{"id":"station-c","name":"Station C","code":"C","mode":"rail","anchor_node_id":"node-c"},"geometry":{"type":"Point","coordinates":[116.485,39.945]}}
+]}

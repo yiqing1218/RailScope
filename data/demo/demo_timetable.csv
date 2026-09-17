@@ -1,0 +1,10 @@
+service_date,train_number,stop_sequence,station_name,arrival,departure
+2026-09-15,101,1,Station A,,07:00:00
+2026-09-15,101,2,Station B,07:10:00,07:12:00
+2026-09-15,101,3,Station C,07:22:00,
+2026-09-15,102,1,Station A,,07:02:00
+2026-09-15,102,2,Station B,07:12:00,07:14:00
+2026-09-15,102,3,Station C,07:24:00,
+2026-09-15,201,1,Station C,,07:05:00
+2026-09-15,201,2,Station B,07:15:00,07:17:00
+2026-09-15,201,3,Station A,07:27:00,

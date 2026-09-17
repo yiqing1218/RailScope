@@ -1,0 +1,7 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"id":"edge-ab","name":"Demo Main AB","mode":"rail","railway_type":"main","service":null,"from":"node-a","to":"node-b","direction":"both"},"geometry":{"type":"LineString","coordinates":[[116.380,39.900],[116.430,39.920]]}},
+{"type":"Feature","properties":{"id":"edge-bc","name":"Demo Main BC","mode":"rail","railway_type":"main","service":null,"from":"node-b","to":"node-c","direction":"both"},"geometry":{"type":"LineString","coordinates":[[116.430,39.920],[116.485,39.945]]}},
+{"type":"Feature","properties":{"id":"edge-b-loop","name":"Passing Loop","mode":"rail","railway_type":"branch","service":"siding","from":"node-b","to":"node-loop","direction":"both"},"geometry":{"type":"LineString","coordinates":[[116.430,39.920],[116.443,39.910]]}},
+{"type":"Feature","properties":{"id":"edge-loop-c","name":"Loop Exit","mode":"rail","railway_type":"branch","service":"siding","from":"node-loop","to":"node-c","direction":"both"},"geometry":{"type":"LineString","coordinates":[[116.443,39.910],[116.485,39.945]]}},
+{"type":"Feature","properties":{"id":"road-1","name":"Demo Road","mode":"road","railway_type":"primary","from":"road-a","to":"road-b","direction":"both"},"geometry":{"type":"LineString","coordinates":[[116.370,39.885],[116.500,39.955]]}}
+]}

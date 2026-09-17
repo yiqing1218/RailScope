@@ -1,0 +1,16 @@
+.env
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/
+dist/
+backend/.coverage
+data/processed/*
+!data/processed/.gitkeep
+data/raw/osm/*.pbf
+data/raw/osm/*.geojson
+data/processed/osm/*.geojson
+data/processed/osm/*.json
+data/processed/osm/*.log
+data/logs/
+backend/*.egg-info/
