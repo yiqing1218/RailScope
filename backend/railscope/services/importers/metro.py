@@ -60,6 +60,17 @@ def color_metadata(tags: dict[str, str]) -> tuple[str, str | None, str]:
     return FALLBACK_COLOR, None, "missing"
 
 
+def is_metro_station_area_tags(tags: dict[str, str]) -> bool:
+    """Return true only for an explicitly tagged urban-rail station area."""
+    railway = tags.get("railway")
+    public_transport = tags.get("public_transport")
+    station = tags.get("station")
+    subway = tags.get("subway")
+    return (railway == "station" or public_transport == "station") and (
+        station in SUPPORTED_ROUTES or subway in {"yes", "true"} or tags.get("railway:station") == "subway"
+    )
+
+
 def route_record(relation_id: int, tags: dict[str, str], members: list[dict[str, Any]]) -> dict[str, Any]:
     display_color, color_raw, color_source = color_metadata(tags)
     return {
@@ -170,10 +181,29 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
         def __init__(self) -> None:
             super().__init__()
             self.ways: dict[int, tuple[dict[str, str], list[list[float]]]] = {}
+            self.station_areas: list[dict[str, Any]] = []
 
         def way(self, way: Any) -> None:
             way_id = int(way.id)
             if way_id not in required_way_ids:
+                area_tags = _tags(way.tags)
+                if not is_metro_station_area_tags(area_tags):
+                    return
+                area_coordinates = _coordinates(way)
+                if area_coordinates is None or area_coordinates[0] != area_coordinates[-1]:
+                    return
+                self.station_areas.append({
+                    "type": "Feature",
+                    "properties": {
+                        "osm_way_id": way_id,
+                        "name": area_tags.get("name") or area_tags.get("name:zh") or "未命名地铁站区",
+                        "station_area_tags": area_tags,
+                        "source": "OpenStreetMap",
+                        "attribution": OSM_ATTRIBUTION,
+                        "license": OSM_LICENSE,
+                    },
+                    "geometry": {"type": "Polygon", "coordinates": [area_coordinates]},
+                })
                 return
             coordinates = _coordinates(way)
             if coordinates is not None:
@@ -185,9 +215,11 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     location_index = output_dir / f".{pbf_path.name}.node-locations.idx"
     way_geometries: dict[int, tuple[dict[str, str], list[list[float]]]] = {}
+    station_areas: list[dict[str, Any]] = []
     try:
         way_scan.apply_file(str(pbf_path), locations=True, idx=f"sparse_file_array,{location_index}")
         way_geometries = way_scan.ways
+        station_areas = way_scan.station_areas
     finally:
         # pyosmium may release the native file mapping only after a collection
         # cycle on Windows.  A failed cleanup must not discard a completed import.
@@ -243,6 +275,7 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
         tags = station["tags"]
         station_features.append({"type": "Feature", "properties": {"osm_node_id": node_id, "name": tags.get("name") or tags.get("name:zh") or "未命名地铁站点", "station_tags": tags, "route_relation_ids": sorted(relation_scan.node_routes[node_id]), "source": "OpenStreetMap", "attribution": OSM_ATTRIBUTION}, "geometry": {"type": "Point", "coordinates": station["coordinates"]}})
     stations_geojson = {"type": "FeatureCollection", "name": "china_osm_metro_stations", "features": station_features}
+    station_areas_geojson = {"type": "FeatureCollection", "name": "china_osm_metro_station_areas", "features": station_areas}
     catalog = {
         "schema": "railscope.osm-metro-route-catalog.v1",
         "source": str(pbf_path), "imported_at": imported_at,
@@ -259,6 +292,7 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
         "ways_with_geometry": len(way_geometries),
         "line_member_features_written": len(features),
         "metro_station_features_written": len(station_features),
+        "metro_station_area_features_written": len(station_areas),
         "missing_or_invalid_way_ids": sorted(missing_way_ids),
         "color_sources": dict(sorted(color_sources.items())),
         "scope": "OSM type=route and route in {subway, light_rail}; raw relation and way tags retained per feature",
@@ -268,10 +302,12 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
     dataset_slug = pbf_path.name.removesuffix(".osm.pbf").removesuffix("-latest")
     geojson_path = output_dir / f"{dataset_slug}_metro_routes.geojson"
     stations_path = output_dir / f"{dataset_slug}_metro_stations.geojson"
+    station_areas_path = output_dir / f"{dataset_slug}_metro_station_areas.geojson"
     catalog_path = output_dir / f"{dataset_slug}_metro_route_catalog.json"
     manifest_path = output_dir / f"{dataset_slug}_metro_import_manifest.json"
     _atomic_json_write(geojson_path, geojson)
     _atomic_json_write(stations_path, stations_geojson)
+    _atomic_json_write(station_areas_path, station_areas_geojson)
     _atomic_json_write(catalog_path, catalog)
     _atomic_json_write(manifest_path, manifest)
     warnings: list[str] = []

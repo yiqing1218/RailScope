@@ -1,4 +1,4 @@
-from railscope.services.importers.metro import FALLBACK_COLOR, color_metadata, route_record
+from railscope.services.importers.metro import FALLBACK_COLOR, color_metadata, is_metro_station_area_tags, route_record
 from railscope.services.importers.construction import is_construction_metro_tags
 
 
@@ -23,3 +23,10 @@ def test_construction_metro_filter_is_explicit_and_does_not_include_generic_rail
     assert is_construction_metro_tags({"railway": "light_rail", "construction": "yes"})
     assert not is_construction_metro_tags({"railway": "construction", "construction": "rail"})
     assert not is_construction_metro_tags({"railway": "rail", "construction": "yes"})
+
+
+def test_metro_station_areas_require_explicit_station_and_subway_tags():
+    assert is_metro_station_area_tags({"railway": "station", "station": "subway"})
+    assert is_metro_station_area_tags({"public_transport": "station", "subway": "yes"})
+    assert not is_metro_station_area_tags({"building": "train_station", "name": "未标注线路"})
+    assert not is_metro_station_area_tags({"railway": "station", "station": "rail"})
