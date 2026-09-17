@@ -43,6 +43,7 @@ class Desk(QMainWindow):
   m=self.menuBar();file=m.addMenu('文件');self.action(file,'导入 GeoJSON 图层…',self.import_file);self.action(file,'导出当前可见图层…',self.export);edit=m.addMenu('编辑');self.action(edit,'显示全部地铁线路',lambda:self.all(True));self.action(edit,'隐藏全部地铁线路',lambda:self.all(False));
   for i,n in enumerate(('地图','运行','数据源','拓扑')):self.action(m,n,lambda _,x=i:self.pages.setCurrentIndex(x))
   help=m.addMenu('帮助');self.action(help,'图层说明',lambda:QMessageBox.information(self,'图层说明','地铁站图层包含 POI 与 OSM 实际站区多边形。'))
+  view=m.addMenu('视图');self.action(view,'展开左侧控制台',lambda:self.left.setVisible(True));self.action(view,'展开右侧对象详情',lambda:self.right.setVisible(True))
  def map_page(self):
   page=QWidget();l=QHBoxLayout(page);l.setContentsMargins(0,0,0,0);self.left=self.sidebar();self.right=self.details();split=QSplitter(Qt.Orientation.Horizontal);split.addWidget(self.left);split.addWidget(self.map);split.addWidget(self.right);split.setSizes([310,1010,320]);l.addWidget(split);return page
  def sidebar(self):
