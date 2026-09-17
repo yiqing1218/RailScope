@@ -31,26 +31,40 @@ class Map(QWebEngineView):
  def redraw(self):
   lines=[f for f in self.metro['features'] if f['properties']['route_relation_id'] in self.lines];stations=[f for f in self.stations['features'] if any(x in self.lines for x in f['properties'].get('route_relation_ids',[]))];d={'rail':EMPTY,'road':EMPTY,'metro':{'type':'FeatureCollection','features':lines} if self.flags['metro'] else EMPTY,'stations':{'type':'FeatureCollection','features':stations} if self.flags['stations'] else EMPTY,'areas':self.areas if self.flags['stations'] else EMPTY,'construction':self.construction if self.flags['construction'] else EMPTY,'vehicles':self.vehicles if self.flags['vehicles'] else EMPTY,'fit':self.first};self.first=False;self.page().runJavaScript('window.updateRailScope('+json.dumps(d,ensure_ascii=False)+')')
  def set_base(self,v):self.page().runJavaScript("window.setBase('"+{'标准地图':'standard','卫星影像':'sat','行政图':'admin'}[v]+"')")
+ def shanghai_line_one(self):
+  candidates=[f for f in self.metro['features'] if f['properties'].get('ref')=='1' and '上海' in str(f['properties'].get('network',''))]
+  if not candidates:candidates=[f for f in self.metro['features'] if f['properties'].get('ref')=='1']
+  path=[]
+  for f in sorted(candidates,key=lambda x:(x['properties'].get('route_relation_id'),x['properties'].get('member_sequence',0))):
+   points=f['geometry']['coordinates']
+   path.extend(points if not path or path[-1]!=points[0] else points[1:])
+  return path
+ def set_vehicle(self,coordinate):
+  self.vehicles={'type':'FeatureCollection','features':[{'type':'Feature','properties':{'vehicle_id':'SHM1-DEMO-001','line_ref':'上海地铁 1 号线','state':'演示运行'},'geometry':{'type':'Point','coordinates':coordinate}}]}
+  self.page().runJavaScript("if(map.getSource('vehicles'))map.getSource('vehicles').setData("+json.dumps(self.vehicles,ensure_ascii=False)+")")
+class Switch(QCheckBox):
+ def __init__(self,text):super().__init__();self.label=text;self.toggled.connect(self.refresh);self.refresh(self.isChecked())
+ def refresh(self,on):self.setText(f'{self.label}    {"ON" if on else "OFF"}')
 class Fold(QWidget):
  def __init__(self,title,child):
   super().__init__();l=QVBoxLayout(self);l.setContentsMargins(0,0,0,0);self.button=QToolButton(text=title,checkable=True,checked=True);self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon);self.button.setArrowType(Qt.ArrowType.DownArrow);self.button.toggled.connect(lambda v:(child.setVisible(v),self.button.setArrowType(Qt.ArrowType.DownArrow if v else Qt.ArrowType.RightArrow)));l.addWidget(self.button);l.addWidget(child)
 class Desk(QMainWindow):
  def __init__(self):super().__init__();self.repo=load_demo();self.setWindowTitle('RailScope · 铁路运行资源与调度平台');self.resize(1640,960);self.build()
  def build(self):
-  self.menu();root=QWidget();l=QVBoxLayout(root);l.setContentsMargins(10,8,10,10);head=QLabel('RailScope   /   交通基础设施 GIS');head.setObjectName('brand');l.addWidget(head);self.pages=QStackedWidget();self.map=Map();self.map.bridge.selected.connect(self.detail);self.pages.addWidget(self.map_page());self.pages.addWidget(self.run_page());self.pages.addWidget(self.data_page());self.pages.addWidget(self.topology_page());l.addWidget(self.pages,1);self.setCentralWidget(root);self.setStyleSheet("QWidget{background:#edf2f5;color:#1f2937;font:14px 'Microsoft YaHei UI';} QMenuBar,QMenu{background:rgba(255,255,255,235);color:#263442;border:1px solid #d6e0e7;} QMenu::item:selected{background:#dcecf5;} #glass{background:rgba(255,255,255,218);border:1px solid rgba(190,205,216,180);border-radius:12px;} #brand{font-size:22px;font-weight:700;color:#12344d;padding:5px;} QPushButton,QToolButton{background:rgba(248,251,253,235);border:1px solid #d3dfe7;border-radius:7px;padding:8px;text-align:left;} QPushButton:hover,QToolButton:hover{background:#e2f0f7;} QComboBox,QTreeWidget,QListWidget{background:rgba(255,255,255,225);border:1px solid #d3dfe7;border-radius:7px;padding:5px;} QCheckBox::indicator{width:34px;height:18px;border-radius:9px;background:#bcc9d2;} QCheckBox::indicator:checked{background:#1976a3;} QCheckBox::indicator:checked:after{background:white;} QTabBar::tab{padding:8px 18px;background:#e5edf2;} QTabBar::tab:selected{background:white;}")
+  self.menu();root=QWidget();l=QVBoxLayout(root);l.setContentsMargins(10,8,10,10);head=QLabel('RailScope   /   交通基础设施 GIS');head.setObjectName('brand');l.addWidget(head);self.map=Map();self.map.bridge.selected.connect(self.detail);l.addWidget(self.map_page(),1);self.setCentralWidget(root);self.vehicle_path=self.map.shanghai_line_one();self.vehicle_index=0;self.vehicle_timer=QTimer(self);self.vehicle_timer.timeout.connect(self.move_vehicle);self.setStyleSheet("QWidget{background:#edf2f5;color:#1f2937;font:14px 'Microsoft YaHei UI';} QMenuBar,QMenu{background:rgba(255,255,255,235);color:#263442;border:1px solid #d6e0e7;} QMenu::item:selected{background:#dcecf5;} #glass{background:rgba(255,255,255,218);border:1px solid rgba(190,205,216,180);border-radius:12px;} #brand{font-size:22px;font-weight:700;color:#12344d;padding:5px;} QPushButton,QToolButton{background:rgba(248,251,253,235);border:1px solid #d3dfe7;border-radius:7px;padding:8px;text-align:left;} QPushButton:hover,QToolButton:hover{background:#e2f0f7;} QComboBox,QTreeWidget,QListWidget{background:rgba(255,255,255,225);border:1px solid #d3dfe7;border-radius:7px;padding:5px;} QCheckBox::indicator{width:38px;height:20px;border-radius:10px;background:#cbd5e1;} QCheckBox::indicator:checked{background:#0f766e;} QCheckBox{spacing:9px;font-weight:600;} QTabBar::tab{padding:8px 18px;background:#e5edf2;} QTabBar::tab:selected{background:white;}");QTimer.singleShot(1600,self.start_vehicle)
  def action(self,parent,text,fn):a=QAction(text,parent);a.triggered.connect(fn);parent.addAction(a)
  def menu(self):
   m=self.menuBar();file=m.addMenu('文件');self.action(file,'导入 GeoJSON 图层…',self.import_file);self.action(file,'导出当前可见图层…',self.export);edit=m.addMenu('编辑');self.action(edit,'显示全部地铁线路',lambda:self.all(True));self.action(edit,'隐藏全部地铁线路',lambda:self.all(False));
-  for i,n in enumerate(('地图','运行','数据源','拓扑')):self.action(m,n,lambda _,x=i:self.pages.setCurrentIndex(x))
+  self.action(m,'地图',lambda:self.left.setVisible(True));run=m.addMenu('运行');self.action(run,'打开运行模块',self.open_run);self.action(run,'启动上海地铁 1 号线列车演示',self.start_vehicle);self.action(run,'暂停列车演示',self.stop_vehicle);data=m.addMenu('数据源');self.action(data,'导入 GeoJSON 图层…',self.import_file);self.action(data,'数据说明',lambda:QMessageBox.information(self,'数据源','全国 OSM 城市地铁、站点与真实站区多边形。'));topo=m.addMenu('拓扑');self.action(topo,'执行拓扑校验',self.show_topology)
   help=m.addMenu('帮助');self.action(help,'图层说明',lambda:QMessageBox.information(self,'图层说明','地铁站图层包含 POI 与 OSM 实际站区多边形。'))
   view=m.addMenu('视图');self.action(view,'展开左侧控制台',lambda:self.left.setVisible(True));self.action(view,'展开右侧对象详情',lambda:self.right.setVisible(True))
  def map_page(self):
-  page=QWidget();l=QHBoxLayout(page);l.setContentsMargins(0,0,0,0);self.left=self.sidebar();self.right=self.details();split=QSplitter(Qt.Orientation.Horizontal);split.addWidget(self.left);split.addWidget(self.map);split.addWidget(self.right);split.setSizes([310,1010,320]);l.addWidget(split);return page
+  page=QWidget();l=QHBoxLayout(page);l.setContentsMargins(0,0,0,0);self.left=self.sidebar();self.right=self.details();self.left_handle=QToolButton(text='☰');self.left_handle.setToolTip('展开左侧控制台');self.left_handle.clicked.connect(lambda:self.left.setVisible(True));self.right_handle=QToolButton(text='☷');self.right_handle.setToolTip('展开对象详情');self.right_handle.clicked.connect(lambda:self.right.setVisible(True));split=QSplitter(Qt.Orientation.Horizontal);split.addWidget(self.left);split.addWidget(self.map);split.addWidget(self.right);split.setSizes([310,1010,320]);l.addWidget(self.left_handle);l.addWidget(split,1);l.addWidget(self.right_handle);return page
  def sidebar(self):
   shell=QFrame();shell.setObjectName('glass');l=QVBoxLayout(shell);top=QHBoxLayout();top.addWidget(QLabel('控制台'));collapse=QToolButton(text='‹');collapse.clicked.connect(lambda:self.left.setVisible(False));top.addWidget(collapse);l.addLayout(top);tabs=QTabWidget();tabs.addTab(self.map_controls(),'地图');tabs.addTab(self.run_controls(),'运行');l.addWidget(tabs,1);return shell
  def switches(self,items):
   w=QWidget();l=QVBoxLayout(w);l.setContentsMargins(6,3,6,6)
-  for text,key in items:q=QCheckBox(text);q.setChecked(self.map.flags[key]);q.toggled.connect(lambda v,k=key:self.setflag(k,v));l.addWidget(q)
+  for text,key in items:q=Switch(text);q.setChecked(self.map.flags[key]);q.toggled.connect(lambda v,k=key:self.setflag(k,v));l.addWidget(q)
   return w
  def map_controls(self):
   w=QWidget();l=QVBoxLayout(w);l.setContentsMargins(4,4,4,4);base=QWidget();bl=QVBoxLayout(base);c=QComboBox();c.addItems(['标准地图','卫星影像','行政图']);c.currentTextChanged.connect(self.map.set_base);bl.addWidget(c);bl.addWidget(QLabel('道路与行政文字由当前底图图源提供。'));l.addWidget(Fold('底图',base));l.addWidget(Fold('地铁',self.metro_controls()));l.addWidget(Fold('公路',self.switches([('公路参照','road')])));l.addWidget(Fold('高铁',self.switches([('高铁基础设施','rail')])));l.addStretch();return w
@@ -91,6 +105,15 @@ class Desk(QMainWindow):
    for x in range(i.childCount()):walk(i.child(x))
   for x in range(self.tree.topLevelItemCount()):walk(self.tree.topLevelItem(x))
   self.tree.blockSignals(False);self.map.redraw()
+ def open_run(self):self.left.setVisible(True);self.left.findChild(QTabWidget).setCurrentIndex(1)
+ def show_topology(self):QMessageBox.information(self,'拓扑校验',json.dumps(validate_topology(self.repo),ensure_ascii=False,indent=2))
+ def start_vehicle(self):
+  if not self.vehicle_path:QMessageBox.warning(self,'列车演示','未找到上海地铁 1 号线的可用线路几何。');return
+  self.map.flags['vehicles']=True;self.vehicle_timer.start(450);self.move_vehicle();self.open_run()
+ def stop_vehicle(self):self.vehicle_timer.stop()
+ def move_vehicle(self):
+  if not self.vehicle_path:return
+  self.map.set_vehicle(self.vehicle_path[self.vehicle_index]);self.vehicle_index=(self.vehicle_index+1)%len(self.vehicle_path)
  def run_page(self):w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel('运行'));l.addWidget(QLabel('运行态、占用、冲突和人工调度位于此工作区。'));l.addStretch();return w
  def data_page(self):w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel('数据源'));b=QPushButton('导入 GeoJSON 图层…');b.clicked.connect(self.import_file);l.addWidget(b);l.addStretch();return w
  def topology_page(self):w=QWidget();l=QVBoxLayout(w);l.addWidget(QLabel('拓扑'));b=QPushButton('执行拓扑校验');b.clicked.connect(lambda:QMessageBox.information(self,'拓扑校验',json.dumps(validate_topology(self.repo),ensure_ascii=False,indent=2)));l.addWidget(b);l.addStretch();return w
