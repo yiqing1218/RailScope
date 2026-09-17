@@ -136,6 +136,8 @@ def test_actual_three_importers_produce_complete_versioned_dataset(
         project / "desktop/import_station_areas.py",
         tmp_path / "desktop/import_station_areas.py",
     )
+    for name in ("metro_data.py", "geometry.py"):
+        shutil.copy2(project / "desktop" / name, tmp_path / "desktop" / name)
     raw = tmp_path / "china-latest.osm.pbf"
     with osmium.SimpleWriter(str(raw)) as writer:
         for node_id, lon, lat, tags in (
@@ -182,6 +184,10 @@ def test_actual_three_importers_produce_complete_versioned_dataset(
                 },
             )
         )
+    unicode_raw = tmp_path / "中文下载目录" / "china-latest.osm.pbf"
+    unicode_raw.parent.mkdir()
+    raw.replace(unicode_raw)
+    raw = unicode_raw
     old = tmp_path / "data/processed/osm/china_metro_routes.geojson"
     old.parent.mkdir(parents=True)
     old.write_bytes(b"old-data-preserved")

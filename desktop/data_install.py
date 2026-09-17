@@ -164,7 +164,21 @@ def activate_dataset(root, stage):
     )
 
 
-def install(root, progress, cancel=None, force=False, pbf=None):
+def active_rail_directory(root):
+    base = Path(root) / "data/processed/rail"
+    pointer = base / "active_dataset.json"
+    if not pointer.exists():
+        return base
+    payload = json.loads(pointer.read_text(encoding="utf-8"))
+    stage = (base / payload["dataset"]).resolve()
+    if stage.parent != (base / "datasets").resolve() or not stage.is_dir():
+        raise ValueError("国铁数据目录指针无效")
+    return stage
+
+
+def install(root, progress, cancel=None, force=False, pbf=None, kind="metro"):
+    if kind not in ("metro", "rail"):
+        raise ValueError("数据类型无效")
     root = Path(root).resolve()
     cancel = cancel or Event()
     if pbf is None:
@@ -173,7 +187,11 @@ def install(root, progress, cancel=None, force=False, pbf=None):
         )
     if cancel.is_set():
         raise Cancelled("已暂停，尚未开始导入")
-    base = root / "data/processed/osm/datasets"
+    base = root / (
+        "data/processed/osm/datasets"
+        if kind == "metro"
+        else "data/processed/rail/datasets"
+    )
     base.mkdir(parents=True, exist_ok=True)
     # File-backed national node indexes may temporarily occupy several GB.
     if shutil.disk_usage(base).free < 8 * 1024**3:
@@ -185,6 +203,12 @@ def install(root, progress, cancel=None, force=False, pbf=None):
     log = logs / ("metro-install-" + stage.name + ".log")
     env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     env["PYTHONPATH"] = str(root / "backend") + os.pathsep + env.get("PYTHONPATH", "")
+    # Parent owns the cache: native mappings are unlocked after each worker exits.
+    sys.path.insert(0, str(root / "backend"))
+    from railscope.services.importers.native_paths import temporary_directory
+
+    native_cache = temporary_directory(pbf)
+    env["RAILSCOPE_NATIVE_TEMP"] = str(native_cache)
     commands = (
         (
             "导入全国运营线路、颜色、属性及站点",
@@ -221,36 +245,95 @@ def install(root, progress, cancel=None, force=False, pbf=None):
                 str(pbf),
                 "--output",
                 str(stage / "china_metro_station_areas.geojson"),
+                "--previous",
+                str(active_directory(root) / "china_metro_station_areas.geojson"),
                 "--worker",
             ],
         ),
     )
+    if kind == "rail":
+        commands = (
+            (
+                "提取国铁物理轨道、在建工程、站台与道岔",
+                [
+                    sys.executable,
+                    str(root / "desktop/import_rail.py"),
+                    "--pbf",
+                    str(pbf),
+                    "--output",
+                    str(stage),
+                ],
+            ),
+        )
     for step, (message, command) in enumerate(commands, 1):
         progress(
             {
                 "phase": "import",
                 "message": message,
                 "step": step,
-                "steps": 3,
+                "steps": len(commands),
                 "log": str(log),
             }
         )
         with log.open("a", encoding="utf-8") as handle:
             handle.write(message + "\n")
-            subprocess.run(
+            result = subprocess.run(
                 command,
                 cwd=root,
                 env=env,
                 stdout=handle,
                 stderr=subprocess.STDOUT,
-                check=True,
+                check=False,
                 creationflags=subprocess.CREATE_NO_WINDOW
                 if sys.platform == "win32"
                 else 0,
             )
+        for temporary in native_cache.iterdir():
+            if temporary.is_file() and temporary.suffix in (".pbf", ".osm", ".idx"):
+                temporary.unlink()
+        if result.returncode:
+            lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            reason = next(
+                (
+                    line
+                    for line in reversed(lines)
+                    if "Error:" in line or "Exception:" in line
+                ),
+                "原生读取器退出，请查看日志",
+            )
+            raise RuntimeError(
+                f"导入阶段 {step}/{len(commands)} 失败：{reason}\nPBF 已下载，无须重复下载。日志：{log}"
+            )
         # Each child has exited, so its mapping is no longer locked on Windows.
         for index in stage.glob("*.idx"):
             index.unlink()
+    if kind == "rail":
+        for name in (
+            "rail_tracks.geojson",
+            "rail_points.geojson",
+            "rail_platforms.geojson",
+            "rail_graph.json",
+            "rail_manifest.json",
+            "rail_catalog.json",
+        ):
+            json.loads((stage / name).read_text(encoding="utf-8"))
+        if not (stage / "rail.sqlite").exists():
+            raise ValueError("国铁视窗索引未生成")
+        pointer = base.parent / "active_dataset.json"
+        if pointer.exists():
+            shutil.copy2(
+                pointer, pointer.with_name("active_dataset." + uuid4().hex + ".bak")
+            )
+        atomic_json(pointer, {"dataset": "datasets/" + stage.name, "source": OSM_URL})
+        progress(
+            {
+                "phase": "done",
+                "message": "国铁基础设施已提取，请先保存运行计划后载入。",
+                "directory": str(stage),
+                "log": str(log),
+            }
+        )
+        return stage
     manifest_path = stage / "china_metro_station_area_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["temporary_index"] = None

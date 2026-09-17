@@ -7,6 +7,7 @@ tagged construction subway/light-rail/metro way.
 """
 
 from __future__ import annotations
+from .native_paths import native_path
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -151,7 +152,8 @@ def extract_construction_metro(
             )
 
     relations = RelationHandler()
-    relations.apply_file(str(pbf_path), locations=False)
+    native_source = native_path(pbf_path)
+    relations.apply_file(str(native_source), locations=False)
 
     class WayHandler(osmium.SimpleHandler):
         def __init__(self) -> None:
@@ -175,11 +177,11 @@ def extract_construction_metro(
             )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    index = output_dir / f".{pbf_path.name}.construction-node-locations.idx"
+    index = native_path(output_dir / ".construction-node-locations.idx", output=True)
     way_scan = WayHandler()
     try:
         way_scan.apply_file(
-            str(pbf_path), locations=True, idx=f"sparse_file_array,{index}"
+            str(native_source), locations=True, idx=f"sparse_file_array,{index}"
         )
         features = way_scan.features
         invalid_way_ids = way_scan.invalid_way_ids

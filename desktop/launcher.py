@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import sys
 import threading
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, parse_qs
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
@@ -55,7 +56,8 @@ from metro_data import associate_station_areas, build_shanghai_lines
 from operating import Plan
 from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
-from data_install import active_directory
+from data_install import active_directory, active_rail_directory
+from rail_ui import RailEditor
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
@@ -183,6 +185,30 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == "/api/rail":
+            try:
+                from rail_store import viewport
+
+                query = parse_qs(urlsplit(self.path).query)
+                payload = json.dumps(
+                    viewport(
+                        active_rail_directory(ROOT),
+                        query["kind"][0],
+                        [float(v) for v in query["bbox"][0].split(",")],
+                        float(query["zoom"][0]),
+                    ),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except (ValueError, KeyError, OSError):
+                self.send_error(400)
+            return
         if path == "/config.json":
             payload = json.dumps(self.server.config, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -206,6 +232,11 @@ class Bridge(QObject):
     camera = Signal(float, float, float)
     base = Signal(str, bool)
     error = Signal(str)
+    screenshot = Signal(str)
+
+    @Slot(str)
+    def imageCaptured(self, data):
+        self.screenshot.emit(data)
 
     @Slot(str)
     def featureSelected(self, data):
@@ -430,12 +461,18 @@ class Desk(QMainWindow):
         self.operations = OperationsEditor(
             self.plan, self.map, self.shanghai_lines, self.plan_path
         )
+        self.rail_operations = RailEditor(
+            self.map,
+            active_rail_directory(ROOT),
+            ROOT / "data/processed/operations/rail_plan.json",
+        )
         self.build()
         self.switches["vehicles"] = self.operations.vehicle_switch
         self.operations.vehicle_switch.toggled.connect(
             lambda on: self.set_flag("vehicles", on)
         )
         self.operations.updated.connect(self.refresh_operating_selection)
+        self.rail_operations.updated.connect(self.refresh_operating_selection)
         self.connect_map()
         self.setStyleSheet(THEME)
         if self.hierarchy_load_error:
@@ -466,6 +503,17 @@ class Desk(QMainWindow):
         sources["rail"] = (
             "/data/raw/osm/beijing_highspeed.geojson" if rail.exists() else EMPTY
         )
+        rail_data = active_rail_directory(ROOT)
+        for key, name in [
+            ("rail", "rail_tracks.geojson"),
+            ("railPoints", "rail_points.geojson"),
+            ("railPlatforms", "rail_platforms.geojson"),
+        ]:
+            if (rail_data / "rail.sqlite").exists():
+                sources[key] = EMPTY
+            elif key != "rail":
+                sources[key] = EMPTY
+        sources["railVehicles"] = EMPTY
         roads = [
             {
                 "type": "Feature",
@@ -479,6 +527,7 @@ class Desk(QMainWindow):
         sources["imported"] = EMPTY
         return {
             "sources": sources,
+            "railViewport": (rail_data / "rail.sqlite").exists(),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
             "demo": self.demo,
@@ -522,6 +571,8 @@ class Desk(QMainWindow):
         self.map.setMinimumHeight(200)
         self.map_stack.addWidget(self.map)
         self.map_stack.addWidget(self.operations)
+        self.map_stack.addWidget(self.rail_operations)
+        self.rail_operations.hide()
         self.map_stack.setSizes([350, 500])
         self.operations.expand_requested.connect(
             lambda: self.map_stack.setSizes(
@@ -552,10 +603,18 @@ class Desk(QMainWindow):
         self.add_action(file, "导入 GeoJSON 图层…", self.import_file, "Ctrl+I")
         self.add_action(file, "自动下载全国地铁数据…", self.open_data_download)
         self.add_action(file, "导出可见图层…", self.export_visible, "Ctrl+E")
+        shots = file.addMenu("截图")
+        self.add_action(shots, "当前地图 PNG…", self.capture_map, "Ctrl+Shift+S")
+        self.add_action(shots, "完整运行图 PNG…", self.capture_diagram)
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
         edit = bar.addMenu("编辑")
-        self.add_action(edit, "目录层级设置…", self.edit_hierarchy)
+        self.add_action(edit, "线路分类整理 / 目录层级设置…", self.edit_hierarchy)
+        self.add_action(
+            edit,
+            "国铁通道 / 分段分类整理…",
+            lambda: self.rail_catalog_widget.organize(),
+        )
         edit.addSeparator()
         self.add_action(edit, "显示全部地铁线路", lambda: self.set_all_lines(True))
         self.add_action(edit, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
@@ -565,6 +624,12 @@ class Desk(QMainWindow):
         self.add_action(map_menu, "查看全国路网", lambda: self.map.call("focusChina"))
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
         run = bar.addMenu("运行")
+        self.add_action(
+            run, "地铁 · 大小交路 / 循环与车辆投放…", self.operations.open_cycles
+        )
+        self.add_action(
+            run, "导出地铁线路 / 车站参考目录（供 AI）…", self.export_plan_references
+        )
         self.add_action(run, "运行控制", lambda: self.open_sidebar(1))
         self.add_action(run, "开始计划仿真", self.play_demo)
         self.add_action(run, "暂停列车演示", self.pause_demo)
@@ -578,8 +643,27 @@ class Desk(QMainWindow):
         self.add_action(run, "保存运行计划", self.operations.save, "Ctrl+S")
         self.add_action(run, "导入运行计划…", self.operations.import_plan)
         self.add_action(run, "导出运行计划…", self.operations.export_plan)
+        rail_run = run.addMenu("国铁 · 车次 / 跨线运行图")
+        self.add_action(
+            rail_run, "打开国铁运行表 / 运行图", lambda: self.open_rail_operations()
+        )
+        self.add_action(rail_run, "开始", self.rail_operations.play)
+        self.add_action(rail_run, "暂停", self.rail_operations.pause)
+        self.add_action(
+            rail_run, "关闭", lambda: self.rail_operations.set_enabled(False)
+        )
+        self.add_action(
+            rail_run, "导入国铁车次与径路…", self.rail_operations.import_plan
+        )
+        self.add_action(rail_run, "导出国铁运行计划…", self.rail_operations.export_plan)
+        self.add_action(rail_run, "保存国铁计划", self.rail_operations.save)
+        self.add_action(
+            rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references
+        )
         data = bar.addMenu("数据源")
         self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
+        self.add_action(data, "下载 / 提取全国国铁…", self.open_rail_download)
+        self.add_action(data, "车站真实轮廓覆盖检查…", self.audit_station_boundaries)
         self.add_action(data, "查看数据概览", self.show_data_summary)
         self.add_action(data, "导入 GeoJSON 图层…", self.import_file)
         topology = bar.addMenu("拓扑")
@@ -616,6 +700,134 @@ class Desk(QMainWindow):
         )
         help = bar.addMenu("帮助")
         self.add_action(help, "图层与数据说明", self.show_data_summary)
+        self.add_action(help, "运行计划交换标准 / AI 编写说明", self.show_plan_standard)
+        self.map.bridge.screenshot.connect(self.save_map_capture)
+
+    def show_plan_standard(self):
+        from PySide6.QtWidgets import QTextBrowser
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("运行计划交换标准")
+        dialog.resize(1000, 760)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        browser.setMarkdown(
+            (ROOT / "docs/OPERATING_PLAN_STANDARD.md").read_text(encoding="utf-8")
+        )
+        layout.addWidget(browser)
+        dialog.exec()
+
+    def audit_station_boundaries(self):
+        from boundary_ui import BoundaryDialog
+
+        stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
+        BoundaryDialog(stations, self.station_areas["features"], self).exec()
+
+    def export_plan_references(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出地铁计划参考目录",
+            str(ROOT / "data/logs/metro-reference.json"),
+            "JSON (*.json)",
+        )
+        if not path:
+            return
+        references = {
+            "system": "metro",
+            "distance_unit": "m",
+            "lines": [
+                {
+                    "id": line["id"],
+                    "name": line["name"],
+                    "relation_id": line["relation_id"],
+                    "stations": line["stations"],
+                }
+                for line in self.plan.lines.values()
+                if line.get("path")
+            ],
+            "notice": "编号与里程必须照此引用；不是官方运行时刻表",
+        }
+        try:
+            Path(path).write_text(
+                json.dumps(references, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError as error:
+            QMessageBox.warning(self, "不能导出", str(error))
+
+    def export_rail_references(self):
+        import shutil
+
+        source = active_rail_directory(ROOT) / "rail_graph.json"
+        if not source.exists():
+            QMessageBox.information(
+                self, "尚无国铁参考目录", "请先使用数据源菜单下载 / 提取国铁基础设施"
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出国铁物理区间（全国目录较大，AI 应选取相关区间）",
+            str(ROOT / "data/logs/rail-reference.json"),
+            "JSON (*.json)",
+        )
+        if path:
+            try:
+                if Path(path).resolve() != source.resolve():
+                    shutil.copy2(source, path)
+            except OSError as error:
+                QMessageBox.warning(self, "无法导出", str(error))
+
+    def capture_map(self):
+        if not self.map.is_ready:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存当前地图截图", str(ROOT / "data/logs/map.png"), "PNG (*.png)"
+        )
+        if path:
+            self._capture_path = path
+            self.map.call("captureMap")
+
+    def save_map_capture(self, data):
+        if not getattr(self, "_capture_path", None):
+            return
+        try:
+            if not data.startswith("data:image/png;base64,"):
+                raise ValueError("地图截图未成功，请等待底图加载后重试")
+            image = base64.b64decode(data.split(",", 1)[1], validate=True)
+            Path(self._capture_path).write_bytes(image)
+            self.load_status.setText("  地图截图已保存：" + self._capture_path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "截图失败", str(error))
+        finally:
+            self._capture_path = None
+
+    def capture_diagram(self):
+        from PySide6.QtGui import QImage, QPainter
+
+        editor = (
+            self.rail_operations
+            if self.run_mode.currentIndex() == 1
+            else self.operations
+        )
+        rect = editor.scene.sceneRect()
+        if rect.width() * rect.height() > 60_000_000:
+            QMessageBox.warning(self, "截图过大", "请先选择车次或缩小运行图时间范围")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存完整运行图", str(ROOT / "data/logs/diagram.png"), "PNG (*.png)"
+        )
+        if not path:
+            return
+        image = QImage(
+            max(1, int(rect.width())),
+            max(1, int(rect.height())),
+            QImage.Format.Format_ARGB32,
+        )
+        image.fill(QColor("white"))
+        painter = QPainter(image)
+        editor.scene.render(painter)
+        painter.end()
+        if not image.save(path):
+            QMessageBox.warning(self, "截图失败", "无法写入 PNG 文件")
 
     def header(self):
         header = frame("header")
@@ -736,7 +948,7 @@ class Desk(QMainWindow):
             Fold("地铁", self.metro_controls(), count=f"{len(self.catalog)} 个关系")
         )
         layout.addWidget(Fold("公路", self.reference_controls("road"), expanded=False))
-        layout.addWidget(Fold("高铁", self.reference_controls("rail"), expanded=False))
+        layout.addWidget(Fold("国铁", self.rail_controls(), expanded=False))
         layout.addStretch()
         scroll.setWidget(body)
         return scroll
@@ -975,7 +1187,62 @@ class Desk(QMainWindow):
         return body
 
     def run_controls(self):
-        return self.operations.sidebar()
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.run_mode = QComboBox()
+        self.run_mode.addItems(["地铁 · 交路 / 车辆循环", "国铁 · 车次 / 跨线径路"])
+        layout.addWidget(self.run_mode)
+        self.run_pages = QStackedWidget()
+        self.run_pages.addWidget(self.operations.sidebar())
+        self.run_pages.addWidget(self.rail_operations.sidebar())
+        layout.addWidget(self.run_pages)
+        self.run_mode.currentIndexChanged.connect(self.change_run_mode)
+        return body
+
+    def change_run_mode(self, index):
+        self.run_pages.setCurrentIndex(index)
+        self.operations.setVisible(self.side_pages.currentIndex() == 1 and index == 0)
+        self.rail_operations.setVisible(
+            self.side_pages.currentIndex() == 1 and index == 1
+        )
+
+    def open_rail_operations(self):
+        self.open_sidebar(1)
+        self.run_mode.setCurrentIndex(1)
+        self.change_run_mode(1)
+
+    def rail_controls(self):
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.addWidget(self.new_switch("rail", "铁路线路 / 轨道"))
+        for key, title in [
+            ("railConstruction", "在建铁路"),
+            ("railPoints", "车站 / 线路所 / 道岔"),
+            ("railPlatforms", "真实站台轮廓"),
+        ]:
+            self.flags[key] = True
+            layout.addWidget(self.new_switch(key, title))
+        download = QPushButton("从全国 PBF 下载 / 提取国铁…")
+        download.clicked.connect(self.open_rail_download)
+        layout.addWidget(download)
+        layout.addWidget(
+            text_label("保留每股道的原始属性；几台几线未标注时不猜测。", wrap=True)
+        )
+        from rail_catalog_ui import RailCatalog
+
+        self.rail_catalog_widget = RailCatalog(
+            active_rail_directory(ROOT),
+            ROOT / "data/user_settings/rail_catalog.json",
+            self.map,
+        )
+        layout.addWidget(self.rail_catalog_widget)
+        return body
+
+    def open_rail_download(self):
+        self.open_data_download()
+        if not self.data_download.worker or not self.data_download.worker.isRunning():
+            self.data_download.kind.setCurrentIndex(1)
 
     def inspector(self):
         panel = frame("panel")
@@ -1086,7 +1353,10 @@ class Desk(QMainWindow):
         self.side_subtitle.setText(
             "列车展示与车辆图层" if index else "按要素与线路组织地图"
         )
-        self.operations.setVisible(index == 1)
+        self.operations.setVisible(index == 1 and self.run_mode.currentIndex() == 0)
+        self.rail_operations.setVisible(
+            index == 1 and self.run_mode.currentIndex() == 1
+        )
 
     def open_or_toggle(self, index):
         if self.left.isVisible() and self.side_pages.currentIndex() == index:
@@ -1162,13 +1432,18 @@ class Desk(QMainWindow):
             "地图对象",
         )
         layers = {
+            "rail-points": "国铁车站 / 线路所 / 道岔",
+            "rail-platform-fill": "国铁真实站台面",
+            "rail-platform-outline": "国铁站台轮廓",
+            "rail-construction": "在建国铁轨道",
+            "rail-vehicles": "国铁车次",
             "metro": "地铁线路",
             "stations": "地铁站 POI",
             "areas-fill": "地铁站区多边形",
             "construction": "在建线路",
             "vehicles": "演示列车",
             "vehicles-symbol": "演示列车",
-            "rail": "高铁轨道",
+            "rail": "国铁物理轨道",
             "road": "道路参考",
         }
         self.selected_title.setText(title)
@@ -1177,6 +1452,9 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
+            "boundary_kind": "边界类型",
+            "mode_source": "关联依据 / 复核状态",
+            "retained_previous_snapshot": "保留旧快照（可能过时）",
             "ref": "线路编号",
             "network": "所属网络",
             "operator": "运营方",
@@ -1269,7 +1547,8 @@ class Desk(QMainWindow):
 
     def refresh_operating_selection(self):
         if (
-            self.selected_data.get("layer") not in ("vehicles", "vehicles-symbol")
+            self.selected_data.get("layer")
+            not in ("vehicles", "vehicles-symbol", "rail-vehicles")
             or not self.right.isVisible()
         ):
             return
@@ -1277,7 +1556,11 @@ class Desk(QMainWindow):
         feature = next(
             (
                 f
-                for f in self.operations.current_vehicle_features
+                for f in (
+                    self.rail_operations
+                    if self.selected_data.get("layer") == "rail-vehicles"
+                    else self.operations
+                ).current_vehicle_features
                 if f["properties"]["vehicle_id"] == vehicle_id
             ),
             None,
@@ -1621,6 +1904,10 @@ def main():
 
         window.map.bridge.initialized.connect(show_hefei)
     if args.screenshot:
+        window._capture_path = str(
+            Path(args.screenshot).with_name(Path(args.screenshot).stem + ".map.png")
+        )
+        QTimer.singleShot(20000, lambda: window.map.call("captureMap"))
 
         def capture():
             def grab_workspace():

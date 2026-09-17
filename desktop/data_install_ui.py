@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QProgressBar,
+    QComboBox,
 )
 
 try:
@@ -25,14 +26,17 @@ class InstallerWorker(QThread):
     failed = Signal(str)
     completed = Signal()
 
-    def __init__(self, root, force, parent=None):
+    def __init__(self, root, force, parent=None, kind="metro"):
         super().__init__(parent)
         self.root, self.force = root, force
+        self.kind = kind
         self.cancel = Event()
 
     def run(self):
         try:
-            install(self.root, self.progress.emit, self.cancel, self.force)
+            install(
+                self.root, self.progress.emit, self.cancel, self.force, kind=self.kind
+            )
         except Cancelled as error:
             self.failed.emit(str(error))
         except Exception as error:
@@ -52,12 +56,16 @@ class DataDownloadDialog(QDialog):
         super().__init__(parent)
         self.root = Path(root)
         self.worker = None
-        self.setWindowTitle("全国地铁数据 · 自动下载与导入")
+        self.setWindowTitle("全国轨道数据 · 自动下载与导入")
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-        layout.addWidget(text_label("获取全国地铁路网", "selectedTitle"))
+        layout.addWidget(text_label("获取全国轨道路网", "selectedTitle"))
+        self.kind = QComboBox()
+        self.kind.addItem("地铁 · 线路 / 站点 / 在建 / 真实边界", "metro")
+        self.kind.addItem("国铁 · 轨道 / 站台 / 线路所 / 道岔", "rail")
+        layout.addWidget(self.kind)
         layout.addWidget(
             text_label(
                 "下载 → 文件校验 → 线路与站点 → 在建工程 → 真实站区 → 安全应用",
@@ -117,7 +125,10 @@ class DataDownloadDialog(QDialog):
         self.pause_button.setEnabled(True)
         self.state.setText("正在连接数据源…")
         self.bar.setRange(0, 0)
-        self.worker = InstallerWorker(self.root, self.force.isChecked(), self)
+        self.kind.setEnabled(False)
+        self.worker = InstallerWorker(
+            self.root, self.force.isChecked(), self, self.kind.currentData()
+        )
         self.worker.progress.connect(self.update_progress)
         self.worker.failed.connect(self.state.setText)
         self.worker.completed.connect(lambda: self.apply_button.setEnabled(True))
@@ -153,6 +164,7 @@ class DataDownloadDialog(QDialog):
     def finished_task(self):
         self.start_button.setEnabled(True)
         self.force.setEnabled(True)
+        self.kind.setEnabled(True)
         self.pause_button.setEnabled(False)
         if not self.apply_button.isEnabled():
             self.bar.setRange(0, 1000)

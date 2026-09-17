@@ -10,11 +10,12 @@ except ImportError:
     from geometry import build_demo_path, distance_m
 
 
-def associate_station_areas(areas, stations):
-    grid = defaultdict(list)
-    for station in stations:
-        x, y = station["geometry"]["coordinates"]
-        grid[int(x / 0.005), int(y / 0.005)].append(station)
+def associate_station_areas(areas, stations, grid=None):
+    if grid is None:
+        grid = defaultdict(list)
+        for station in stations:
+            x, y = station["geometry"]["coordinates"]
+            grid[int(x / 0.005), int(y / 0.005)].append(station)
     for area in areas:
         geometry = area["geometry"]
         polygons = (
@@ -57,6 +58,13 @@ def associate_station_areas(areas, stations):
             {r for s in inside for r in s["properties"].get("route_relation_ids", [])}
         )
         area["properties"]["route_relation_ids"] = ids
+        area["properties"]["associated_station_ids"] = sorted(
+            {
+                s["properties"]["osm_node_id"]
+                for s in inside
+                if "osm_node_id" in s["properties"]
+            }
+        )
         area["properties"]["association_source"] = (
             "空间派生关联，非 OSM 原始标签" if ids else "尚未关联到线路"
         )

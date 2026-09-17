@@ -3,6 +3,45 @@ import pytest
 from desktop.import_station_areas import extract
 
 
+def test_subway_platform_outline_and_previous_real_boundary_are_retained(tmp_path):
+    pytest.importorskip("osmium")
+    source = tmp_path / "platform.osm"
+    source.write_text(
+        """<osm version="0.6"><node id="1" lon="121" lat="31"/><node id="2" lon="121.001" lat="31"/><node id="3" lon="121.001" lat="31.001"/><way id="10"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="1"/><tag k="railway" v="platform"/><tag k="subway" v="yes"/><tag k="ref" v="2"/></way></osm>""",
+        encoding="utf-8",
+    )
+    previous = tmp_path / "previous.geojson"
+    previous.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "osm_relation_id": 20,
+                            "source": "OpenStreetMap",
+                        },
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [[121, 31], [121.01, 31], [121.01, 31.01], [121, 31]]
+                            ],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "areas.geojson"
+    extract(source, output, previous=previous)
+    features = json.loads(output.read_text(encoding="utf-8"))["features"]
+    assert len(features) == 2
+    assert features[0]["properties"]["boundary_kind"] == "platform"
+    assert features[1]["properties"]["retained_previous_snapshot"] is True
+
+
 def test_real_multipolygon_holes_and_raw_tags_preserved(tmp_path):
     pytest.importorskip("osmium")
     source = tmp_path / "stations.osm"

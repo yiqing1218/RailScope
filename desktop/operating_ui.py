@@ -1,6 +1,5 @@
 """Single-workspace timetable/diagram editor; no external operational control."""
 
-from copy import deepcopy
 from pathlib import Path
 from time import monotonic
 
@@ -142,6 +141,7 @@ class OperationsEditor(QFrame):
         layout.addLayout(tools)
         actions = QHBoxLayout()
         for title, method in [
+            ("大小交路 / 车辆循环…", self.open_cycles),
             ("新增列车", self.add_train),
             ("整车平移", self.shift_train),
             ("删除列车", self.delete_train),
@@ -208,7 +208,15 @@ class OperationsEditor(QFrame):
         cl = QVBoxLayout(card)
         cl.setContentsMargins(14, 16, 14, 16)
         cl.addWidget(text_label("计划仿真", "panelTitle", True))
-        cl.addWidget(text_label("当前方案：上海城市轨道 · 非官方演示", "muted", True))
+        cl.addWidget(
+            text_label(
+                "当前方案：国铁车次与跨线径路"
+                if self.plan.system == "rail"
+                else "当前方案：地铁交路与车辆循环 · 非官方计划",
+                "muted",
+                True,
+            )
+        )
         self.enabled_switch = Switch(False)
         self.enabled_switch.toggled.connect(self.set_enabled)
         cl.addWidget(switch_row("开启运行展示", self.enabled_switch))
@@ -257,6 +265,8 @@ class OperationsEditor(QFrame):
             ("空心圆环", "ring"),
             ("列车图标", "train"),
         ):
+            if self.plan.system == "rail" and value == "train":
+                continue
             self.marker_style.addItem(label, value)
         self.marker_style.currentIndexChanged.connect(self.change_appearance)
         layout.addWidget(self.marker_style)
@@ -422,12 +432,12 @@ class OperationsEditor(QFrame):
             self.refresh_table()
 
     def checkpoint(self):
-        self.undo_stack.append(deepcopy(self.plan.trains))
+        self.undo_stack.append(self.plan.snapshot())
         self.undo_stack = self.undo_stack[-50:]
         self.redo_stack.clear()
 
     def commit_stop(self, train_id, index, arrival, departure):
-        before = deepcopy(self.plan.trains)
+        before = self.plan.snapshot()
         try:
             self.plan.edit_stop(train_id, index, int(arrival), int(departure))
             self.undo_stack.append(before)
@@ -460,7 +470,7 @@ class OperationsEditor(QFrame):
         )
         if not accepted:
             return
-        before = deepcopy(self.plan.trains)
+        before = self.plan.snapshot()
         try:
             self.plan.shift_train(self.selected_train, seconds)
             self.undo_stack.append(before)
@@ -471,6 +481,9 @@ class OperationsEditor(QFrame):
 
     def add_train(self):
         line = self.current_line()
+        if not line or not line.get("path"):
+            self.message.setText("请先导入有效线路数据")
+            return
         number = 1
         while any(
             t["id"] == "USER-" + line["ref"] + "-" + str(number)
@@ -496,7 +509,7 @@ class OperationsEditor(QFrame):
         form.addRow(buttons)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        before = deepcopy(self.plan.trains)
+        before = self.plan.snapshot()
         try:
             train = self.plan.add_train(
                 self.selected_line,
@@ -524,14 +537,14 @@ class OperationsEditor(QFrame):
 
     def undo(self):
         if self.undo_stack:
-            self.redo_stack.append(deepcopy(self.plan.trains))
-            self.plan.trains = self.undo_stack.pop()
+            self.redo_stack.append(self.plan.snapshot())
+            self.plan.restore(self.undo_stack.pop())
             self.changed("已撤销")
 
     def redo(self):
         if self.redo_stack:
-            self.undo_stack.append(deepcopy(self.plan.trains))
-            self.plan.trains = self.redo_stack.pop()
+            self.undo_stack.append(self.plan.snapshot())
+            self.plan.restore(self.redo_stack.pop())
             self.changed("已重做")
 
     def save(self):
@@ -546,7 +559,7 @@ class OperationsEditor(QFrame):
             self, "导入运行计划", str(Path(self.path).parent), "运行计划 (*.json)"
         )
         if path:
-            before = deepcopy(self.plan.trains)
+            before = self.plan.snapshot()
             try:
                 self.plan.load(path)
                 self.undo_stack.append(before)
@@ -640,15 +653,17 @@ class OperationsEditor(QFrame):
         if not self.map.is_ready:
             return
         features = []
-        for train in self.plan.trains if self.enabled else []:
-            position = self.plan.position(train["id"], self.clock)
+        for train, position in (
+            self.plan.vehicle_positions(self.clock) if self.enabled else []
+        ):
             if position:
                 line = self.plan.lines[train["line_id"]]
                 features.append(
                     {
                         "type": "Feature",
                         "properties": {
-                            "vehicle_id": train["id"],
+                            "vehicle_id": train.get("vehicle_id", train["id"]),
+                            "trip_id": train["id"],
                             "name": train["id"] + " · " + line["name"],
                             "line_ref": line["ref"],
                             "route_relation_id": line["relation_id"],
@@ -675,6 +690,16 @@ class OperationsEditor(QFrame):
             self.playing,
         )
         self.update_sidebar(len(features))
+
+    def open_cycles(self):
+        if not self.current_line() or not self.current_line().get("path"):
+            self.message.setText("请先导入有连续几何与站序的线路")
+            return
+        try:
+            from .cycle_ui import CycleDialog
+        except ImportError:
+            from cycle_ui import CycleDialog
+        CycleDialog(self).exec()
 
     def update_sidebar(self, active):
         if hasattr(self, "clock_label"):

@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from ...domain import ImportReport
+from .native_paths import native_path
 
 OSM_ATTRIBUTION = "© OpenStreetMap contributors"
 OSM_LICENSE = "ODbL 1.0"
@@ -157,7 +158,8 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
         raise FileNotFoundError(f"OSM PBF was not found: {pbf_path}")
 
     relation_scan = _MetroRelationsHandler().handler
-    relation_scan.apply_file(str(pbf_path), locations=False)
+    native_source = native_path(pbf_path)
+    relation_scan.apply_file(str(native_source), locations=False)
     routes: dict[int, dict[str, Any]] = relation_scan.routes
     required_way_ids: set[int] = relation_scan.required_way_ids
 
@@ -175,7 +177,7 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
             self.nodes[node_id] = {"tags": tags, "coordinates": [node.location.lon, node.location.lat]}
 
     station_scan = StationHandler()
-    station_scan.apply_file(str(pbf_path), locations=False)
+    station_scan.apply_file(str(native_source), locations=False)
 
     class WayHandler(osmium.SimpleHandler):
         def __init__(self) -> None:
@@ -213,11 +215,11 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
     # Node locations are needed to produce WGS84 LineStrings.  A file-backed
     # sparse index avoids keeping China's complete node coordinate index in RAM.
     output_dir.mkdir(parents=True, exist_ok=True)
-    location_index = output_dir / f".{pbf_path.name}.node-locations.idx"
+    location_index = native_path(output_dir / ".metro-node-locations.idx", output=True)
     way_geometries: dict[int, tuple[dict[str, str], list[list[float]]]] = {}
     station_areas: list[dict[str, Any]] = []
     try:
-        way_scan.apply_file(str(pbf_path), locations=True, idx=f"sparse_file_array,{location_index}")
+        way_scan.apply_file(str(native_source), locations=True, idx=f"sparse_file_array,{location_index}")
         way_geometries = way_scan.ways
         station_areas = way_scan.station_areas
     finally:
