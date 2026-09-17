@@ -54,11 +54,14 @@ from hierarchy_ui import HierarchyDialog
 from metro_data import associate_station_areas, build_shanghai_lines
 from operating import Plan
 from operating_ui import OperationsEditor
+from bootstrap import ensure_assets
+from data_install import active_directory
+from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
 
 EMPTY = {"type": "FeatureCollection", "features": []}
-DATA = ROOT / "data" / "processed" / "osm"
+DATA = active_directory(ROOT)
 # City names and provinces are UI grouping metadata, never written into OSM facts.
 REGIONS = [
     ("北京", "北京市", 116.40, 39.90),
@@ -165,6 +168,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 and Path(path).suffix in {".html", ".css", ".js"}
             )
             or path.startswith("/frontend/node_modules/maplibre-gl/dist/")
+            or path
+            in ("/desktop/vendor/maplibre-gl.js", "/desktop/vendor/maplibre-gl.css")
             or (path.startswith("/data/processed/osm/") and path.endswith(".geojson"))
             or path == "/data/raw/osm/beijing_highspeed.geojson"
         )
@@ -445,7 +450,9 @@ class Desk(QMainWindow):
 
     def make_config(self):
         sources = {
-            key: f"/data/processed/osm/{name}" if (DATA / name).exists() else EMPTY
+            key: "/" + (DATA / name).relative_to(ROOT).as_posix()
+            if (DATA / name).exists()
+            else EMPTY
             for key, name in {
                 "metro": "china_metro_routes.geojson",
                 "stations": "china_metro_stations.geojson",
@@ -543,6 +550,7 @@ class Desk(QMainWindow):
         bar = self.menuBar()
         file = bar.addMenu("文件")
         self.add_action(file, "导入 GeoJSON 图层…", self.import_file, "Ctrl+I")
+        self.add_action(file, "自动下载全国地铁数据…", self.open_data_download)
         self.add_action(file, "导出可见图层…", self.export_visible, "Ctrl+E")
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
@@ -571,6 +579,7 @@ class Desk(QMainWindow):
         self.add_action(run, "导入运行计划…", self.operations.import_plan)
         self.add_action(run, "导出运行计划…", self.operations.export_plan)
         data = bar.addMenu("数据源")
+        self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
         self.add_action(data, "查看数据概览", self.show_data_summary)
         self.add_action(data, "导入 GeoJSON 图层…", self.import_file)
         topology = bar.addMenu("拓扑")
@@ -1034,7 +1043,11 @@ class Desk(QMainWindow):
         bridge = self.map.bridge
         bridge.selected.connect(self.display_feature)
         bridge.dataLoaded.connect(
-            lambda: self.load_status.setText("  本地路网已载入 · 地图就绪")
+            lambda: self.load_status.setText(
+                "  本地路网已载入 · 地图就绪"
+                if self.catalog
+                else "  地图就绪 · 尚未下载地铁数据，请使用「数据源 → 自动下载全国地铁」"
+            )
         )
         bridge.state.connect(self.demo_state)
         bridge.camera.connect(
@@ -1339,6 +1352,30 @@ class Desk(QMainWindow):
         )
         self.raw.setPlainText(json.dumps(self.manifest, ensure_ascii=False, indent=2))
 
+    def open_data_download(self):
+        if not hasattr(self, "data_download"):
+            self.data_download = DataDownloadDialog(ROOT, self)
+            self.data_download.reload_requested.connect(self.reload_imported_data)
+        self.data_download.show()
+        self.data_download.raise_()
+
+    def reload_imported_data(self):
+        if self.data_download.worker and self.data_download.worker.isRunning():
+            return
+        answer = QMessageBox.question(
+            self,
+            "载入地铁数据",
+            "将重建当前地图工作区。请确认已保存运行计划，继续载入？",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        global DATA
+        DATA = active_directory(ROOT)
+        window = Desk()
+        QApplication.instance().workbench = window
+        window.show()
+        self.close()
+
     def show_topology(self):
         report = validate_topology(self.repo)
         self.display_feature(
@@ -1516,6 +1553,19 @@ class Desk(QMainWindow):
             QMessageBox.warning(self, "无法导出", str(error))
 
     def closeEvent(self, event):
+        if (
+            hasattr(self, "data_download")
+            and self.data_download.worker
+            and self.data_download.worker.isRunning()
+        ):
+            self.open_data_download()
+            QMessageBox.information(
+                self,
+                "数据任务仍在运行",
+                "请先暂停下载并等待停止，或等待导入完成，再退出软件。可以收起下载工具继续浏览地图。",
+            )
+            event.ignore()
+            return
         self.server.shutdown()
         self.server.server_close()
         super().closeEvent(event)
@@ -1541,6 +1591,7 @@ def main():
     parser.add_argument("--verify-hierarchy", action="store_true")
     parser.add_argument("--verify-hefei", action="store_true")
     args = parser.parse_args()
+    ensure_assets(ROOT)
     app = QApplication(sys.argv[:1])
     app.setStyle("Fusion")
     window = Desk()

@@ -68,10 +68,24 @@ events and restores the scheduled result.
 
 ## Desktop
 
-首次安装桌面依赖：`python -m pip install -r desktop/requirements.txt`。
-地图使用本地 MapLibre 资源，首次需在 `frontend` 执行 `npm install`；不必启动
-Vite 或单独的 API 服务。全国路网属于可再生导入数据，不随 Git 提交，需按下方
-步骤从已有 PBF 导入。本机已导入的数据会继续使用。
+### 同学从 GitHub 下载后的启动步骤
+
+1. 下载最新 `feature/desktop-workbench` 分支 ZIP，**完整解压**，不要在 ZIP 内运行。
+2. 安装 Python 3.12 或更新的兼容版本（Windows 64 位）。当前 GitHub 提供的是源码，不是免安装 EXE。
+3. 双击根目录 **`Start-RailScope.cmd`**。也可右键 `desktop/Run-RailScope.ps1` → 使用 PowerShell 运行。
+4. 首次会自动创建项目内 `.venv`、安装桌面依赖、下载并校验固定版本地图组件。需要联网；不需要 Node.js、Docker、管理员权限或手工启动服务器。
+5. 软件打开后，使用 **数据源 → 自动下载 / 更新全国地铁…** 获取数据。
+
+不再依赖开发者电脑的 `D:\Python312`。启动失败会显示原因并保留窗口，日志位于
+`data/logs/startup.log`。如脚本被 Windows 阻止，优先使用根目录 CMD 入口；它仅为
+本次 PowerShell 进程设置执行策略，不修改系统全局策略。
+
+**GitHub 不包含全国地铁数据**：约 1.5 GB 的原始 OSM PBF、大型派生 GIS 图层、
+Python 环境和地图组件缓存均不提交。仓库只有小型合成示例；没有全国数据也能
+打开地图和菜单，而不是因运行编辑器空列表退出。每位使用者首次下载一次即可。
+
+桌面端也支持手工安装：`python -m pip install -r desktop/requirements.txt`，随后
+`python desktop/launcher.py`。启动器自动准备地图组件；无需 `npm install`。
 
 直接运行 `desktop/Run-RailScope.ps1`，或在 PowerShell 中执行
 `python desktop/launcher.py`。它会打开一个原生 Qt 桌面窗口，不会打开
@@ -84,6 +98,9 @@ Qt WebEngine / MapLibre（因此仍需要 WebEngine 支持）。菜单功能集�
 地图上的车辆按这些时刻停站和运行。`Ctrl+S` 保存，下次启动恢复，菜单支持
 计划导入/导出。初始 42 列车均为演示数据，**不是上海地铁真实全车队或官方
 运行图**。详见 [车辆与计划约定](docs/VEHICLE_LAYER_CONTRACT.md)。
+启动时运行展示关闭；在运行面板主动开启、开始、暂停或关闭。暂停保留位置，
+关闭移除列车。列车标记可选择光晕圆点、空心圆环、列车图标和 8–40 px 大小。
+地图标题卡片默认隐藏；视图菜单可控制标题、导航工具、图例、坐标浮层及比例尺。
 
 目录归属有误时，使用 **编辑 → 目录层级设置…**，选择线路或整个城市，设置
 所属省、市（也可自定义目录名），点击「保存并应用」。同一线路的方向关系
@@ -94,7 +111,19 @@ Qt WebEngine / MapLibre（因此仍需要 WebEngine 支持）。菜单功能集�
 
 ### 中国城市地铁 / 轻轨导入
 
-下载 Geofabrik 的 `china-latest.osm.pbf` 后，执行：
+推荐直接使用软件内 **数据源 → 自动下载 / 更新全国地铁…**：
+
+- 下载 Geofabrik 全国快照，支持暂停与续传；通过版本标识避免续传混合不同快照，完整文件校验通过才替换 PBF。
+- 默认复用完整的本地 PBF；需要更新时开启「重新下载最新快照」。约 1.5 GB 下载，建议预留至少 10 GB 空间。
+- 自动导入运营线路、全部原始标签与颜色、站点、在建工程、真实车站多边形及多面关系。OSM 未绘制的范围不会伪造。
+- 导入时可以收起工具继续浏览地图。导入阶段不能暂停；请等待完成后退出。长任务日志保存在 `data/logs/metro-install-*.log`。
+- 全部阶段成功才原子切换 `data/processed/osm/active_dataset.json`；失败不改变当前路网。旧目录、运行计划和用户目录设置保留。
+- 完成后先保存运行计划，再点击「载入已完成的数据」，在同一工作区加载新数据；或重启软件。
+
+没有手工下载过数据的新用户，**不要只安装依赖后等待地铁自动出现**：请主动点击
+上述下载菜单。底图仍需联网，下载本地地铁不等于下载全国底图或卫星影像。
+
+高级用户仍可在已有 PBF 的基础上手工导入：
 
 ```powershell
 Set-Location backend
@@ -102,6 +131,10 @@ python -m railscope.cli metro import ..\data\raw\osm\china-latest.osm.pbf --outp
 ```
 
 该命令只接受 OSM `type=route` 且 `route=subway` 或 `route=light_rail` 的线路关系；它保留每条关系的完整原始标签、每个轨道成员的完整原始标签、成员顺序和角色。输出目录包含：GeoJSON 地图层、线路目录和导入清单。显示颜色仅使用关系的 `colour`（优先）或 `color` 原值；无有效颜色时以中性灰显示，并在清单中报告，不会猜测线路颜色。
+
+软件自动下载使用 [Geofabrik 官方中国数据源](https://download.geofabrik.de/asia/china.html)。
+手工 CLI 输出到旧版目录；如已通过软件下载激活版本目录，需导入到当前版本目录，
+或继续使用软件的自动流程。当前活动目录记录在 `active_dataset.json` 中。
 
 ## Attribution
 

@@ -105,7 +105,7 @@ class OperationsEditor(QFrame):
         self.appearance = {"size": 14, "style": "glow"}
         self.speed = 30
         self.loading = False
-        self.selected_line = "sh-1"
+        self.selected_line = lines[0]["id"] if lines else None
         self.selected_train = None
         self.undo_stack = []
         self.redo_stack = []
@@ -301,7 +301,10 @@ class OperationsEditor(QFrame):
         base = self.line_combo.currentData()
         self.variant_combo.blockSignals(True)
         self.variant_combo.clear()
-        line = self.plan.lines[base]
+        line = self.plan.lines.get(base)
+        if not line:
+            self.variant_combo.blockSignals(False)
+            return
         self.variant_combo.addItem(
             "完整主路径 · " + str(len(line["stations"])) + " 站", base
         )
@@ -374,7 +377,9 @@ class OperationsEditor(QFrame):
         trains = self.displayed_trains()
         self.table.setRowCount(sum(len(t["stops"]) for t in trains))
         row = 0
-        stations = {s["id"]: s["name"] for s in self.current_line()["stations"]}
+        stations = {
+            s["id"]: s["name"] for s in (self.current_line() or {}).get("stations", [])
+        }
         for train in trains:
             for index, stop in enumerate(train["stops"]):
                 values = [

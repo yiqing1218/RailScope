@@ -1,2 +1,3 @@
 # Version used for the verified Windows desktop build.
 PySide6==6.11.2
+osmium>=4,<5

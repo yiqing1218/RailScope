@@ -26,6 +26,18 @@ class MapStub:
         self.calls.append(args)
 
 
+def test_clean_checkout_with_no_metro_data_opens_editor(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app
+    editor = OperationsEditor(Plan([]), MapStub(), [], tmp_path / "plan.json")
+    sidebar = editor.sidebar()
+    assert editor.table.rowCount() == 0
+    assert not editor.enabled and editor.current_line() is None
+    editor.timer.stop()
+    editor.close()
+    sidebar.close()
+
+
 def test_simulation_is_opt_in_and_can_pause_disable_and_change_marker(tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app
