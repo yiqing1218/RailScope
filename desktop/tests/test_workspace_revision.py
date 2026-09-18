@@ -112,7 +112,7 @@ def test_builtin_g1_no_load_buttons_compact_and_train_visibility(tmp_path):
     editor.show()
     app.processEvents()
     assert editor.tabs.height() > 450
-    assert editor.table.columnCount() == 11
+    assert editor.table.columnCount() == 12
     editor.play()
     assert len(editor.current_vehicle_features) == 1
     editor.set_trains_visible({"G1"}, False)

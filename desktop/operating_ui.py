@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QToolButton,
     QTreeWidgetItem,
+    QApplication,
 )
 
 try:
@@ -90,6 +91,14 @@ class TimeHandle(QGraphicsEllipseItem):
                 self.train_id, self.index, arrival, departure
             ),
         )
+
+
+class DiagramView(QGraphicsView):
+    resized = Signal()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.resized.emit()
 
 
 class OperationsEditor(QFrame):
@@ -226,7 +235,18 @@ class OperationsEditor(QFrame):
             self.table, "国铁时刻表" if plan.system == "rail" else "地铁运行表"
         )
         self.scene = QGraphicsScene()
-        self.diagram = QGraphicsView(self.scene)
+        self.diagram = DiagramView(self.scene)
+        self.diagram.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self._diagram_timer = QTimer(self)
+        self._diagram_timer.setSingleShot(True)
+        self._diagram_timer.timeout.connect(self.refresh_diagram)
+        self.diagram.resized.connect(
+            lambda: (
+                self._diagram_timer.start(20) if self.plan.system == "rail" else None
+            )
+        )
         self.diagram.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.diagram.setBackgroundBrush(QColor("#fbfcfd"))
         self.tabs.addTab(self.diagram, "运行图 · 时间 / 里程")
@@ -856,6 +876,10 @@ class OperationsEditor(QFrame):
             )
 
     def refresh_diagram(self):
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            self._diagram_timer.start(80)
+            return  # Never destroy a time handle during an active drag.
+        self.diagram.resetTransform()
         self.scene.clear()
         self.cursor_line = None
         line = self.current_line()
@@ -863,17 +887,29 @@ class OperationsEditor(QFrame):
             return
         trains = self.displayed_trains()
         stations = line["stations"]
-        self.diagram_height = max(400, len(stations) * 22)
+        self.diagram_height = max(
+            400, len(stations) * 22, self.diagram.viewport().height() - 30
+        )
         earliest = min((t["stops"][0]["arrival_s"] for t in trains), default=25200)
         latest = max((t["stops"][-1]["departure_s"] for t in trains), default=28800)
         self.start_time = max(0, earliest - 300)
+        if self.plan.system == "rail":
+            available = max(800, self.diagram.viewport().width() - 4)
+            self.time_scale = (available - self.plot_left - 32) / max(
+                600, latest - self.start_time + 300
+            )
         width = max(
             800,
-            (latest - self.start_time + 300) * self.time_scale + self.plot_left + 50,
+            (latest - self.start_time + 300) * self.time_scale
+            + self.plot_left
+            + (32 if self.plan.system == "rail" else 50),
         )
         self.scene.setSceneRect(0, 0, width, self.diagram_height + 30)
         length = line["path"]["length_m"]
-        y = lambda d: 40 + d / length * (self.diagram_height - 55)
+
+        def y(distance):
+            return 40 + distance / length * (self.diagram_height - 55)
+
         for station in stations:
             yy = y(station["distance_m"])
             self.scene.addLine(
@@ -887,11 +923,16 @@ class OperationsEditor(QFrame):
             text.setDefaultTextColor(QColor("#536875"))
             text.setPos(0, yy - 10)
         grid = self.time_grid_s
+        if self.plan.system == "rail":
+            for candidate in (900, 1800, 3600, 7200, 14400, 28800, 86400):
+                grid = candidate
+                if grid * self.time_scale >= 72:
+                    break
         for time in range(
             int(self.start_time // grid) * grid, int(latest) + grid * 2, grid
         ):
             xx = self.plot_left + (time - self.start_time) * self.time_scale
-            if xx < self.plot_left:
+            if xx < self.plot_left or xx > width - 24:
                 continue
             self.scene.addLine(
                 xx, 30, xx, self.diagram_height, QPen(QColor("#e1e8ec"), 1)

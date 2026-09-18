@@ -44,7 +44,7 @@ def expanded_document(payload):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes"},
+            {"name", "track_changes", "sequence"},
             "单向运行通道",
         )
         if (
@@ -268,7 +268,7 @@ def validate_corridors(routes, edges):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes"},
+            {"name", "track_changes", "sequence"},
             "单向运行通道",
         )
         if (
@@ -284,6 +284,21 @@ def validate_corridors(routes, edges):
             raise ValueError("通道名称为空或无效")
         if not isinstance(route["path"], list) or not route["path"]:
             raise ValueError("通道须有明确的单向物理区间组合")
+        if "sequence" in route:
+            try:
+                from .rail_lines import RailLineLibrary
+            except ImportError:
+                from rail_lines import RailLineLibrary
+            library = RailLineLibrary(
+                [
+                    lookup[leg["edge_id"]]
+                    for leg in route["path"]
+                    if leg["edge_id"] in lookup
+                ],
+                [],
+            )
+            if library.resolve(route["sequence"]) != route["path"]:
+                raise ValueError("端点—线路表格与物理通道组合不一致")
         nodes = []
         for leg in route["path"]:
             strict_fields(leg, {"edge_id", "direction"}, set(), "通道区间")

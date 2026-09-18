@@ -1,7 +1,8 @@
 """Single-workspace rail corridor catalog, independent from layer and running panels."""
 
 from copy import deepcopy
-from PySide6.QtCore import Qt, Signal
+import sqlite3
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -13,16 +14,74 @@ from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QTableWidget,
-    QTableWidgetItem,
     QDialogButtonBox,
     QMessageBox,
     QHeaderView,
+    QComboBox,
+    QCompleter,
 )
 
 try:
     from .components import GrowingTree, text_label
 except ImportError:
     from components import GrowingTree, text_label
+
+
+class SearchChoice(QComboBox):
+    """At most 100 search candidates, regardless of the national dataset size."""
+
+    def __init__(self, search, placeholder, value=None, label=""):
+        super().__init__()
+        self.search = search
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.setMinimumWidth(0)
+        self.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.setMinimumContentsLength(10)
+        self.setMaxVisibleItems(12)
+        self.lineEdit().setPlaceholderText(placeholder)
+        self.completer().setCompletionMode(
+            QCompleter.CompletionMode.UnfilteredPopupCompletion
+        )
+        self.completer().activated[str].connect(self.select_result)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self.find_results)
+        self.lineEdit().textEdited.connect(lambda: self._search_timer.start(220))
+        if value is not None:
+            self.addItem(label, value)
+        else:
+            self.setCurrentIndex(-1)
+
+    def select_result(self, text):
+        index = self.findText(text)
+        if index >= 0:
+            self.setCurrentIndex(index)
+
+    def find_results(self):
+        query = self.currentText().strip()
+        try:
+            choices = self.search(query)
+        except (ValueError, sqlite3.Error):
+            choices = []
+        self.blockSignals(True)
+        self.clear()
+        for key, label in choices:
+            self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
+        self.setCurrentIndex(-1)
+        self.setEditText(query)
+        self.blockSignals(False)
+        if self.lineEdit().hasFocus():
+            self.completer().complete()
+
+    def showPopup(self):
+        if not self.count():
+            for key, label in self.search(""):
+                self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
+            self.setCurrentIndex(-1)
+        super().showPopup()
 
 
 class CorridorPanel(QScrollArea):
@@ -52,10 +111,16 @@ class CorridorPanel(QScrollArea):
         self.tree = GrowingTree()
         self.tree.setHeaderHidden(True)
         self.tree.itemClicked.connect(self.choose)
+        self.tree.itemDoubleClicked.connect(
+            lambda item, column: self.edit_table(item.data(0, Qt.ItemDataRole.UserRole))
+        )
         layout.addWidget(self.tree)
-        edit = QPushButton("编辑通道名称 / 变道信息…")
+        edit = QPushButton("编辑端点—线路通道表格…")
         edit.clicked.connect(self.edit_selected)
         layout.addWidget(edit)
+        create = QPushButton("新建单向通道…")
+        create.clicked.connect(lambda: self.edit_table(None))
+        layout.addWidget(create)
         save = QPushButton("保存通道与国铁车次")
         save.clicked.connect(self.save)
         layout.addWidget(save)
@@ -135,46 +200,111 @@ class CorridorPanel(QScrollArea):
         if not item:
             self.note.setText("请先在目录中选择一个运行通道")
             return
-        ident = item.data(0, Qt.ItemDataRole.UserRole)
-        payload = self.editor.corridors_document()
-        route = next(r for r in payload["corridors"] if r["id"] == ident)
+        self.edit_table(item.data(0, Qt.ItemDataRole.UserRole))
+
+    def edit_table(self, ident):
+        try:
+            library = self.editor.line_library(interactive=True)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "铁路基础设施未就绪", str(error))
+            return
+        route = next(
+            (r for r in self.editor.rail_payload["routes"] if r["id"] == ident), None
+        )
         dialog = QDialog(self)
-        dialog.setWindowTitle("编辑单向运行通道 · 不改变已有物理径路")
-        dialog.resize(840, 500)
+        dialog.setWindowTitle("单向通道 · 端点—铁路线—端点")
+        dialog.resize(1100, 620)
+        dialog.setStyleSheet(
+            "QDialog { background: #f5f9fa; } QTableWidget { background: white; border: 1px solid #d4e2e7; border-radius: 8px; gridline-color: #e5eef1; } QHeaderView::section { background: #e7f3f1; padding: 10px; border: 0; color: #245c60; }"
+        )
         form = QFormLayout(dialog)
-        name = QLineEdit(route.get("name", ident))
+        form.setContentsMargins(20, 18, 20, 18)
+        form.setVerticalSpacing(12)
+        heading = text_label("通道编排")
+        heading.setStyleSheet("font-size: 22px; font-weight: 600; color: #163d46;")
+        form.addRow(heading)
+        code = QLineEdit(ident or "")
+        code.setObjectName("corridorId")
+        code.setPlaceholderText("唯一编号，例如 COR-JINGHU-DOWN")
+        code.setReadOnly(bool(ident))
+        form.addRow("通道编号", code)
+        name = QLineEdit(route.get("name", ident) if route else "")
+        name.setObjectName("corridorName")
         form.addRow("通道名称", name)
         form.addRow(
             text_label(
-                "股道留空，道岔节点留空表示未知。位置必须在通道上；尚不执行真实联锁或变道。",
+                "每行：起点 → 铁路线 → 终点。相邻行必须共用端点；中间不换线的线路所隐含。站台在车次时刻表中填写。已有车次引用的通道改径路时须另建编号。",
                 wrap=True,
             )
         )
-        changes = route.get("track_changes", [])
-        table = QTableWidget(len(changes), 4)
+        sequence = (
+            (route.get("sequence") or library.describe(route["path"])) if route else []
+        )
+        table = QTableWidget(0, 3)
         table.setHorizontalHeaderLabels(
-            ["变道位置 OSM 节点", "原股道", "目标股道", "道岔 OSM 节点"]
+            ["起点 / 换线端点", "复用铁路线（稳定编号）", "终点 / 换线端点"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        for row, change in enumerate(changes):
-            for col, field in enumerate(
-                ("node_id", "from_track", "to_track", "via_node")
-            ):
-                table.setItem(
-                    row,
-                    col,
-                    QTableWidgetItem(
-                        "" if change[field] is None else str(change[field])
-                    ),
+
+        def add_row(a=None, line=None, b=None):
+            row = table.rowCount()
+            table.insertRow(row)
+            choices = {}
+            for col, value in [(0, a), (1, line), (2, b)]:
+                if col == 1:
+
+                    def search(query):
+                        return [
+                            (r["id"], r["name"]) for r in library.search_lines(query)
+                        ]
+
+                    label = (
+                        library.lines[value]["name"] if value in library.lines else ""
+                    )
+                else:
+
+                    def search(query, choices=choices):
+                        return library.search_nodes(
+                            query,
+                            choices.get(1).currentData() if choices.get(1) else None,
+                        )
+
+                    label = (
+                        f"{library.nodes[value]} · {value}"
+                        if value in library.nodes
+                        else ""
+                    )
+                combo = SearchChoice(
+                    search,
+                    "搜索线路名称 / 编号"
+                    if col == 1
+                    else "搜索车站 / 线路所 / 道岔编号",
+                    value,
+                    label,
                 )
-            table.item(row, 0).setData(
-                Qt.ItemDataRole.UserRole, deepcopy(change.get("extensions", {}))
+                choices[col] = combo
+                table.setCellWidget(row, col, combo)
+            table.setRowHeight(row, 52)
+
+        for index in range(1, len(sequence), 2):
+            add_row(
+                sequence[index - 1]["node_id"],
+                sequence[index]["line_id"],
+                sequence[index + 1]["node_id"],
             )
+        if not sequence:
+            add_row()
         form.addRow(table)
         actions = QHBoxLayout()
-        add = QPushButton("添加变道位置")
-        add.clicked.connect(lambda: table.insertRow(table.rowCount()))
-        remove = QPushButton("删除所选位置")
+        add = QPushButton("添加线路组合段")
+        add.clicked.connect(
+            lambda: add_row(
+                table.cellWidget(table.rowCount() - 1, 2).currentData()
+                if table.rowCount()
+                else None
+            )
+        )
+        remove = QPushButton("删除所选组合段")
         remove.clicked.connect(
             lambda: (
                 table.removeRow(table.currentRow()) if table.currentRow() >= 0 else None
@@ -182,47 +312,111 @@ class CorridorPanel(QScrollArea):
         )
         actions.addWidget(add)
         actions.addWidget(remove)
+        up = QPushButton("上移组合段")
+        down = QPushButton("下移组合段")
+
+        def move(delta):
+            row = table.currentRow()
+            target = row + delta
+            if row < 0 or not 0 <= target < table.rowCount():
+                return
+            # Rebuild the two rows, preserving values without moving Qt-owned widgets.
+            values = []
+            for index in range(table.rowCount()):
+                entries = []
+                for col in range(3):
+                    combo = table.cellWidget(index, col)
+                    value = combo.currentData()
+                    if combo.currentText() != combo.itemText(combo.currentIndex()):
+                        value = combo.currentText().strip()
+                        if col != 1 and value.isdigit():
+                            value = int(value)
+                    if value is not None and (
+                        (col == 1 and value not in library.lines)
+                        or (col != 1 and value not in library.nodes)
+                    ):
+                        self.note.setText("请先选择有效端点和铁路线，再移动组合段。")
+                        return
+                    entries.append(value)
+                values.append(entries)
+            values[row], values[target] = values[target], values[row]
+            table.setRowCount(0)
+            for a, line, b in values:
+                add_row(a, line, b)
+            table.selectRow(target)
+
+        up.clicked.connect(lambda: move(-1))
+        down.clicked.connect(lambda: move(1))
+        actions.addWidget(up)
+        actions.addWidget(down)
         form.addRow(actions)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("应用通道")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.rejected.connect(dialog.reject)
 
         def accept():
             try:
-                route["name"] = name.text().strip()
+                if not code.text().strip() or not name.text().strip():
+                    raise ValueError("请填写唯一通道编号和通道名称")
+                if not table.rowCount():
+                    raise ValueError("至少添加一行起点—铁路线—终点")
                 result = []
                 for row in range(table.rowCount()):
-                    values = [
-                        table.item(row, col).text().strip()
-                        if table.item(row, col)
-                        else ""
-                        for col in range(4)
-                    ]
-                    if not values[0].isdigit() or (
-                        values[3] and not values[3].isdigit()
-                    ):
-                        raise ValueError("变道位置须为整数节点，道岔节点可空")
-                    ext = (
-                        table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-                        if table.item(row, 0)
-                        else {}
+                    values = []
+                    for col in range(3):
+                        combo = table.cellWidget(row, col)
+                        value = combo.currentData()
+                        if combo.currentText() != combo.itemText(combo.currentIndex()):
+                            value = combo.currentText().strip()
+                            if col != 1:
+                                value = int(value)
+                        values.append(value)
+                    a, line, b = values
+                    if a is None or line is None or b is None:
+                        raise ValueError(f"第 {row + 1} 行：请选择起点、铁路线和终点")
+                    if row and result[-1]["node_id"] != a:
+                        raise ValueError("相邻组合段必须共用同一个端点")
+                    if row == 0:
+                        result.append({"kind": "endpoint", "node_id": a})
+                    result.extend(
+                        [
+                            {"kind": "line", "line_id": line},
+                            {"kind": "endpoint", "node_id": b},
+                        ]
                     )
-                    result.append(
+                payload = {
+                    "schema": "railscope.rail-corridors.v2",
+                    "source": "用户编辑端点—线路组合；非实际联锁进路",
+                    "required_capabilities": [],
+                    "extensions": {},
+                    "corridors": [
                         {
-                            "node_id": int(values[0]),
-                            "from_track": values[1],
-                            "to_track": values[2],
-                            "via_node": int(values[3]) if values[3] else None,
-                            "extensions": ext or {},
+                            "id": code.text().strip(),
+                            "name": name.text().strip(),
+                            "sequence": result,
+                            "extensions": deepcopy(route["extensions"])
+                            if route
+                            else {},
                         }
-                    )
-                route["track_changes"] = result
-                payload["corridors"] = [route]
-                self.editor.merge_corridors(payload)
+                    ],
+                }
+                self.editor.merge_corridors(payload, interactive=True)
                 dialog.accept()
                 self.refresh()
-            except (ValueError, KeyError, TypeError, OSError) as error:
+                for index in range(self.tree.topLevelItemCount()):
+                    item = self.tree.topLevelItem(index)
+                    if item.data(0, Qt.ItemDataRole.UserRole) == code.text().strip():
+                        self.tree.setCurrentItem(item)
+                        self.tree.scrollToItem(item)
+                        break
+                self.note.setText(
+                    "通道已应用。点击目录可在地图查看；使用「保存通道与国铁车次」保存到本机。"
+                )
+                self.selected.emit(code.text().strip(), "")
+            except (ValueError, KeyError, TypeError, OSError, sqlite3.Error) as error:
                 QMessageBox.warning(dialog, "通道未修改", str(error))
 
         buttons.accepted.connect(accept)

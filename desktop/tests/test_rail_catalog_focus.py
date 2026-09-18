@@ -38,7 +38,11 @@ def test_rail_directory_double_click_fits_full_line_without_toggling(tmp_path):
             )
             db.execute("INSERT INTO bounds VALUES(?,?,?,?,?)", (ident, *bounds))
     widget.tree.itemDoubleClicked.emit(widget.items["line"], 0)
-    assert view.calls[-1] == ("fit", [[120, 30], [123, 33]], "测试铁路")
+    assert view.calls[-1] == (
+        "fit",
+        [[120, 30], [123, 33]],
+        widget.items["line"].text(0),
+    )
     assert widget.visible == set(), "定位不能更改显示开关"
     before = len(view.calls)
     widget.tree.itemDoubleClicked.emit(widget.items["line"], 1)

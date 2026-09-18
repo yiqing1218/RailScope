@@ -1,0 +1,18 @@
+{
+  "schema": "railscope.rail-corridors.v2",
+  "source": "便携 G1 参考轨道组合，非实际联锁进路",
+  "required_capabilities": [],
+  "extensions": {},
+  "corridors": [
+    {
+      "id": "COR-JINGHU-DOWN",
+      "name": "京沪下行参考通道",
+      "sequence": [
+        {"kind": "endpoint", "node_id": 9560692742},
+        {"kind": "line", "line_id": "RL-f2b1dec5971012fc9df6"},
+        {"kind": "endpoint", "node_id": 3687619616}
+      ],
+      "extensions": {}
+    }
+  ]
+}

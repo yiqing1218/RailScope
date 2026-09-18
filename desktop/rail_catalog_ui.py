@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import threading
 import sqlite3
+import hashlib
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget,
@@ -50,6 +51,7 @@ class RailCatalog(QWidget):
             if value.get("version") == VERSION:
                 self.catalog = value["catalog"]
         self.overrides = {}
+        self.way_names = {}
         self.visible = set()
         if self.path.exists():
             try:
@@ -174,7 +176,7 @@ class RailCatalog(QWidget):
                 if key not in groups:
                     groups[key] = QTreeWidgetItem(parent, [label])
                 parent = groups[key]
-            label = record.get("name", name)
+            label = self.display_name(name)
             item = QTreeWidgetItem(parent, [label])
             item.setToolTip(
                 0,
@@ -218,6 +220,30 @@ class RailCatalog(QWidget):
         for i in range(self.tree.topLevelItemCount()):
             visit(self.tree.topLevelItem(i))
         self.tree.schedule_height()
+
+    def display_name(self, key):
+        record = self.meta(key)
+        aliases = sorted(
+            {
+                self.way_names[str(way)]
+                for way in record["way_ids"]
+                if str(way) in self.way_names
+            }
+        )
+        label = record.get("display_name") or (
+            aliases[0] if aliases else record.get("name", key)
+        )
+        # A province/type directory entry is not itself a national physical line.
+        # Give these slices unique IDs too, without altering source OSM tags.
+        ident = "RC-" + hashlib.sha256(key.encode()).hexdigest()[:12]
+        return f"{label} · {ident}"
+
+    def reload_names(self, path):
+        path = Path(path)
+        self.way_names = (
+            json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        )
+        self.populate()
 
     def toggle_group(self, keys, on):
         self.visible.update(keys) if on else self.visible.difference_update(keys)
@@ -311,9 +337,16 @@ class RailCatalog(QWidget):
                 "修改类型、省份、通道与分段，保存后重建目录；不修改 OSM 原始属性。仅高速主线参加八纵八横。"
             )
         )
-        table = QTableWidget(len(self.catalog), 5)
+        table = QTableWidget(len(self.catalog), 6)
         table.setHorizontalHeaderLabels(
-            ["原始线路 / 工程名称", "省份", "高速规划通道", "通道分段", "轨道类型"]
+            [
+                "原始线路 / 工程名称",
+                "省份",
+                "高速规划通道",
+                "通道分段",
+                "轨道类型",
+                "目录显示名称",
+            ]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(table)
@@ -327,6 +360,7 @@ class RailCatalog(QWidget):
                     meta["corridor"],
                     meta["section"],
                     meta.get("track_type", "未确认类型"),
+                    meta.get("display_name", self.catalog[name].get("name", name)),
                 )
             ):
                 item = QTableWidgetItem(value)
@@ -369,6 +403,8 @@ class RailCatalog(QWidget):
                     for col, key in enumerate(("province", "corridor", "section"), 1)
                 },
                 "track_type": table.cellWidget(row, 4).currentText(),
+                "display_name": table.item(row, 5).text().strip()
+                or self.catalog[name].get("name", name),
             }
             for row, name in enumerate(names)
         }

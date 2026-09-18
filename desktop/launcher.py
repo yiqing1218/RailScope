@@ -635,6 +635,12 @@ class Desk(QMainWindow):
             lambda: self.rail_catalog_widget.organize(),
         )
         edit.addSeparator()
+        self.add_action(
+            edit, "铁路线规范命名 / 改名…", self.rail_operations.organize_lines
+        )
+        self.add_action(
+            file, "导出铁路命名与端点分段…", self.rail_operations.export_line_library
+        )
         self.add_action(edit, "显示全部地铁线路", lambda: self.set_all_lines(True))
         self.add_action(edit, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
         self.add_action(edit, "清除导入图层", self.clear_imported)
@@ -1308,10 +1314,7 @@ class Desk(QMainWindow):
         if index == 1:
             QTimer.singleShot(
                 0,
-                lambda: self.rail_operations.diagram.fitInView(
-                    self.rail_operations.scene.sceneRect(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                ),
+                self.rail_operations.refresh_diagram,
             )
 
             def refocus_rail():
@@ -1357,6 +1360,11 @@ class Desk(QMainWindow):
             self.map,
         )
         layout.addWidget(self.rail_catalog_widget)
+        names_path = self.rail_operations.path.parent / "rail_way_names.json"
+        self.rail_catalog_widget.reload_names(names_path)
+        self.rail_operations.names_changed.connect(
+            lambda: self.rail_catalog_widget.reload_names(names_path)
+        )
         self.rail_catalog_widget.enabled_requested.connect(
             lambda: self.set_flag("rail", True)
         )
@@ -2249,6 +2257,38 @@ def main():
                             len(editor.document()["routes"]) == 1
                             and root.child(0).text(0) == "G1"
                         )
+                        table_document = editor.corridors_document(table=True)
+                        checks["corridor_endpoint_line_notation"] = (
+                            table_document["schema"] == "railscope.rail-corridors.v2"
+                            and len(table_document["corridors"][0]["sequence"]) == 3
+                            and "path" not in table_document["corridors"][0]
+                        )
+
+                        def inspect_corridor_table():
+                            dialog = app.activeModalWidget()
+                            table = dialog.findChild(QTableWidget) if dialog else None
+                            checks["corridor_endpoint_table_editable"] = bool(
+                                table
+                                and table.columnCount() == 3
+                                and table.rowCount() == 1
+                                and table.cellWidget(0, 0).currentData() == 9560692742
+                                and table.cellWidget(0, 2).currentData() == 3687619616
+                            )
+                            if dialog:
+                                dialog.grab().save(
+                                    str(
+                                        screenshot.with_name(
+                                            screenshot.stem + "-table.png"
+                                        )
+                                    )
+                                )
+                                dialog.reject()
+
+                        editor.line_library(interactive=True)
+                        QTimer.singleShot(800, inspect_corridor_table)
+                        window.corridor_panel.edit_table(
+                            table_document["corridors"][0]["id"]
+                        )
                         grab_workspace().save(
                             str(
                                 screenshot.with_name(screenshot.stem + "-corridors.png")
@@ -2295,6 +2335,12 @@ def main():
                         checks["g1_diagram_visible_in_workspace"] = (
                             window.rail_operations.isVisible()
                             and window.rail_operations.height() > 200
+                        )
+                        diagram = window.rail_operations.diagram
+                        checks["g1_diagram_fills_editor"] = (
+                            diagram.transform().m11() == 1
+                            and window.rail_operations.scene.sceneRect().height()
+                            >= diagram.viewport().height() - 5
                         )
                     if args.verify_rail:
                         screenshot = Path(args.screenshot)

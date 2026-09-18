@@ -39,6 +39,9 @@ try {
     Push-Location $projectRoot
     Write-Host 'RailScope: checking Python and local dependencies...'
     $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
+    if ((Test-Path -LiteralPath $pythonPath) -and -not (Test-PythonCommand -Executable $pythonPath -Code 'import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)')) {
+        throw 'The local .venv is unusable or was copied from another computer. Rename .venv to .venv-backup and run Start-RailScope.cmd again to create a fresh environment. Your data is not affected.'
+    }
     if (-not (Test-Path -LiteralPath $pythonPath)) {
         $pythonCandidate = $null
         foreach ($candidateName in @('py', 'python', 'python3')) {
@@ -62,7 +65,7 @@ try {
     if (-not (Test-PythonCommand -Executable $pythonPath -Code 'import PySide6, osmium; from PySide6.QtWebEngineWidgets import QWebEngineView')) {
         if ($NoInstall) { throw 'Desktop dependencies are missing.' }
         Write-Host 'Installing desktop dependencies. First launch requires internet and may take several minutes...'
-        Invoke-NativeChecked -Executable $pythonPath -CommandArguments @('-m', 'pip', 'install', '-r', (Join-Path $scriptRoot 'requirements.txt'), '--disable-pip-version-check')
+        Invoke-NativeChecked -Executable $pythonPath -CommandArguments @('-m', 'pip', 'install', '-r', (Join-Path $scriptRoot 'requirements.txt'), '--disable-pip-version-check', '--retries', '5', '--timeout', '90')
     }
     Invoke-NativeChecked -Executable $pythonPath -CommandArguments @((Join-Path $scriptRoot 'bootstrap.py'))
     if ($CheckOnly) {

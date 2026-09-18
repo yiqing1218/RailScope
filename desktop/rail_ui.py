@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QComboBox,
     QDialogButtonBox,
+    QTableWidget,
+    QHeaderView,
 )
 
 try:
@@ -62,8 +64,10 @@ class RailMap:
 
 
 class RailEditor(OperationsEditor):
+    names_changed = Signal()
+
     def __init__(self, map_view, directory, path):
-        self.directory = Path(directory)
+        self.directory = Path(directory).resolve()
         self.graph = {"edges": [], "points": []}
         self.platforms = (
             json.loads(
@@ -265,9 +269,7 @@ class RailEditor(OperationsEditor):
         )
         self.apply_payload(reference["plan"], show_route=True)
         self.tabs.setCurrentIndex(0)
-        self.diagram.fitInView(
-            self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio
-        )
+        self.refresh_diagram()
         self.message.setText(
             "G1 · 7站 · 06:30—11:24 · 公开资料参考，非12306实时/实际股道；可编辑到发时刻，按开始仿真才运行。"
         )
@@ -379,15 +381,96 @@ class RailEditor(OperationsEditor):
         ):
             self.show_reference_route()
 
-    def corridors_document(self):
+    def corridors_document(self, table=False):
         payload = self.document()
+        if not table:
+            return {
+                "schema": "railscope.rail-corridors.v1",
+                "source": payload["source"],
+                "required_capabilities": [],
+                "extensions": deepcopy(payload["extensions"]),
+                "corridors": deepcopy(payload["routes"]),
+            }
+        try:
+            from .rail_lines import RailLineLibrary
+        except ImportError:
+            from rail_lines import RailLineLibrary
+        library = RailLineLibrary(self.graph["edges"], self.graph["points"])
+        corridors = []
+        for route in payload["routes"]:
+            sequence = route.get("sequence") or library.describe(route["path"])
+            if library.resolve(sequence) != route["path"]:
+                raise ValueError("通道存在歧义，请在通道表格中补充端点")
+            extensions = deepcopy(route["extensions"])
+            if route.get("track_changes"):
+                extensions["railscope.org/legacy-track-changes"] = deepcopy(
+                    route["track_changes"]
+                )
+            corridors.append(
+                {
+                    "id": route["id"],
+                    "name": route.get("name", route["id"]),
+                    "sequence": sequence,
+                    "extensions": extensions,
+                }
+            )
         return {
-            "schema": "railscope.rail-corridors.v1",
+            "schema": "railscope.rail-corridors.v2",
             "source": payload["source"],
             "required_capabilities": [],
             "extensions": deepcopy(payload["extensions"]),
-            "corridors": deepcopy(payload["routes"]),
+            "corridors": corridors,
         }
+
+    def line_library(self, interactive=False):
+        try:
+            from .rail_lines import RailLineLibrary
+            from .rail_line_store import (
+                DiskRailLineLibrary,
+                build_line_index,
+                fingerprint,
+                index_ready,
+            )
+            from .background_work import prepare_with_progress
+        except ImportError:
+            from rail_lines import RailLineLibrary
+            from rail_line_store import (
+                DiskRailLineLibrary,
+                build_line_index,
+                fingerprint,
+                index_ready,
+            )
+            from background_work import prepare_with_progress
+        edges = {e["id"]: e for e in self.graph["edges"]}
+        points = list(self.graph["points"])
+        database = (self.directory / "rail.sqlite").resolve()
+        stamp = database.stat().st_mtime_ns if database.exists() else None
+        signature = (str(database), stamp, tuple(edges))
+        if getattr(self, "_line_library_signature", None) == signature:
+            return self._line_library
+        names_path = Path(self.path).parent / "rail_line_names.json"
+        names = (
+            json.loads(names_path.read_text(encoding="utf-8"))
+            if names_path.exists()
+            else {}
+        )
+        if database.exists():
+            index = database.with_name("rail_lines.sqlite")
+            extras = list(edges.values())
+            if not index_ready(index, fingerprint(database, extras)):
+
+                def build(progress):
+                    return build_line_index(database, index, extras, points, progress)
+
+                if interactive:
+                    prepare_with_progress(self, "准备铁路命名与端点目录", build)
+                else:
+                    build(lambda text: None)
+            self._line_library = DiskRailLineLibrary(index, names)
+        else:
+            self._line_library = RailLineLibrary(list(edges.values()), points, names)
+        self._line_library_signature = signature
+        return self._line_library
 
     def show_corridor(self, corridor_id, train_id=""):
         route = next(r for r in self.rail_payload["routes"] if r["id"] == corridor_id)
@@ -461,11 +544,12 @@ class RailEditor(OperationsEditor):
             [[min(xs), min(ys)], [max(xs), max(ys)]],
             route.get("name", corridor_id),
         )
-        self.route_switch.blockSignals(True)
-        self.route_switch.setChecked(True)
-        self.route_switch.blockSignals(False)
+        if hasattr(self, "route_switch"):
+            self.route_switch.blockSignals(True)
+            self.route_switch.setChecked(True)
+            self.route_switch.blockSignals(False)
 
-    def merge_corridors(self, value):
+    def merge_corridors(self, value, interactive=False):
         strict_fields(
             value,
             {"schema", "source", "required_capabilities", "extensions", "corridors"},
@@ -473,7 +557,8 @@ class RailEditor(OperationsEditor):
             "运行通道目录",
         )
         if (
-            value["schema"] != "railscope.rail-corridors.v1"
+            value["schema"]
+            not in ("railscope.rail-corridors.v1", "railscope.rail-corridors.v2")
             or value["required_capabilities"] != []
             or not isinstance(value["source"], str)
             or not isinstance(value["corridors"], list)
@@ -482,16 +567,57 @@ class RailEditor(OperationsEditor):
         before = self.document()
         payload = deepcopy(before)
         routes = {r["id"]: r for r in payload["routes"]}
-        for route in value["corridors"]:
+        incoming = deepcopy(value["corridors"])
+        if value["schema"] == "railscope.rail-corridors.v2":
+            library = self.line_library(interactive=interactive)
+            for route in incoming:
+                strict_fields(
+                    route,
+                    {"id", "name", "sequence", "extensions"},
+                    set(),
+                    "端点—线路通道",
+                )
+                # Existing, explicitly verified physical combinations remain reusable
+                # even when the national dataset has additional parallel tracks.
+                known = next(
+                    (
+                        r
+                        for r in routes.values()
+                        if (r.get("sequence") or library.describe(r["path"]))
+                        == route["sequence"]
+                    ),
+                    None,
+                )
+                if known:
+                    route["path"] = deepcopy(known["path"])
+                elif interactive and hasattr(library, "connect"):
+                    try:
+                        from .background_work import prepare_with_progress
+                    except ImportError:
+                        from background_work import prepare_with_progress
+
+                    def resolve(report):
+                        report("校验端点并组合既有物理线路…")
+                        result = library.resolve(route["sequence"])
+                        report("物理线路组合已完成")
+                        return result
+
+                    route["path"] = prepare_with_progress(self, "校验单向通道", resolve)
+                else:
+                    route["path"] = library.resolve(route["sequence"])
+                legacy = route["extensions"].get("railscope.org/legacy-track-changes")
+                if legacy is not None:
+                    route["track_changes"] = deepcopy(legacy)
+        for route in incoming:
             strict_fields(
                 route,
                 {"id", "path", "extensions"},
-                {"name", "track_changes"},
+                {"name", "track_changes", "sequence"},
                 "单向运行通道",
             )
             if route["id"] in routes and route["path"] != routes[route["id"]]["path"]:
                 raise ValueError("已有通道物理径路不能覆盖；新径路请使用新的通道 ID")
-            routes[route["id"]] = deepcopy(route)
+            routes[route["id"]] = {**routes.get(route["id"], {}), **deepcopy(route)}
             routes[route["id"]]["extensions"].setdefault(
                 "railscope.org/provenance", {"source": value["source"]}
             )
@@ -512,12 +638,23 @@ class RailEditor(OperationsEditor):
             self,
             "导入单向国铁运行通道",
             str(Path(self.path).parent),
-            "RailScope 通道 JSON (*.json)",
+            "RailScope 通道 (*.json *.csv)",
         )
         if path:
             try:
-                self.merge_corridors(read_plan(path))
-            except (ValueError, OSError, KeyError, TypeError) as error:
+                if Path(path).suffix.lower() == ".csv":
+                    try:
+                        from .rail_lines import import_corridor_csv
+                    except ImportError:
+                        from rail_lines import import_corridor_csv
+                    value = import_corridor_csv(
+                        Path(path).read_text(encoding="utf-8-sig")
+                    )
+                else:
+                    value = read_plan(path)
+                self.line_library(interactive=True)
+                self.merge_corridors(value, interactive=True)
+            except (ValueError, OSError, KeyError, TypeError, sqlite3.Error) as error:
                 QMessageBox.warning(self, "通道整批未导入", str(error))
 
     def export_corridors(self):
@@ -525,14 +662,25 @@ class RailEditor(OperationsEditor):
             self,
             "导出单向国铁运行通道",
             str(Path(self.path).parent / "rail-corridors.json"),
-            "RailScope 通道 JSON (*.json)",
+            "RailScope 通道 JSON (*.json);;通道表格 CSV (*.csv)",
         )
         if path:
             try:
                 temporary = Path(path).with_suffix(".json.tmp")
+                value = self.corridors_document(table=True)
+                if Path(path).suffix.lower() == ".csv":
+                    try:
+                        from .rail_lines import export_corridor_csv
+                    except ImportError:
+                        from rail_lines import export_corridor_csv
+                    text = export_corridor_csv(value)
+                else:
+                    text = json.dumps(value, ensure_ascii=False, indent=2)
                 temporary.write_text(
-                    json.dumps(self.corridors_document(), ensure_ascii=False, indent=2),
-                    encoding="utf-8",
+                    text,
+                    encoding="utf-8-sig"
+                    if Path(path).suffix.lower() == ".csv"
+                    else "utf-8",
                 )
                 temporary.replace(path)
             except (ValueError, OSError) as error:
@@ -540,6 +688,206 @@ class RailEditor(OperationsEditor):
 
     def snapshot_state(self):
         return self.document()
+
+    def organize_lines(self):
+        try:
+            library = self.line_library(interactive=True)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "铁路线命名目录未打开", str(error))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("铁路线命名 · 稳定编号与可编辑名称")
+        dialog.resize(1100, 700)
+        dialog.setStyleSheet(
+            "QDialog { background: #f5f9fa; } QTableWidget { background: white; border: 1px solid #d4e2e7; border-radius: 8px; gridline-color: #e5eef1; } QHeaderView::section { background: #e7f3f1; padding: 10px; border: 0; color: #245c60; }"
+        )
+        form = QFormLayout(dialog)
+        form.setContentsMargins(20, 18, 20, 18)
+        form.setVerticalSpacing(12)
+        from PySide6.QtWidgets import QLabel
+
+        form.addRow(
+            QLabel(
+                "编号不随改名变化；通道引用编号，不引用显示文字。原始 OSM 标签不修改。未命名轨道不猜测所属线路。"
+            )
+        )
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton
+        from PySide6.QtCore import QTimer
+
+        search = QLineEdit()
+        search.setPlaceholderText("搜索线路名称或稳定编号（每页 100 条）")
+        form.addRow(search)
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(
+            ["稳定线路编号", "OSM 原名", "可编辑规范名称", "物理区间数量"]
+        )
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        keys, edits, page = [], {}, [0]
+
+        def remember():
+            for row, key in enumerate(keys):
+                value = table.item(row, 2).text().strip()
+                original = library.names.get(key, library.lines[key]["source_name"])
+                if value != original:
+                    edits[key] = value
+                else:
+                    edits.pop(key, None)
+
+        def refresh(reset=False):
+            remember()
+            if reset:
+                page[0] = 0
+            records = library.search_lines(
+                search.text().strip(), limit=100, offset=page[0] * 100
+            )
+            keys[:] = [record["id"] for record in records]
+            table.setRowCount(len(keys))
+            for row, record in enumerate(records):
+                key = record["id"]
+                values = (
+                    key,
+                    record["source_name"],
+                    edits.get(key, library.names.get(key, record["source_name"])),
+                    str(record.get("edge_count", len(record.get("edge_ids", [])))),
+                )
+                for col, value in enumerate(values):
+                    item = QTableWidgetItem(value)
+                    item.setToolTip(value)
+                    if col != 2:
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    table.setItem(row, col, item)
+            previous.setEnabled(page[0] > 0)
+            following.setEnabled(len(records) == 100)
+            counter.setText(
+                f"第 {page[0] + 1} 页 · 本页 {len(records)} 条 · 名称修改跨页保留"
+            )
+
+        form.addRow(table)
+        navigation = QHBoxLayout()
+        previous, following, counter = (
+            QPushButton("上一页"),
+            QPushButton("下一页"),
+            QLabel(),
+        )
+        for widget in (previous, counter, following):
+            navigation.addWidget(widget)
+        form.addRow(navigation)
+
+        def turn(delta):
+            page[0] += delta
+            refresh()
+
+        previous.clicked.connect(lambda: turn(-1))
+        following.clicked.connect(lambda: turn(1))
+        debounce = QTimer(dialog)
+        debounce.setSingleShot(True)
+        debounce.setInterval(250)
+        debounce.timeout.connect(lambda: refresh(True))
+        search.textChanged.connect(lambda: debounce.start())
+        refresh()
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存命名")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        buttons.rejected.connect(dialog.reject)
+
+        def save():
+            try:
+                remember()
+                self.save_line_names(edits)
+                dialog.accept()
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(dialog, "命名未保存", str(error))
+
+        buttons.accepted.connect(save)
+        form.addRow(buttons)
+        dialog.exec()
+
+    def save_line_names(self, names):
+        library = self.line_library()
+        if any(
+            key not in library.lines or not isinstance(name, str) or not name.strip()
+            for key, name in names.items()
+        ):
+            raise ValueError("编号不存在或名称为空")
+        path = Path(self.path).parent / "rail_line_names.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps({**library.names, **names}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+        library.names.update(names)
+        if isinstance(library.lines, dict):
+            for key, name in names.items():
+                library.lines[key]["name"] = name + " · " + key
+        if hasattr(library, "changed_way_names"):
+            way_names = library.changed_way_names(library.names)
+        else:
+            way_names = {}
+            for edge in library.edges.values():
+                key = library.edge_lines[edge["id"]]
+                way = edge["id"].split(":")[0].removeprefix("w")
+                way_names[way] = (
+                    library.names.get(key, library.lines[key]["source_name"])
+                    + " · "
+                    + key
+                )
+        target = Path(self.path).parent / "rail_way_names.json"
+        temp = target.with_suffix(".json.tmp")
+        temp.write_text(json.dumps(way_names, ensure_ascii=False), encoding="utf-8")
+        temp.replace(target)
+        self.names_changed.emit()
+        self.updated.emit()
+
+    def export_line_library(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出铁路命名与可复用端点分段",
+            str(Path(self.path).parent / "rail-lines.json"),
+            "铁路目录 (*.json)",
+        )
+        if path:
+            try:
+                library = self.line_library(interactive=True)
+                if hasattr(library, "write_export"):
+                    try:
+                        from .background_work import prepare_with_progress
+                    except ImportError:
+                        from background_work import prepare_with_progress
+                    prepare_with_progress(
+                        self,
+                        "导出铁路命名与端点分段",
+                        lambda report: library.write_export(path, report),
+                    )
+                    return
+                value = {
+                    "schema": "railscope.rail-lines.v1",
+                    "lines": [
+                        {
+                            "id": key,
+                            "name": record["name"],
+                            "source_name": record["source_name"],
+                            "edge_count": len(record["edge_ids"]),
+                        }
+                        for key, record in sorted(library.lines.items())
+                    ],
+                    "endpoints": [
+                        {"node_id": key, "name": name}
+                        for key, name in sorted(library.nodes.items())
+                    ],
+                    "sections": library.sections(),
+                }
+                temporary = Path(path).with_suffix(".json.tmp")
+                temporary.write_text(
+                    json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                temporary.replace(path)
+            except (ValueError, OSError, sqlite3.Error) as error:
+                QMessageBox.warning(self, "铁路目录未导出", str(error))
 
     def restore_state(self, snapshot):
         history, future = list(self.undo_stack), list(self.redo_stack)
@@ -558,7 +906,7 @@ class RailEditor(OperationsEditor):
     def refresh_table(self):
         super().refresh_table()
         self.table.blockSignals(True)
-        self.table.setColumnCount(11)
+        self.table.setColumnCount(12)
         self.table.setHorizontalHeaderLabels(
             [
                 "车次",
@@ -572,6 +920,7 @@ class RailEditor(OperationsEditor):
                 "目标股道",
                 "道岔节点",
                 "变道时刻",
+                "站台 OSM 编号",
             ]
         )
         for column, width in enumerate((75, 45, 40, 105, 80, 80, 55, 70, 70, 95, 80)):
@@ -612,6 +961,17 @@ class RailEditor(OperationsEditor):
                         "股道与位置来自共享通道（通道面板编辑）；执行时刻属于本车次。未知留空，尚不执行实际联锁 / 变道"
                     )
                     self.table.setItem(row, column, item)
+                platform = (
+                    stop.get("extensions", {})
+                    .get("railscope.org/rail-stop", {})
+                    .get("platform_id", "")
+                )
+                item = QTableWidgetItem(str(platform))
+                item.setData(Qt.ItemDataRole.UserRole, (train["id"], index))
+                item.setToolTip(
+                    "本车次的站台 OSM Way 编号；未知留空。须先导入真实站台，不能以此替代联锁验证。"
+                )
+                self.table.setItem(row, 11, item)
                 row += 1
         self.table.blockSignals(False)
 
@@ -630,14 +990,19 @@ class RailEditor(OperationsEditor):
         ]
         before = self.snapshot_state()
         previous = deepcopy(original)
-        change = original.setdefault(
-            "track_change",
-            {k: "" for k in ("from_track", "to_track", "via_node", "time")},
-        )
-        change[("from_track", "to_track", "via_node", "time")[item.column() - 7]] = (
-            item.text().strip()
-        )
         try:
+            if item.column() == 11:
+                value = item.text().strip()
+                if value:
+                    original["platform_id"] = int(value)
+                else:
+                    original.pop("platform_id", None)
+            else:
+                change = original.setdefault(
+                    "track_change",
+                    {k: "" for k in ("from_track", "to_track", "via_node", "time")},
+                )
+                change["time"] = item.text().strip()
             self.document()
             self.undo_stack.append(before)
             self.redo_stack.clear()

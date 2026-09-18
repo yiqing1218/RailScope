@@ -1,5 +1,14 @@
 # RailScope
 
+## Windows 桌面版：下载后如何运行
+
+1. 下载 ZIP 后先完整解压到可写文件夹，中文和空格路径均可；不要直接在 ZIP 内运行。
+2. 安装 **64 位 Python 3.12**，安装时勾选加入 PATH；双击根目录 **Start-RailScope.cmd**。
+3. 首次运行自动创建 `.venv`、安装桌面依赖和校验地图组件，需要联网。无需 Node、Docker、PostGIS 或手动运行后端。
+4. 内置 G1 参考示例无需全国数据。全国地铁/国铁在菜单栏「数据源」下载和提取；原始 PBF 和生成数据不在 GitHub 源码中。
+
+不要从另一台电脑复制 `.venv`。启动失败会保留错误窗口，日志位于 `data/logs/startup.log`。可运行 `powershell -NoProfile -ExecutionPolicy Bypass -File desktop/Run-RailScope.ps1 -CheckOnly` 做启动检查。在线底图和首次依赖下载仍取决于本机网络；不代表离线安装包。
+
 桌面端启动默认只显示底图，所有轨道、车站、站台、在建线路与车辆图层关闭；在左侧按需打开。全部数据导入/下载入口在菜单栏。
 
 国铁目录按轨道中点所在省界分类，跨省同名线路分省列出。旧数据自动升级目录，不必重下 PBF；省界附近保留待核对。
@@ -8,7 +17,7 @@ G1 已内置：**运行 → 国铁 · 车次 / 跨线运行图 → 打开国铁�
 
 地铁与国铁运行菜单、计划和时钟独立。国铁按车次选择独立时刻表 / 运行图，一车次对应一列车；工作台可手动新增车次，运行菜单可批量导入严格 CSV 表。共享径路 JSON v2 避免每个车次重复声明轨道；兼容 v1。变道信息预留，不表示已验证真实股道。铁路目录先分轨道类型，高速主线继续按八纵八横整理；地图菜单可按类型设置颜色 / 线宽。
 
-国铁采用三层结构：**物理铁路线 / 轨道 → 单向运行通道 → 车次**。左侧“通道”与“图层 / 运行”平行，替代原“定位”；可以查看通道及引用车次，编辑共享变道位置、股道信息。通道独立导入 / 导出在“文件”菜单，格式为 `railscope.rail-corridors.v1`。一个运行通道可以组合多条铁路线，不等于八纵八横规划分类。选择车次或地图中的国铁列车，会显示其共享通道；反向运行须使用另一个单向通道。详见 [交换标准](docs/OPERATING_PLAN_STANDARD.md)。
+国铁采用三层结构：**物理铁路线 / 轨道 → 单向运行通道 → 车次**。左侧“通道”与“图层 / 运行”平行，替代原“定位”；以起点—铁路线—终点表格编排通道，支持搜索和组合段排序。通道独立导入 / 导出在“文件”菜单，支持 `railscope.rail-corridors.v2` JSON 和严格 CSV，兼容旧 v1。一个运行通道可以组合多条铁路线，不等于八纵八横规划分类。选择车次或地图中的国铁列车，会显示其共享通道；反向运行须使用另一个单向通道。站台在各车次时刻表中填写。详见 [交换标准](docs/OPERATING_PLAN_STANDARD.md)。
 
 RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway
@@ -18,7 +27,7 @@ animation and real railway control. The native desktop now includes a local,
 editable Shanghai stop-time table and time-distance diagram for simulation,
 not an official timetable or live fleet service.
 
-## Prerequisites
+## Web / backend development prerequisites（不是桌面版启动要求）
 
 - Python 3.12+
 - Node.js 20+
@@ -169,3 +178,6 @@ PBF 已下载后，更新代码再点“开始 / 继续”，保持“重新下�
 
 Demo geometry is synthetic. External OSM imports must retain OpenStreetMap
 contributors attribution, license and import date through `data_source`.
+# 端点—线路通道
+
+国铁通道可在左侧“通道”中按起点 → 铁路线 → 终点表格新建和编辑，复用固定基础设施，不为车次生成线路。编辑菜单支持稳定编号下的线路改名；文件菜单支持通道交换与铁路命名/端点分段目录导出。详见 [命名与通道标准](docs/RAIL_LINE_NAMING_AND_CORRIDORS.md)。
