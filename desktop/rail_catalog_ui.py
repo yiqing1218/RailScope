@@ -19,6 +19,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QMessageBox,
     QLineEdit,
+    QMenu,
+    QInputDialog,
+    QFormLayout,
 )
 
 try:
@@ -66,6 +69,18 @@ class RailCatalog(QWidget):
                         isinstance(v.get(f), str) and v[f].strip()
                         for f in ("province", "corridor", "section")
                     )
+                    and isinstance(v.get("archived", False), bool)
+                    and (
+                        "folder_path" not in v
+                        or (
+                            isinstance(v["folder_path"], list)
+                            and bool(v["folder_path"])
+                            and all(
+                                isinstance(f, str) and f.strip()
+                                for f in v["folder_path"]
+                            )
+                        )
+                    )
                 }
             except (ValueError, OSError) as error:
                 QMessageBox.warning(self, "国铁分类设置未载入", str(error))
@@ -96,6 +111,8 @@ class RailCatalog(QWidget):
         self.tree.setColumnWidth(1, 62)
         self.tree.setMinimumWidth(0)
         self.tree.itemDoubleClicked.connect(self.focus_item)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.context_menu)
         layout.addWidget(self.tree)
         self.note = text_label(
             "先按轨道用途分类；高速主线再按八纵八横整理。省份保留，未知类型/通道不猜测。",
@@ -129,6 +146,7 @@ class RailCatalog(QWidget):
             key
             for key, record in catalog.items()
             if ways.intersection(record["way_ids"])
+            and not self.meta(key).get("archived", False)
         }
         if ways:
             self.send_visibility(False)
@@ -168,7 +186,7 @@ class RailCatalog(QWidget):
         self.members = {}
         for name, record in sorted(self.catalog.items()):
             meta = self.meta(name)
-            parents = catalog_parents(meta, self.mode.currentIndex())
+            parents = self.parents(name)
             parent = self.tree.invisibleRootItem()
             key = ()
             for label in parents:
@@ -183,18 +201,23 @@ class RailCatalog(QWidget):
                 f"{label}\n{meta['province']} · {meta.get('track_type', '未确认类型')} · {len(record['way_ids'])} 个轨道段\n依据：{meta.get('type_evidence', '待核对')}",
             )
             self.items[name] = item
+            item.setData(0, Qt.ItemDataRole.UserRole, name)
             self.members[id(item)] = {name}
             ancestor = parent
             while ancestor is not self.tree.invisibleRootItem():
                 self.members.setdefault(id(ancestor), set()).add(name)
                 ancestor = ancestor.parent() or self.tree.invisibleRootItem()
             switch = Switch(name in self.visible)
+            switch.setEnabled(not meta.get("archived", False))
             switch.toggled.connect(lambda on, n=name: self.toggle(n, on))
             self.tree.setItemWidget(item, 1, switch)
         for item in groups.values():
             keys = self.members[id(item)]
             item.setText(0, item.text(0) + f" · {len(keys)} 项")
             control = Switch(bool(keys & self.visible))
+            control.setEnabled(
+                not all(self.meta(k).get("archived", False) for k in keys)
+            )
             control.setMixed(bool(keys & self.visible) and not keys <= self.visible)
             control.toggled.connect(lambda on, k=keys: self.toggle_group(k, on))
             self.tree.setItemWidget(item, 1, control)
@@ -202,6 +225,211 @@ class RailCatalog(QWidget):
             item.setExpanded(key in expanded)
         self.groups = groups
         self.filter_tree(self.search.text())
+
+    def parents(self, key):
+        meta = self.meta(key)
+        folders = meta.get("folder_path")
+        parents = (
+            tuple(folders)
+            if isinstance(folders, list) and folders
+            else tuple(catalog_parents(meta, self.mode.currentIndex()))
+        )
+        return (("已归档",) + parents) if meta.get("archived", False) else parents
+
+    def save_overrides(self, changes):
+        """Persist presentation metadata atomically; never write the GIS source."""
+        proposed = {**self.overrides}
+        for key, change in changes.items():
+            if key not in self.catalog:
+                raise ValueError("目录项已变化，请重新选择")
+            meta = self.meta(key)
+            proposed[key] = {
+                **self.overrides.get(key, {}),
+                **{
+                    field: meta[field]
+                    for field in (
+                        "display_name",
+                        "folder_path",
+                        "archived",
+                        "track_type",
+                    )
+                    if field in meta
+                },
+                **{field: meta[field] for field in ("province", "corridor", "section")},
+                **change,
+            }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary.replace(self.path)
+        self.overrides = proposed
+        self.visible = {
+            key for key in self.visible if not self.meta(key).get("archived", False)
+        }
+        self.send_visibility(False)
+        self.populate()
+        if changes:
+            item = self.items.get(sorted(changes)[0])
+            if item:
+                ancestor = item.parent()
+                while ancestor:
+                    ancestor.setExpanded(True)
+                    ancestor = ancestor.parent()
+                self.tree.setCurrentItem(item)
+                self.tree.schedule_height()
+                self.tree.scrollToItem(item)
+
+    def archive_items(self, keys, archived=True):
+        self.save_overrides({key: {"archived": archived} for key in keys})
+        self.note.setText(
+            "已归档并关闭地图显示；可在「已归档」目录右键恢复。"
+            if archived
+            else "已恢复目录项；地图显示仍关闭，可按需打开。"
+        )
+
+    def move_items(self, keys, folders):
+        if (
+            not isinstance(folders, list)
+            or not folders
+            or any(not isinstance(f, str) or not f.strip() for f in folders)
+        ):
+            raise ValueError("请填写有效目录路径，例如：上海市 / 虹桥站 / 站场股道")
+        folders = [f.strip() for f in folders]
+        if folders[0] == "已归档":
+            raise ValueError("「已归档」是保留目录；请使用归档功能")
+        self.save_overrides({key: {"folder_path": folders} for key in keys})
+        self.note.setText(
+            "已移动目录项：" + " / ".join(folders) + "；原始分类和数据保留。"
+        )
+
+    def rename_item(self, key, name):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("名称不能为空")
+        self.save_overrides({key: {"display_name": name.strip()}})
+        self.note.setText("已更新目录显示名称；原始名称、编号和通道引用保留。")
+
+    def rename_folder(self, path, name):
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or "/" in name
+            or name.strip() == "已归档"
+        ):
+            raise ValueError("请填写有效文件夹名称（不能包含 / 或使用保留名称）")
+        prefix = tuple(path[1:]) if path and path[0] == "已归档" else tuple(path)
+        if not prefix:
+            raise ValueError("归档目录不能重命名")
+        changes = {}
+        for key in self.catalog:
+            parents = self.parents(key)
+            if parents and parents[0] == "已归档":
+                parents = parents[1:]
+            if parents[: len(prefix)] == prefix and self.meta(key).get(
+                "archived", False
+            ) == (path[0] == "已归档"):
+                changes[key] = {
+                    "folder_path": [*prefix[:-1], name.strip(), *parents[len(prefix) :]]
+                }
+        self.save_overrides(changes)
+
+    def context_menu(self, position):
+        item = self.tree.itemAt(position)
+        if not item:
+            return
+        self.tree.setCurrentItem(item)
+        menu = self.item_menu(item)
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def item_menu(self, item):
+        keys = set(self.members.get(id(item), set()))
+        leaf = item.data(0, Qt.ItemDataRole.UserRole)
+        folder = next(
+            (path for path, candidate in self.groups.items() if candidate is item), None
+        )
+        menu = QMenu(self)
+
+        def perform(action):
+            try:
+                action()
+            except (ValueError, OSError) as error:
+                QMessageBox.warning(self, "目录修改未保存", str(error))
+
+        def rename():
+            old = (
+                self.meta(leaf).get("display_name", self.meta(leaf).get("name", leaf))
+                if leaf
+                else folder[-1]
+            )
+            value, accepted = QInputDialog.getText(
+                self,
+                "重命名目录项" if leaf else "重命名文件夹",
+                "显示名称（原始数据保留）",
+                text=old,
+            )
+            if accepted:
+                perform(
+                    lambda: (
+                        self.rename_item(leaf, value)
+                        if leaf
+                        else self.rename_folder(folder, value)
+                    )
+                )
+
+        rename_action = menu.addAction("重命名…", rename)
+        rename_action.setEnabled(bool(leaf or (folder and folder != ("已归档",))))
+        menu.addAction("移动到文件夹…", lambda: self.move_dialog(keys))
+        menu.addSeparator()
+        archived = all(self.meta(key).get("archived", False) for key in keys)
+        menu.addAction(
+            "取消归档 / 恢复" if archived else "归档",
+            lambda: perform(lambda: self.archive_items(keys, not archived)),
+        )
+        return menu
+
+    def move_dialog(self, keys):
+        if not keys:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("移动目录项 · 原始数据保留")
+        dialog.resize(520, 180)
+        form = QFormLayout(dialog)
+        form.addRow(
+            text_label(
+                f"移动 {len(keys)} 个目录项。选择已有目录，或输入新的多级路径。",
+                wrap=True,
+            )
+        )
+        destination = QComboBox()
+        destination.setEditable(True)
+        paths = {self.parents(key) for key in self.catalog}
+        paths = {p[1:] if p[0] == "已归档" else p for p in paths}
+        destination.addItems(sorted(" / ".join(path) for path in paths))
+        current = self.parents(sorted(keys)[0])
+        if current[0] == "已归档":
+            current = current[1:]
+        destination.setCurrentText(" / ".join(current))
+        form.addRow("目标文件夹", destination)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("移动")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        buttons.rejected.connect(dialog.reject)
+
+        def accept():
+            try:
+                folders = destination.currentText().split("/")
+                self.move_items(keys, folders)
+                dialog.accept()
+            except (ValueError, OSError) as error:
+                QMessageBox.warning(dialog, "目录未移动", str(error))
+
+        buttons.accepted.connect(accept)
+        form.addRow(buttons)
+        dialog.exec()
 
     def filter_tree(self, text):
         query = text.strip().lower()
@@ -246,16 +474,23 @@ class RailCatalog(QWidget):
         self.populate()
 
     def toggle_group(self, keys, on):
+        keys = {key for key in keys if not self.meta(key).get("archived", False)}
         self.visible.update(keys) if on else self.visible.difference_update(keys)
         self.send_visibility(on)
         QTimer.singleShot(0, self.populate)
 
     def set_all(self, on):
-        self.visible = set(self.catalog) if on else set()
+        self.visible = (
+            {key for key in self.catalog if not self.meta(key).get("archived", False)}
+            if on
+            else set()
+        )
         self.send_visibility(False)
         self.populate()
 
     def toggle(self, name, on):
+        if self.meta(name).get("archived", False):
+            return
         if on:
             self.visible.add(name)
         else:
@@ -387,6 +622,7 @@ class RailCatalog(QWidget):
             return
         overrides = {
             name: {
+                **self.overrides.get(name, {}),
                 **{
                     key: (
                         table.cellWidget(row, 2).currentText()
