@@ -6,6 +6,36 @@ import hashlib
 import json
 import csv
 import io
+import heapq
+
+try:
+    from .geometry import distance_m
+    from .rail_categories import track_type
+except ImportError:
+    from geometry import distance_m
+    from rail_categories import track_type
+
+RESOLUTION_KEY = "railscope.org/line-resolution"
+
+
+def resolution_policy(extensions):
+    value = extensions.get(RESOLUTION_KEY, {})
+    if not isinstance(value, dict):
+        raise ValueError("线路拼接策略须为对象")
+    policy = value.get("policy", "strict")
+    if policy not in ("strict", "mainline"):
+        raise ValueError("不支持的线路拼接策略")
+    return policy
+
+
+def edge_length(edge):
+    if "length_m" in edge:
+        return max(0.001, float(edge["length_m"]))
+    coordinates = edge.get("coordinates", [])
+    return max(
+        0.001, sum(distance_m(a, b) for a, b in zip(coordinates, coordinates[1:]))
+    )
+
 
 CORRIDOR_COLUMNS = (
     "corridor_id",
@@ -32,7 +62,7 @@ def import_corridor_csv(text):
                 "id": row["corridor_id"],
                 "name": row["corridor_name"],
                 "sequence": [],
-                "extensions": {},
+                "extensions": {RESOLUTION_KEY: {"policy": "mainline"}},
             },
         )
         sequence = route["sequence"]
@@ -137,6 +167,8 @@ class RailLineLibrary:
                     "source_name": source_name,
                     "edge_ids": [],
                     "graph": defaultdict(list),
+                    "track_type": track_type(edge.get("way_tags", {}))[0],
+                    "type_evidence": track_type(edge.get("way_tags", {}))[1],
                 },
             )
             record["edge_ids"].append(edge["id"])
@@ -208,7 +240,9 @@ class RailLineLibrary:
         self._bridges[ident] = result
         return result
 
-    def resolve(self, sequence):
+    def resolve(self, sequence, policy="strict"):
+        if policy not in ("strict", "mainline"):
+            raise ValueError("不支持的线路拼接策略")
         if (
             not isinstance(sequence, list)
             or len(sequence) < 3
@@ -236,13 +270,33 @@ class RailLineLibrary:
             a, b = sequence[i - 1]["node_id"], sequence[i + 1]["node_id"]
             if a == b or a not in record["graph"] or b not in record["graph"]:
                 raise ValueError("起终端点相同，或不在指定铁路线中")
-            queue, previous = deque([a]), {a: None}
-            while queue and b not in previous:
-                node = queue.popleft()
-                for other, edge_id, direction in record["graph"][node]:
-                    if other not in previous:
-                        previous[other] = (node, edge_id, direction)
-                        queue.append(other)
+            previous = {a: None}
+            if policy == "mainline":
+                queue, costs = [(0.0, a)], {a: 0.0}
+                settled = set()
+                while queue:
+                    cost, node = heapq.heappop(queue)
+                    if node in settled:
+                        continue
+                    settled.add(node)
+                    if node == b:
+                        break
+                    for other, edge_id, direction in sorted(record["graph"][node]):
+                        if self.edges[edge_id].get("construction"):
+                            continue
+                        candidate = cost + edge_length(self.edges[edge_id])
+                        if candidate < costs.get(other, float("inf")):
+                            costs[other] = candidate
+                            previous[other] = (node, edge_id, direction)
+                            heapq.heappush(queue, (candidate, other))
+            else:
+                queue = deque([a])
+                while queue and b not in previous:
+                    node = queue.popleft()
+                    for other, edge_id, direction in record["graph"][node]:
+                        if other not in previous:
+                            previous[other] = (node, edge_id, direction)
+                            queue.append(other)
             if b not in previous:
                 raise ValueError("指定铁路线在两个端点之间不连通；请补充真实基础设施")
             legs, node = [], b
@@ -250,9 +304,11 @@ class RailLineLibrary:
                 node, edge_id, direction = previous[node]
                 legs.append({"edge_id": edge_id, "direction": direction})
             direct = [v for v in record["graph"][a] if v[0] == b]
-            if len(direct) == 1:
+            if policy == "strict" and len(direct) == 1:
                 legs = [{"edge_id": direct[0][1], "direction": direct[0][2]}]
-            elif any(leg["edge_id"] not in self.bridges(ident) for leg in legs):
+            elif policy == "strict" and any(
+                leg["edge_id"] not in self.bridges(ident) for leg in legs
+            ):
                 raise ValueError(
                     "两个端点之间存在分支 / 多条股道，请增加明确的岔道端点，不自动猜测"
                 )
@@ -302,6 +358,11 @@ class RailLineLibrary:
             global_degree[edge["to_node"]] += 1
         for ident, record in self.lines.items():
             graph, seen = record["graph"], set()
+
+            def role(edge_id):
+                edge = self.edges[edge_id]
+                return edge.get("track_type") or track_type(edge.get("way_tags", {}))[0]
+
             endpoints = {
                 node
                 for node, neighbors in graph.items()
@@ -309,6 +370,7 @@ class RailLineLibrary:
                 or global_degree[node] != 2
                 or node in getattr(self, "split_nodes", set())
                 or not self.nodes[node].startswith("轨道端点 ")
+                or len({role(edge_id) for _, edge_id, _ in neighbors}) > 1
             }
             # Remaining degree-two cycles are physical infrastructure too,
             # even though a running corridor may not be a closed loop.
@@ -327,10 +389,37 @@ class RailLineLibrary:
                         seen.add(edge_id)
                         legs.append({"edge_id": edge_id, "direction": direction})
                     key = json.dumps(sorted(leg["edge_id"] for leg in legs))
+                    section_id = (
+                        "RS-" + hashlib.sha256((ident + key).encode()).hexdigest()[:20]
+                    )
+                    first_edge = self.edges[legs[0]["edge_id"]]
+                    category = role(legs[0]["edge_id"])
+                    evidence = (
+                        first_edge.get("type_evidence")
+                        or track_type(first_edge.get("way_tags", {}))[1]
+                    )
                     output.append(
                         {
-                            "id": "RS-"
-                            + hashlib.sha256((ident + key).encode()).hexdigest()[:20],
+                            "id": section_id,
+                            "name": self.lines[ident]["name"]
+                            + " · "
+                            + category
+                            + " · "
+                            + self.nodes[start]
+                            + " → "
+                            + self.nodes[end]
+                            + " · "
+                            + section_id,
+                            "track_type": category,
+                            "type_evidence": evidence,
+                            "construction": bool(first_edge.get("construction")),
+                            "length_m": round(
+                                sum(
+                                    edge_length(self.edges[leg["edge_id"]])
+                                    for leg in legs
+                                ),
+                                3,
+                            ),
                             "line_id": ident,
                             "from_node": start,
                             "to_node": end,

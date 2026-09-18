@@ -12,7 +12,7 @@
         {"kind": "line", "line_id": "RL-f2b1dec5971012fc9df6"},
         {"kind": "endpoint", "node_id": 3687619616}
       ],
-      "extensions": {}
+      "extensions": {"railscope.org/line-resolution": {"policy": "mainline"}}
     }
   ]
 }

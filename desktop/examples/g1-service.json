@@ -1,0 +1,15 @@
+{
+  "service_date": "2026-09-17",
+  "train_id": "G1",
+  "source": "G1 公开时刻参考（资料更新2026-08-14）；非12306实时查询",
+  "timetable_url": "https://www.gaotie.com.cn/checi/G1.html",
+  "stops": [
+    {"name": "北京南", "arrival_s": 23400, "departure_s": 23400},
+    {"name": "沧州西", "arrival_s": 26280, "departure_s": 26400},
+    {"name": "德州东", "arrival_s": 27900, "departure_s": 28020},
+    {"name": "曲阜东", "arrival_s": 30840, "departure_s": 30960},
+    {"name": "南京南", "arrival_s": 36780, "departure_s": 36900},
+    {"name": "苏州北", "arrival_s": 39540, "departure_s": 39660},
+    {"name": "上海虹桥", "arrival_s": 41040, "departure_s": 41040}
+  ]
+}

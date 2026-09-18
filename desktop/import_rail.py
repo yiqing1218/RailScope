@@ -217,6 +217,11 @@ def extract(pbf, output):
     except ImportError:
         from rail_store import build_index
     build_index(output, tracks, points, platforms, edges)
+    try:
+        from .rail_boundaries import extract as extract_boundaries
+    except ImportError:
+        from rail_boundaries import extract as extract_boundaries
+    boundaries = extract_boundaries(pbf, output)
     report = {
         "tracks": len(tracks),
         "points": len(points),
@@ -225,6 +230,7 @@ def extract(pbf, output):
         "relations": len(relations),
         "source": str(pbf),
         "license": "ODbL 1.0",
+        "boundary_polygons": boundaries["polygons"],
     }
     (output / "rail_manifest.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"

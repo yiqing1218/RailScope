@@ -69,7 +69,9 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     assert editor.table.item(1, 8).text() == "2"
     from PySide6.QtCore import Qt
 
-    assert not editor.table.item(1, 8).flags() & Qt.ItemFlag.ItemIsEditable
+    assert editor.table.item(1, 8).flags() & Qt.ItemFlag.ItemIsEditable
+    editor.table.item(1, 8).setText("3")
+    assert editor.document()["trains"][1]["stops"][1]["track_change"]["to_track"] == "3"
     assert editor.document()["routes"][0]["track_changes"][0]["to_track"] == "2"
     bad = deepcopy(document)
     leg = bad["corridors"][0]["path"][0]
@@ -93,7 +95,7 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     preview = next(
         c[1]["features"] for c in reversed(view.calls) if c[0] == "setRailPlan"
     )
-    assert preview[0]["properties"]["train_ids"] == []
+    assert next(f for f in preview if f["properties"].get("corridor_id") == other["id"])["properties"]["train_ids"] == []
     assert len(editor.plan.trains) == 2, "预览通道不能生成车次"
     editor.add_train_on_corridor("G5", other["id"], 25200, 43200)
     assert len(editor.plan.trains) == 3

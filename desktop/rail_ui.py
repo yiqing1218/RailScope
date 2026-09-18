@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QTableWidget,
     QHeaderView,
+    QPlainTextEdit,
+    QLabel,
 )
 
 try:
@@ -30,6 +32,7 @@ try:
     from .operating import strict_fields
     from .rail_tables import merge_csv, export_csv
     from .operating import parse_time, format_time
+    from .rail_lines import resolution_policy, RESOLUTION_KEY
 except ImportError:
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -42,6 +45,7 @@ except ImportError:
     from operating import strict_fields
     from rail_tables import merge_csv, export_csv
     from operating import parse_time, format_time
+    from rail_lines import resolution_policy, RESOLUTION_KEY
 
 
 class RailMap:
@@ -76,7 +80,16 @@ class RailEditor(OperationsEditor):
             if (self.directory / "rail_platforms.geojson").exists()
             else []
         )
+        if (self.directory / "rail.sqlite").exists():
+            with sqlite3.connect(str(self.directory / "rail.sqlite")) as db:
+                self.platforms = [
+                    json.loads(raw)
+                    for (raw,) in db.execute(
+                        "SELECT data FROM features WHERE kind='railPlatforms'"
+                    )
+                ]
         self.rail_payload = None
+        self.visible_corridors = set()
         super().__init__(Plan([], "rail"), RailMap(map_view), [], path)
         self.time_scale = 0.055
         self.time_grid_s = 900
@@ -87,15 +100,29 @@ class RailEditor(OperationsEditor):
             except (ValueError, OSError, KeyError, TypeError) as error:
                 self.message.setText("国铁计划未载入：" + str(error))
         if self.rail_payload is None:
-            reference = json.loads(
-                (Path(__file__).parent / "examples/g1-reference.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.apply_payload(reference["plan"])
+            self.apply_payload(self.initial_g1_payload())
             self.message.setText(
                 "内置 G1 · 7站参考时刻 · 已关闭运行；选择车次查看独立时刻表 / 运行图。"
             )
+
+    def initial_g1_payload(self):
+        if (self.directory / "rail.sqlite").exists():
+            try:
+                try:
+                    from .rail_assembly import assemble_jinghu
+                except ImportError:
+                    from rail_assembly import assemble_jinghu
+                payload, _ = assemble_jinghu(self.directory)
+                return payload
+            except (ValueError, sqlite3.Error):
+                # Partial regional databases may not contain the Jinghu example.
+                pass
+        reference = json.loads(
+            (Path(__file__).parent / "examples/g1-reference.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return reference["plan"]
 
     def play(self):
         if not self.plan.trains:
@@ -105,7 +132,19 @@ class RailEditor(OperationsEditor):
 
     def apply_payload(self, payload, show_route=False):
         original_payload = shared_document(payload)
-        payload = expanded_document(payload)
+        for train in original_payload["trains"]:
+            for section in train.get("station_paths", []):
+                if "sequence" in section:
+                    strict_fields(
+                        section,
+                        {"from_node", "to_node", "sequence", "extensions"},
+                        {"path"},
+                        "车次站场径路",
+                    )
+                    section["path"] = self.line_library().resolve(
+                        section["sequence"], resolution_policy(section["extensions"])
+                    )
+        payload = expanded_document(original_payload)
         try:
             from .rail_store import load_edges
         except ImportError:
@@ -115,10 +154,11 @@ class RailEditor(OperationsEditor):
             for route in original_payload["routes"]
             for leg in route["path"]
         ]
-        reference = json.loads(
-            (Path(__file__).parent / "examples/g1-reference.json").read_text(
-                encoding="utf-8"
-            )
+        required.extend(
+            leg["edge_id"]
+            for train in original_payload["trains"]
+            for section in train.get("station_paths", [])
+            for leg in section["path"]
         )
         reference_mode = (
             payload.get("extensions", {})
@@ -126,21 +166,53 @@ class RailEditor(OperationsEditor):
             .get("path_status")
             == "connected_osm_reference_not_dispatch_route"
         )
-        reference_edges = (
-            {e["id"]: e for e in reference["edges"]} if reference_mode else {}
+        edges = (
+            load_edges(self.directory, required)
+            if (self.directory / "rail.sqlite").exists()
+            else []
         )
-        bundled = [
-            reference_edges[key]
-            for key in dict.fromkeys(required)
-            if key in reference_edges
-        ]
-        missing = [key for key in required if key not in reference_edges]
-        if missing and not (self.directory / "rail.sqlite").exists():
-            raise ValueError("此计划包含便携 G1 示例之外的区间，请先提取国铁基础设施")
-        edges = bundled + (load_edges(self.directory, missing) if missing else [])
-        points = reference["points"] if reference_mode else []
-        if not reference_mode and (self.directory / "rail.sqlite").exists():
+        found = {e["id"] for e in edges}
+        missing = set(required) - found
+        points = []
+        if missing and reference_mode:
+            reference = json.loads(
+                (Path(__file__).parent / "examples/g1-reference.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            edges.extend(e for e in reference["edges"] if e["id"] in missing)
+            points = reference["points"]
+            missing -= {e["id"] for e in edges}
+        if missing:
+            raise ValueError("铁路库缺少所引用的物理区间，请先导入对应基础设施")
+        mappings = (
+            payload.get("extensions", {})
+            .get("railscope.org/assembly", {})
+            .get("stations", [])
+        )
+        if (
+            not mappings
+            and reference_mode
+            and not missing
+            and (self.directory / "rail.sqlite").exists()
+        ):
+            try:
+                try:
+                    from .rail_assembly import assemble_jinghu
+                except ImportError:
+                    from rail_assembly import assemble_jinghu
+                assembled, _ = assemble_jinghu(self.directory)
+                assembly = assembled["extensions"]["railscope.org/assembly"]
+                # Migrate source-station labels only; never replace a saved user's path or times.
+                original_payload["extensions"]["railscope.org/assembly"] = deepcopy(
+                    assembly
+                )
+                mappings = assembly["stations"]
+            except (ValueError, sqlite3.Error):
+                pass
+        if (self.directory / "rail.sqlite").exists():
             stop_ids = {s["node_id"] for t in payload["trains"] for s in t["stops"]}
+            stop_ids.update(mapping["source_station_node"] for mapping in mappings)
             with sqlite3.connect(str(self.directory / "rail.sqlite")) as db:
                 for ident in stop_ids:
                     for row in db.execute(
@@ -148,16 +220,48 @@ class RailEditor(OperationsEditor):
                         (ident,),
                     ):
                         points.append(json.loads(row[0]))
+        if mappings:
+            coordinates = {
+                node: coord
+                for edge in edges
+                for node, coord in zip(edge["node_ids"], edge["coordinates"])
+            }
+            for mapping in mappings:
+                node = mapping["anchor_node"]
+                if node in coordinates:
+                    points.append(
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                "osm_node_id": node,
+                                "name": mapping["station_name"],
+                                "source_station_node": mapping["source_station_node"],
+                                "anchor_offset_m": mapping["offset_m"],
+                                "infrastructure_id": "node/"
+                                + str(mapping["source_station_node"]),
+                            },
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": coordinates[node],
+                            },
+                        }
+                    )
         validate_corridors(original_payload["routes"], edges)
         plan, lines = compile_rail_plan(payload, edges, points, self.platforms)
         self.pause()
         self.set_enabled(False)
         self.graph["points"] = points
         self.graph["edges"] = edges
+        self.shared_station_features = {
+            p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
+        }
+        self.visible_corridors.intersection_update(
+            r["id"] for r in original_payload["routes"]
+        )
         for profile, train, shared_train in zip(
             lines, payload["trains"], original_payload["trains"]
         ):
-            profile["rail_path"] = deepcopy(train["path"])
+            profile["rail_path"] = deepcopy(profile["resolved_rail_path"])
             profile["corridor_id"] = shared_train["route_id"]
             route = next(
                 r
@@ -192,39 +296,71 @@ class RailEditor(OperationsEditor):
                 f"{int(self.clock) // 3600:02}:{int(self.clock) % 3600 // 60:02}:{int(self.clock) % 60:02}"
             )
         self.update_sidebar(0)
+        self.push_corridors()
         if show_route:
             self.show_reference_route()
 
     def show_reference_route(self):
+        selected = self.current_line()
+        if selected:
+            self.visible_corridors.add(selected["corridor_id"])
+        self.push_corridors()
+        if hasattr(self, "route_switch"):
+            self.route_switch.blockSignals(True)
+            self.route_switch.setChecked(bool(self.visible_corridors))
+            self.route_switch.blockSignals(False)
+        self.locate_current_line()
+
+    def set_corridor_visible(self, ident, on):
+        if on:
+            self.visible_corridors.add(ident)
+        else:
+            self.visible_corridors.discard(ident)
+        self.push_corridors()
+        if hasattr(self, "route_switch"):
+            self.route_switch.blockSignals(True)
+            self.route_switch.setChecked(bool(self.visible_corridors))
+            self.route_switch.blockSignals(False)
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self.updated.emit)
+
+    def push_corridors(self):
         features = []
         drawn_paths, drawn_stations = set(), set()
-        selected = self.current_line()
-        corridor_id = selected.get("corridor_id") if selected else None
-        route = next(
-            (
-                r
-                for r in (self.rail_payload or {}).get("routes", [])
-                if r["id"] == corridor_id
-            ),
-            None,
-        )
-        trains = [
-            t["id"]
-            for t in self.plan.trains
-            if self.plan.lines[t["line_id"]].get("corridor_id") == corridor_id
-        ]
-        for line in self.base_lines:
-            if line.get("corridor_id") != corridor_id:
+        lookup = {edge["id"]: edge for edge in self.graph["edges"]}
+        node_coordinates = {
+            node: coord
+            for edge in self.graph["edges"]
+            for node, coord in zip(
+                edge.get("node_ids", [edge["from_node"], edge["to_node"]]),
+                edge["coordinates"],
+            )
+        }
+        for route in (self.rail_payload or {}).get("routes", []):
+            corridor_id = route["id"]
+            if corridor_id not in self.visible_corridors:
                 continue
+            trains = [
+                t["id"]
+                for t in self.plan.trains
+                if self.plan.lines[t["line_id"]].get("corridor_id") == corridor_id
+            ]
             props = {
                 "name": route.get("name", corridor_id) if route else "单向参考通道",
                 "source": self.rail_payload["source"],
-                "train_id": line["ref"],
+                "train_id": trains[0] if trains else "",
                 "corridor_id": corridor_id,
                 "train_ids": trains,
                 "track_changes": (route or {}).get("track_changes", []),
             }
-            key = tuple((leg["edge_id"], leg["direction"]) for leg in line["rail_path"])
+            coords = []
+            for leg in route["path"]:
+                part = lookup[leg["edge_id"]]["coordinates"]
+                if leg["direction"] == "reverse":
+                    part = part[::-1]
+                coords.extend(part if not coords else part[1:])
+            key = tuple((leg["edge_id"], leg["direction"]) for leg in route["path"])
             if key not in drawn_paths:
                 drawn_paths.add(key)
                 features.append(
@@ -233,41 +369,50 @@ class RailEditor(OperationsEditor):
                         "properties": props,
                         "geometry": {
                             "type": "LineString",
-                            "coordinates": line["path"]["coordinates"],
+                            "coordinates": coords,
                         },
                     }
                 )
-            for station in line["stations"]:
-                from_coords = line["path"]["coordinates"][
-                    line["path"]["cumulative"].index(station["distance_m"])
-                ]
-                station_key = (station["id"], tuple(from_coords))
+            stop_ids = {
+                s["node_id"]
+                for train in self.rail_payload["trains"]
+                if train["route_id"] == corridor_id
+                for s in train["stops"]
+            }
+            for station in self.graph["points"]:
+                data = station["properties"]
+                if data["osm_node_id"] not in stop_ids:
+                    continue
+                source_node = data.get("source_station_node", data["osm_node_id"])
+                shared = self.shared_station_features.get(source_node, station)
+                station_key = "node/" + str(source_node)
                 if station_key in drawn_stations:
                     continue
                 drawn_stations.add(station_key)
                 features.append(
                     {
                         "type": "Feature",
-                        "properties": {**props, "name": station["name"]},
-                        "geometry": {"type": "Point", "coordinates": from_coords},
+                        "properties": {
+                            **props,
+                            **shared["properties"],
+                            "infrastructure_id": station_key,
+                        },
+                        "geometry": shared.get(
+                            "geometry",
+                            {
+                                "type": "Point",
+                                "coordinates": node_coordinates[data["osm_node_id"]],
+                            },
+                        ),
                     }
                 )
         self.map.call(
             "setRailPlan", {"type": "FeatureCollection", "features": features}
         )
-        if hasattr(self, "route_switch"):
-            self.route_switch.blockSignals(True)
-            self.route_switch.setChecked(True)
-            self.route_switch.blockSignals(False)
-        self.locate_current_line()
+        self.map.call("setVisibility", "railPlan", bool(features))
 
     def load_g1_example(self):
-        reference = json.loads(
-            (Path(__file__).parent / "examples/g1-reference.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        self.apply_payload(reference["plan"], show_route=True)
+        self.apply_payload(self.initial_g1_payload(), show_route=True)
         self.tabs.setCurrentIndex(0)
         self.refresh_diagram()
         self.message.setText(
@@ -318,20 +463,10 @@ class RailEditor(OperationsEditor):
         if self.rail_payload is None:
             raise ValueError("请先导入国铁车次计划和实际基础设施")
         self.plan.validate()
-        payload = expanded_document(self.rail_payload)
+        payload = deepcopy(self.rail_payload)
         payload["trains"] = []
         for train in self.plan.trains:
-            path = deepcopy(self.plan.lines[train["line_id"]]["rail_path"])
-            if train["direction"] == "reverse":
-                path = [
-                    {
-                        "edge_id": leg["edge_id"],
-                        "direction": "reverse"
-                        if leg["direction"] == "forward"
-                        else "forward",
-                    }
-                    for leg in path[::-1]
-                ]
+            profile = self.plan.lines[train["line_id"]]
             stops = []
             for stop in train["stops"]:
                 original = deepcopy(
@@ -346,31 +481,19 @@ class RailEditor(OperationsEditor):
             payload["trains"].append(
                 {
                     "id": train["id"],
-                    "path": path,
+                    "route_id": profile["corridor_id"],
                     "stops": stops,
                     "extensions": train.get("extensions", {}),
                 }
             )
+            if profile.get("station_paths"):
+                payload["trains"][-1]["station_paths"] = deepcopy(
+                    profile["station_paths"]
+                )
         compile_rail_plan(
             payload, self.graph["edges"], self.graph["points"], self.platforms
         )
-        result = shared_document(payload)
-        old_routes = {r["id"]: deepcopy(r) for r in self.rail_payload.get("routes", [])}
-        generated = {r["id"]: r for r in result["routes"]}
-        used_new = set()
-        for train in result["trains"]:
-            profile = self.plan.lines["rail/" + train["id"]]
-            old = old_routes.get(profile.get("corridor_id"))
-            if old and old["path"] == generated[train["route_id"]]["path"]:
-                train["route_id"] = old["id"]
-            else:
-                used_new.add(train["route_id"])
-        result["routes"] = list(old_routes.values()) + [
-            r
-            for key, r in generated.items()
-            if key in used_new and key not in old_routes
-        ]
-        return result
+        return payload
 
     def variant_changed(self):
         super().variant_changed()
@@ -399,7 +522,10 @@ class RailEditor(OperationsEditor):
         corridors = []
         for route in payload["routes"]:
             sequence = route.get("sequence") or library.describe(route["path"])
-            if library.resolve(sequence) != route["path"]:
+            if (
+                library.resolve(sequence, resolution_policy(route["extensions"]))
+                != route["path"]
+            ):
                 raise ValueError("通道存在歧义，请在通道表格中补充端点")
             extensions = deepcopy(route["extensions"])
             if route.get("track_changes"):
@@ -488,6 +614,7 @@ class RailEditor(OperationsEditor):
             self.line_combo.setCurrentIndex(self.line_combo.findData("rail/" + ident))
             self.show_reference_route()
             return
+        self.set_corridor_visible(corridor_id, True)
         lookup = {e["id"]: e for e in self.graph["edges"]}
         first, last = route["path"][0], route["path"][-1]
         start = lookup[first["edge_id"]][
@@ -519,25 +646,6 @@ class RailEditor(OperationsEditor):
         _, lines = compile_rail_plan(payload, self.graph["edges"], self.graph["points"])
         coords = lines[0]["path"]["coordinates"]
         self.map.call("setRunSystem", "rail")
-        self.map.call(
-            "setRailPlan",
-            {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "properties": {
-                            "name": route.get("name", corridor_id),
-                            "corridor_id": corridor_id,
-                            "train_ids": [],
-                            "track_changes": route.get("track_changes", []),
-                            "source": self.rail_payload["source"],
-                        },
-                        "geometry": {"type": "LineString", "coordinates": coords},
-                    }
-                ],
-            },
-        )
         xs, ys = zip(*coords)
         self.map.call(
             "fit",
@@ -577,20 +685,9 @@ class RailEditor(OperationsEditor):
                     set(),
                     "端点—线路通道",
                 )
-                # Existing, explicitly verified physical combinations remain reusable
-                # even when the national dataset has additional parallel tracks.
-                known = next(
-                    (
-                        r
-                        for r in routes.values()
-                        if (r.get("sequence") or library.describe(r["path"]))
-                        == route["sequence"]
-                    ),
-                    None,
-                )
-                if known:
-                    route["path"] = deepcopy(known["path"])
-                elif interactive and hasattr(library, "connect"):
+                # Resolve from the infrastructure every time, including G1 notation.
+                policy = resolution_policy(route["extensions"])
+                if interactive and hasattr(library, "connect"):
                     try:
                         from .background_work import prepare_with_progress
                     except ImportError:
@@ -598,13 +695,22 @@ class RailEditor(OperationsEditor):
 
                     def resolve(report):
                         report("校验端点并组合既有物理线路…")
-                        result = library.resolve(route["sequence"])
+                        result = library.resolve(route["sequence"], policy)
                         report("物理线路组合已完成")
                         return result
 
                     route["path"] = prepare_with_progress(self, "校验单向通道", resolve)
                 else:
-                    route["path"] = library.resolve(route["sequence"])
+                    route["path"] = library.resolve(route["sequence"], policy)
+                route["extensions"][RESOLUTION_KEY] = {
+                    **route["extensions"].get(RESOLUTION_KEY, {}),
+                    "policy": policy,
+                    "data_source": "railway_database"
+                    if (self.directory / "rail.sqlite").exists()
+                    else "portable_reference",
+                    "edge_count": len(route["path"]),
+                    "geometry_status": "assembled_geometry_not_dispatch_route",
+                }
                 legacy = route["extensions"].get("railscope.org/legacy-track-changes")
                 if legacy is not None:
                     route["track_changes"] = deepcopy(legacy)
@@ -948,28 +1054,23 @@ class RailEditor(OperationsEditor):
                     ("from_track", "to_track", "via_node", "time"), 7
                 ):
                     shared = shared_changes.get(int(stop["station_id"]), {})
-                    value = (
-                        change.get(field, "")
-                        if field == "time"
-                        else shared.get(field, change.get(field, ""))
-                    )
+                    value = change.get(field, shared.get(field, ""))
                     item = QTableWidgetItem("" if value is None else str(value))
                     item.setData(Qt.ItemDataRole.UserRole, (train["id"], index))
-                    if column < 10:
-                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                     item.setToolTip(
-                        "股道与位置来自共享通道（通道面板编辑）；执行时刻属于本车次。未知留空，尚不执行实际联锁 / 变道"
+                        "本车次的停靠股道 / 道岔 / 时刻。未知留空；文字字段不改变动画径路，实体轨道在「编辑车次站场径路」中定义。"
                     )
                     self.table.setItem(row, column, item)
-                platform = (
-                    stop.get("extensions", {})
-                    .get("railscope.org/rail-stop", {})
-                    .get("platform_id", "")
+                platform_data = stop.get("extensions", {}).get(
+                    "railscope.org/rail-stop", {}
+                )
+                platform = platform_data.get(
+                    "platform_ref", platform_data.get("platform_id", "")
                 )
                 item = QTableWidgetItem(str(platform))
                 item.setData(Qt.ItemDataRole.UserRole, (train["id"], index))
                 item.setToolTip(
-                    "本车次的站台 OSM Way 编号；未知留空。须先导入真实站台，不能以此替代联锁验证。"
+                    "本车次的真实站台：way/编号 或 relation/编号；兼容旧整数 Way 编号。未知留空，不代表联锁验证。"
                 )
                 self.table.setItem(row, 11, item)
                 row += 1
@@ -978,12 +1079,6 @@ class RailEditor(OperationsEditor):
     def table_changed(self, item):
         if self.loading or item.column() < 7:
             return super().table_changed(item)
-        if item.column() < 10:
-            self.message.setText(
-                "股道与道岔位置在左侧「通道」中统一编辑，所有引用车次共享"
-            )
-            self.refresh_table()
-            return
         train_id, index = item.data(Qt.ItemDataRole.UserRole)
         original = self.plan.train(train_id)["stops"][index]["extensions"][
             "railscope.org/rail-stop"
@@ -993,16 +1088,24 @@ class RailEditor(OperationsEditor):
         try:
             if item.column() == 11:
                 value = item.text().strip()
+                original.pop("platform_id", None)
+                original.pop("platform_ref", None)
                 if value:
-                    original["platform_id"] = int(value)
-                else:
-                    original.pop("platform_id", None)
+                    if value.startswith(("way/", "relation/")):
+                        kind, number = value.split("/", 1)
+                        if not number.isdigit():
+                            raise ValueError("站台引用须为 way/整数 或 relation/整数")
+                        original["platform_ref"] = kind + "/" + str(int(number))
+                    else:
+                        original["platform_id"] = int(value)
             else:
                 change = original.setdefault(
                     "track_change",
                     {k: "" for k in ("from_track", "to_track", "via_node", "time")},
                 )
-                change["time"] = item.text().strip()
+                change[
+                    ("from_track", "to_track", "via_node", "time")[item.column() - 7]
+                ] = item.text().strip()
             self.document()
             self.undo_stack.append(before)
             self.redo_stack.clear()
@@ -1012,6 +1115,58 @@ class RailEditor(OperationsEditor):
             original.update(previous)
             self.message.setText(str(error))
             self.refresh_table()
+
+    def edit_station_paths(self):
+        line = self.current_line()
+        if not line:
+            return
+        ident = line["ref"]
+        dialog = QDialog(self)
+        dialog.setWindowTitle(ident + " · 站场进出轨道（仅本车次）")
+        dialog.resize(880, 600)
+        form = QFormLayout(dialog)
+        hint = QLabel(
+            "每段填写 from_node、to_node、sequence、extensions。端点必须是通道上的已切分节点；按端点—线路组合解析现有轨道，不生成新几何。停靠节点必须位于解析后的车次径路上。空数组表示沿用通道主线。"
+        )
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        text = QPlainTextEdit(
+            json.dumps(line.get("station_paths", []), ensure_ascii=False, indent=2)
+        )
+        form.addRow(text)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.rejected.connect(dialog.reject)
+
+        def accept():
+            try:
+                sections = json.loads(text.toPlainText())
+                if not isinstance(sections, list):
+                    raise ValueError("站场径路必须是数组")
+                library = self.line_library(interactive=True)
+                for section in sections:
+                    strict_fields(
+                        section,
+                        {"from_node", "to_node", "sequence", "extensions"},
+                        {"path"},
+                        "车次站场径路",
+                    )
+                    section["path"] = library.resolve(
+                        section["sequence"], resolution_policy(section["extensions"])
+                    )
+                before = self.document()
+                payload = deepcopy(before)
+                train = next(t for t in payload["trains"] if t["id"] == ident)
+                train["station_paths"] = sections
+                self.accept_batch(payload, before)
+                dialog.accept()
+            except (ValueError, KeyError, TypeError, OSError, sqlite3.Error) as error:
+                QMessageBox.warning(dialog, "站場径路未修改", str(error))
+
+        buttons.accepted.connect(accept)
+        form.addRow(buttons)
+        dialog.exec()
 
     def add_train(self):
         payload = self.document()

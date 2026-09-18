@@ -61,20 +61,6 @@ def merge_csv(text, payload):
             raise ValueError(f"第 {line} 行径路不一致或站序不连续（从 1 开始）")
         if not row["node_id"].isdigit():
             raise ValueError(f"第 {line} 行节点须为整数 OSM ID")
-        change = next(
-            (
-                c
-                for c in routes[row["route_id"]].get("track_changes", [])
-                if c["node_id"] == int(row["node_id"])
-            ),
-            {},
-        )
-        for field in ("from_track", "to_track", "via_node"):
-            declared = change.get(field)
-            if row[field] and row[field] != ("" if declared is None else str(declared)):
-                raise ValueError(
-                    f"第 {line} 行股道 / 道岔与共享通道不符，请先编辑或导入通道"
-                )
         stop = {
             "node_id": int(row["node_id"]),
             "arrival_s": parse_time(row["arrival"]),
@@ -100,7 +86,13 @@ def export_csv(payload):
     writer.writeheader()
     routes = {r["id"]: r for r in payload["routes"]}
     for train in payload["trains"]:
+        if train.get("station_paths"):
+            raise ValueError("含站场径路的车次请导出 JSON；CSV 不能无损保存嵌套路径")
         for sequence, stop in enumerate(train["stops"], 1):
+            if stop.get("platform_ref"):
+                raise ValueError(
+                    "含统一站台引用 platform_ref 的车次请导出 JSON；旧 CSV 无法无损保存"
+                )
             change = stop.get("track_change", {})
             shared = next(
                 (
@@ -120,7 +112,9 @@ def export_csv(payload):
                     "departure": format_time(stop["departure_s"]),
                     "platform_id": stop.get("platform_id", ""),
                     **{
-                        k: shared.get(k, "") if shared.get(k) is not None else ""
+                        k: change.get(k, shared.get(k, ""))
+                        if change.get(k, shared.get(k)) is not None
+                        else ""
                         for k in ("from_track", "to_track", "via_node")
                     },
                     "change_time": change.get("time", ""),

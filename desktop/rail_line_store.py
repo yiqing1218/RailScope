@@ -8,11 +8,13 @@ import sqlite3
 from uuid import uuid4
 
 try:
-    from .rail_lines import RailLineLibrary, line_identity
+    from .rail_lines import RailLineLibrary, line_identity, edge_length
+    from .rail_categories import track_type
 except ImportError:
-    from rail_lines import RailLineLibrary, line_identity
+    from rail_lines import RailLineLibrary, line_identity, edge_length
+    from rail_categories import track_type
 
-INDEX_VERSION = 2
+INDEX_VERSION = 5
 
 
 def fingerprint(source, extras):
@@ -47,25 +49,29 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
     try:
         db.executescript("""
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);
-            CREATE TABLE lines(id TEXT PRIMARY KEY,source_name TEXT NOT NULL,edge_count INTEGER DEFAULT 0);
-            CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a INTEGER,b INTEGER,construction INTEGER);
+            CREATE TABLE lines(id TEXT PRIMARY KEY,source_name TEXT NOT NULL,edge_count INTEGER DEFAULT 0,track_type TEXT,evidence TEXT);
+            CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a INTEGER,b INTEGER,construction INTEGER,length_m REAL,track_type TEXT,evidence TEXT);
             CREATE TABLE nodes(id INTEGER PRIMARY KEY,label TEXT,kind TEXT);
             CREATE TABLE line_nodes(line_id TEXT,node_id INTEGER,PRIMARY KEY(line_id,node_id));
         """)
 
-        def add(edge):
+        def add(edge, replace=True):
             ident, name = line_identity(edge)
             db.execute(
-                "INSERT OR IGNORE INTO lines(id,source_name) VALUES(?,?)", (ident, name)
+                "INSERT OR IGNORE INTO lines(id,source_name,track_type,evidence) VALUES(?,?,?,?)",
+                (ident, name, *track_type(edge.get("way_tags", {}))),
             )
             db.execute(
-                "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?)",
+                ("INSERT OR REPLACE" if replace else "INSERT OR IGNORE")
+                + " INTO edges VALUES(?,?,?,?,?,?,?,?)",
                 (
                     edge["id"],
                     ident,
                     edge["from_node"],
                     edge["to_node"],
                     int(edge.get("construction", False)),
+                    edge_length(edge),
+                    *track_type(edge.get("way_tags", {})),
                 ),
             )
 
@@ -78,7 +84,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                 if index % 4000 == 0:
                     progress(f"整理铁路名称与端点：{index:,} / {count:,}")
             for edge in extras:
-                add(edge)
+                add(edge, replace=False)
             progress("建立可搜索的线路和端点目录…")
             db.executescript("""
                 CREATE INDEX edge_line ON edges(line_id);
@@ -140,22 +146,27 @@ class _DirectoryMapping(Mapping):
         if not row:
             raise KeyError(key)
         if self.kind == "lines":
-            ident, name, count = row
+            ident, name, count, kind, evidence = row
             return {
                 "id": ident,
                 "source_name": name,
                 "name": self.store.names.get(ident, name) + " · " + ident,
                 "edge_count": count,
+                "track_type": kind,
+                "type_evidence": evidence,
             }
         if self.kind == "nodes":
             return self.store.node_label(row)
-        ident, line, a, b, construction = row
+        ident, line, a, b, construction, length, kind, evidence = row
         return {
             "id": ident,
             "from_node": a,
             "to_node": b,
             "construction": bool(construction),
             "line_id": line,
+            "length_m": length,
+            "track_type": kind,
+            "type_evidence": evidence,
         }
 
 
@@ -187,9 +198,7 @@ class DiskRailLineLibrary:
 
     def search_lines(self, query="", limit=100, offset=0):
         term = (
-            "%"
-            + query.replace("!", "!!").replace("%", "!%").replace("_", "!_")
-            + "%"
+            "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         )
         aliases = [
             key
@@ -220,9 +229,7 @@ class DiskRailLineLibrary:
             clause = " AND n.id IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
             args.append(line_id)
         term = (
-            "%"
-            + query.replace("!", "!!").replace("%", "!%").replace("_", "!_")
-            + "%"
+            "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         )
         with self.connect() as db:
             rows = db.execute(
@@ -246,8 +253,8 @@ class DiskRailLineLibrary:
 
                 record.update(edge_ids=[], graph=defaultdict(list))
                 library.lines[line_id] = record
-                for ident, a, b, construction in db.execute(
-                    "SELECT id,a,b,construction FROM edges WHERE line_id=? ORDER BY id",
+                for ident, a, b, construction, length, kind, evidence in db.execute(
+                    "SELECT id,a,b,construction,length_m,track_type,evidence FROM edges WHERE line_id=? ORDER BY id",
                     (line_id,),
                 ):
                     library.edges[ident] = {
@@ -255,6 +262,9 @@ class DiskRailLineLibrary:
                         "from_node": a,
                         "to_node": b,
                         "construction": bool(construction),
+                        "length_m": length,
+                        "track_type": kind,
+                        "type_evidence": evidence,
                     }
                     library.edge_lines[ident] = line_id
                     record["edge_ids"].append(ident)
@@ -272,7 +282,7 @@ class DiskRailLineLibrary:
                     library.split_nodes.add(node)
         return library
 
-    def resolve(self, sequence):
+    def resolve(self, sequence, policy="strict"):
         if not isinstance(sequence, list):
             raise ValueError("通道序列必须是数组")
         ids = [
@@ -282,7 +292,7 @@ class DiskRailLineLibrary:
         ]
         if any(not isinstance(key, str) or key not in self.lines for key in ids):
             raise ValueError("铁路线编号不存在，请先载入相应的铁路数据")
-        return self.selected_library(ids).resolve(sequence)
+        return self.selected_library(ids).resolve(sequence, policy)
 
     def describe(self, path):
         sequence, previous = [], None
@@ -327,7 +337,7 @@ class DiskRailLineLibrary:
                                 "edge_count": count,
                             }
                             for key, name, count in db.execute(
-                                "SELECT * FROM lines ORDER BY id"
+                                "SELECT id,source_name,edge_count FROM lines ORDER BY id"
                             )
                         ),
                     ),

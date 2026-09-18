@@ -61,11 +61,99 @@ def expanded_document(payload):
     result["schema"] = "railscope.rail-plan.v1"
     for train in result["trains"]:
         strict_fields(
-            train, {"id", "route_id", "stops", "extensions"}, set(), "国铁车次"
+            train,
+            {"id", "route_id", "stops", "extensions"},
+            {"station_paths"},
+            "国铁车次",
         )
         if train["route_id"] not in routes:
             raise ValueError("车次引用的共享径路不存在")
         train["path"] = deepcopy(routes[train.pop("route_id")]["path"])
+    return result
+
+
+def train_path(base_path, overrides, edges):
+    """Replace bounded station sections, never change the reusable corridor."""
+    if not isinstance(base_path, list) or not base_path:
+        raise ValueError("车次须有明确物理径路")
+    if not isinstance(overrides, list):
+        raise ValueError("station_paths 必须是数组")
+    lookup = {edge["id"]: edge for edge in edges}
+    boundaries = []
+    for leg in base_path:
+        strict_fields(leg, {"edge_id", "direction"}, set(), "通道轨道区间")
+        if not isinstance(leg["edge_id"], str) or leg["direction"] not in (
+            "forward",
+            "reverse",
+        ):
+            raise ValueError("轨道区间编号或方向无效")
+        edge = lookup.get(leg["edge_id"])
+        if not edge:
+            raise ValueError("通道引用的轨道不存在")
+        a, b = edge["from_node"], edge["to_node"]
+        if leg["direction"] == "reverse":
+            a, b = b, a
+        if boundaries and boundaries[-1] != a:
+            raise ValueError("通道物理连接不连续")
+        if not boundaries:
+            boundaries.append(a)
+        boundaries.append(b)
+    result, cursor = [], 0
+    for section in overrides:
+        strict_fields(
+            section,
+            {"from_node", "to_node", "path", "extensions"},
+            {"sequence"},
+            "车次站场径路",
+        )
+        if not isinstance(section["extensions"], dict):
+            raise ValueError("站场径路扩展必须是对象")
+        if any(type(section[key]) is not int for key in ("from_node", "to_node")):
+            raise ValueError("站场进出端点必须是整数基础设施节点")
+        try:
+            start = boundaries.index(section["from_node"], cursor)
+            end = boundaries.index(section["to_node"], start + 1)
+        except ValueError as error:
+            raise ValueError(
+                "站场端点必须是通道上按方向排列且已经切分的端点；不能重叠"
+            ) from error
+        if section.get("sequence"):
+            validate_corridors(
+                [
+                    {
+                        "id": "station-section",
+                        "path": section["path"],
+                        "sequence": section["sequence"],
+                        "extensions": section["extensions"],
+                    }
+                ],
+                edges,
+            )
+        replacement = section["path"]
+        if not isinstance(replacement, list) or not replacement:
+            raise ValueError("站场径路不能为空")
+        current = section["from_node"]
+        for leg in replacement:
+            strict_fields(leg, {"edge_id", "direction"}, set(), "站场轨道区间")
+            edge = lookup.get(leg["edge_id"])
+            if (
+                not edge
+                or edge["construction"]
+                or leg["direction"] not in ("forward", "reverse")
+            ):
+                raise ValueError("站场径路引用不存在、在建或方向错误的轨道")
+            a, b = edge["from_node"], edge["to_node"]
+            if leg["direction"] == "reverse":
+                a, b = b, a
+            if a != current:
+                raise ValueError("站场径路不连续")
+            current = b
+        if current != section["to_node"]:
+            raise ValueError("站场径路必须回到指定通道端点")
+        result.extend(base_path[cursor:start])
+        result.extend(replacement)
+        cursor = end
+    result.extend(base_path[cursor:])
     return result
 
 
@@ -127,10 +215,26 @@ def compile_rail_plan(payload, edges, points, platforms=()):
         )
         for p in points
     }
-    platform_ids = {p["properties"]["osm_way_id"] for p in platforms}
+    platform_ids = {
+        p["properties"]["osm_way_id"]
+        for p in platforms
+        if "osm_way_id" in p["properties"]
+    }
+    platform_refs = {
+        p["properties"].get("infrastructure_id")
+        or (
+            "way/" + str(p["properties"]["osm_way_id"])
+            if "osm_way_id" in p["properties"]
+            else "relation/" + str(p["properties"].get("osm_relation_id"))
+        )
+        for p in platforms
+    }
     lines, trains, paths = [], [], {}
     for train in payload["trains"]:
-        strict_fields(train, {"id", "path", "stops", "extensions"}, set(), "国铁车次")
+        strict_fields(
+            train, {"id", "path", "stops", "extensions"}, {"station_paths"}, "国铁车次"
+        )
+        train["path"] = train_path(train["path"], train.get("station_paths", []), edges)
         if (
             not isinstance(train["path"], list)
             or not train["path"]
@@ -168,7 +272,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             strict_fields(
                 stop,
                 {"node_id", "arrival_s", "departure_s"},
-                {"platform_id", "extensions", "track_change"},
+                {"platform_id", "platform_ref", "extensions", "track_change"},
                 "国铁经停",
             )
             if type(stop["node_id"]) is not int:
@@ -192,8 +296,16 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             except ValueError as error:
                 raise ValueError("经停/通过节点不在已声明的径路上或站序倒退") from error
             offset = index + 1
-            if "platform_id" in stop and stop["platform_id"] not in platform_ids:
+            if "platform_id" in stop and (
+                type(stop["platform_id"]) is not int
+                or stop["platform_id"] not in platform_ids
+            ):
                 raise ValueError("站台 ID 不在本地真实站台图层中")
+            if "platform_ref" in stop and (
+                not isinstance(stop["platform_ref"], str)
+                or stop["platform_ref"] not in platform_refs
+            ):
+                raise ValueError("站台引用不在共享基础设施库中")
             stations.append(
                 {
                     "id": str(stop["node_id"]),
@@ -230,6 +342,8 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 "variants": [],
                 "path": path,
                 "stations": stations,
+                "resolved_rail_path": deepcopy(train["path"]),
+                "station_paths": deepcopy(train.get("station_paths", [])),
             }
         )
         trains.append(
@@ -286,9 +400,9 @@ def validate_corridors(routes, edges):
             raise ValueError("通道须有明确的单向物理区间组合")
         if "sequence" in route:
             try:
-                from .rail_lines import RailLineLibrary
+                from .rail_lines import RailLineLibrary, resolution_policy
             except ImportError:
-                from rail_lines import RailLineLibrary
+                from rail_lines import RailLineLibrary, resolution_policy
             library = RailLineLibrary(
                 [
                     lookup[leg["edge_id"]]
@@ -297,7 +411,12 @@ def validate_corridors(routes, edges):
                 ],
                 [],
             )
-            if library.resolve(route["sequence"]) != route["path"]:
+            if (
+                library.resolve(
+                    route["sequence"], resolution_policy(route["extensions"])
+                )
+                != route["path"]
+            ):
                 raise ValueError("端点—线路表格与物理通道组合不一致")
         nodes = []
         for leg in route["path"]:

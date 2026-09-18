@@ -57,9 +57,9 @@ def audit(stations, areas):
 
 
 class BoundaryDialog(QDialog):
-    def __init__(self, stations, areas, parent=None):
+    def __init__(self, stations, areas, parent=None, *, records=None):
         super().__init__(parent)
-        self.records = audit(stations, areas)
+        self.records = audit(stations, areas) if records is None else records
         self.setWindowTitle("车站真实轮廓覆盖检查")
         self.resize(1000, 700)
         layout = QVBoxLayout(self)
@@ -68,19 +68,38 @@ class BoundaryDialog(QDialog):
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        table = QTableWidget(len(self.records), 4)
-        table.setHorizontalHeaderLabels(["车站", "OSM 节点", "轮廓状态", "关联线路 ID"])
+        national = records is not None
+        table = QTableWidget(len(self.records), 5 if national else 4)
+        table.setHorizontalHeaderLabels(
+            [
+                "车站",
+                "共用基础设施编号",
+                "轮廓状态",
+                "实际轮廓类型",
+                "高铁属性 / 判定状态",
+            ]
+            if national
+            else ["车站", "OSM 节点", "轮廓状态", "关联线路 ID"]
+        )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(table)
         for row, record in enumerate(self.records):
-            for col, value in enumerate(
-                (
-                    record["name"],
-                    record["osm_node_id"],
-                    record["status"],
-                    ",".join(map(str, record["route_relation_ids"])),
-                )
-            ):
+            values = (
+                record["name"],
+                record.get("osm_node_id", record.get("station_id", "")),
+                record["status"],
+                ",".join(
+                    map(
+                        str,
+                        record.get(
+                            "route_relation_ids", record.get("boundary_types", [])
+                        ),
+                    )
+                ),
+            )
+            if national:
+                values += (record.get("facility_class", "未判定"),)
+            for col, value in enumerate(values):
                 table.setItem(row, col, QTableWidgetItem(str(value)))
         table.setSortingEnabled(True)
         export = QPushButton("导出缺失 / 覆盖清单 JSON…")

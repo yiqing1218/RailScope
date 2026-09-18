@@ -1,6 +1,7 @@
 """Derived UI associations. Raw OSM tags are preserved and never rewritten."""
 
 from collections import defaultdict
+from copy import deepcopy
 import heapq
 import math
 
@@ -16,6 +17,12 @@ def associate_station_areas(areas, stations, grid=None):
         for station in stations:
             x, y = station["geometry"]["coordinates"]
             grid[int(x / 0.005), int(y / 0.005)].append(station)
+    by_node = {
+        s["properties"]["osm_node_id"]: s
+        for values in grid.values()
+        for s in values
+        if "osm_node_id" in s["properties"]
+    }
     for area in areas:
         geometry = area["geometry"]
         polygons = (
@@ -23,7 +30,8 @@ def associate_station_areas(areas, stations, grid=None):
             if geometry["type"] == "MultiPolygon"
             else [geometry["coordinates"]]
         )
-        inside = []
+        explicit_ids = area["properties"].get("member_station_ids", [])
+        inside = [by_node[node] for node in explicit_ids if node in by_node]
         for polygon in polygons:
             ring, holes = polygon[0], polygon[1:]
             xs, ys = zip(*ring)
@@ -66,9 +74,108 @@ def associate_station_areas(areas, stations, grid=None):
             }
         )
         area["properties"]["association_source"] = (
-            "空间派生关联，非 OSM 原始标签" if ids else "尚未关联到线路"
+            "OSM 关系成员关联"
+            if explicit_ids and ids
+            else "空间派生关联，非 OSM 原始标签"
+            if ids
+            else "尚未关联到线路"
         )
     return areas
+
+
+def display_stations(stations, radius_m=350):
+    """One selectable marker per nearby namesake; keep every source member intact."""
+    groups, grid = [], defaultdict(list)
+    for station in sorted(
+        stations, key=lambda s: s["properties"].get("osm_node_id", 0)
+    ):
+        props = station["properties"]
+        name = str(props.get("name", "")).strip().removesuffix("站")
+        coordinate = station["geometry"]["coordinates"]
+        x, y = int(coordinate[0] / 0.005), int(coordinate[1] / 0.005)
+        candidates = [
+            index
+            for a in range(x - 1, x + 2)
+            for b in range(y - 1, y + 2)
+            for index in grid[a, b]
+        ]
+        matches = [
+            index
+            for index in candidates
+            if name
+            and groups[index]["name"] == name
+            and distance_m(groups[index]["coordinate"], coordinate) <= radius_m
+        ]
+        if matches:
+            group = groups[min(matches)]
+        else:
+            group = {"name": name, "coordinate": coordinate, "members": []}
+            grid[x, y].append(len(groups))
+            groups.append(group)
+        group["members"].append(station)
+    result = []
+    for group in groups:
+        members = group["members"]
+        canonical = next(
+            (
+                s
+                for s in members
+                if s["properties"].get("node_tags", {}).get("railway") == "station"
+            ),
+            members[0],
+        )
+        feature = deepcopy(canonical)
+        props = feature["properties"]
+        ids = sorted(s["properties"]["osm_node_id"] for s in members)
+        props["infrastructure_id"] = "metro-station/" + str(ids[0])
+        props["associated_station_ids"] = ids
+        props["route_relation_ids"] = sorted(
+            {
+                rid
+                for s in members
+                for rid in s["properties"].get("route_relation_ids", [])
+            }
+        )
+        props["source_members"] = deepcopy(members)
+        result.append(feature)
+    return result
+
+
+def display_station_areas(areas, stations):
+    """Names and station identities are derived; source names/tags/geometry stay intact."""
+    markers = display_stations(stations)
+    by_node = {
+        node: marker["properties"]
+        for marker in markers
+        for node in marker["properties"]["associated_station_ids"]
+    }
+    result = deepcopy(areas)
+    for feature in result:
+        props = feature["properties"]
+        kind = "way" if "osm_way_id" in props else "relation"
+        number = props.get("osm_" + kind + "_id")
+        if number is None:
+            continue
+        props["infrastructure_id"] = f"{kind}/{number}"
+        matched = {
+            by_node[node]["infrastructure_id"]: by_node[node]
+            for node in props.get("associated_station_ids", [])
+            if node in by_node
+        }
+        props["station_ids"] = sorted(matched)
+        props.setdefault("source_name", props.get("name", ""))
+        names = (
+            " / ".join(sorted({p["name"] for p in matched.values()}))
+            or props["source_name"]
+            or "未关联地铁站"
+        )
+        label = {"platform": "站台", "station_building": "车站建筑"}.get(
+            props.get("boundary_kind"), "站区"
+        )
+        tags = props.get("way_tags", props.get("station_area_tags", {}))
+        ref = tags.get("ref", tags.get("local_ref", ""))
+        props["name"] = f"{names} · {label}{ref} · {props['infrastructure_id']}"
+    return result
 
 
 def contains(ring, point):
@@ -208,6 +315,16 @@ def build_shanghai_lines(catalog, routes, stations):
                     )
                 # Physical path orientation is independent of OSM stop order.
                 projected.sort(key=lambda s: s["distance_m"])
+                if (
+                    ref == "4"
+                    and path["coordinates"][0] == path["coordinates"][-1]
+                    and projected
+                ):
+                    # An explicitly closed physical ring needs its return stop;
+                    # this is an operating occurrence, not a second map POI.
+                    projected.append(
+                        {**projected[0], "distance_m": round(path["length_m"], 3)}
+                    )
                 variants.append(
                     {
                         "path": path,

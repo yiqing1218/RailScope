@@ -66,7 +66,7 @@ OSM 依据：[service](https://wiki.openstreetmap.org/wiki/Key:service)、[highs
 
 已实现的 v2 先把连续物理区间从每个车次抽成共享 `routes`，车次只引用 `route_id` 与经停/通过时刻；导出和保存使用 v2，仍兼容 v1。内存中相同径路共用几何对象，地图参考径路去重显示，不为每个车次生成 GIS 文件。严格字段与 CSV 见 OPERATING_PLAN_STANDARD.md。
 
-以下是更长期的线路区段 / 控制点目录设计，**尚不是现有 v2 中可省略物理径路、只给两端点就执行的格式**：
+已实现 `railscope.rail-corridors.v2` 端点—线路—端点导入，编译时复用基础设施的真实区间，不要求每个车次携带 OSM 几何。表格编排、RL/RS 稳定命名与两种解析策略详见 RAIL_LINE_NAMING_AND_CORRIDORS.md。以下业务控制点及通过时刻体系仍需进一步核验：
 
 基础设施表维护稳定的 `line_id`、`section_id`、`from_control_point_id`、`to_control_point_id`、方向、所属线路、真实几何和底层 OSM 区间映射。控制点包括车站、线路所、接轨点等。基础设施版本必须固定，避免数据更新后同一编号含义漂移。
 

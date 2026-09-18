@@ -51,7 +51,12 @@ from components import Fold, Switch, THEME, switch_row, text_label, GrowingTree
 from geometry import build_demo_path
 from hierarchy import Hierarchy, label_order
 from hierarchy_ui import HierarchyDialog
-from metro_data import associate_station_areas, build_shanghai_lines
+from metro_data import (
+    associate_station_areas,
+    build_shanghai_lines,
+    display_stations,
+    display_station_areas,
+)
 from operating import Plan
 from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
@@ -330,6 +335,10 @@ class Desk(QMainWindow):
         self.manifest = read_json(DATA / "china_metro_import_manifest.json")
         features = read_json(DATA / "china_metro_routes.geojson", EMPTY)["features"]
         stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
+        self.display_stations = {
+            "type": "FeatureCollection",
+            "features": display_stations(stations),
+        }
         self.station_areas = {
             "type": "FeatureCollection",
             "features": associate_station_areas(
@@ -339,6 +348,9 @@ class Desk(QMainWindow):
                 stations,
             ),
         }
+        self.station_areas["features"] = display_station_areas(
+            self.station_areas["features"], stations
+        )
         self.shanghai_lines = build_shanghai_lines(self.catalog, features, stations)
         self.plan = Plan(self.shanghai_lines)
         for line in self.shanghai_lines:
@@ -504,6 +516,7 @@ class Desk(QMainWindow):
         }
         rail = ROOT / "data" / "raw" / "osm" / "beijing_highspeed.geojson"
         sources["areas"] = self.station_areas
+        sources["stations"] = self.display_stations
         sources["construction"] = self.construction
         sources["rail"] = (
             "/data/raw/osm/beijing_highspeed.geojson" if rail.exists() else EMPTY
@@ -513,6 +526,7 @@ class Desk(QMainWindow):
             ("rail", "rail_tracks.geojson"),
             ("railPoints", "rail_points.geojson"),
             ("railPlatforms", "rail_platforms.geojson"),
+            ("railStationAreas", "rail_station_areas.geojson"),
         ]:
             if (rail_data / "rail.sqlite").exists():
                 sources[key] = EMPTY
@@ -716,6 +730,9 @@ class Desk(QMainWindow):
         self.add_action(rail_run, "导出国铁运行计划…", self.rail_operations.export_plan)
         self.add_action(rail_run, "保存国铁计划", self.rail_operations.save)
         self.add_action(
+            rail_run, "编辑当前车次站场径路…", self.rail_operations.edit_station_paths
+        )
+        self.add_action(
             rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references
         )
         run_menu.addSeparator()
@@ -734,6 +751,9 @@ class Desk(QMainWindow):
         self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
         self.add_action(data, "下载 / 提取全国国铁…", self.open_rail_download)
         self.add_action(data, "车站真实轮廓覆盖检查…", self.audit_station_boundaries)
+        self.add_action(
+            data, "全国铁路站区 / 站台轮廓覆盖检查…", self.audit_rail_boundaries
+        )
         self.add_action(data, "查看数据概览", self.show_data_summary)
         self.add_action(data, "导入 GeoJSON 图层…", self.import_file)
         topology = bar.addMenu("拓扑")
@@ -792,6 +812,19 @@ class Desk(QMainWindow):
 
         stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
         BoundaryDialog(stations, self.station_areas["features"], self).exec()
+
+    def audit_rail_boundaries(self):
+        from boundary_ui import BoundaryDialog
+
+        path = active_rail_directory(ROOT) / "rail_boundary_coverage.json"
+        if not path.is_file():
+            QMessageBox.information(
+                self, "尚无铁路轮廓报告", "请先通过文件菜单下载 / 提取全国铁路数据。"
+            )
+            return
+        dialog = BoundaryDialog([], [], self, records=read_json(path, []))
+        dialog.setWindowTitle("全国真实铁路站区 / 站台 · 缺失与覆盖清单")
+        dialog.exec()
 
     def export_plan_references(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -942,10 +975,6 @@ class Desk(QMainWindow):
         )
         layout.addWidget(self.map_rail)
         layout.addWidget(self.run_rail)
-        self.corridor_rail = self.rail_button(
-            "通道", "管理国铁单向运行通道", lambda: self.open_or_toggle(2)
-        )
-        layout.addWidget(self.corridor_rail)
         layout.addStretch()
         self.detail_rail = self.rail_button(
             "详情", "展开或收起右侧对象详情", self.toggle_right
@@ -996,9 +1025,6 @@ class Desk(QMainWindow):
         self.side_pages = QStackedWidget()
         self.side_pages.addWidget(self.map_controls())
         self.side_pages.addWidget(self.run_controls())
-        self.corridor_panel = CorridorPanel(self.rail_operations)
-        self.corridor_panel.selected.connect(self.show_corridor)
-        self.side_pages.addWidget(self.corridor_panel)
         layout.addWidget(self.side_pages, 1)
         return panel
 
@@ -1086,6 +1112,8 @@ class Desk(QMainWindow):
         self.tree.setColumnWidth(1, 62)
         self.populate_tree()
         self.tree.itemDoubleClicked.connect(self.focus_tree_item)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.metro_context_menu)
         layout.addWidget(self.tree)
         self.line_count = text_label("")
         layout.addWidget(self.line_count)
@@ -1094,6 +1122,18 @@ class Desk(QMainWindow):
 
     def route_city(self, route):
         return self.hierarchy.parent(route)[:2]
+
+    def metro_context_menu(self, position):
+        from PySide6.QtWidgets import QMenu
+
+        item = self.tree.itemAt(position)
+        if not item:
+            return
+        self.tree.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("编辑显示名称 / 省市归属…", self.edit_hierarchy)
+        menu.addAction("定位到此线路 / 分组", lambda: self.focus_tree_item(item, 0))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
 
     def edit_hierarchy(self):
         selected = self.tree.currentItem()
@@ -1275,7 +1315,12 @@ class Desk(QMainWindow):
         layout.addWidget(self.run_mode)
         self.run_pages = QStackedWidget()
         self.run_pages.addWidget(self.operations.sidebar())
-        self.run_pages.addWidget(self.rail_operations.sidebar())
+        self.rail_run_tabs = QTabWidget()
+        self.rail_run_tabs.addTab(self.rail_operations.sidebar(), "车次运行")
+        self.corridor_panel = CorridorPanel(self.rail_operations)
+        self.corridor_panel.selected.connect(self.show_corridor)
+        self.rail_run_tabs.addTab(self.corridor_panel, "共享通道")
+        self.run_pages.addWidget(self.rail_run_tabs)
         layout.addWidget(self.run_pages)
         self.run_mode.currentIndexChanged.connect(self.change_run_mode)
         return body
@@ -1347,6 +1392,7 @@ class Desk(QMainWindow):
             ("railConstruction", "在建铁路"),
             ("railPoints", "车站 / 线路所 / 道岔"),
             ("railPlatforms", "真实站台轮廓"),
+            ("railStationAreas", "真实铁路站区 / 建筑轮廓"),
         ]:
             layout.addWidget(self.new_switch(key, title))
         layout.addWidget(
@@ -1481,11 +1527,14 @@ class Desk(QMainWindow):
         self.rail_operations.show_corridor(corridor_id, train_id)
 
     def open_sidebar(self, index):
+        if index == 2:
+            self.open_rail_operations()
+            self.rail_run_tabs.setCurrentIndex(1)
+            return
         self.left.show()
         self.side_pages.setCurrentIndex(index)
         self.map_rail.setChecked(index == 0)
         self.run_rail.setChecked(index == 1)
-        self.corridor_rail.setChecked(index == 2)
         self.side_title.setText(["图层控制", "运行控制", "国铁运行通道"][index])
         self.side_subtitle.setText(
             ["按要素与线路组织地图", "列车展示与车辆图层", "共享单向径路与股道衔接"][
@@ -1514,9 +1563,6 @@ class Desk(QMainWindow):
         )
         self.run_rail.setChecked(
             self.left.isVisible() and self.side_pages.currentIndex() == 1
-        )
-        self.corridor_rail.setChecked(
-            self.left.isVisible() and self.side_pages.currentIndex() == 2
         )
 
     def toggle_right(self):
@@ -2239,8 +2285,9 @@ def main():
                         window.open_sidebar(2)
                         app.processEvents()
                         checks["corridor_navigation_replaces_location"] = (
-                            window.corridor_rail.text() == "通道"
-                            and window.side_pages.currentIndex() == 2
+                            window.side_pages.currentIndex() == 1
+                            and window.run_mode.currentIndex() == 1
+                            and window.rail_run_tabs.currentIndex() == 1
                         )
                         root = window.corridor_panel.tree.topLevelItem(0)
                         root.setExpanded(True)

@@ -60,7 +60,7 @@ def build_index(directory, tracks, points, platforms, edges):
 
 
 def viewport(directory, kind, bbox, zoom):
-    if kind not in ("rail", "railPoints", "railPlatforms"):
+    if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
     if not -180 <= west < east <= 180 or not -90 <= south < north <= 90:
@@ -82,6 +82,11 @@ def viewport(directory, kind, bbox, zoom):
         for feature in features:
             props = feature["properties"]
             props["track_type"] = track_type(props.get("way_tags", props))[0]
+    for feature in features:
+        props = feature["properties"]
+        if "infrastructure_id" not in props:
+            source = "node" if "osm_node_id" in props else "way" if "osm_way_id" in props else "relation"
+            props["infrastructure_id"] = f"{source}/{props.get('osm_'+source+'_id')}"
     if zoom < 10:
         for feature in features:
             if feature["geometry"]["type"] == "LineString":

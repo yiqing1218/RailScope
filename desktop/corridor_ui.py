@@ -1,7 +1,8 @@
-"""Single-workspace rail corridor catalog, independent from layer and running panels."""
+"""Reusable corridor catalog integrated into the national railway running panel."""
 
 from copy import deepcopy
 import sqlite3
+from uuid import uuid4
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget,
@@ -22,9 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import GrowingTree, text_label
+    from .components import GrowingTree, text_label, Switch
+    from .rail_lines import RESOLUTION_KEY
 except ImportError:
-    from components import GrowingTree, text_label
+    from components import GrowingTree, text_label, Switch
+    from rail_lines import RESOLUTION_KEY
 
 
 class SearchChoice(QComboBox):
@@ -109,6 +112,10 @@ class CorridorPanel(QScrollArea):
         self.search.textChanged.connect(self.refresh)
         layout.addWidget(self.search)
         self.tree = GrowingTree()
+        self.tree.setColumnCount(2)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.tree.setColumnWidth(1, 58)
         self.tree.setHeaderHidden(True)
         self.tree.itemClicked.connect(self.choose)
         self.tree.itemDoubleClicked.connect(
@@ -143,6 +150,7 @@ class CorridorPanel(QScrollArea):
             id(payload),
             tuple(t["id"] for t in self.editor.plan.trains),
             self.search.text(),
+            tuple(sorted(self.editor.visible_corridors)),
         )
         if signature == self._signature:
             return
@@ -172,6 +180,9 @@ class CorridorPanel(QScrollArea):
                 continue
             root = QTreeWidgetItem(self.tree, [f"{name} · {len(trains)} 车次"])
             root.setData(0, Qt.ItemDataRole.UserRole, route["id"])
+            switch = Switch(route["id"] in self.editor.visible_corridors)
+            switch.toggled.connect(lambda on, ident=route["id"]: self.editor.set_corridor_visible(ident, on))
+            self.tree.setItemWidget(root, 1, switch)
             root.setToolTip(
                 0,
                 f"{route['id']}\n{len(route['path'])} 个真实物理区间 · 单向 · 变道信息待核对",
@@ -223,7 +234,7 @@ class CorridorPanel(QScrollArea):
         heading = text_label("通道编排")
         heading.setStyleSheet("font-size: 22px; font-weight: 600; color: #163d46;")
         form.addRow(heading)
-        code = QLineEdit(ident or "")
+        code = QLineEdit(ident or "COR-" + uuid4().hex[:12].upper())
         code.setObjectName("corridorId")
         code.setPlaceholderText("唯一编号，例如 COR-JINGHU-DOWN")
         code.setReadOnly(bool(ident))
@@ -231,6 +242,30 @@ class CorridorPanel(QScrollArea):
         name = QLineEdit(route.get("name", ident) if route else "")
         name.setObjectName("corridorName")
         form.addRow("通道名称", name)
+        manual_name = [bool(route)]
+        name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
+        policy = QComboBox()
+        policy.addItem("主线几何拼接 · 沿所选线路组合", "mainline")
+        policy.addItem("精确股道 · 多解时补充端点", "strict")
+        if (
+            route
+            and route["extensions"].get(RESOLUTION_KEY, {}).get("policy") == "strict"
+        ):
+            policy.setCurrentIndex(1)
+        form.addRow("拼接方式", policy)
+        source = (
+            "已导入的全国铁路库"
+            if (self.editor.directory / "rail.sqlite").exists()
+            else "便携参考轨道（尚未导入全国铁路库）"
+        )
+        form.addRow(
+            text_label(
+                "基础设施来源："
+                + source
+                + "。主线拼接用于通道示意，站台和实际股道由车次细化。",
+                wrap=True,
+            )
+        )
         form.addRow(
             text_label(
                 "每行：起点 → 铁路线 → 终点。相邻行必须共用端点；中间不换线的线路所隐含。站台在车次时刻表中填写。已有车次引用的通道改径路时须另建编号。",
@@ -245,6 +280,24 @@ class CorridorPanel(QScrollArea):
             ["起点 / 换线端点", "复用铁路线（稳定编号）", "终点 / 换线端点"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        def suggest_name():
+            if manual_name[0] or not table.rowCount():
+                return
+            start = table.cellWidget(0, 0)
+            end = table.cellWidget(table.rowCount() - 1, 2)
+            if (
+                start
+                and end
+                and start.currentData() in library.nodes
+                and end.currentData() in library.nodes
+            ):
+                name.setText(
+                    library.nodes[start.currentData()]
+                    + " → "
+                    + library.nodes[end.currentData()]
+                    + " · 单向通道"
+                )
 
         def add_row(a=None, line=None, b=None):
             row = table.rowCount()
@@ -284,7 +337,9 @@ class CorridorPanel(QScrollArea):
                 )
                 choices[col] = combo
                 table.setCellWidget(row, col, combo)
+                combo.currentIndexChanged.connect(suggest_name)
             table.setRowHeight(row, 52)
+            suggest_name()
 
         for index in range(1, len(sequence), 2):
             add_row(
@@ -359,8 +414,11 @@ class CorridorPanel(QScrollArea):
 
         def accept():
             try:
-                if not code.text().strip() or not name.text().strip():
-                    raise ValueError("请填写唯一通道编号和通道名称")
+                if not code.text().strip():
+                    code.setText("COR-" + uuid4().hex[:12].upper())
+                if not name.text().strip():
+                    manual_name[0] = False
+                    suggest_name()
                 if not table.rowCount():
                     raise ValueError("至少添加一行起点—铁路线—终点")
                 result = []
@@ -387,6 +445,8 @@ class CorridorPanel(QScrollArea):
                             {"kind": "endpoint", "node_id": b},
                         ]
                     )
+                if not name.text().strip():
+                    name.setText(library.nodes[result[0]["node_id"]] + " → " + library.nodes[result[-1]["node_id"]] + " · 单向通道")
                 payload = {
                     "schema": "railscope.rail-corridors.v2",
                     "source": "用户编辑端点—线路组合；非实际联锁进路",
@@ -402,6 +462,9 @@ class CorridorPanel(QScrollArea):
                             else {},
                         }
                     ],
+                }
+                payload["corridors"][0]["extensions"][RESOLUTION_KEY] = {
+                    "policy": policy.currentData()
                 }
                 self.editor.merge_corridors(payload, interactive=True)
                 dialog.accept()

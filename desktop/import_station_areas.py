@@ -54,6 +54,33 @@ def extract(pbf, output, previous=None):
         if stations_path.exists()
         else []
     )
+    by_station = {s["properties"]["osm_node_id"]: s for s in known_stations}
+    members = defaultdict(set)
+    # Membership catches platforms whose POI is outside the polygon or whose
+    # own tags omit subway=yes. Never infer a footprint from a stop node.
+    relations = (
+        osmium.FileProcessor(str(native_path(pbf)))
+        .with_filter(osmium.filter.EntityFilter(osmium.osm.RELATION))
+        .with_filter(
+            osmium.filter.TagFilter(
+                ("public_transport", "stop_area"),
+                ("route", "subway"),
+                ("route", "light_rail"),
+            )
+        )
+    )
+    for relation in relations:
+        station_ids = {
+            m.ref for m in relation.members if m.type == "n" and m.ref in by_station
+        }
+        for member in relation.members:
+            if member.type == "w" and (
+                relation.tags.get("public_transport") == "stop_area"
+                or member.role.startswith("platform")
+            ):
+                members["way", member.ref].update(station_ids)
+            elif member.type == "r" and member.role.startswith("platform"):
+                members["relation", member.ref].update(station_ids)
     station_grid = defaultdict(list)
     for station in known_stations:
         x, y = station["geometry"]["coordinates"]
@@ -102,11 +129,12 @@ def extract(pbf, output, previous=None):
                     "source": "OpenStreetMap",
                     "attribution": "© OpenStreetMap contributors",
                     "license": "ODbL 1.0",
+                    "member_station_ids": sorted(members[kind, area.orig_id()]),
                 },
                 "geometry": geometry,
             }
+            associate_station_areas([feature], [], grid=station_grid)
             if not explicit and not is_metro_station_area_tags(raw):
-                associate_station_areas([feature], [], grid=station_grid)
                 if not feature["properties"].get("route_relation_ids"):
                     continue
                 feature["properties"]["mode_source"] = "空间关联已知地铁站，待人工复核"

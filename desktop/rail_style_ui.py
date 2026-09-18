@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QLabel,
     QHeaderView,
+    QComboBox,
 )
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt
@@ -26,15 +27,37 @@ except ImportError:
 
 
 def defaults():
-    return {name: {"color": "#667887", "width": 2.0} for name in TRACK_TYPES}
+    colors = {
+        "高速铁路线": "#c52c3b",
+        "普速铁路线": "#283541",
+        "货运铁路线": "#78532c",
+        "联络线 / 匝道": "#75609a",
+        "支线 / 岔道": "#557a69",
+        "渡线 / 道岔连接轨": "#e09036",
+        "高速铁路站场股道": "#b75964",
+    }
+    return {
+        name: {
+            "color": colors.get(name, "#667887"),
+            "width": 2.5,
+            "pattern": "alternating",
+        }
+        for name in TRACK_TYPES
+    }
 
 
 def validate_styles(value):
     if not isinstance(value, dict) or set(value) != set(TRACK_TYPES):
         raise ValueError("铁路样式必须完整包含所有轨道类型")
     for item in value.values():
-        if not isinstance(item, dict) or set(item) != {"color", "width"}:
-            raise ValueError("样式只能包含 color 和 width")
+        if (
+            not isinstance(item, dict)
+            or not {"color", "width"}.issubset(item)
+            or set(item) - {"color", "width", "pattern"}
+        ):
+            raise ValueError("样式只能包含 color、width 和 pattern")
+        if item.get("pattern", "alternating") not in ("alternating", "solid"):
+            raise ValueError("pattern 为 alternating 或 solid")
         if not isinstance(item["color"], str) or not re.fullmatch(
             r"#[0-9a-fA-F]{6}", item["color"]
         ):
@@ -62,8 +85,8 @@ class RailStyleDialog(QDialog):
         self.resize(640, 560)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("设置颜色与基准线宽；远景自动细化。在建线路保留虚线。"))
-        table = QTableWidget(len(TRACK_TYPES), 3)
-        table.setHorizontalHeaderLabels(["轨道类型", "颜色", "线宽 px"])
+        table = QTableWidget(len(TRACK_TYPES), 4)
+        table.setHorizontalHeaderLabels(["轨道类型", "颜色", "线宽 px", "轨道样式"])
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().hide()
         self.controls = {}
@@ -82,7 +105,12 @@ class RailStyleDialog(QDialog):
             width.setValue(styles[name]["width"])
             table.setCellWidget(row, 2, width)
             table.setRowHeight(row, 40)
-            self.controls[name] = color, width
+            pattern = QComboBox()
+            pattern.addItem("彩白相间", "alternating")
+            pattern.addItem("实线", "solid")
+            pattern.setCurrentIndex(1 if styles[name].get("pattern") == "solid" else 0)
+            table.setCellWidget(row, 3, pattern)
+            self.controls[name] = color, width, pattern
         layout.addWidget(table)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -102,14 +130,19 @@ class RailStyleDialog(QDialog):
             button.setText(color.name())
 
     def reset(self):
-        for name, (color, width) in self.controls.items():
+        for name, (color, width, pattern) in self.controls.items():
             color.setText(defaults()[name]["color"])
             width.setValue(defaults()[name]["width"])
+            pattern.setCurrentIndex(0)
 
     def value(self):
         return validate_styles(
             {
-                name: {"color": color.text(), "width": width.value()}
-                for name, (color, width) in self.controls.items()
+                name: {
+                    "color": color.text(),
+                    "width": width.value(),
+                    "pattern": pattern.currentData(),
+                }
+                for name, (color, width, pattern) in self.controls.items()
             }
         )
