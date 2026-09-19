@@ -24,6 +24,9 @@ class InfrastructureLine:
     mode: str
     railway_type: str | None = None
     source_id: str | None = None
+    construction_status: str = "unknown"
+    verification_status: str = "unverified"
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,9 @@ class NetworkNode:
     mode: str = "rail"
     node_type: str = "junction"
     station_id: str | None = None
+    source_id: str | None = None
+    source_node_ids: tuple[str, ...] = ()
+    snapshot_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,13 @@ class NetworkEdge:
     direction: str = "both"
     infrastructure_line_id: str | None = None
     source_id: str | None = None
+    construction_status: str = "operating"
+    snapshot_id: str | None = None
+    osm_way_id: str | None = None
+    osm_node_ids: tuple[str, ...] = ()
+    source_tags: dict = field(default_factory=dict)
+    verification_status: str = "unverified"
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +73,14 @@ class Station:
     anchor_node_id: str
     mode: str = "rail"
     code: str | None = None
+    source_member_ids: tuple[str, ...] = ()
+    verification_status: str = "unverified"
+    source_id: str | None = None
+    confidence: float | None = None
+
+    @property
+    def anchor_point(self):
+        return (self.lon, self.lat)
 
 
 @dataclass(frozen=True)
@@ -71,6 +92,12 @@ class TrainRun:
     destination_station_id: str
     route_path_id: str | None = None
     train_length_m: float | None = None
+    service_id: str | None = None
+    corridor_id: str | None = None
+    internal_train_no: str | None = None
+    source_id: str | None = None
+    source_version: str | None = None
+    verification_status: str = "unverified"
 
 
 @dataclass(frozen=True)
@@ -82,6 +109,8 @@ class StopTime:
     departure_time_s: int | None
     scheduled_distance_m: float | None = None
     station_track_id: str | None = None
+    platform_id: str | None = None
+    station_route_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +129,105 @@ class RoutePath:
     total_length_m: float
     origin_station_id: str
     destination_station_id: str
+
+
+# Desktop DTOs and SQL/PostGIS rows adapt to these same domain objects.
+AtomicEdge = NetworkEdge
+LogicalStation = Station
+
+
+@dataclass(frozen=True)
+class DatasetSnapshot:
+    id: str
+    dataset_id: str
+    source: str
+    retrieved_at: str
+    effective_date: str
+    version: str
+
+
+@dataclass(frozen=True)
+class LineMembership:
+    edge_id: str
+    line_id: str
+    source_id: str | None = None
+    verification_status: str = "unverified"
+
+
+@dataclass(frozen=True)
+class RouteSection:
+    id: str
+    edge_refs: tuple[RoutePathEdge, ...]
+    origin_node_id: str
+    destination_node_id: str
+
+
+@dataclass(frozen=True)
+class Corridor:
+    """One complete directed physical path; intermediate stations are implicit."""
+    id: str
+    name: str
+    edge_refs: tuple[RoutePathEdge, ...]
+    origin_node_id: str
+    destination_node_id: str
+    snapshot_id: str | None = None
+    source_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class StationRoute:
+    id: str
+    station_id: str
+    edge_refs: tuple[RoutePathEdge, ...]
+    entry_node_id: str
+    exit_node_id: str
+    verification_status: str = "unverified"
+
+
+@dataclass(frozen=True)
+class TrainService:
+    id: str
+    train_code: str
+    internal_train_no: str | None = None
+    source_id: str | None = None
+    source_version: str | None = None
+
+
+@dataclass(frozen=True)
+class StationArea:
+    id: str
+    station_id: str
+    area_type: str
+    geometry: dict
+    source_id: str
+    verification_status: str = "unverified"
+
+
+@dataclass(frozen=True)
+class Platform:
+    id: str
+    station_id: str
+    name: str
+    area_id: str | None = None
+    source_id: str | None = None
+
+
+@dataclass(frozen=True)
+class StopPosition:
+    id: str
+    station_id: str
+    node_id: str
+
+
+@dataclass(frozen=True)
+class Entrance:
+    id: str
+    station_id: str
+    lon: float
+    lat: float
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)

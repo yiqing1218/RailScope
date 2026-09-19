@@ -68,6 +68,7 @@ from layer_state import initial_visibility, editor_sizes
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
+from railscope.services.stations import StationRegistry
 
 EMPTY = {"type": "FeatureCollection", "features": []}
 DATA = active_directory(ROOT)
@@ -335,9 +336,10 @@ class Desk(QMainWindow):
         self.manifest = read_json(DATA / "china_metro_import_manifest.json")
         features = read_json(DATA / "china_metro_routes.geojson", EMPTY)["features"]
         stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
+        self.station_registry = StationRegistry(ROOT / "data/user_settings/workspace.sqlite")
         self.display_stations = {
             "type": "FeatureCollection",
-            "features": display_stations(stations),
+            "features": display_stations(stations, registry=self.station_registry),
         }
         self.station_areas = {
             "type": "FeatureCollection",
@@ -349,7 +351,7 @@ class Desk(QMainWindow):
             ),
         }
         self.station_areas["features"] = display_station_areas(
-            self.station_areas["features"], stations
+            self.station_areas["features"], stations, registry=self.station_registry
         )
         self.shanghai_lines = build_shanghai_lines(self.catalog, features, stations)
         self.plan = Plan(self.shanghai_lines)
@@ -730,7 +732,7 @@ class Desk(QMainWindow):
         self.add_action(rail_run, "导出国铁运行计划…", self.rail_operations.export_plan)
         self.add_action(rail_run, "保存国铁计划", self.rail_operations.save)
         self.add_action(
-            rail_run, "编辑当前车次站场径路…", self.rail_operations.edit_station_paths
+            rail_run, "编辑当前车次停站 / 站台 / 到发线…", self.rail_operations.edit_station_paths
         )
         self.add_action(
             rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references

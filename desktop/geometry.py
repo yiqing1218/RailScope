@@ -1,17 +1,6 @@
-"""Measured polyline interpolation used by the single-train demonstration."""
+"""Desktop path assembly using the shared backend simulation geometry."""
 
-import bisect
-import math
-
-
-def distance_m(a, b):
-    lat1, lat2 = math.radians(a[1]), math.radians(b[1])
-    dlat, dlon = lat2 - lat1, math.radians(b[0] - a[0])
-    h = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    )
-    return 6371008.8 * 2 * math.asin(min(1, math.sqrt(h)))
+from railscope.services.simulation.geometry import distance_m, interpolate
 
 
 def build_demo_path(features, relation_id=199200):
@@ -46,15 +35,3 @@ def build_demo_path(features, relation_id=199200):
         "length_m": cumulative[-1],
         "relation_id": relation_id,
     }
-
-
-def interpolate(path, distance):
-    distance = max(0, min(path["length_m"], distance))
-    index = min(
-        len(path["coordinates"]) - 2,
-        max(0, bisect.bisect_right(path["cumulative"], distance) - 1),
-    )
-    a, b = path["coordinates"][index : index + 2]
-    span = path["cumulative"][index + 1] - path["cumulative"][index]
-    ratio = (distance - path["cumulative"][index]) / span if span else 0
-    return [a[0] + (b[0] - a[0]) * ratio, a[1] + (b[1] - a[1]) * ratio]

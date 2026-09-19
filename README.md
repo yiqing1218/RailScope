@@ -17,7 +17,7 @@ G1 已内置：**运行 → 国铁 · 车次 / 跨线运行图 → 打开国铁�
 
 地铁与国铁运行菜单、计划和时钟独立。国铁按车次选择独立时刻表 / 运行图，一车次对应一列车；工作台可手动新增车次，运行菜单可批量导入严格 CSV 表。共享径路 JSON v2 避免每个车次重复声明轨道；兼容 v1。变道信息预留，不表示已验证真实股道。铁路目录先分轨道类型，高速主线继续按八纵八横整理；地图菜单可按类型设置颜色 / 线宽。
 
-国铁采用三层结构：**物理铁路线 / 轨道 → 单向运行通道 → 车次**。左侧“通道”与“图层 / 运行”平行，替代原“定位”；以起点—铁路线—终点表格编排通道，支持搜索和组合段排序。通道独立导入 / 导出在“文件”菜单，支持 `railscope.rail-corridors.v2` JSON 和严格 CSV，兼容旧 v1。一个运行通道可以组合多条铁路线，不等于八纵八横规划分类。选择车次或地图中的国铁列车，会显示其共享通道；反向运行须使用另一个单向通道。站台在各车次时刻表中填写。详见 [交换标准](docs/OPERATING_PLAN_STANDARD.md)。
+国铁采用三层结构：**稳定物理 NetworkEdge → 单向完整 Corridor → 具体 TrainRun**。左侧“通道”以起点—铁路线—终点表格编排，保存结果是从起点边界到终点边界的完整连续 edge 序列；经过中间车站不拆 CorridorSegment。直达、大站停和站站停车次可以引用同一 Corridor，仅 stops 不同；反向或跨线运行另建完整 Corridor。站台、到发线和车站进路在各车次时刻表中填写。通道独立导入 / 导出支持 `railscope.rail-corridors.v2` JSON 和严格 CSV，兼容旧 v1。详见 [交换标准](docs/OPERATING_PLAN_STANDARD.md)。
 
 RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway

@@ -5,6 +5,16 @@ from .domain import *
 
 @dataclass
 class RailRepository:
+    snapshots: dict[str, DatasetSnapshot] = field(default_factory=dict)
+    memberships: list[LineMembership] = field(default_factory=list)
+    sections: dict[str, RouteSection] = field(default_factory=dict)
+    corridors: dict[str, Corridor] = field(default_factory=dict)
+    station_routes: dict[str, StationRoute] = field(default_factory=dict)
+    train_services: dict[str, TrainService] = field(default_factory=dict)
+    station_areas: dict[str, StationArea] = field(default_factory=dict)
+    platforms: dict[str, Platform] = field(default_factory=dict)
+    stop_positions: dict[str, StopPosition] = field(default_factory=dict)
+    entrances: dict[str, Entrance] = field(default_factory=dict)
     sources: dict[str, DataSource] = field(default_factory=dict)
     lines: dict[str, InfrastructureLine] = field(default_factory=dict)
     nodes: dict[str, NetworkNode] = field(default_factory=dict)

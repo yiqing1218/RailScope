@@ -33,21 +33,21 @@ UTF-8 JSON，不接受重复键、NaN、Infinity。时间为从运营日 00:00 �
 
 ## 国铁文件
 
-v2 顶层必填且只允许：`schema`（railscope.rail-plan.v2）、`service_date`（YYYY-MM-DD）、`timezone`（Asia/Shanghai）、`source`、`required_capabilities`、`extensions`、`routes`、`trains`。
+v2 顶层必填：`schema`（railscope.rail-plan.v2）、`service_date`（YYYY-MM-DD）、`timezone`（Asia/Shanghai）、`source`、`required_capabilities`、`extensions`、`routes`、`trains`；可选 `station_routes`。
 
-`routes` 是**单向运行通道**数组。每项必填 `id`（非空唯一字符串）、`path`（下述有序区间数组）、`extensions`（命名空间对象），可选 `name`（非空名称）、`track_changes`（下述共享变道数组）。同一方向的通道可以组合不同铁路线、供多个车次引用；基础设施和几何不随新增车次复制为 GIS 文件。反向运行另建一个通道，将 path 顺序反转、每一段方向取反；当前拒绝首尾同一节点的循环通道。
+`routes` 是**单向完整运行通道（Corridor）**数组。每项必填 `id`（非空唯一字符串）、`path`（从起点边界到终点边界的完整有序 NetworkEdge 数组）、`extensions`（命名空间对象），可选 `name`。同一方向的通道可以组合不同铁路线、供多个车次引用；经过中间车站、线路所或道岔不要求拆成 CorridorSegment。反向运行另建一个完整通道，将 path 顺序反转、每一段方向取反；跨线车次也应引用另一条已保存的完整通道，不能在 TrainRun 中临时拼接路径。
 
 这是“物理铁路线 / 轨道 → 单向运行通道 → 车次”三层结构。运行通道不是八纵八横规划分类；前者供车次引用，后者仅整理物理图层。选择车次时，地图展示它引用的共享通道与其他共用车次，不生成专属 OSM 图层。
 
-v2 每个车次必填且只允许 `id`、`route_id`、`stops`、`extensions`。`route_id` 必须引用 routes 中已注册的径路。车次编号唯一，一个编号固定对应一列车、一份时刻表和一幅运行图；国铁不接受额外 vehicles 数组。v1 仍可导入，顶层无 routes，每个车次含 path 而非 route_id。软件保存为 v2。
+v2 每个车次必填且只允许 `id`、`route_id`、`stops`、`extensions`。`route_id` 必须引用 routes 中已注册的完整通道。桌面兼容格式中 `id` 在单一 `service_date` 文件内唯一；进入共享领域模型后会规范化为独立 `TrainService` 与 `TrainRun`，运行实例由服务日、公众车次号和内部车次号共同区分。v1 仍可导入，旧的逐车 path 或 `station_paths` 只作为迁移输入；迁移会生成另一条完整 Corridor，运行时不临时替换原通道片段。
 
 保留自由度的无损交换使用 JSON；任意未来数据须放在命名空间 extensions，不得增加未知标准字段。
 
-`path` 是按行驶顺序排列的区间数组；每项必填 `edge_id` 与 `direction`（forward/reverse）。edge_id 从导出的物理区间目录获取；方向相对区间 from_node→to_node。相邻区间必须共享同一个真实 OSM 节点，禁止用距离接近代替连接；在建区间禁止排运营车次。区间可以属于不同铁路，不要求整趟列车只属于一条线路。
+`path` 是按行驶顺序排列的完整物理区间数组；每项必填稳定 RailScope `edge_id` 与 `direction`（forward/reverse）。OSM Way/Node ID 只作为来源别名，不是长期业务主键。相邻区间必须共享同一个真实拓扑节点，禁止用距离接近代替连接；construction、planned、disused、unknown 区间默认禁止排正式运营车次。
 
-`stops` 是经停和通过的时刻控制点，必填整数 `node_id`、`arrival_s`、`departure_s`；可选整数 `platform_id`（真实平台 OSM way ID）和 `extensions`。控制点必须按顺序位于声明径路中。需要线路所处分段展示时，将它也加入 stops；通过时 arrival_s=departure_s。站名相同不足以建立拓扑连接。站台 ID 的存在校验不等于已验证站台与进路相接，须人工核对。
+`stops` 是具体 TrainRun 的经停和通过计划，必填整数 `node_id`、`arrival_s`、`departure_s`；可选 `platform_id`/`platform_ref`、`station_track_id`、`station_route_id` 和 `extensions`。控制点必须按顺序位于完整 Corridor 上；不停车的中间车站无需写入 stops。站台、到发线和车站进路都属于车次，不属于长距离 Corridor。`station_route_id` 只能引用已登记且包含在完整 Corridor 中的车站内路径；若实际物理路径不同，须另建完整 Corridor。
 
-stops 另可选 `track_change`，提供时必须且只允许四个字符串字段：`from_track`、`to_track`、`via_node`、`time`。未知均用 `""`；via_node 非空必须为数字 OSM 节点 ID，time 非空必须为 HH:MM[:SS]（00–47 时）。前三项兼容旧版车次备注，新计划应将静态位置 / 股道信息放在通道中；time 是本车次执行时刻。时刻表优先显示共享通道股道与道岔信息，这三列只读；在“通道”面板统一编辑。本车次变道时刻可直接编辑，尚不验证真实进路或执行变道。
+stops 另可选旧版 `track_change` 四个字符串字段，用于兼容既有文件。新计划应使用该 stop 自身的 `station_track_id`、`station_route_id` 和站台引用；这些字段不会改变 Corridor 的物理 path。
 
 ### 独立国铁运行通道 JSON
 
@@ -55,7 +55,7 @@ stops 另可选 `track_change`，提供时必须且只允许四个字符串字�
 
 顶层必填且只允许 `schema`（固定 `railscope.rail-corridors.v1`）、`source`（来源字符串）、`required_capabilities`（当前必须 []）、`extensions`（命名空间对象）、`corridors`（数组）。corridors 每项与 rail-plan.v2 的 routes 完全相同，编号就是车次引用的 route_id。允许无引用车次的通道，预览不会自动生成车辆。需先有其引用的真实基础设施，内置 G1 范围内无需全国下载。
 
-通道可选 `track_changes`，每项必填且只允许：
+旧通道可带 `track_changes`，仅作为兼容输入；载入时会复制到对应车次 stop。新建通道不应用它表达停靠股道或站台：
 
 | 字段 | 规则 |
 | --- | --- |
@@ -64,7 +64,7 @@ stops 另可选 `track_change`，提供时必须且只允许四个字符串字�
 | via_node | 整数道岔节点且在通道上，未知为 null |
 | extensions | 命名空间扩展对象 |
 
-通道是共享静态路径，**不含车次绝对变道时刻**。股道 / 道岔位置供所有引用车次共享，具体时间来自该车次时刻表；尚不驱动真实联锁、越行或道岔动作。node_id 在几何上存在不等于实际股道 / 进路已验证。尚未提供时可以省略 track_changes 或写 []，不得猜测填写 G1 的实际进路。
+通道只回答“沿哪些真实轨道、以什么方向、从哪里运行到哪里”。停车、通过、到发时刻、站台、到发线和车站进路由各 TrainRun 定义；尚不驱动真实联锁、越行或道岔动作。
 
 导入是按通道 ID 合并，保留所有已有车次；允许同一 ID 修改名称、变道信息和扩展，不允许覆盖其物理 path。改变物理径路须使用新 ID，避免悄悄改变已有车次。任一通道不连续、在建、节点无效或编号重复，整批拒绝，原计划保留。JSON 扩展原样保存。
 

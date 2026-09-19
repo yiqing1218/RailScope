@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QTableWidget,
     QHeaderView,
-    QPlainTextEdit,
     QLabel,
+    QPushButton,
 )
 
 try:
@@ -28,6 +28,8 @@ try:
         expanded_document,
         shared_document,
         validate_corridors,
+        migrate_legacy_train_paths,
+        resolve_edge_aliases,
     )
     from .operating import strict_fields
     from .rail_tables import merge_csv, export_csv
@@ -41,6 +43,8 @@ except ImportError:
         expanded_document,
         shared_document,
         validate_corridors,
+        migrate_legacy_train_paths,
+        resolve_edge_aliases,
     )
     from operating import strict_fields
     from rail_tables import merge_csv, export_csv
@@ -72,7 +76,10 @@ class RailEditor(OperationsEditor):
 
     def __init__(self, map_view, directory, path):
         self.directory = Path(directory).resolve()
+        self.workspace_identity_path = Path(path).resolve().parent / "workspace.sqlite"
         self.graph = {"edges": [], "points": []}
+        self.domain_repo = None
+        self.domain_bindings = {}
         self.platforms = (
             json.loads(
                 (self.directory / "rail_platforms.geojson").read_text(encoding="utf-8")
@@ -124,6 +131,14 @@ class RailEditor(OperationsEditor):
         )
         return reference["plan"]
 
+    def canonical_repository(self, identity_path):
+        """Expose the shared domain contract; desktop dictionaries are DTOs only."""
+        try:
+            from .domain_adapter import build_repository
+        except ImportError:
+            from domain_adapter import build_repository
+        return build_repository(self.graph, self.document(), identity_path)
+
     def play(self):
         if not self.plan.trains:
             self.message.setText("请在国铁运行菜单导入车次计划，或手动新增车次。")
@@ -160,6 +175,11 @@ class RailEditor(OperationsEditor):
             for section in train.get("station_paths", [])
             for leg in section["path"]
         )
+        required.extend(
+            leg["edge_id"]
+            for route in original_payload.get("station_routes", [])
+            for leg in route["edge_refs"]
+        )
         reference_mode = (
             payload.get("extensions", {})
             .get("railscope.org/reference", {})
@@ -171,7 +191,10 @@ class RailEditor(OperationsEditor):
             if (self.directory / "rail.sqlite").exists()
             else []
         )
-        found = {e["id"] for e in edges}
+        original_payload = resolve_edge_aliases(original_payload, edges)
+        found = {e["id"] for e in edges} | {
+            e["requested_edge_alias"] for e in edges if e.get("requested_edge_alias")
+        }
         missing = set(required) - found
         points = []
         if missing and reference_mode:
@@ -185,6 +208,8 @@ class RailEditor(OperationsEditor):
             missing -= {e["id"] for e in edges}
         if missing:
             raise ValueError("铁路库缺少所引用的物理区间，请先导入对应基础设施")
+        original_payload = migrate_legacy_train_paths(original_payload, edges)
+        payload = expanded_document(original_payload)
         mappings = (
             payload.get("extensions", {})
             .get("railscope.org/assembly", {})
@@ -279,6 +304,9 @@ class RailEditor(OperationsEditor):
         self.plan = plan
         self.base_lines = lines
         self.rail_payload = original_payload
+        self.domain_repo, self.domain_bindings = self.canonical_repository(
+            self.workspace_identity_path
+        )
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.line_combo.blockSignals(True)
@@ -445,6 +473,9 @@ class RailEditor(OperationsEditor):
         body.widget().layout().insertWidget(
             2, switch_row("共享运行通道 / 控制点", self.route_switch)
         )
+        edit_stops = QPushButton("编辑当前车次停站计划…")
+        edit_stops.clicked.connect(self.edit_train_stops)
+        body.widget().layout().insertWidget(3, edit_stops)
         self.time_input.setText(format_time(self.clock))
         return body
 
@@ -1012,7 +1043,7 @@ class RailEditor(OperationsEditor):
     def refresh_table(self):
         super().refresh_table()
         self.table.blockSignals(True)
-        self.table.setColumnCount(12)
+        self.table.setColumnCount(14)
         self.table.setHorizontalHeaderLabels(
             [
                 "车次",
@@ -1027,23 +1058,14 @@ class RailEditor(OperationsEditor):
                 "道岔节点",
                 "变道时刻",
                 "站台 OSM 编号",
+                "到发线编号",
+                "车站进路编号",
             ]
         )
         for column, width in enumerate((75, 45, 40, 105, 80, 80, 55, 70, 70, 95, 80)):
             self.table.setColumnWidth(column, width)
         row = 0
         for train in self.displayed_trains():
-            corridor = next(
-                (
-                    r
-                    for r in (self.rail_payload or {}).get("routes", [])
-                    if r["id"] == self.plan.lines[train["line_id"]].get("corridor_id")
-                ),
-                {},
-            )
-            shared_changes = {
-                c["node_id"]: c for c in corridor.get("track_changes", [])
-            }
             for index, stop in enumerate(train["stops"]):
                 change = (
                     stop.get("extensions", {})
@@ -1053,12 +1075,11 @@ class RailEditor(OperationsEditor):
                 for column, field in enumerate(
                     ("from_track", "to_track", "via_node", "time"), 7
                 ):
-                    shared = shared_changes.get(int(stop["station_id"]), {})
-                    value = change.get(field, shared.get(field, ""))
+                    value = change.get(field, "")
                     item = QTableWidgetItem("" if value is None else str(value))
                     item.setData(Qt.ItemDataRole.UserRole, (train["id"], index))
                     item.setToolTip(
-                        "本车次的停靠股道 / 道岔 / 时刻。未知留空；文字字段不改变动画径路，实体轨道在「编辑车次站场径路」中定义。"
+                        "本车次的停靠股道 / 道岔 / 时刻。旧文字字段仅供参考；真实到发线请填写到发线编号，其他物理路径请另建完整通道。"
                     )
                     self.table.setItem(row, column, item)
                 platform_data = stop.get("extensions", {}).get(
@@ -1073,6 +1094,13 @@ class RailEditor(OperationsEditor):
                     "本车次的真实站台：way/编号 或 relation/编号；兼容旧整数 Way 编号。未知留空，不代表联锁验证。"
                 )
                 self.table.setItem(row, 11, item)
+                for column, key in ((12, "station_track_id"), (13, "station_route_id")):
+                    item = QTableWidgetItem(platform_data.get(key, ""))
+                    item.setData(Qt.ItemDataRole.UserRole, (train["id"], index))
+                    item.setToolTip(
+                        "仅属于本车次停靠计划，引用必须存在且位于完整通道上。"
+                    )
+                    self.table.setItem(row, column, item)
                 row += 1
         self.table.blockSignals(False)
 
@@ -1086,7 +1114,14 @@ class RailEditor(OperationsEditor):
         before = self.snapshot_state()
         previous = deepcopy(original)
         try:
-            if item.column() == 11:
+            if item.column() in (12, 13):
+                key = "station_track_id" if item.column() == 12 else "station_route_id"
+                value = item.text().strip()
+                if value:
+                    original[key] = value
+                else:
+                    original.pop(key, None)
+            elif item.column() == 11:
                 value = item.text().strip()
                 original.pop("platform_id", None)
                 original.pop("platform_ref", None)
@@ -1117,23 +1152,66 @@ class RailEditor(OperationsEditor):
             self.refresh_table()
 
     def edit_station_paths(self):
+        """Keep the existing menu callback while moving choices into train stops."""
+        self.edit_train_stops()
+
+    def set_train_stops(self, train_id, stops):
+        before = self.document()
+        payload = deepcopy(before)
+        train = next(t for t in payload["trains"] if t["id"] == train_id)
+        train["stops"] = deepcopy(stops)
+        self.accept_batch(payload, before, train_id)
+        self.message.setText("已更新本车次停站计划；完整通道及其他车次保持不变")
+
+    def edit_train_stops(self):
         line = self.current_line()
         if not line:
             return
         ident = line["ref"]
+        train = next(t for t in self.document()["trains"] if t["id"] == ident)
         dialog = QDialog(self)
-        dialog.setWindowTitle(ident + " · 站场进出轨道（仅本车次）")
+        dialog.setWindowTitle(ident + " · 停站、站台与到发线")
         dialog.resize(880, 600)
         form = QFormLayout(dialog)
         hint = QLabel(
-            "每段填写 from_node、to_node、sequence、extensions。端点必须是通道上的已切分节点；按端点—线路组合解析现有轨道，不生成新几何。停靠节点必须位于解析后的车次径路上。空数组表示沿用通道主线。"
+            "这里只定义本车次实际停站；未填写的中间车站自然通过，不拆分通道。保留两端即为直达，可添加或删除中间停站。节点必须位于完整通道且顺序一致；其他跨线路径请另建完整通道。"
         )
         hint.setWordWrap(True)
         form.addRow(hint)
-        text = QPlainTextEdit(
-            json.dumps(line.get("station_paths", []), ensure_ascii=False, indent=2)
+        table = QTableWidget(0, 6)
+        table.setHorizontalHeaderLabels(
+            ["停靠节点", "到达", "发车", "站台引用", "到发线编号", "车站进路编号"]
         )
-        form.addRow(text)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        def add_row(stop=None):
+            stop = stop or {}
+            row = table.rowCount()
+            table.insertRow(row)
+            values = [
+                stop.get("node_id", ""),
+                format_time(stop["arrival_s"]) if "arrival_s" in stop else "",
+                format_time(stop["departure_s"]) if "departure_s" in stop else "",
+                stop.get("platform_ref", stop.get("platform_id", "")),
+                stop.get("station_track_id", ""),
+                stop.get("station_route_id", ""),
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+            table.item(row, 0).setData(Qt.ItemDataRole.UserRole, deepcopy(stop))
+
+        for stop in train["stops"]:
+            add_row(stop)
+        form.addRow(table)
+        add = QPushButton("添加停站（按通道方向填写）")
+        add.clicked.connect(lambda: add_row())
+        remove = QPushButton("删除选中停站")
+        remove.clicked.connect(
+            lambda: (
+                table.removeRow(table.currentRow()) if table.currentRow() >= 0 else None
+            )
+        )
+        form.addRow(add, remove)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -1141,28 +1219,41 @@ class RailEditor(OperationsEditor):
 
         def accept():
             try:
-                sections = json.loads(text.toPlainText())
-                if not isinstance(sections, list):
-                    raise ValueError("站场径路必须是数组")
-                library = self.line_library(interactive=True)
-                for section in sections:
-                    strict_fields(
-                        section,
-                        {"from_node", "to_node", "sequence", "extensions"},
-                        {"path"},
-                        "车次站场径路",
+                stops = []
+                for row in range(table.rowCount()):
+                    values = [
+                        table.item(row, column).text().strip() for column in range(6)
+                    ]
+                    stop = deepcopy(
+                        table.item(row, 0).data(Qt.ItemDataRole.UserRole) or {}
                     )
-                    section["path"] = library.resolve(
-                        section["sequence"], resolution_policy(section["extensions"])
+                    stop.update(
+                        node_id=int(values[0]),
+                        arrival_s=parse_time(values[1]),
+                        departure_s=parse_time(values[2]),
                     )
-                before = self.document()
-                payload = deepcopy(before)
-                train = next(t for t in payload["trains"] if t["id"] == ident)
-                train["station_paths"] = sections
-                self.accept_batch(payload, before)
+                    for key in (
+                        "platform_id",
+                        "platform_ref",
+                        "station_track_id",
+                        "station_route_id",
+                    ):
+                        stop.pop(key, None)
+                    if values[3]:
+                        stop[
+                            "platform_id" if values[3].isdigit() else "platform_ref"
+                        ] = int(values[3]) if values[3].isdigit() else values[3]
+                    for column, key in (
+                        (4, "station_track_id"),
+                        (5, "station_route_id"),
+                    ):
+                        if values[column]:
+                            stop[key] = values[column]
+                    stops.append(stop)
+                self.set_train_stops(ident, stops)
                 dialog.accept()
             except (ValueError, KeyError, TypeError, OSError, sqlite3.Error) as error:
-                QMessageBox.warning(dialog, "站場径路未修改", str(error))
+                QMessageBox.warning(dialog, "停站计划未修改", str(error))
 
         buttons.accepted.connect(accept)
         form.addRow(buttons)

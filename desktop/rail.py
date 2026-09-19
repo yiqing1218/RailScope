@@ -32,7 +32,7 @@ def expanded_document(payload):
             "routes",
             "trains",
         },
-        set(),
+        {"station_routes"},
         "国铁共享径路计划",
     )
     if not isinstance(payload["routes"], list) or not isinstance(
@@ -138,7 +138,7 @@ def train_path(base_path, overrides, edges):
             edge = lookup.get(leg["edge_id"])
             if (
                 not edge
-                or edge["construction"]
+                or not edge_is_operating(edge)
                 or leg["direction"] not in ("forward", "reverse")
             ):
                 raise ValueError("站场径路引用不存在、在建或方向错误的轨道")
@@ -179,9 +179,105 @@ def shared_document(payload):
     return result
 
 
+def migrate_legacy_train_paths(payload, edges):
+    """Materialize legacy per-train replacements as reusable complete corridors.
+
+    This is an explicit import adapter: runtime trains never splice their own
+    paths. Original corridors and legacy instructions remain auditable.
+    """
+    result = shared_document(payload)
+    routes = {route["id"]: route for route in result["routes"]}
+    by_path = {
+        tuple((leg["edge_id"], leg["direction"]) for leg in route["path"]): route["id"]
+        for route in result["routes"]
+    }
+    for train in result["trains"]:
+        route = routes[train["route_id"]]
+        # Old shared track choices are copied once into this train's stops.
+        changes = {c["node_id"]: c for c in route.get("track_changes", [])}
+        for stop in train["stops"]:
+            if stop["node_id"] in changes and "track_change" not in stop:
+                change = changes[stop["node_id"]]
+                stop["track_change"] = {
+                    "from_track": change["from_track"],
+                    "to_track": change["to_track"],
+                    "via_node": str(change["via_node"])
+                    if change["via_node"] is not None
+                    else "",
+                    "time": "",
+                }
+        sections = train.pop("station_paths", [])
+        if not sections:
+            continue
+        path = train_path(route["path"], sections, edges)
+        key = tuple((leg["edge_id"], leg["direction"]) for leg in path)
+        if key not in by_path:
+            encoded = json.dumps(path, sort_keys=True, separators=(",", ":"))
+            ident = "route/" + hashlib.sha256(encoded.encode()).hexdigest()[:20]
+            if ident in routes and routes[ident]["path"] != path:
+                raise ValueError("迁移生成的通道编号冲突")
+            candidate = {
+                "id": ident,
+                "name": route.get("name", route["id"]) + " · 完整替代径路",
+                "path": path,
+                "extensions": {
+                    "railscope.org/legacy-path-migration": {
+                        "original_route_id": route["id"]
+                    }
+                },
+            }
+            validate_corridors([candidate], edges)
+            result["routes"].append(candidate)
+            routes[ident] = candidate
+            by_path[key] = ident
+        train["route_id"] = by_path[key]
+        train["extensions"]["railscope.org/legacy-path-migration"] = {
+            "original_route_id": route["id"],
+            "station_paths": sections,
+        }
+    return result
+
+
+def edge_is_operating(edge):
+    return (
+        not edge.get("construction", False)
+        and edge.get("construction_status", "operating") == "operating"
+    )
+
+
+def resolve_edge_aliases(payload, edges):
+    """Migrate legacy OSM-derived edge references to stable internal IDs."""
+    aliases = {
+        edge["requested_edge_alias"]: edge["id"]
+        for edge in edges
+        if edge.get("requested_edge_alias")
+    }
+    if not aliases:
+        return deepcopy(payload)
+    result = deepcopy(payload)
+
+    def update(legs):
+        for leg in legs:
+            if leg.get("edge_id") in aliases:
+                leg["edge_id"] = aliases[leg["edge_id"]]
+
+    for route in result.get("routes", []):
+        update(route.get("path", []))
+    for train in result.get("trains", []):
+        update(train.get("path", []))
+        for section in train.get("station_paths", []):
+            update(section.get("path", []))
+    for route in result.get("station_routes", []):
+        update(route.get("edge_refs", []))
+    result.setdefault("extensions", {}).setdefault(
+        "railscope.org/edge-id-migration", {}
+    )["aliases"] = aliases
+    return result
+
+
 def compile_rail_plan(payload, edges, points, platforms=()):
-    if payload.get("schema") == "railscope.rail-plan.v2":
-        validate_corridors(payload.get("routes", []), edges)
+    payload = migrate_legacy_train_paths(payload, edges)
+    validate_corridors(payload.get("routes", []), edges)
     payload = expanded_document(payload)
     strict_fields(
         payload,
@@ -194,7 +290,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             "required_capabilities",
             "trains",
         },
-        set(),
+        {"station_routes"},
         "国铁运行计划",
     )
     if (
@@ -209,6 +305,39 @@ def compile_rail_plan(payload, edges, points, platforms=()):
     if not isinstance(payload["trains"], list):
         raise ValueError("车次必须是数组")
     edge_lookup = {e["id"]: e for e in edges}
+    station_routes = {}
+    if not isinstance(payload.get("station_routes", []), list):
+        raise ValueError("车站进路目录必须是数组")
+    for route in payload.get("station_routes", []):
+        strict_fields(
+            route,
+            {"id", "station_id", "entry_node_id", "exit_node_id", "edge_refs"},
+            {"verification_status"},
+            "车站进路",
+        )
+        if (
+            not isinstance(route["id"], str)
+            or not route["id"].strip()
+            or route["id"] in station_routes
+        ):
+            raise ValueError("车站进路编号为空或重复")
+        if not isinstance(route["station_id"], str) or not route["station_id"].strip():
+            raise ValueError("车站进路须引用车站编号")
+        validate_corridors(
+            [{"id": route["id"], "path": route["edge_refs"], "extensions": {}}], edges
+        )
+        first, last = route["edge_refs"][0], route["edge_refs"][-1]
+        start = edge_lookup[first["edge_id"]][
+            "from_node" if first["direction"] == "forward" else "to_node"
+        ]
+        end = edge_lookup[last["edge_id"]][
+            "to_node" if last["direction"] == "forward" else "from_node"
+        ]
+        if str(start) != str(route["entry_node_id"]) or str(end) != str(
+            route["exit_node_id"]
+        ):
+            raise ValueError("车站进路端点与轨道不一致")
+        station_routes[route["id"]] = route
     names = {
         p["properties"]["osm_node_id"]: p["properties"].get(
             "name", str(p["properties"]["osm_node_id"])
@@ -245,7 +374,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
         for leg in train["path"]:
             strict_fields(leg, {"edge_id", "direction"}, set(), "径路区间")
             edge = edge_lookup.get(leg["edge_id"])
-            if not edge or edge["construction"]:
+            if not edge or not edge_is_operating(edge):
                 raise ValueError("径路区间不存在或尚在建设，不能运营")
             if leg["direction"] not in ("forward", "reverse"):
                 raise ValueError("区间方向无效")
@@ -272,7 +401,14 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             strict_fields(
                 stop,
                 {"node_id", "arrival_s", "departure_s"},
-                {"platform_id", "platform_ref", "extensions", "track_change"},
+                {
+                    "platform_id",
+                    "platform_ref",
+                    "extensions",
+                    "track_change",
+                    "station_track_id",
+                    "station_route_id",
+                },
                 "国铁经停",
             )
             if type(stop["node_id"]) is not int:
@@ -296,6 +432,45 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             except ValueError as error:
                 raise ValueError("经停/通过节点不在已声明的径路上或站序倒退") from error
             offset = index + 1
+            if "station_track_id" in stop:
+                if not isinstance(stop["station_track_id"], str):
+                    raise ValueError("到发线编号必须是字符串")
+                track = edge_lookup.get(stop["station_track_id"])
+                if not track or stop["station_track_id"] not in {
+                    leg["edge_id"] for leg in train["path"]
+                }:
+                    raise ValueError("到发线必须引用本通道上的真实轨道")
+                if stop["node_id"] not in track.get(
+                    "node_ids", [track["from_node"], track["to_node"]]
+                ):
+                    raise ValueError("停靠节点不在指定到发线上")
+            if "station_route_id" in stop:
+                if not isinstance(stop["station_route_id"], str):
+                    raise ValueError("车站进路编号必须是字符串")
+                route = station_routes.get(stop["station_route_id"])
+                if not route:
+                    raise ValueError("车次引用的车站进路不存在")
+                refs = route["edge_refs"]
+                positions = [
+                    i
+                    for i in range(len(train["path"]) - len(refs) + 1)
+                    if train["path"][i : i + len(refs)] == refs
+                ]
+                if not positions:
+                    raise ValueError("车站进路须包含于完整通道；其他物理路径请另建通道")
+                route_nodes = {
+                    node
+                    for leg in refs
+                    for node in edge_lookup[leg["edge_id"]].get(
+                        "node_ids",
+                        [
+                            edge_lookup[leg["edge_id"]]["from_node"],
+                            edge_lookup[leg["edge_id"]]["to_node"],
+                        ],
+                    )
+                }
+                if stop["node_id"] not in route_nodes:
+                    raise ValueError("停靠节点不在车站进路上")
             if "platform_id" in stop and (
                 type(stop["platform_id"]) is not int
                 or stop["platform_id"] not in platform_ids
@@ -424,7 +599,7 @@ def validate_corridors(routes, edges):
             edge = lookup.get(leg["edge_id"])
             if (
                 not edge
-                or edge["construction"]
+                or not edge_is_operating(edge)
                 or leg["direction"] not in ("forward", "reverse")
             ):
                 raise ValueError("通道区间不存在、在建或方向无效")

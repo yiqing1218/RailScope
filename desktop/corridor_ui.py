@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QComboBox,
     QCompleter,
+    QMenu,
 )
 
 try:
@@ -99,7 +100,7 @@ class CorridorPanel(QScrollArea):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
         layout.addWidget(
-            text_label("固定轨道 → 单向运行通道 → 多个车次", "muted", True)
+            text_label("完整物理路径 → 单向 Corridor → 多个 TrainRun", "muted", True)
         )
         layout.addWidget(
             text_label(
@@ -121,6 +122,8 @@ class CorridorPanel(QScrollArea):
         self.tree.itemDoubleClicked.connect(
             lambda item, column: self.edit_table(item.data(0, Qt.ItemDataRole.UserRole))
         )
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.context_menu)
         layout.addWidget(self.tree)
         edit = QPushButton("编辑端点—线路通道表格…")
         edit.clicked.connect(self.edit_selected)
@@ -185,7 +188,7 @@ class CorridorPanel(QScrollArea):
             self.tree.setItemWidget(root, 1, switch)
             root.setToolTip(
                 0,
-                f"{route['id']}\n{len(route['path'])} 个真实物理区间 · 单向 · 变道信息待核对",
+                f"{route['id']}\n{len(route['path'])} 个真实物理区间 · 完整连续 · 单向",
             )
             root.setExpanded(bool(query) or route["id"] in expanded)
             if route["id"] == selected_id:
@@ -201,6 +204,39 @@ class CorridorPanel(QScrollArea):
             item.data(0, Qt.ItemDataRole.UserRole),
             item.data(0, Qt.ItemDataRole.UserRole + 1) or "",
         )
+
+    def context_menu(self, position):
+        item = self.tree.itemAt(position)
+        if not item:
+            return
+        route_id = item.data(0, Qt.ItemDataRole.UserRole)
+        train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        menu = QMenu(self)
+        menu.addAction("查看引用关系…", lambda: self.show_references(route_id, train_id))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def show_references(self, route_id, selected_train=""):
+        route = next(r for r in self.editor.rail_payload["routes"] if r["id"] == route_id)
+        trains = [
+            train["id"] for train in self.editor.rail_payload["trains"]
+            if train["route_id"] == route_id
+        ]
+        station_routes = sorted({
+            stop["station_route_id"]
+            for train in self.editor.rail_payload["trains"] if train["route_id"] == route_id
+            for stop in train["stops"] if stop.get("station_route_id")
+        })
+        detail = (
+            f"Corridor：{route.get('name', route_id)}\n"
+            f"稳定编号：{route_id}\n"
+            f"物理 NetworkEdge：{len(route['path'])} 个\n"
+            f"引用 TrainRun：{', '.join(trains) if trains else '无'}\n"
+            f"引用 StationRoute：{', '.join(station_routes) if station_routes else '无'}"
+        )
+        if selected_train:
+            detail += f"\n当前车次：{selected_train}"
+        QMessageBox.information(self, "通道引用关系", detail)
 
     def save(self):
         self.editor.save()

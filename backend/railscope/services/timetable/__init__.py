@@ -32,10 +32,14 @@ def effective_run(repo: RailRepository, scenario_id: str, train_id: str) -> Effe
 
 
 def route_distances(repo: RailRepository, effective: EffectiveRun) -> tuple[StopTime, ...]:
-    if not effective.route_path_id:
+    from .canonical import station_distances
+    corridor_id = effective.train_run.corridor_id
+    if corridor_id:
+        path = repo.corridors[corridor_id]
+    elif effective.route_path_id:
+        path = repo.routes[effective.route_path_id]
+    else:
         return effective.stops
-    path = repo.routes[effective.route_path_id]
-    # For the basic model, stop order maps monotonically across the route.
-    count = max(1, len(effective.stops) - 1)
-    return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": path.total_length_m * i / count})
-                 for i, s in enumerate(effective.stops))
+    distances = station_distances(repo, path.edge_refs, (s.station_id for s in effective.stops))
+    return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": distance})
+                 for s, distance in zip(effective.stops, distances))

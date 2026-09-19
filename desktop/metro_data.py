@@ -80,70 +80,57 @@ def associate_station_areas(areas, stations, grid=None):
             if ids
             else "尚未关联到线路"
         )
+        area["properties"]["association_verification_status"] = (
+            "osm_derived" if explicit_ids and inside else "automatic_match" if inside else "unresolved"
+        )
+        area["properties"]["association_confidence"] = (
+            .95 if explicit_ids and inside else .5 if inside else None
+        )
     return areas
 
 
-def display_stations(stations, radius_m=350):
-    """One selectable marker per nearby namesake; keep every source member intact."""
-    groups, grid = [], defaultdict(list)
-    for station in sorted(
-        stations, key=lambda s: s["properties"].get("osm_node_id", 0)
-    ):
-        props = station["properties"]
-        name = str(props.get("name", "")).strip().removesuffix("站")
-        coordinate = station["geometry"]["coordinates"]
-        x, y = int(coordinate[0] / 0.005), int(coordinate[1] / 0.005)
-        candidates = [
-            index
-            for a in range(x - 1, x + 2)
-            for b in range(y - 1, y + 2)
-            for index in grid[a, b]
-        ]
-        matches = [
-            index
-            for index in candidates
-            if name
-            and groups[index]["name"] == name
-            and distance_m(groups[index]["coordinate"], coordinate) <= radius_m
-        ]
-        if matches:
-            group = groups[min(matches)]
-        else:
-            group = {"name": name, "coordinate": coordinate, "members": []}
-            grid[x, y].append(len(groups))
-            groups.append(group)
-        group["members"].append(station)
+def display_stations(stations, radius_m=350, registry=None):
+    """One logical anchor; raw members and legacy source aliases stay inspectable.
+
+    Desktop supplies a persistent StationRegistry. Pure callers can use the
+    preview mode, whose legacy alias is explicitly not a canonical business ID.
+    """
+    from railscope.services.stations import (
+        anchor_feature, group_station_sources,
+    )
+
+    groups = group_station_sources(stations, radius_m)
+    resolved = registry.resolve(groups) if registry else [
+        (None, group["members"]) for group in groups
+    ]
     result = []
-    for group in groups:
-        members = group["members"]
-        canonical = next(
-            (
-                s
-                for s in members
-                if s["properties"].get("node_tags", {}).get("railway") == "station"
-            ),
-            members[0],
-        )
+    for station, members in resolved:
+        canonical = anchor_feature(members)
         feature = deepcopy(canonical)
         props = feature["properties"]
         ids = sorted(s["properties"]["osm_node_id"] for s in members)
-        props["infrastructure_id"] = "metro-station/" + str(ids[0])
+        legacy_id = "metro-station/" + str(ids[0])
+        props["infrastructure_id"] = station.id if station else legacy_id
+        props["station_id"] = station.id if station else None
+        props["legacy_station_id"] = legacy_id
+        props["verification_status"] = station.verification_status if station else "automatic_match"
+        props["confidence"] = station.confidence if station else None
+        props["identity_status"] = "canonical" if station else "source_preview"
         props["associated_station_ids"] = ids
-        props["route_relation_ids"] = sorted(
-            {
-                rid
-                for s in members
-                for rid in s["properties"].get("route_relation_ids", [])
-            }
-        )
+        props["route_relation_ids"] = sorted({
+            rid for s in members for rid in s["properties"].get("route_relation_ids", [])
+        })
+        props["source_member_ids"] = list(station.source_member_ids) if station else [
+            f"osm:node:{s['properties']['osm_node_id']}" for s in members
+        ]
         props["source_members"] = deepcopy(members)
         result.append(feature)
     return result
 
 
-def display_station_areas(areas, stations):
+def display_station_areas(areas, stations, registry=None):
     """Names and station identities are derived; source names/tags/geometry stay intact."""
-    markers = display_stations(stations)
+    markers = display_stations(stations, registry=registry)
     by_node = {
         node: marker["properties"]
         for marker in markers
@@ -163,6 +150,14 @@ def display_station_areas(areas, stations):
             if node in by_node
         }
         props["station_ids"] = sorted(matched)
+        if registry:
+            area = registry.register_area(
+                f"osm:{kind}:{number}", props["station_ids"],
+                props.get("boundary_kind", "station_outline"), feature["geometry"],
+            )
+            props["source_object_id"] = props["infrastructure_id"]
+            props["infrastructure_id"] = area.id
+            props["area_id"] = area.id
         props.setdefault("source_name", props.get("name", ""))
         names = (
             " / ".join(sorted({p["name"] for p in matched.values()}))

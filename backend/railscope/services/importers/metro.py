@@ -104,11 +104,23 @@ class _MetroRelationsHandler:  # constructed only after osmium is available
                 inner.required_way_ids: set[int] = set()
                 inner.required_node_ids: set[int] = set()
                 inner.node_routes: dict[int, set[int]] = {}
+                inner.station_relations: dict[int, dict[str, set[int]]] = {}
                 inner.relations_read = 0
 
             def relation(inner, relation: Any) -> None:
                 inner.relations_read += 1
                 tags = _tags(relation.tags)
+                station_relation_kind = (
+                    "stop_area_relation_ids" if tags.get("public_transport") == "stop_area"
+                    else "station_relation_ids" if tags.get("railway") == "station"
+                    or tags.get("public_transport") == "station" else None
+                )
+                if station_relation_kind:
+                    for member in relation.members:
+                        if str(member.type) == "n":
+                            inner.station_relations.setdefault(int(member.ref), {}).setdefault(
+                                station_relation_kind, set()
+                            ).add(int(relation.id))
                 if tags.get("type") != "route" or tags.get("route") not in SUPPORTED_ROUTES:
                     return
                 members = []
@@ -162,6 +174,17 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
     relation_scan.apply_file(str(native_source), locations=False)
     routes: dict[int, dict[str, Any]] = relation_scan.routes
     required_way_ids: set[int] = relation_scan.required_way_ids
+    station_relation_nodes: dict[tuple[str, int], set[int]] = {}
+    for node_id, kinds in relation_scan.station_relations.items():
+        for kind, relations in kinds.items():
+            for relation_id in relations:
+                station_relation_nodes.setdefault((kind, relation_id), set()).add(node_id)
+    for node_ids in station_relation_nodes.values():
+        route_ids = {rid for node in node_ids for rid in relation_scan.node_routes.get(node, set())}
+        if route_ids:
+            for node_id in node_ids:
+                relation_scan.required_node_ids.add(node_id)
+                relation_scan.node_routes.setdefault(node_id, set()).update(route_ids)
 
     class StationHandler(osmium.SimpleHandler):
         def __init__(self) -> None:
@@ -276,6 +299,12 @@ def extract_metro_routes(pbf_path: Path, output_dir: Path) -> MetroImportResult:
     for node_id, station in station_scan.nodes.items():
         tags = station["tags"]
         station_features.append({"type": "Feature", "properties": {"osm_node_id": node_id, "name": tags.get("name") or tags.get("name:zh") or "未命名地铁站点", "station_tags": tags, "route_relation_ids": sorted(relation_scan.node_routes[node_id]), "source": "OpenStreetMap", "attribution": OSM_ATTRIBUTION}, "geometry": {"type": "Point", "coordinates": station["coordinates"]}})
+        props = station_features[-1]["properties"]
+        props.update({key: sorted(values) for key, values in relation_scan.station_relations.get(node_id, {}).items()})
+        props["station_networks"] = sorted({
+            routes[rid].get("network") for rid in relation_scan.node_routes[node_id]
+            if routes[rid].get("network")
+        })
     stations_geojson = {"type": "FeatureCollection", "name": "china_osm_metro_stations", "features": station_features}
     station_areas_geojson = {"type": "FeatureCollection", "name": "china_osm_metro_station_areas", "features": station_areas}
     catalog = {

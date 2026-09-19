@@ -127,6 +127,8 @@ def extract(pbf, output, previous=None):
                     if raw.get("building") == "train_station"
                     else "station_outline",
                     "source": "OpenStreetMap",
+                    "geometry_source": "osm_polygon",
+                    "verification_status": "osm_derived",
                     "attribution": "© OpenStreetMap contributors",
                     "license": "ODbL 1.0",
                     "member_station_ids": sorted(members[kind, area.orig_id()]),

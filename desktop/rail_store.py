@@ -3,13 +3,16 @@
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
+from uuid import uuid4
 
 
 def build_index(directory, tracks, points, platforms, edges):
     directory = Path(directory)
-    db = sqlite3.connect(directory / "rail.sqlite")
+    temporary = directory / ("rail." + uuid4().hex + ".sqlite.tmp")
+    db = sqlite3.connect(temporary)
     db.executescript(
-        "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT); CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy); CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT);"
+        "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT); CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy); CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT); CREATE TABLE edge_aliases(alias TEXT PRIMARY KEY,id TEXT NOT NULL REFERENCES edges(id));"
     )
     try:
         from .provinces import ProvinceIndex, add_track
@@ -52,8 +55,13 @@ def build_index(directory, tracks, points, platforms, edges):
         "INSERT INTO edges VALUES(?,?)",
         ((e["id"], json.dumps(e, ensure_ascii=False)) for e in edges),
     )
+    db.executemany(
+        "INSERT OR IGNORE INTO edge_aliases VALUES(?,?)",
+        ((e.get("source_edge_id", e["id"]), e["id"]) for e in edges),
+    )
     db.commit()
     db.close()
+    temporary.replace(directory / "rail.sqlite")
     (directory / "rail_catalog.json").write_text(
         json.dumps(dict(catalog), ensure_ascii=False), encoding="utf-8"
     )
@@ -108,8 +116,18 @@ def load_edges(directory, ids):
     if len(ids) > 50000:
         raise ValueError("径路区间过多")
     with sqlite3.connect(str(Path(directory) / "rail.sqlite")) as db:
-        return [
-            json.loads(row[0])
-            for key in set(ids)
-            for row in db.execute("SELECT data FROM edges WHERE id=?", (key,))
-        ]
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        result = []
+        for key in dict.fromkeys(ids):
+            row = db.execute("SELECT data FROM edges WHERE id=?", (key,)).fetchone()
+            if row is None and "edge_aliases" in tables:
+                row = db.execute(
+                    "SELECT e.data FROM edges e JOIN edge_aliases a ON a.id=e.id WHERE a.alias=?",
+                    (key,),
+                ).fetchone()
+            if row is not None:
+                edge = json.loads(row[0])
+                if edge["id"] != key:
+                    edge["requested_edge_alias"] = key
+                result.append(edge)
+        return result

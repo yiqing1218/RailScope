@@ -30,7 +30,7 @@ def defaults():
     colors = {
         "高速铁路线": "#c52c3b",
         "普速铁路线": "#283541",
-        "货运铁路线": "#78532c",
+        "货运铁路线": "#4b5055",
         "联络线 / 匝道": "#75609a",
         "支线 / 岔道": "#557a69",
         "渡线 / 道岔连接轨": "#e09036",
@@ -39,7 +39,7 @@ def defaults():
     return {
         name: {
             "color": colors.get(name, "#667887"),
-            "width": 2.5,
+            "width": 2.5 if name in ("高速铁路线", "普速铁路线", "货运铁路线") else 1.5,
             "pattern": "alternating",
         }
         for name in TRACK_TYPES

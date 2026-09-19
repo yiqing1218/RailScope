@@ -116,6 +116,8 @@ def export_corridor_csv(document):
 
 def line_identity(edge):
     tags = edge.get("way_tags", {})
+    if edge.get("line_id"):
+        return edge["line_id"], edge.get("line_name") or tags.get("name") or "未命名轨道"
     name = tags.get("name") or tags.get("full_name")
     # Never merge every unnamed siding nationwide into one fictional railway.
     fallback = edge["id"].split(":")[0]

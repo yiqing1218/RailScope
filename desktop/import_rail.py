@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -9,9 +10,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from railscope.services.importers.native_paths import native_path
+from railscope.domain import DatasetSnapshot
+from railscope.identity import IdentityRegistry, new_id
 
 
-def extract(pbf, output):
+def extract(pbf, output, identity_path=None):
     import osmium
 
     output = Path(output)
@@ -164,7 +167,9 @@ def extract(pbf, output):
         if p["properties"]["kind"] in ("station", "halt", "junction")
         or p["properties"]["osm_node_id"] in used
     ]
-    split = {p["properties"]["osm_node_id"] for p in points} | {
+    # Signals/ordinary shape vertices do not become artificial route segments.
+    split = {p["properties"]["osm_node_id"] for p in points
+             if p["properties"]["kind"] in {"station", "halt", "switch", "junction", "railway_crossing", "buffer_stop"}} | {
         n for n, d in degree.items() if d != 2
     }
     edges = []
@@ -189,6 +194,23 @@ def extract(pbf, output):
                 start = i
     if not tracks:
         raise ValueError("未找到国铁轨道，旧数据未替换")
+    registry = IdentityRegistry(identity_path or output / "identity.sqlite")
+    now = datetime.now(timezone.utc).isoformat()
+    snapshot = DatasetSnapshot(new_id("SNAP"), "national-rail", "osm", now,
+                               now[:10], str(Path(pbf).stat().st_mtime_ns))
+    prepared = registry.prepare(edges, snapshot)
+    edges = prepared.edges
+    by_way = {}
+    for edge in edges:
+        by_way.setdefault(str(edge["osm_way_id"]), []).append(edge["id"])
+    for track in tracks:
+        props = track["properties"]
+        way = str(props["osm_way_id"])
+        props["source_object_id"] = "osm/way/" + way
+        props["network_edge_ids"] = by_way.get(way, [])
+        props["construction_status"] = (
+            "construction" if props.get("construction") else "operating"
+        )
     for name, features in [
         ("rail_tracks.geojson", tracks),
         ("rail_points.geojson", points),
@@ -206,6 +228,7 @@ def extract(pbf, output):
                 "edges": edges,
                 "points": points,
                 "relations": relations,
+                "snapshot_id": snapshot.id,
                 "notice": "OSM 物理连接，不是联锁进路。站台归属和几台几线仅以原始标注为准；未标注不推断。",
             },
             ensure_ascii=False,
@@ -231,10 +254,18 @@ def extract(pbf, output):
         "source": str(pbf),
         "license": "ODbL 1.0",
         "boundary_polygons": boundaries["polygons"],
+        "snapshot_id": snapshot.id,
+        "previous_snapshot_id": prepared.previous_snapshot_id,
+        "migration_conflicts": len(prepared.conflicts),
     }
+    (output / "rail_migration.json").write_text(json.dumps({
+        "snapshot_id": snapshot.id, "previous_snapshot_id": prepared.previous_snapshot_id,
+        "changes": prepared.changes, "conflicts": prepared.conflicts,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "rail_manifest.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    registry.commit(prepared)
     return report
 
 
@@ -242,5 +273,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pbf", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--identity-db", type=Path, default=ROOT / "data/user_settings/workspace.sqlite")
     args = parser.parse_args()
-    print(extract(args.pbf, args.output))
+    print(extract(args.pbf, args.output, args.identity_db))

@@ -91,8 +91,11 @@ def associate(features, stations):
             node = nearest["properties"]["osm_node_id"]
             name = nearest["properties"]["name"]
             props["station_id"] = "node/" + str(node)
+            props["station_id"] = nearest["properties"].get("station_id") or props["station_id"]
             props["associated_station_ids"] = [node]
             props["association_source"] = "空间关联真实铁路车站，待复核"
+            props["association_verification_status"] = "automatic_match"
+            props["association_confidence"] = .5
             props["facility_class"] = nearest["properties"].get(
                 "facility_class", "铁路车站（高铁属性未判定）"
             )
@@ -100,6 +103,8 @@ def associate(features, stations):
             name = props["source_name"] or "未关联铁路车站"
             props["associated_station_ids"] = []
             props["association_source"] = "尚未关联车站"
+            props["association_verification_status"] = "unresolved"
+            props["association_confidence"] = None
         kind = props["boundary_kind"]
         ref = props["way_tags"].get("ref") or props["way_tags"].get("local_ref")
         label = (
@@ -205,6 +210,8 @@ def extract(pbf, directory, progress=print):
                         else "station_outline",
                         "mode_verified": raw.get("train") == "yes" or not platform,
                         "source": "OpenStreetMap",
+                        "geometry_source": "osm_polygon",
+                        "verification_status": "osm_derived",
                         "license": "ODbL 1.0",
                     },
                     "geometry": geometry,
