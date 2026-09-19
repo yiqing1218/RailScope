@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { FeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
@@ -7,7 +8,7 @@ import type { Edge, Station } from '../../types/api';
 import { useLayerStore } from '../../stores/layerStore';
 import { railTheme } from './styles/theme';
 
-type GeoJson = GeoJSON.FeatureCollection;
+type GeoJson = FeatureCollection;
 const empty: GeoJson = { type: 'FeatureCollection', features: [] };
 
 export function MapView() {

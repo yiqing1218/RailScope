@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="/desktop/vendor/maplibre-gl.css">
   <link rel="stylesheet" href="map.css">
-  <script src="/desktop/vendor/maplibre-gl.js"></script>
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 </head>
 <body>
@@ -39,6 +38,10 @@
   </div>
   <div id="map-status" class="glass map-status"><span id="base-status">标准地图</span><span class="divider"></span><span id="camera-status">全国视图</span></div>
   <div id="loading" class="glass loading"><div class="loader"></div><strong>正在载入轨道地图</strong><span>加载本地路网与站区面数据</span></div>
-  <script src="map.js"></script>
+  <script type="module">
+    import * as maplibregl from '/desktop/vendor/maplibre-gl.mjs';
+    window.maplibregl = maplibregl;
+    await import('./map.js');
+  </script>
 </body>
 </html>

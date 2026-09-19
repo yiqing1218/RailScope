@@ -21,9 +21,9 @@ G1 已内置：**运行 → 国铁 · 车次 / 跨线运行图 → 打开国铁�
 
 RailScope is a desktop-oriented GIS and railway operations foundation. This
 iteration implements **V0 + V1 + V5**: infrastructure GIS, explicit railway
-topology, route paths, virtual blocks, occupancy/conflict detection, and manual
-scenario dispatch. It deliberately excludes V2/V3 playback, national train
-animation and real railway control. The native desktop now includes a local,
+topology, complete shared Corridors, virtual blocks, occupancy/conflict detection,
+manual scenario dispatch and reference train animation. It excludes real railway
+control and does not claim verified signalling or interlocking routes. The native desktop includes a local,
 editable Shanghai stop-time table and time-distance diagram for simulation,
 not an official timetable or live fleet service.
 

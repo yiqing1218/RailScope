@@ -115,6 +115,10 @@ class RailEditor(OperationsEditor):
                 else "当前铁路库尚不能组合完整 G1 通道；请先导入覆盖京沪高铁的全国铁路数据。"
             )
 
+    def map_ready(self):
+        super().map_ready()
+        self.push_corridors()
+
     @staticmethod
     def empty_payload():
         return {

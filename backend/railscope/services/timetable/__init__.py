@@ -6,7 +6,7 @@ from ...repository import RailRepository
 def effective_run(repo: RailRepository, scenario_id: str, train_id: str) -> EffectiveRun:
     run = repo.train_runs[train_id]
     stops = list(repo.stops_for(train_id))
-    route_id = run.route_path_id
+    corridor_id = run.corridor_id
     cancelled = False
     offset = 0
     for event in repo.events_for(scenario_id, train_id):
@@ -22,24 +22,20 @@ def effective_run(repo: RailRepository, scenario_id: str, train_id: str) -> Effe
             # Hold moves this departure and all later times; it never changes scheduled facts.
             stops[index:] = [shifted_stop(s, int(seconds)) for s in stops[index:]]
         elif event.event_type == "change_route":
-            route_id = str(event.new_value)
+            corridor_id = str(event.new_value)
         elif event.event_type == "assign_track":
             station_id, track_id = event.new_value
             stops = [StopTime(**{**s.__dict__, "station_track_id": track_id}) if s.station_id == station_id else s for s in stops]
     if offset:
         stops = [shifted_stop(s, offset) for s in stops]
-    return EffectiveRun(run, tuple(stops), route_id, cancelled)
+    return EffectiveRun(run, tuple(stops), corridor_id, cancelled)
 
 
 def route_distances(repo: RailRepository, effective: EffectiveRun) -> tuple[StopTime, ...]:
     from .canonical import station_distances
-    corridor_id = effective.train_run.corridor_id
-    if corridor_id:
-        path = repo.corridors[corridor_id]
-    elif effective.route_path_id:
-        path = repo.routes[effective.route_path_id]
-    else:
+    if not effective.corridor_id:
         return effective.stops
+    path = repo.corridors[effective.corridor_id]
     distances = station_distances(repo, path.edge_refs, (s.station_id for s in effective.stops))
     return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": distance})
                  for s, distance in zip(effective.stops, distances))

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from .domain import RoutePathEdge
+from .domain import DirectedEdgeRef
 
 
 def ordered_path_nodes(repo, edge_refs):
@@ -67,7 +67,7 @@ def path_refs(repo, legs, allow_nonoperating=False):
             raise ValueError(f'非运营轨道不能进入正式通道：{key}')
         if not math.isfinite(edge.length_m) or edge.length_m<=0:
             raise ValueError(f'Edge 长度无效：{key}')
-        refs.append(RoutePathEdge(key,sequence,forward,distance,distance+edge.length_m))
+        refs.append(DirectedEdgeRef(key,sequence,forward,distance,distance+edge.length_m))
         previous=b
         distance+=edge.length_m
     if not refs:
@@ -77,10 +77,10 @@ def path_refs(repo, legs, allow_nonoperating=False):
 
 def references(repo, kind, ident):
     """Return stable IDs, not map features; include transitive corridor/run impact."""
-    result={key:[] for key in ('lines','sections','corridors','station_routes','routes','train_runs')}
+    result={key:[] for key in ('lines','sections','corridors','station_routes','train_runs')}
     if kind=='edge':
         result['lines']=[m.line_id for m in repo.memberships if m.edge_id==ident]
-        for collection in ('sections','corridors','station_routes','routes'):
+        for collection in ('sections','corridors','station_routes'):
             result[collection]=[p.id for p in getattr(repo,collection).values() if any(r.edge_id==ident for r in p.edge_refs)]
     elif kind=='station':
         node_ids={n.id for n in repo.nodes.values() if n.station_id==ident}
@@ -95,7 +95,7 @@ def references(repo, kind, ident):
         result['train_runs'] += [s.train_run_id for s in repo.stops if s.station_id==ident]
     elif kind=='corridor':
         result['corridors']=[ident]
-    result['train_runs'] += [t.id for t in repo.train_runs.values() if t.corridor_id in result['corridors'] or t.route_path_id in result['routes']]
+    result['train_runs'] += [t.id for t in repo.train_runs.values() if t.corridor_id in result['corridors']]
     return {key:sorted(set(value)) for key,value in result.items()}
 
 
@@ -111,7 +111,7 @@ def validate_repository(repo):
     for member in repo.memberships:
         if member.edge_id not in repo.edges or member.line_id not in repo.lines:
             errors.append(f'membership {member.edge_id}: missing edge/line')
-    for collection in ('sections','corridors','station_routes','routes'):
+    for collection in ('sections','corridors','station_routes'):
         for path in getattr(repo,collection).values():
             try:
                 expected=path_refs(repo,[(r.edge_id,r.forward) for r in path.edge_refs],allow_nonoperating=collection=='sections')
@@ -142,9 +142,9 @@ def validate_repository(repo):
     for run in repo.train_runs.values():
         if run.service_id and run.service_id not in repo.train_services:
             errors.append(f'run {run.id}: service missing')
-        path=repo.corridors.get(run.corridor_id) if run.corridor_id else repo.routes.get(run.route_path_id)
+        path=repo.corridors.get(run.corridor_id) if run.corridor_id else None
         if not path:
-            if run.corridor_id or run.route_path_id:
+            if run.corridor_id:
                 errors.append(f'run {run.id}: path missing')
             continue  # unresolved imports may exist, but cannot simulate.
         try:
@@ -179,7 +179,7 @@ def validate_repository(repo):
 
 def delete_edge(repo, edge_id):
     refs=references(repo,'edge',edge_id)
-    if any(refs[k] for k in ('sections','corridors','station_routes','routes','train_runs')):
+    if any(refs[k] for k in ('sections','corridors','station_routes','train_runs')):
         raise ValueError(f"轨道被 {len(refs['corridors'])} 个 Corridor、{len(refs['train_runs'])} 个 TrainRun 引用：{refs}")
     del repo.edges[edge_id]
     repo.memberships[:]=[m for m in repo.memberships if m.edge_id!=edge_id]

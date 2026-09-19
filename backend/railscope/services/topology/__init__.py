@@ -14,9 +14,9 @@ def validate_topology(repo: RailRepository) -> dict[str, object]:
     duplicate = [e.id for e in edges if pairs[(e.from_node_id, e.to_node_id, tuple(e.coordinates))] > 1]
     isolated = [n.id for n in repo.nodes.values() if degree[n.id] == 0]
     dangling = [n for n, d in degree.items() if d == 1]
-    broken_paths = [p.id for p in repo.routes.values() if any(ref.edge_id not in repo.edges for ref in p.edge_refs)]
+    broken_paths = [p.id for p in repo.corridors.values() if any(ref.edge_id not in repo.edges for ref in p.edge_refs)]
     return {"nodes": len(repo.nodes), "edges": len(edges), "isolated_nodes": isolated,
             "dangling_edges": dangling, "zero_length_edges": zero_length,
             "duplicate_edges": duplicate, "self_loop_edges": self_loops,
-            "broken_route_paths": broken_paths, "invalid_direction": invalid_direction,
+            "broken_corridors": broken_paths, "invalid_direction": invalid_direction,
             "status": "FAIL" if zero_length or self_loops or invalid_direction or broken_paths else "PASS"}

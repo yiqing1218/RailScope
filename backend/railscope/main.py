@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from .demo import load_demo
 from .domain import DispatchEvent, DispatchScenario
 from .repository import RailRepository
@@ -34,7 +34,10 @@ class EventRequest(BaseModel):
     train_run_id: str
     seconds: int | None = Field(default=None, ge=0)
     station_id: str | None = None
-    route_path_id: str | None = None
+    corridor_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("corridor_id", "route_path_id"),
+    )
     station_track_id: str | None = None
     reason: str | None = None
 
@@ -60,7 +63,12 @@ def station(station_id: str): return get_or_404(repo.stations, station_id)
 def edges(bbox: str | None = None):
     # The API is for local/debug use. PMTiles remains the nationwide rendering boundary.
     if bbox:
-        min_lon, min_lat, max_lon, max_lat = map(float, bbox.split(","))
+        values = bbox.split(",")
+        if len(values) != 4:
+            raise ValueError("bbox must contain min_lon,min_lat,max_lon,max_lat")
+        min_lon, min_lat, max_lon, max_lat = map(float, values)
+        if not (-180 <= min_lon < max_lon <= 180 and -90 <= min_lat < max_lat <= 90):
+            raise ValueError("bbox coordinates or order are invalid")
         if (max_lon-min_lon) * (max_lat-min_lat) > 25:
             raise HTTPException(400, "bbox area exceeds debug API limit")
         return [e for e in repo.edges.values() if any(min_lon <= x <= max_lon and min_lat <= y <= max_lat for x, y in e.coordinates)]
@@ -96,8 +104,18 @@ def train_run(train_id: str): return get_or_404(repo.train_runs, train_id)
 def stops(train_id: str): return repo.stops_for(train_id)
 
 
-@app.get("/api/v1/route-paths/{route_id}")
-def route(route_id: str): return get_or_404(repo.routes, route_id)
+@app.get("/api/v1/corridors")
+def corridors(): return list(repo.corridors.values())
+
+
+@app.get("/api/v1/corridors/{corridor_id}")
+def corridor(corridor_id: str): return get_or_404(repo.corridors, corridor_id)
+
+
+@app.get("/api/v1/route-paths/{corridor_id}", deprecated=True)
+def legacy_route_path(corridor_id: str):
+    """Compatibility alias; the returned object is a complete Corridor."""
+    return get_or_404(repo.corridors, corridor_id)
 
 
 @app.get("/api/v1/blocks")
@@ -176,8 +194,9 @@ def cancel(request: EventRequest): return dispatch(request, "cancel_train", True
 
 @app.post("/api/v1/dispatch/change-route")
 def change_route(request: EventRequest):
-    if request.route_path_id not in repo.routes: raise ValueError("change route requires an existing route_path_id")
-    return dispatch(request, "change_route", request.route_path_id)
+    if request.corridor_id not in repo.corridors:
+        raise ValueError("change route requires an existing corridor_id")
+    return dispatch(request, "change_route", request.corridor_id)
 
 
 @app.post("/api/v1/dispatch/assign-track")

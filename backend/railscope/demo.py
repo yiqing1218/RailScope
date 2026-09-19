@@ -3,7 +3,7 @@ from math import asin, cos, radians, sin, sqrt
 from .domain import *
 from .repository import RailRepository
 from .services.blocks import create_virtual_blocks
-from .services.routing import manual_route
+from .services.routing import manual_corridor
 from .services.dispatch import recalculate
 
 
@@ -44,13 +44,33 @@ def load_demo(repo: RailRepository | None = None) -> RailRepository:
     repo.station_tracks["track-b-1"] = StationTrack("track-b-1", "station-b", "B-1", "1", "1")
     repo.headway_rules.append(HeadwayRule("default", 180, 0))
     repo.scenarios["base-2026-09-15"] = DispatchScenario("base-2026-09-15", "Base Scenario", "2026-09-15")
-    for train_id, number, origin, destination in (("run-101", "101", "station-a", "station-c"), ("run-102", "102", "station-a", "station-c"), ("run-201", "201", "station-c", "station-a")):
-        repo.train_runs[train_id] = TrainRun(train_id, "2026-09-15", number, origin, destination, f"route-{train_id}", train_length_m=200)
-    manual_route(repo, "route-run-101", ["edge-ab", "edge-bc"], "station-a", "station-c")
-    manual_route(repo, "route-run-102", ["edge-ab", "edge-bc"], "station-a", "station-c")
-    # Reverse uses explicit edge sequence with compatible distance order; this is an operational path, not geometry reuse.
-    reverse = manual_route(repo, "route-run-201", ["edge-bc", "edge-ab"], "station-c", "station-a")
-    repo.routes[reverse.id] = RoutePath(reverse.id, tuple(RoutePathEdge(r.edge_id, r.sequence, False, r.start_distance_m, r.end_distance_m) for r in reverse.edge_refs), reverse.total_length_m, "station-c", "station-a")
+    manual_corridor(
+        repo,
+        "corridor-eastbound",
+        ["edge-ab", "edge-bc"],
+        name="Station A → Station C",
+    )
+    manual_corridor(
+        repo,
+        "corridor-westbound",
+        [("edge-bc", False), ("edge-ab", False)],
+        name="Station C → Station A",
+    )
+    for train_id, number, origin, destination, corridor_id in (
+        ("run-101", "101", "station-a", "station-c", "corridor-eastbound"),
+        ("run-102", "102", "station-a", "station-c", "corridor-eastbound"),
+        ("run-201", "201", "station-c", "station-a", "corridor-westbound"),
+    ):
+        repo.train_runs[train_id] = TrainRun(
+            train_id,
+            "2026-09-15",
+            number,
+            origin,
+            destination,
+            train_length_m=200,
+            corridor_id=corridor_id,
+            verification_status="user_verified",
+        )
     data = {
         "run-101": [("station-a", None, "07:00:00"), ("station-b", "07:10:00", "07:12:00"), ("station-c", "07:22:00", None)],
         "run-102": [("station-a", None, "07:02:00"), ("station-b", "07:12:00", "07:14:00"), ("station-c", "07:24:00", None)],

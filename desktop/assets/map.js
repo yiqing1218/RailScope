@@ -1,9 +1,10 @@
 'use strict';
+const maplibregl = window.maplibregl;
 let bridge, map, config, standardStyle, currentBase = 'standard', selectedFeature = null, selectedLayer = null;
 let running = false, travelled = 0;
 const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railPoints:false,railPlatforms:false,railStationAreas:false,railVehicles:false,railPlan:false,road:false, imported:false, vehicles:false};
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
-let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [];
+let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
 let followTrain=false;
 let focusedBounds=null;
@@ -304,7 +305,7 @@ async function init() {
     if(!response.ok)throw new Error('Vector style request failed');
     standardStyle=styleWorkbench(await response.json());vectorAvailable=true;
   } catch(error) { vectorAvailable=false; }
-  maplibregl.workerCount=2;
+  maplibregl.setWorkerCount(2);
   map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false,
     pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0});
   map.on('webglcontextlost',()=>{
@@ -335,7 +336,11 @@ async function init() {
       report('ready');report('demoState',running);
     }
   });
-  map.on('error',event=>{const message=String(event.error?.message||event.error);if(!mapErrors.includes(message)){mapErrors.push(message);if(mapErrors.length>100)mapErrors.shift();}});
+  map.on('error',event=>{
+    const message=String(event.error?.message||event.error);
+    const target=message==='The source image could not be decoded.'?mapWarnings:mapErrors;
+    if(!target.includes(message)){target.push(message);if(target.length>100)target.shift();}
+  });
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
   map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';report('cameraChanged',p.lng,p.lat,map.getZoom());});
   map.on('click',event=>{const ids=['rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
@@ -407,7 +412,7 @@ async function init() {
         currentBase,visibleLines:visibleIds.length,visibleConstruction:constructionIds.length,
         line1StationsAllowed:allowsLine1('stations'),line1AreasAllowed:allowsLine1('areas-fill'),
         running,travelled,operatingMode,operatingClock,activeVehicles:operatingVehicles.features.length,
-        visibility:{...visibility},vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,overlays,vehicleAppearance,
+        visibility:{...visibility},vehicleVisible:visibility.vehicles,vectorAvailable,errors:mapErrors,warnings:mapWarnings,overlays,vehicleAppearance,
         markerRadius:map.getPaintProperty('vehicles','circle-radius'),trainIconVisibility:map.getLayoutProperty('vehicles-symbol','visibility'),
         titleHidden:document.getElementById('map-title').hidden,hasLine1Button:!!document.getElementById('focus-demo'),
         vehicle:operatingVehicles.features[0]?.geometry.coordinates||null,

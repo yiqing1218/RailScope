@@ -90,7 +90,6 @@ class TrainRun:
     train_number: str
     origin_station_id: str
     destination_station_id: str
-    route_path_id: str | None = None
     train_length_m: float | None = None
     service_id: str | None = None
     corridor_id: str | None = None
@@ -114,7 +113,7 @@ class StopTime:
 
 
 @dataclass(frozen=True)
-class RoutePathEdge:
+class DirectedEdgeRef:
     edge_id: str
     sequence: int
     forward: bool
@@ -122,13 +121,8 @@ class RoutePathEdge:
     end_distance_m: float
 
 
-@dataclass(frozen=True)
-class RoutePath:
-    id: str
-    edge_refs: tuple[RoutePathEdge, ...]
-    total_length_m: float
-    origin_station_id: str
-    destination_station_id: str
+# Compatibility name for stored workspace JSON. New code uses DirectedEdgeRef.
+RoutePathEdge = DirectedEdgeRef
 
 
 # Desktop DTOs and SQL/PostGIS rows adapt to these same domain objects.
@@ -157,7 +151,7 @@ class LineMembership:
 @dataclass(frozen=True)
 class RouteSection:
     id: str
-    edge_refs: tuple[RoutePathEdge, ...]
+    edge_refs: tuple[DirectedEdgeRef, ...]
     origin_node_id: str
     destination_node_id: str
 
@@ -167,7 +161,7 @@ class Corridor:
     """One complete directed physical path; intermediate stations are implicit."""
     id: str
     name: str
-    edge_refs: tuple[RoutePathEdge, ...]
+    edge_refs: tuple[DirectedEdgeRef, ...]
     origin_node_id: str
     destination_node_id: str
     snapshot_id: str | None = None
@@ -180,7 +174,7 @@ class Corridor:
 class StationRoute:
     id: str
     station_id: str
-    edge_refs: tuple[RoutePathEdge, ...]
+    edge_refs: tuple[DirectedEdgeRef, ...]
     entry_node_id: str
     exit_node_id: str
     verification_status: str = "unverified"
@@ -292,7 +286,7 @@ class DispatchEvent:
 class EffectiveRun:
     train_run: TrainRun
     stops: tuple[StopTime, ...]
-    route_path_id: str | None
+    corridor_id: str | None
     cancelled: bool = False
 
 

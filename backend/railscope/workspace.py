@@ -21,7 +21,7 @@ TYPES={
     'sources':d.DataSource,'snapshots':d.DatasetSnapshot,'lines':d.InfrastructureLine,
     'nodes':d.NetworkNode,'edges':d.NetworkEdge,'stations':d.Station,
     'sections':d.RouteSection,'corridors':d.Corridor,'station_routes':d.StationRoute,
-    'train_services':d.TrainService,'train_runs':d.TrainRun,'routes':d.RoutePath,
+    'train_services':d.TrainService,'train_runs':d.TrainRun,
     'station_tracks':d.StationTrack,'station_areas':d.StationArea,'platforms':d.Platform,
     'stop_positions':d.StopPosition,'entrances':d.Entrance,'blocks':d.BlockSection,
     'scenarios':d.DispatchScenario,
@@ -32,10 +32,12 @@ LIST_TYPES={'memberships':d.LineMembership,'stops':d.StopTime,'block_edges':d.Bl
 
 def decode(cls, raw):
     raw=dict(raw)
+    if cls is d.TrainRun and 'route_path_id' in raw:
+        raw.setdefault('corridor_id',raw.pop('route_path_id'))
     for key in ('osm_node_ids','source_node_ids','source_member_ids'):
         if key in raw: raw[key]=tuple(raw[key])
     if 'coordinates' in raw: raw['coordinates']=tuple(tuple(p) for p in raw['coordinates'])
-    if 'edge_refs' in raw: raw['edge_refs']=tuple(d.RoutePathEdge(**r) for r in raw['edge_refs'])
+    if 'edge_refs' in raw: raw['edge_refs']=tuple(d.DirectedEdgeRef(**r) for r in raw['edge_refs'])
     return cls(**raw)
 
 
@@ -82,11 +84,23 @@ class SQLiteWorkspace:
             revision=db.execute("SELECT value FROM workspace_meta WHERE key='revision'").fetchone()[0]
             rows={(kind,key):raw for kind,key,raw in db.execute('SELECT kind,id,data FROM workspace_source')}
             rows.update({(kind,key):raw for kind,key,raw in db.execute('SELECT kind,id,data FROM workspace_override')})
+        legacy_routes=[]
         for (kind,key),raw in rows.items():
             if raw is None: continue
             data=json.loads(raw)
             if kind in TYPES: getattr(repo,kind)[key]=decode(TYPES[kind],data)
             elif kind in LIST_TYPES: setattr(repo,kind,[decode(LIST_TYPES[kind],v) for v in data])
+            elif kind=='routes': legacy_routes.append((key,data))
+        for key,data in legacy_routes:
+            if key in repo.corridors:
+                continue
+            refs=tuple(d.DirectedEdgeRef(**value) for value in data['edge_refs'])
+            first,last=repo.edges[refs[0].edge_id],repo.edges[refs[-1].edge_id]
+            repo.corridors[key]=d.Corridor(
+                key,data.get('name',key),refs,
+                first.from_node_id if refs[0].forward else first.to_node_id,
+                last.to_node_id if refs[-1].forward else last.from_node_id,
+                source_id='legacy_route_path',verification_status='unverified')
         validate_repository(repo)
         return repo,revision
 
@@ -194,10 +208,8 @@ class EditSession:
                 for key,obj in objects.items():
                     if obj.station_id==source: objects[key]=replace(obj,station_id=target)
             repo.stops[:]=[replace(s,station_id=target) if s.station_id==source else s for s in repo.stops]
-            for collection in ('train_runs','routes'):
-                objects=getattr(repo,collection)
-                for key,obj in objects.items():
-                    objects[key]=replace(obj,origin_station_id=target if obj.origin_station_id==source else obj.origin_station_id,destination_station_id=target if obj.destination_station_id==source else obj.destination_station_id)
+            for key,obj in repo.train_runs.items():
+                repo.train_runs[key]=replace(obj,origin_station_id=target if obj.origin_station_id==source else obj.origin_station_id,destination_station_id=target if obj.destination_station_id==source else obj.destination_station_id)
             del repo.stations[source]
         self.change(apply)
 

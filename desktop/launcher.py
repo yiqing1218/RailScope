@@ -171,6 +171,17 @@ class LocalHandler(SimpleHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
+    def valid_host(self):
+        host = self.headers.get("Host", "").lower()
+        port = self.server.server_port
+        return host in {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        super().end_headers()
+
     def permitted(self):
         path = unquote(urlsplit(self.path).path)
         allowed = (
@@ -178,21 +189,28 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 path.startswith("/desktop/assets/")
                 and Path(path).suffix in {".html", ".css", ".js"}
             )
-            or path.startswith("/frontend/node_modules/maplibre-gl/dist/")
             or path
-            in ("/desktop/vendor/maplibre-gl.js", "/desktop/vendor/maplibre-gl.css")
+            in {
+                "/desktop/vendor/maplibre-gl.mjs",
+                "/desktop/vendor/maplibre-gl-shared.mjs",
+                "/desktop/vendor/maplibre-gl-worker.mjs",
+                "/desktop/vendor/maplibre-gl.css",
+            }
             or (path.startswith("/data/processed/osm/") and path.endswith(".geojson"))
             or path == "/data/raw/osm/beijing_highspeed.geojson"
         )
         return allowed and ".." not in path and "\\" not in path
 
     def do_HEAD(self):
-        if not self.permitted():
+        if not self.valid_host() or not self.permitted():
             self.send_error(404)
             return
         super().do_HEAD()
 
     def do_GET(self):
+        if not self.valid_host():
+            self.send_error(421)
+            return
         path = urlsplit(self.path).path
         if path == "/api/rail":
             try:
@@ -241,6 +259,7 @@ class Bridge(QObject):
     camera = Signal(float, float, float)
     base = Signal(str, bool)
     error = Signal(str)
+    notice = Signal(str)
     screenshot = Signal(str)
 
     @Slot(str)
@@ -284,11 +303,15 @@ class MapPage(QWebEnginePage):
     def __init__(self, parent):
         super().__init__(parent)
         self.console_errors = []
+        self.runtime_errors = []
 
     def javaScriptConsoleMessage(self, level, message, line, source):
         if level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
             self.console_errors.append(message)
             del self.console_errors[:-100]
+
+    def errors(self):
+        return [*self.runtime_errors, *self.console_errors]
 
 
 class MapView(QWebEngineView):
@@ -296,13 +319,16 @@ class MapView(QWebEngineView):
         super().__init__()
         self.setPage(MapPage(self))
         self.bridge = Bridge(self)
+        self.bridge.error.connect(self.page().runtime_errors.append)
         self.channel = QWebChannel(self.page())
         self.channel.registerObject("bridge", self.bridge)
         self.page().setWebChannel(self.channel)
         self.commands = MapCommands()
         self.command_in_flight = False
         self.is_ready = False
+        self.renderer_restarts = 0
         self.bridge.initialized.connect(self._ready)
+        self.page().renderProcessTerminated.connect(self._renderer_terminated)
         self.load(
             QUrl(f"http://127.0.0.1:{server.server_port}/desktop/assets/map.html")
         )
@@ -331,6 +357,17 @@ class MapView(QWebEngineView):
     def _ready(self):
         self.is_ready = True
         self._dispatch()
+
+    def _renderer_terminated(self, _status, exit_code):
+        self.is_ready = False
+        self.command_in_flight = False
+        self.renderer_restarts += 1
+        message = f"地图渲染进程异常退出（代码 {exit_code}）"
+        if self.renderer_restarts <= 2:
+            self.bridge.notice.emit(message + "，正在恢复地图…")
+            QTimer.singleShot(750, self.reload)
+        else:
+            self.bridge.error.emit(message + "；已停止自动重试，请保存计划后重启软件。")
 
 
 class Desk(QMainWindow):
@@ -487,6 +524,7 @@ class Desk(QMainWindow):
         self.operations.updated.connect(self.refresh_operating_selection)
         self.rail_operations.updated.connect(self.refresh_operating_selection)
         self.connect_map()
+        self.map.bridge.initialized.connect(self.restore_map_state)
         self.setStyleSheet(THEME)
         if self.hierarchy_load_error:
             QTimer.singleShot(
@@ -1553,6 +1591,24 @@ class Desk(QMainWindow):
         bridge.error.connect(
             lambda error: self.load_status.setText("  地图载入失败：" + error)
         )
+        bridge.notice.connect(lambda text: self.load_status.setText("  " + text))
+
+    def restore_map_state(self):
+        """Replay bounded Python-owned UI state after a renderer restart."""
+        self.map.call(
+            "setBase", ("standard", "satellite", "admin")[self.base_combo.currentIndex()]
+        )
+        for key, control in self.base_switches.items():
+            self.map.call("setBaseDetail", key, control.isChecked())
+        for key, action in self.overlay_actions.items():
+            self.map.call("setOverlay", key, action.isChecked())
+        self.send_directory_filter()
+        self.rail_catalog_widget.send_visibility(False)
+        for key, enabled in self.flags.items():
+            self.map.call("setVisibility", key, enabled)
+        self.map.call("imported", self.imported)
+        self.map.call("setRailStyles", self.config["railStyles"])
+        self.change_run_mode(self.run_mode.currentIndex())
 
     def base_changed(self, kind, vector):
         index = ("standard", "satellite", "admin").index(kind)
@@ -2372,6 +2428,7 @@ def main():
                         window.corridor_panel.choose(root, 0)
                         window.corridor_panel.tree.fit_content()
                         app.processEvents()
+                        root = window.corridor_panel.tree.topLevelItem(0)
                         checks["corridor_tree_last_row_not_clipped"] = (
                             window.corridor_panel.tree.visualItemRect(
                                 root.child(0)
@@ -2477,7 +2534,7 @@ def main():
                         report = {
                             "checks": checks,
                             "map": state,
-                            "javascript_errors": window.map.page().console_errors,
+                            "javascript_errors": window.map.page().errors(),
                             "screenshot": args.screenshot,
                         }
                         Path(args.smoke_report).write_text(
@@ -2489,7 +2546,7 @@ def main():
                         or not state.get("metroLoaded")
                         or state.get("errors")
                         or any(value is False for value in checks.values())
-                        or window.map.page().console_errors
+                        or window.map.page().errors()
                     )
                     QTimer.singleShot(500, lambda: app.exit(1 if failed else 0))
 

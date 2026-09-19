@@ -62,6 +62,11 @@ try {
         Write-Host 'Creating a project-local Python environment (no administrator access needed)...'
         Invoke-NativeChecked -Executable $pythonCandidate -CommandArguments ($pythonArguments + @('-m', 'venv', (Join-Path $projectRoot '.venv')))
     }
+    if (-not (Test-PythonCommand -Executable $pythonPath -Code "import pip; p=tuple(int(x) for x in pip.__version__.split('.')[:2]); raise SystemExit(0 if p >= (26,2) else 1)")) {
+        if ($NoInstall) { throw 'The local pip is older than the required security baseline (26.2).' }
+        Write-Host 'Updating the local package installer to the security baseline...'
+        Invoke-NativeChecked -Executable $pythonPath -CommandArguments @('-m', 'pip', 'install', '--upgrade', 'pip>=26.2', '--disable-pip-version-check')
+    }
     if (-not (Test-PythonCommand -Executable $pythonPath -Code 'import PySide6, osmium; from PySide6.QtWebEngineWidgets import QWebEngineView')) {
         if ($NoInstall) { throw 'Desktop dependencies are missing.' }
         Write-Host 'Installing desktop dependencies. First launch requires internet and may take several minutes...'

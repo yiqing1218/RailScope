@@ -15,10 +15,18 @@ class TimetableLinearInterpolationModel:
         run = effective.train_run
         if effective.cancelled:
             return {"state": "cancelled", "train_run_id": train_id}
-        if (run.service_id or run.corridor_id) and (not run.corridor_id or run.verification_status not in {'official', 'user_verified', 'manual_override'}):
+        if (run.service_id or run.corridor_id) and (
+            not effective.corridor_id
+            or run.verification_status
+            not in {"official", "user_verified", "manual_override"}
+        ):
             return {"state": "unresolved", "train_run_id": train_id}
         try:
-            if run.corridor_id and any(repo.edges[ref.edge_id].construction_status != 'operating' for ref in repo.corridors[run.corridor_id].edge_refs):
+            corridor = repo.corridors[effective.corridor_id]
+            if any(
+                repo.edges[ref.edge_id].construction_status != "operating"
+                for ref in corridor.edge_refs
+            ):
                 return {"state": "unresolved", "train_run_id": train_id}
             stops = route_distances(repo, effective)
         except (KeyError, ValueError):
@@ -47,7 +55,7 @@ class TimetableLinearInterpolationModel:
     def _position(repo, effective, state, distance):
         result = {"state": state, "train_run_id": effective.train_run.id, "route_distance_m": distance}
         run = effective.train_run
-        path = repo.corridors.get(run.corridor_id) if run.corridor_id else repo.routes.get(effective.route_path_id)
+        path = repo.corridors.get(effective.corridor_id)
         if path is not None:
             result['coordinate'] = route_coordinate(repo, path.edge_refs, distance)
         return result

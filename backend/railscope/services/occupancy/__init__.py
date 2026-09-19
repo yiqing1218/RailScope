@@ -11,12 +11,12 @@ def calculate_occupancies(repo: RailRepository, scenario_id: str) -> list[TrackO
         edge_blocks.setdefault(member.edge_id, []).append(member.block_id)
     for train in repo.train_runs.values():
         effective = effective_run(repo, scenario_id, train.id)
-        if effective.cancelled or not effective.route_path_id:
+        if effective.cancelled or not effective.corridor_id:
             continue
         stops = route_distances(repo, effective)
         if len(stops) < 2:
             continue
-        path = repo.routes[effective.route_path_id]
+        path = repo.corridors[effective.corridor_id]
         for left, right in zip(stops, stops[1:]):
             start = left.departure_time_s if left.departure_time_s is not None else left.arrival_time_s
             end = right.arrival_time_s if right.arrival_time_s is not None else right.departure_time_s

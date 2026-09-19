@@ -22,7 +22,6 @@ class RailRepository:
     stations: dict[str, Station] = field(default_factory=dict)
     train_runs: dict[str, TrainRun] = field(default_factory=dict)
     stops: list[StopTime] = field(default_factory=list)
-    routes: dict[str, RoutePath] = field(default_factory=dict)
     blocks: dict[str, BlockSection] = field(default_factory=dict)
     block_edges: list[BlockEdge] = field(default_factory=list)
     station_tracks: dict[str, StationTrack] = field(default_factory=dict)

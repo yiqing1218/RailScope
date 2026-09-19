@@ -40,7 +40,7 @@ def test_dates_internal_numbers_midnight_and_provenance():
     assert a.service_id == b.service_id != c.service_id
     assert repo.stops_for(a.id)[1].arrival_time_s == 24 * 3600 + 10 * 60
     assert a.source_version == '2026-09' and a.internal_train_no == 'internal-1'
-    assert not a.route_path_id and not a.corridor_id
+    assert not a.corridor_id
 
 
 def test_batch_is_atomic_on_duplicate_or_ambiguous_station():
@@ -80,7 +80,7 @@ def test_different_stop_patterns_share_full_corridor_and_need_verification():
         assert engine.position_at_time(repo, '', run.id, 24 * 3600)['state'] == 'unresolved'
         verify_corridor(repo, run.id, 'cor')
         assert engine.position_at_time(repo, '', run.id, 24 * 3600)['state'] == 'running'
-    assert len(repo.corridors) == 1 and not repo.routes
+    assert len(repo.corridors) == 1
 
 
 def test_multiple_matches_stay_unresolved_and_wrong_stop_order_rejected():

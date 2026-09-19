@@ -1,4 +1,6 @@
 from dataclasses import replace
+import json
+import sqlite3
 
 import pytest
 
@@ -49,6 +51,34 @@ def test_transactional_override_undo_redo_and_reimport(tmp_path):
     store.seed(refreshed)
     loaded, _ = store.load()
     assert loaded.lines["IL-1"].name == "京沪高速铁路", "人工覆盖须在重新导入后继续生效"
+
+
+def test_legacy_route_path_workspace_migrates_to_corridor(tmp_path):
+    store = SQLiteWorkspace(tmp_path / "workspace.sqlite")
+    store.seed(repository())
+    with sqlite3.connect(store.path) as db, db:
+        raw = db.execute(
+            "SELECT data FROM workspace_source WHERE kind='corridors' AND id='COR-1'"
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO workspace_source VALUES('routes','COR-1',?)", (raw,)
+        )
+        db.execute(
+            "DELETE FROM workspace_source WHERE kind='corridors' AND id='COR-1'"
+        )
+        run = json.loads(
+            db.execute(
+                "SELECT data FROM workspace_source WHERE kind='train_runs' AND id='RUN-1'"
+            ).fetchone()[0]
+        )
+        run["route_path_id"] = run.pop("corridor_id")
+        db.execute(
+            "UPDATE workspace_source SET data=? WHERE kind='train_runs' AND id='RUN-1'",
+            (json.dumps(run),),
+        )
+    loaded, _ = store.load()
+    assert loaded.train_runs["RUN-1"].corridor_id == "COR-1"
+    assert loaded.corridors["COR-1"].verification_status == "unverified"
 
 
 def test_failed_candidate_and_stale_save_leave_workspace_unchanged(tmp_path):
