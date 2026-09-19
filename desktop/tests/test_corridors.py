@@ -30,9 +30,11 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.rail_ui import RailEditor
     from desktop.tests.test_operating_ui import MapStub
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     view = MapStub()
     editor = RailEditor(view, tmp_path, tmp_path / "plan.json")
     side = editor.sidebar()
@@ -45,8 +47,17 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     editor.merge_corridors(document)
     assert len(editor.plan.trains) == 2
     assert all(t["route_id"] == route["id"] for t in editor.document()["trains"])
+    editor.show_corridor(route["id"], "")
+    corridor_only = next(
+        c[1]["features"] for c in reversed(view.calls) if c[0] == "setRailPlan"
+    )
+    assert all(f["geometry"]["type"] == "LineString" for f in corridor_only)
     editor.line_combo.setCurrentIndex(editor.line_combo.findData("rail/G3"))
     editor.show_reference_route()
+    selected_train = next(
+        c[1]["features"] for c in reversed(view.calls) if c[0] == "setRailPlan"
+    )
+    assert any(f["geometry"]["type"] == "Point" for f in selected_train)
     feature = next(
         c[1]["features"][0] for c in reversed(view.calls) if c[0] == "setRailPlan"
     )
@@ -90,17 +101,28 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
         }
         for leg in reversed(other["path"])
     ]
+    other.pop("sequence", None)
     editor.merge_corridors({**document, "corridors": [other]})
     editor.show_corridor(other["id"])
     preview = next(
         c[1]["features"] for c in reversed(view.calls) if c[0] == "setRailPlan"
     )
     assert next(f for f in preview if f["properties"].get("corridor_id") == other["id"])["properties"]["train_ids"] == []
+    assert all(f["geometry"]["type"] == "LineString" for f in preview), (
+        "选择 Corridor 只能显示完整物理路径，不能显示车次经停站"
+    )
     assert len(editor.plan.trains) == 2, "预览通道不能生成车次"
     editor.add_train_on_corridor("G5", other["id"], 25200, 43200)
     assert len(editor.plan.trains) == 3
     assert editor.document()["trains"][-1]["route_id"] == other["id"]
     assert len(editor.plan.trains[-1]["stops"]) == 2
+    editor.show_corridor(other["id"], "G5")
+    train_preview = next(
+        c[1]["features"] for c in reversed(view.calls) if c[0] == "setRailPlan"
+    )
+    assert any(f["geometry"]["type"] == "Point" for f in train_preview), (
+        "只有选择 TrainRun 时才显示经停站"
+    )
     editor.timer.stop()
     side.close()
     editor.close()
@@ -110,9 +132,11 @@ def test_saved_corridor_without_train_survives_restart(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.rail_ui import RailEditor
     from desktop.tests.test_operating_ui import MapStub
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     path = tmp_path / "plan.json"
     editor = RailEditor(MapStub(), tmp_path, path)
     payload = editor.document()

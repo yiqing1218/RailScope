@@ -10,11 +10,13 @@ from uuid import uuid4
 try:
     from .rail_lines import RailLineLibrary, line_identity, edge_length
     from .rail_categories import track_type
+    from .geometry import distance_m
 except ImportError:
     from rail_lines import RailLineLibrary, line_identity, edge_length
     from rail_categories import track_type
+    from geometry import distance_m
 
-INDEX_VERSION = 5
+INDEX_VERSION = 6
 
 
 def fingerprint(source, extras):
@@ -51,8 +53,9 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);
             CREATE TABLE lines(id TEXT PRIMARY KEY,source_name TEXT NOT NULL,edge_count INTEGER DEFAULT 0,track_type TEXT,evidence TEXT);
             CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a INTEGER,b INTEGER,construction INTEGER,length_m REAL,track_type TEXT,evidence TEXT);
-            CREATE TABLE nodes(id INTEGER PRIMARY KEY,label TEXT,kind TEXT);
+            CREATE TABLE nodes(id INTEGER PRIMARY KEY,label TEXT,kind TEXT,x REAL,y REAL);
             CREATE TABLE line_nodes(line_id TEXT,node_id INTEGER,PRIMARY KEY(line_id,node_id));
+            CREATE TABLE station_aliases(source_id TEXT,alias TEXT,station_node_id INTEGER,anchor_node INTEGER,distance_m REAL,verification_status TEXT,confidence REAL,PRIMARY KEY(source_id,alias,anchor_node));
         """)
 
         def add(edge, replace=True):
@@ -74,6 +77,16 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     *track_type(edge.get("way_tags", {})),
                 ),
             )
+            coordinates = edge.get("coordinates", [])
+            if coordinates:
+                for node, coordinate in (
+                    (edge["from_node"], coordinates[0]),
+                    (edge["to_node"], coordinates[-1]),
+                ):
+                    db.execute(
+                        "INSERT INTO nodes(id,x,y) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET x=coalesce(nodes.x,excluded.x),y=coalesce(nodes.y,excluded.y)",
+                        (node, coordinate[0], coordinate[1]),
+                    )
 
         with closing(
             sqlite3.connect(Path(source).resolve().as_uri() + "?mode=ro", uri=True)
@@ -92,6 +105,8 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                 INSERT OR IGNORE INTO line_nodes SELECT line_id,b FROM edges;
                 INSERT OR IGNORE INTO nodes(id) SELECT node_id FROM line_nodes;
                 CREATE INDEX endpoint_line ON line_nodes(node_id);
+                CREATE VIRTUAL TABLE node_bounds USING rtree(id,minx,maxx,miny,maxy);
+                INSERT INTO node_bounds SELECT id,x,x,y,y FROM nodes WHERE x IS NOT NULL AND y IS NOT NULL;
                 UPDATE lines SET edge_count=(SELECT count(*) FROM edges WHERE line_id=lines.id);
                 DELETE FROM lines WHERE edge_count=0;
             """)
@@ -104,15 +119,153 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     (prop.get("name") or None, prop.get("kind"), ident),
                 )
 
+            station_points = {}
             for index, (raw,) in enumerate(
                 src.execute("SELECT data FROM features WHERE kind='railPoints'")
             ):
-                label(json.loads(raw))
+                point = json.loads(raw)
+                label(point)
+                props = point.get("properties", {})
+                if (
+                    props.get("kind") in ("station", "halt")
+                    and point.get("geometry", {}).get("type") == "Point"
+                ):
+                    station_points[props.get("osm_node_id")] = point
                 if index % 5000 == 0:
                     progress(f"整理车站、线路所与道岔名称：{index:,}")
             # Bundled station anchors have better labels than generic switches.
             for point in points:
                 label(point)
+                props = point.get("properties", {})
+                if (
+                    props.get("kind") in ("station", "halt")
+                    and point.get("geometry", {}).get("type") == "Point"
+                ):
+                    station_points[props.get("osm_node_id")] = point
+
+            def nearby_anchors(coordinate):
+                x, y = coordinate
+                candidates = []
+                for radius in (0.02, 0.06):
+                    candidates = db.execute(
+                        "SELECT n.id,n.x,n.y,ln.line_id FROM node_bounds b "
+                        "JOIN nodes n ON n.id=b.id JOIN line_nodes ln ON ln.node_id=n.id "
+                        "WHERE b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
+                        (x - radius, x + radius, y - radius, y + radius),
+                    ).fetchall()
+                    if candidates:
+                        break
+                if not candidates:
+                    return []
+                per_line = {}
+                for node, nx, ny, line_id in candidates:
+                    gap = distance_m(coordinate, [nx, ny])
+                    if gap > 5000:
+                        continue
+                    current = per_line.get(line_id)
+                    if current is None or (gap, node) < (current[1], current[0]):
+                        per_line[line_id] = (node, gap)
+                # Keep nearby alternatives so a station remains selectable after
+                # the user chooses a specific physical line in a dense yard.
+                result, seen = [], set()
+                for node, gap in sorted(per_line.values(), key=lambda item: (item[1], item[0])):
+                    if node in seen:
+                        continue
+                    seen.add(node)
+                    result.append((node, gap))
+                    if len(result) >= 48:
+                        break
+                return result
+
+            def add_alias(alias, source_id, station_node, coordinate):
+                if not alias or not coordinate:
+                    return
+                exact = db.execute(
+                    "SELECT id FROM nodes WHERE id=?", (station_node,)
+                ).fetchone()
+                if exact:
+                    anchors = [(station_node, 0.0)]
+                    status = "source_node"
+                else:
+                    anchors = nearby_anchors(coordinate)
+                    status = (
+                        "automatic_nearby_topology_node" if anchors else "unresolved"
+                    )
+                if not anchors:
+                    anchors = [(None, None)]
+                for anchor, gap in anchors:
+                    confidence = (
+                        1.0
+                        if status == "source_node"
+                        else max(0.1, round(1 - gap / 5000, 3))
+                        if anchor
+                        else None
+                    )
+                    db.execute(
+                        "INSERT OR IGNORE INTO station_aliases VALUES(?,?,?,?,?,?,?)",
+                        (source_id, alias, station_node, anchor, gap, status, confidence),
+                    )
+
+            def area_center(geometry):
+                if geometry.get("type") == "Polygon":
+                    points = [point for ring in geometry.get("coordinates", []) for point in ring]
+                elif geometry.get("type") == "MultiPolygon":
+                    points = [
+                        point
+                        for polygon in geometry.get("coordinates", [])
+                        for ring in polygon
+                        for point in ring
+                    ]
+                else:
+                    points = []
+                if not points:
+                    return None
+                xs, ys = zip(*(point[:2] for point in points))
+                return [(min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2]
+
+            for station_node, point in station_points.items():
+                props = point["properties"]
+                add_alias(
+                    props.get("name"),
+                    "node/" + str(station_node),
+                    station_node,
+                    point["geometry"]["coordinates"],
+                )
+
+            # Real station buildings/outlines supply aliases such as 上海站 even
+            # when the OSM station node itself is labelled 上海.
+            tables = {
+                row[0]
+                for row in src.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "features" in tables:
+                for (raw,) in src.execute(
+                    "SELECT data FROM features WHERE kind='railStationAreas'"
+                ):
+                    area = json.loads(raw)
+                    props = area.get("properties", {})
+                    alias = props.get("source_name")
+                    station_ids = props.get("associated_station_ids", [])
+                    station_node = station_ids[0] if station_ids else None
+                    station = station_points.get(station_node)
+                    coordinate = (
+                        station["geometry"]["coordinates"]
+                        if station
+                        else area_center(area.get("geometry", {}))
+                    )
+                    if alias and coordinate:
+                        source_kind = "way" if "osm_way_id" in props else "relation"
+                        source_number = props.get("osm_" + source_kind + "_id")
+                        add_alias(
+                            alias,
+                            f"{source_kind}/{source_number}",
+                            station_node,
+                            coordinate,
+                        )
+            db.execute("CREATE INDEX station_alias_name ON station_aliases(alias)")
+            db.execute("CREATE INDEX station_alias_anchor ON station_aliases(anchor_node)")
         db.execute("INSERT INTO metadata VALUES(?,?)", ("source", signature))
         progress("保存铁路索引…")
         db.commit()
@@ -140,8 +293,9 @@ class _DirectoryMapping(Mapping):
 
     def __getitem__(self, key):
         with self.store.connect() as db:
+            fields = "id,label,kind" if self.kind == "nodes" else "*"
             row = db.execute(
-                "SELECT * FROM " + self.kind + " WHERE id=?", (key,)
+                "SELECT " + fields + " FROM " + self.kind + " WHERE id=?", (key,)
             ).fetchone()
         if not row:
             raise KeyError(key)
@@ -228,19 +382,37 @@ class DiskRailLineLibrary:
         if line_id:
             clause = " AND n.id IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
             args.append(line_id)
+        else:
+            clause = (
+                " AND (a.alias IS NULL OR a.distance_m=(SELECT min(a2.distance_m) "
+                "FROM station_aliases a2 WHERE a2.source_id=a.source_id "
+                "AND a2.alias=a.alias AND a2.anchor_node IS NOT NULL))"
+            )
         term = (
             "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         )
         with self.connect() as db:
             rows = db.execute(
-                "SELECT n.id,n.label,n.kind FROM nodes n WHERE (n.label LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!' OR n.kind LIKE ? ESCAPE '!')"
+                "SELECT n.id,coalesce(a.alias,n.label),coalesce(n.kind,'station'),a.distance_m "
+                "FROM nodes n LEFT JOIN station_aliases a ON a.anchor_node=n.id "
+                "WHERE (a.alias LIKE ? ESCAPE '!' OR n.label LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!' OR n.kind LIKE ? ESCAPE '!')"
                 + clause
-                + " ORDER BY n.label IS NULL,n.label,n.id LIMIT ?",
-                (term, term, term, *args, limit),
+                + " ORDER BY a.alias IS NULL,a.distance_m,n.label IS NULL,coalesce(a.alias,n.label),n.id LIMIT ?",
+                (term, term, term, term, *args, limit * 3),
             ).fetchall()
-        return [
-            (node, self.node_label((node, name, kind))) for node, name, kind in rows
-        ]
+        result, seen = [], set()
+        for node, name, kind, gap in rows:
+            key = (node, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = self.node_label((node, name, kind))
+            if gap and name:
+                label += f" · 邻近轨道端点 {gap:.0f} m"
+            result.append((node, label))
+            if len(result) >= limit:
+                break
+        return result
 
     def selected_library(self, ids):
         # Reuse the graph resolver with only the requested lines, never the country.
@@ -345,7 +517,9 @@ class DiskRailLineLibrary:
                         "endpoints",
                         (
                             {"node_id": row[0], "name": self.node_label(row)}
-                            for row in db.execute("SELECT * FROM nodes ORDER BY id")
+                            for row in db.execute(
+                                "SELECT id,label,kind FROM nodes ORDER BY id"
+                            )
                         ),
                     ),
                     ("sections", self.sections()),

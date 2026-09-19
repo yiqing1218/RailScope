@@ -69,3 +69,26 @@ def test_rail_directory_without_geometry_does_not_move_map(tmp_path):
     assert view.calls == []
     assert "无法定位" in widget.note.text()
     widget.close()
+
+
+def test_map_selected_way_is_revealed_in_rail_directory(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app
+    catalog = {
+        "line": {
+            "name": "京沪高铁",
+            "province": "上海市",
+            "corridor": "纵向 · 京沪通道",
+            "section": "京沪高铁",
+            "track_type": "高速铁路线",
+            "way_ids": [99],
+        }
+    }
+    (tmp_path / "rail_catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    widget.search.setText("不会匹配")
+    assert widget.select_way(99)
+    assert widget.search.text() == ""
+    assert widget.tree.currentItem() is widget.items["line"]
+    assert widget.items["line"].parent().isExpanded()
+    widget.close()

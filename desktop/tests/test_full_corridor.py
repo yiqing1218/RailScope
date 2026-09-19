@@ -141,9 +141,11 @@ def test_train_stop_editor_changes_one_train_and_roundtrips(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.rail_ui import RailEditor
     from desktop.tests.test_operating_ui import MapStub
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     path = tmp_path / "plan.json"
     editor = RailEditor(MapStub(), tmp_path, path)
     editor.add_train_number("G3", "G1", 24000)

@@ -65,6 +65,7 @@ from rail_ui import RailEditor
 from rail_style_ui import load_styles, RailStyleDialog
 from corridor_ui import CorridorPanel
 from layer_state import initial_visibility, editor_sizes
+from map_commands import MapCommands
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
@@ -287,6 +288,7 @@ class MapPage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, line, source):
         if level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
             self.console_errors.append(message)
+            del self.console_errors[:-100]
 
 
 class MapView(QWebEngineView):
@@ -297,7 +299,8 @@ class MapView(QWebEngineView):
         self.channel = QWebChannel(self.page())
         self.channel.registerObject("bridge", self.bridge)
         self.page().setWebChannel(self.channel)
-        self.commands = []
+        self.commands = MapCommands()
+        self.command_in_flight = False
         self.is_ready = False
         self.bridge.initialized.connect(self._ready)
         self.load(
@@ -310,16 +313,24 @@ class MapView(QWebEngineView):
             + ",".join(json.dumps(arg, ensure_ascii=False) for arg in args)
             + ")"
         )
-        if self.is_ready:
-            self.page().runJavaScript(code)
-        else:
-            self.commands.append(code)
+        self.commands.put(method, args, code)
+        self._dispatch()
+
+    def _dispatch(self):
+        if not self.is_ready or self.command_in_flight:
+            return
+        code = self.commands.pop()
+        if code is not None:
+            self.command_in_flight = True
+            self.page().runJavaScript(code, self._completed)
+
+    def _completed(self, result):
+        self.command_in_flight = False
+        self._dispatch()
 
     def _ready(self):
         self.is_ready = True
-        for code in self.commands:
-            self.page().runJavaScript(code)
-        self.commands.clear()
+        self._dispatch()
 
 
 class Desk(QMainWindow):
@@ -518,7 +529,12 @@ class Desk(QMainWindow):
         }
         rail = ROOT / "data" / "raw" / "osm" / "beijing_highspeed.geojson"
         sources["areas"] = self.station_areas
-        sources["stations"] = self.display_stations
+        # Keep full raw members in Python/registry; do not clone each of them
+        # into Chromium and its GeoJSON workers just to draw a station marker.
+        sources["stations"] = {"type": "FeatureCollection", "features": [
+            {**feature, "properties": {key: value for key, value in feature["properties"].items() if key != "source_members"}}
+            for feature in self.display_stations["features"]
+        ]}
         sources["construction"] = self.construction
         sources["rail"] = (
             "/data/raw/osm/beijing_highspeed.geojson" if rail.exists() else EMPTY
@@ -752,7 +768,7 @@ class Desk(QMainWindow):
         data = bar.addMenu("数据源")
         self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
         self.add_action(data, "下载 / 提取全国国铁…", self.open_rail_download)
-        self.add_action(data, "车站真实轮廓覆盖检查…", self.audit_station_boundaries)
+        self.add_action(data, "全国地铁站 / 真实区域检索…", self.audit_station_boundaries)
         self.add_action(
             data, "全国铁路站区 / 站台轮廓覆盖检查…", self.audit_rail_boundaries
         )
@@ -813,7 +829,19 @@ class Desk(QMainWindow):
         from boundary_ui import BoundaryDialog
 
         stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
-        BoundaryDialog(stations, self.station_areas["features"], self).exec()
+        dialog = BoundaryDialog(stations, self.station_areas["features"], self)
+        dialog.located.connect(self.locate_station_record)
+        dialog.exec()
+
+    def locate_station_record(self, record):
+        self.visible_lines.update(record.get("route_relation_ids", []))
+        self.sync_tree_switches()
+        self.send_directory_filter()
+        self.set_flag("stations", True)
+        self.select_metro_tree_item(record.get("route_relation_ids", []))
+        self.open_sidebar(0)
+        self.map.call("focus", *record["coordinates"], 16, record["name"])
+        self.display_feature({"layer": "stations", "properties": record})
 
     def audit_rail_boundaries(self):
         from boundary_ui import BoundaryDialog
@@ -1274,6 +1302,26 @@ class Desk(QMainWindow):
             if point:
                 self.map.call("focus", *point, 11)
 
+    def select_metro_tree_item(self, relation_ids):
+        relation_ids = {int(value) for value in relation_ids if value is not None}
+        candidates = [
+            item
+            for item in self.tree_items
+            if not item.childCount() and relation_ids & self.item_ids(item)
+        ]
+        if not candidates:
+            return False
+        item = candidates[0]
+        if self.line_search.text():
+            self.line_search.clear()
+        ancestor = item.parent()
+        while ancestor:
+            ancestor.setExpanded(True)
+            ancestor = ancestor.parent()
+        self.tree.setCurrentItem(item)
+        self.tree.scrollToItem(item)
+        return True
+
     def update_count(self):
         self.line_count.setText(
             f"{self.leaf_count} 条线路 / 工程 · {sum(r > 0 for r in self.visible_lines)} 个线路关系可见"
@@ -1605,13 +1653,41 @@ class Desk(QMainWindow):
     def select_map_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         props = feature.get("properties", {})
-        if feature.get("layer") in (
+        layer = feature.get("layer", "")
+        if props.get("corridor_id") and layer in (
             "rail-vehicles",
             "rail-vehicle-labels",
-        ) and props.get("corridor_id"):
-            self.rail_operations.show_corridor(
-                props["corridor_id"], props.get("trip_id", "")
+            "rail-plan-path",
+            "rail-plan-stations",
+            "rail-plan-labels",
+        ):
+            train_id = (
+                props.get("trip_id") or props.get("train_id", "")
+                if layer != "rail-plan-path"
+                else ""
             )
+            self.open_sidebar(2)
+            self.corridor_panel.focus_item(props["corridor_id"], train_id)
+            self.rail_operations.show_corridor(props["corridor_id"], train_id)
+        elif layer in ("rail", "rail-stripes", "rail-construction") and props.get(
+            "osm_way_id"
+        ) is not None:
+            self.open_sidebar(0)
+            self.rail_catalog_widget.select_way(props["osm_way_id"])
+        else:
+            relation_ids = props.get("route_relation_ids", [])
+            if isinstance(relation_ids, str):
+                try:
+                    relation_ids = json.loads(relation_ids)
+                except ValueError:
+                    relation_ids = []
+            relation_ids = list(relation_ids) if isinstance(relation_ids, list) else []
+            relation = props.get("route_relation_id")
+            if relation is not None:
+                relation_ids.insert(0, relation)
+            if relation_ids:
+                self.open_sidebar(0)
+                self.select_metro_tree_item(relation_ids)
         self.display_feature(feature)
 
     def display_feature(self, data):

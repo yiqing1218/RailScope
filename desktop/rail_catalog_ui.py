@@ -562,6 +562,39 @@ class RailCatalog(QWidget):
         )
         self.note.setText("已定位：" + item.text(0) + "；显示开关保持不变。")
 
+    def select_way(self, way_id, province=None):
+        """Reveal a map-selected OSM way in the current catalog hierarchy."""
+        candidates = [
+            key
+            for key, record in self.catalog.items()
+            if way_id in record.get("way_ids", [])
+        ]
+        if province:
+            preferred = [
+                key for key in candidates if self.meta(key).get("province") == province
+            ]
+            candidates = preferred or candidates
+        if not candidates:
+            return False
+        current = self.tree.currentItem()
+        current_key = (
+            current.data(0, Qt.ItemDataRole.UserRole) if current is not None else None
+        )
+        key = current_key if current_key in candidates else sorted(candidates)[0]
+        if self.search.text():
+            self.search.clear()
+        item = self.items.get(key)
+        if item is None:
+            return False
+        ancestor = item.parent()
+        while ancestor:
+            ancestor.setExpanded(True)
+            ancestor = ancestor.parent()
+        self.tree.setCurrentItem(item)
+        self.tree.scrollToItem(item)
+        self.note.setText("地图已选择：" + item.text(0))
+        return True
+
     def organize(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("国铁分类整理 · 轨道类型 / 省份 / 高速通道")

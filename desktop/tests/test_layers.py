@@ -97,6 +97,46 @@ def test_same_rail_name_can_have_different_province_sections():
     assert {r["province"] for r in catalog.values()} == {"上海市", "江苏省"}
 
 
+def test_cross_boundary_way_is_present_on_both_province_sides():
+    from desktop.provinces import ProvinceIndex, add_track
+
+    data = {
+        "features": [
+            {
+                "properties": {"shapeName": "Shanghai"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[1, 0], [2, 0], [2, 2], [1, 2], [1, 0]]],
+                },
+            },
+            {
+                "properties": {"shapeName": "Jiangsu"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[0, 0], [1, 0], [1, 2], [0, 2], [0, 0]]],
+                },
+            },
+        ]
+    }
+    catalog = {}
+    add_track(
+        catalog,
+        {
+            "properties": {
+                "osm_way_id": 99,
+                "way_tags": {"name": "京沪高铁", "highspeed": "yes"},
+            },
+            "geometry": {"coordinates": [[0.8, 1], [1.2, 1]]},
+        },
+        ProvinceIndex(data),
+    )
+    assert {record["province"] for record in catalog.values()} == {
+        "江苏省",
+        "上海市",
+    }
+    assert all(record["way_ids"] == [99] for record in catalog.values())
+
+
 def test_province_holes_and_half_length_not_coordinate_average():
     from desktop.provinces import ProvinceIndex, midpoint
 

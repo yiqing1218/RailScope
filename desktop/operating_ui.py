@@ -791,11 +791,13 @@ class OperationsEditor(QFrame):
         now = monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
-        if self.enabled and self.playing:
+        advancing = self.enabled and self.playing
+        if advancing:
             self.clock = min(172799, self.clock + self.speed * elapsed)
         if self.clock >= 172799:
             self.playing = False
-        self.push_positions()
+        if advancing:
+            self.push_positions()
         self._ticks += 1
         if self._ticks % 5 == 0:
             self.updated.emit()

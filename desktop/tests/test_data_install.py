@@ -136,7 +136,7 @@ def test_actual_three_importers_produce_complete_versioned_dataset(
         project / "desktop/import_station_areas.py",
         tmp_path / "desktop/import_station_areas.py",
     )
-    for name in ("metro_data.py", "geometry.py"):
+    for name in ("metro_data.py", "geometry.py", "station_search.py"):
         shutil.copy2(project / "desktop" / name, tmp_path / "desktop" / name)
     raw = tmp_path / "china-latest.osm.pbf"
     with osmium.SimpleWriter(str(raw)) as writer:

@@ -12,7 +12,7 @@ except ImportError:
     from geometry import distance_m
     from rail_categories import track_type, corridor_for
 
-VERSION = "geoboundaries-CHN-ADM1-43563684-type-midpoint-v3"
+VERSION = "geoboundaries-CHN-ADM1-43563684-type-track-span-v4"
 NAMES = {
     "Hainan": "海南省",
     "Taiwan": "台湾省",
@@ -132,30 +132,41 @@ class ProvinceIndex:
                 return name
         return "省界外 / 待核对"
 
+    def along(self, coordinates):
+        """Return every province touched by an OSM way without clipping source geometry."""
+        # OSM railway ways are short. Endpoints catch boundary crossings while
+        # the half-length point retains the former single-province behavior.
+        samples = [coordinates[0], midpoint(coordinates), coordinates[-1]]
+        names = {self.locate(point) for point in samples}
+        inside = names - {"省界外 / 待核对"}
+        return sorted(inside or names)
+
 
 def add_track(catalog, feature, index):
     props = feature["properties"]
     tags = props["way_tags"]
     name = tags.get("project:name") or tags.get("name") or "未命名轨道"
-    province = index.locate(midpoint(feature["geometry"]["coordinates"]))
     category, evidence = track_type(tags)
-    key = json.dumps(
-        [province, name, category], ensure_ascii=False, separators=(",", ":")
-    )
-    record = catalog.setdefault(
-        key,
-        {
-            "name": name,
-            "province": province,
-            "way_ids": [],
-            "corridor": corridor_for(name, category),
-            "section": name,
-            "track_type": category,
-            "type_evidence": evidence,
-            "classification": VERSION,
-        },
-    )
-    record["way_ids"].append(props["osm_way_id"])
+    coordinates = feature["geometry"]["coordinates"]
+    for province in index.along(coordinates):
+        key = json.dumps(
+            [province, name, category], ensure_ascii=False, separators=(",", ":")
+        )
+        record = catalog.setdefault(
+            key,
+            {
+                "name": name,
+                "province": province,
+                "way_ids": [],
+                "corridor": corridor_for(name, category),
+                "section": name,
+                "track_type": category,
+                "type_evidence": evidence,
+                "classification": VERSION,
+            },
+        )
+        if props["osm_way_id"] not in record["way_ids"]:
+            record["way_ids"].append(props["osm_way_id"])
 
 
 def geographic_catalog(directory):

@@ -205,6 +205,27 @@ class CorridorPanel(QScrollArea):
             item.data(0, Qt.ItemDataRole.UserRole + 1) or "",
         )
 
+    def focus_item(self, route_id, train_id=""):
+        """Reveal the map-selected corridor or TrainRun in the left directory."""
+        self.search.clear()
+        self.refresh()
+        for index in range(self.tree.topLevelItemCount()):
+            root = self.tree.topLevelItem(index)
+            if root.data(0, Qt.ItemDataRole.UserRole) != route_id:
+                continue
+            target = root
+            if train_id:
+                for child_index in range(root.childCount()):
+                    child = root.child(child_index)
+                    if child.data(0, Qt.ItemDataRole.UserRole + 1) == train_id:
+                        target = child
+                        break
+            root.setExpanded(True)
+            self.tree.setCurrentItem(target)
+            self.tree.scrollToItem(target)
+            return True
+        return False
+
     def context_menu(self, position):
         item = self.tree.itemAt(position)
         if not item:
@@ -292,7 +313,7 @@ class CorridorPanel(QScrollArea):
         source = (
             "已导入的全国铁路库"
             if (self.editor.directory / "rail.sqlite").exists()
-            else "便携参考轨道（尚未导入全国铁路库）"
+            else "尚未导入全国铁路库"
         )
         form.addRow(
             text_label(

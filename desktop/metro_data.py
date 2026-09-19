@@ -11,81 +11,83 @@ except ImportError:
     from geometry import build_demo_path, distance_m
 
 
-def associate_station_areas(areas, stations, grid=None):
-    if grid is None:
-        grid = defaultdict(list)
-        for station in stations:
-            x, y = station["geometry"]["coordinates"]
-            grid[int(x / 0.005), int(y / 0.005)].append(station)
-    by_node = {
-        s["properties"]["osm_node_id"]: s
-        for values in grid.values()
-        for s in values
-        if "osm_node_id" in s["properties"]
-    }
+def station_area_index(stations):
+    """One reusable spatial/name index for an entire national import."""
+    try:
+        from .station_search import name_keys
+    except ImportError:
+        from station_search import name_keys
+    grid = defaultdict(list)
+    by_node, names = {}, {}
+    for station in stations:
+        x, y = station["geometry"]["coordinates"]
+        grid[int(x / 0.005), int(y / 0.005)].append(station)
+        props = station["properties"]
+        if "osm_node_id" in props:
+            by_node[props["osm_node_id"]] = station
+        names[id(station)] = name_keys(props)
+    return grid, by_node, names
+
+
+def ring_distance(ring, point):
+    """Distance to the actual polygon perimeter, not its bounding-box centre."""
+    scale = math.cos(math.radians(point[1]))
+    best = math.inf
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        ax, ay = (a[0] - point[0]) * scale, a[1] - point[1]
+        dx, dy = (b[0] - a[0]) * scale, b[1] - a[1]
+        norm = dx * dx + dy * dy
+        t = max(0, min(1, -(ax * dx + ay * dy) / norm)) if norm else 0
+        best = min(best, math.hypot(ax + t * dx, ay + t * dy) * 111195)
+    return best
+
+
+def associate_station_areas(areas, stations, grid=None, index=None):
+    try:
+        from .station_search import name_keys
+    except ImportError:
+        from station_search import name_keys
+    if index is None:
+        index = station_area_index(stations if grid is None else [s for values in grid.values() for s in values])
+    grid, by_node, names = index
     for area in areas:
-        geometry = area["geometry"]
-        polygons = (
-            geometry["coordinates"]
-            if geometry["type"] == "MultiPolygon"
-            else [geometry["coordinates"]]
-        )
-        explicit_ids = area["properties"].get("member_station_ids", [])
-        inside = [by_node[node] for node in explicit_ids if node in by_node]
-        for polygon in polygons:
-            ring, holes = polygon[0], polygon[1:]
-            xs, ys = zip(*ring)
-            center = [(min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2]
-            nearby = [
-                s
-                for a in range(int(min(xs) / 0.005) - 1, int(max(xs) / 0.005) + 2)
-                for b in range(int(min(ys) / 0.005) - 1, int(max(ys) / 0.005) + 2)
-                for s in grid[a, b]
-                if not any(
-                    contains(hole, s["geometry"]["coordinates"]) for hole in holes
-                )
-            ]
-            matched = [
-                s for s in nearby if contains(ring, s["geometry"]["coordinates"])
-            ]
-            if not matched and nearby:
-                nearest = min(
-                    nearby,
-                    key=lambda s: distance_m(center, s["geometry"]["coordinates"]),
-                )
-                if distance_m(center, nearest["geometry"]["coordinates"]) <= 150:
-                    name = nearest["properties"].get("name")
-                    matched = [
-                        s
-                        for s in nearby
-                        if s["properties"].get("name") == name
-                        and distance_m(center, s["geometry"]["coordinates"]) <= 250
-                    ]
-            inside.extend(matched)
-        ids = sorted(
-            {r for s in inside for r in s["properties"].get("route_relation_ids", [])}
-        )
-        area["properties"]["route_relation_ids"] = ids
-        area["properties"]["associated_station_ids"] = sorted(
-            {
-                s["properties"]["osm_node_id"]
-                for s in inside
-                if "osm_node_id" in s["properties"]
-            }
-        )
-        area["properties"]["association_source"] = (
-            "OSM 关系成员关联"
-            if explicit_ids and ids
-            else "空间派生关联，非 OSM 原始标签"
-            if ids
-            else "尚未关联到线路"
-        )
-        area["properties"]["association_verification_status"] = (
-            "osm_derived" if explicit_ids and inside else "automatic_match" if inside else "unresolved"
-        )
-        area["properties"]["association_confidence"] = (
-            .95 if explicit_ids and inside else .5 if inside else None
-        )
+        props, geometry = area["properties"], area["geometry"]
+        polygons = geometry["coordinates"] if geometry["type"] == "MultiPolygon" else [geometry["coordinates"]]
+        explicit = [by_node[node] for node in props.get("member_station_ids", []) if node in by_node]
+        inside, candidates = list(explicit), {}
+        area_names = name_keys(props)
+        # A stop_area has explicit station membership. Do not add unrelated
+        # adjacent stations, and never treat a whole route as a stop_area.
+        if not explicit:
+            for polygon in polygons:
+                ring, holes = polygon[0], polygon[1:]
+                xs, ys = zip(*ring)
+                for a in range(int(min(xs) / 0.005) - 1, int(max(xs) / 0.005) + 2):
+                    for b in range(int(min(ys) / 0.005) - 1, int(max(ys) / 0.005) + 2):
+                        for station in grid.get((a, b), []):
+                            point = station["geometry"]["coordinates"]
+                            if any(contains(hole, point) for hole in holes):
+                                continue
+                            if contains(ring, point):
+                                inside.append(station)
+                                continue
+                            gap = ring_distance(ring, point)
+                            same_name = bool(area_names & names[id(station)])
+                            if (same_name and gap <= 350) or (not area_names and gap <= 80):
+                                candidates[id(station)] = station
+            if not inside and candidates:
+                # Shared names may represent duplicate platforms of one stop;
+                # competing station names stay unresolved instead of nearest-wins.
+                groups = {frozenset(names[key]) for key in candidates}
+                if len(groups) == 1 and next(iter(groups)):
+                    inside = list(candidates.values())
+        props["route_relation_ids"] = sorted({r for station in inside for r in station["properties"].get("route_relation_ids", [])})
+        props["associated_station_ids"] = sorted({station["properties"]["osm_node_id"] for station in inside if "osm_node_id" in station["properties"]})
+        props["association_candidate_station_ids"] = sorted({station["properties"]["osm_node_id"] for station in candidates.values() if "osm_node_id" in station["properties"]}) if not inside else []
+        props["association_source"] = "OSM 关系成员关联" if explicit else "名称与真实边界空间派生关联，非 OSM 原始标签" if inside else "尚未关联到线路"
+        props["association_verification_status"] = "osm_derived" if explicit else "automatic_match" if inside else "unresolved"
+        props["association_confidence"] = .95 if explicit else .5 if inside else None
+        props["association_version"] = "station-area-v2"
     return areas
 
 

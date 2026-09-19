@@ -1,5 +1,6 @@
 import json
 import pytest
+import sqlite3
 
 
 def test_rail_path_crosses_lines_but_never_invents_junctions():
@@ -78,3 +79,31 @@ def test_actual_rail_import_keeps_switches_platforms_tracks_and_raw_tags(tmp_pat
         )["features"][0]["geometry"]["type"]
         == "Polygon"
     )
+
+
+def test_national_viewport_has_hard_feature_budget(tmp_path):
+    from desktop.rail_store import VIEWPORT_FEATURES, viewport
+
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript(
+            "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT);"
+            "CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);"
+        )
+        feature = json.dumps({
+            "type": "Feature",
+            "properties": {"osm_node_id": 1},
+            "geometry": {"type": "Point", "coordinates": [121, 31]},
+        })
+        db.executemany(
+            "INSERT INTO features VALUES(?,?,?,?)",
+            ((index, "railPoints", "main", feature) for index in range(1, VIEWPORT_FEATURES + 2)),
+        )
+        db.executemany(
+            "INSERT INTO bounds VALUES(?,?,?,?,?)",
+            ((index, 121, 121, 31, 31) for index in range(1, VIEWPORT_FEATURES + 2)),
+        )
+    hidden = viewport(tmp_path, "railPoints", [120, 30, 122, 32], 9)
+    assert hidden["features"] == []
+    visible = viewport(tmp_path, "railPoints", [120, 30, 122, 32], 14)
+    assert len(visible["features"]) == VIEWPORT_FEATURES
+    assert visible["truncated"] is True

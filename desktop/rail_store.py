@@ -1,10 +1,27 @@
 """Viewport index: national data stays on disk, not in the browser at startup."""
 
 import json
+import math
 from pathlib import Path
 import sqlite3
 from contextlib import closing
 from uuid import uuid4
+from threading import BoundedSemaphore
+
+# Rendering budgets only: persisted infrastructure and route resolution stay complete.
+VIEWPORT_FEATURES = 6000
+VIEWPORT_BYTES = 8 * 1024 * 1024
+VIEWPORT_VERTICES = 100000
+VIEWPORT_FEATURE_BYTES = 1024 * 1024
+_viewport_gate = BoundedSemaphore(1)
+
+
+def coordinate_count(value):
+    if not value:
+        return 0
+    if isinstance(value[0], (int, float)):
+        return 1
+    return sum(coordinate_count(part) for part in value)
 
 
 def build_index(directory, tracks, points, platforms, edges):
@@ -71,17 +88,48 @@ def viewport(directory, kind, bbox, zoom):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
+    if not math.isfinite(zoom):
+        raise ValueError("缩放级别无效")
     if not -180 <= west < east <= 180 or not -90 <= south < north <= 90:
         raise ValueError("视窗无效")
     path = Path(directory) / "rail.sqlite"
     if not path.exists():
         return {"type": "FeatureCollection", "features": []}
-    with sqlite3.connect(str(path)) as db:
-        rows = db.execute(
-            'SELECT f.data FROM features f JOIN bounds b ON f.id=b.id WHERE f.kind=? AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? AND (? >= 10 OR f.service="main") LIMIT 12001',
-            (kind, west, east, south, north, zoom),
-        ).fetchall()
-    features = [json.loads(r[0]) for r in rows[:12000]]
+    minimum_zoom = {"railPoints": 10, "railPlatforms": 12, "railStationAreas": 11}
+    if zoom < minimum_zoom.get(kind, 0):
+        return {"type": "FeatureCollection", "features": [], "truncated": False}
+    # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
+    if not _viewport_gate.acquire(blocking=False):
+        return {"type": "FeatureCollection", "features": [], "busy": True}
+    features, byte_count, vertices, truncated = [], 0, 0, False
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+            db.execute("PRAGMA cache_size=-2048")
+            rows = db.execute(
+                'SELECT CASE WHEN length(f.data)<=? THEN f.data ELSE NULL END '
+                'FROM features f JOIN bounds b ON f.id=b.id WHERE f.kind=? '
+                'AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? '
+                'AND (? >= 10 OR f.service="main") LIMIT ?',
+                (VIEWPORT_FEATURE_BYTES, kind, west, east, south, north, zoom, VIEWPORT_FEATURES + 1),
+            )
+            for (raw,) in rows:
+                if raw is None:
+                    truncated = True
+                    continue
+                size = len(raw.encode("utf-8"))
+                if len(features) >= VIEWPORT_FEATURES or byte_count + size > VIEWPORT_BYTES:
+                    truncated = True
+                    break
+                feature = json.loads(raw)
+                count = coordinate_count(feature["geometry"]["coordinates"])
+                if vertices + count > VIEWPORT_VERTICES:
+                    truncated = True
+                    continue
+                features.append(feature)
+                byte_count += size
+                vertices += count
+    finally:
+        _viewport_gate.release()
     if kind == "rail":
         try:
             from .rail_categories import track_type
@@ -108,7 +156,7 @@ def viewport(directory, kind, bbox, zoom):
     return {
         "type": "FeatureCollection",
         "features": features,
-        "truncated": len(rows) > 12000,
+        "truncated": truncated,
     }
 
 

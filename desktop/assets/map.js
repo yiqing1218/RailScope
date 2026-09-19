@@ -74,7 +74,60 @@ function rasterStyle(type) {
 }
 function addSource(id, data) { if (!map.getSource(id)) map.addSource(id,{type:'geojson',data,generateId:true}); }
 let railRequest=0;
+let railController=null,railTimer=null;
+let graphicsPaused=false;
+const populatedRailSources=new Set();
+const staticSourceState=new Map();
+function updateStaticSources(){
+  if(!config||graphicsPaused)return;
+  const zoom=map.getZoom(),bounds=map.getBounds(),lines=new Set(visibleIds);
+  for(const id of ['metro','stations','areas','construction','road','imported']){
+    const group=id==='areas'?'stations':id;
+    const on=!!visibility[group]&&!document.hidden&&zoom>=({stations:9,areas:12}[id]||0);
+    const spatial=id==='stations'||id==='areas';
+    const key=on?(spatial?JSON.stringify([visibleIds,bounds.toArray()]):'on'):'off';
+    if(staticSourceState.get(id)===key||!map.getSource(id))continue;
+    let data=on?config.sources[id]:empty;
+    if(on&&spatial&&data?.features){
+      // Bound detailed station geometry to the current camera. A hidden
+      // layer otherwise still leaves a complete national worker index alive.
+      let vertices=0;
+      const features=[];
+      function visit(coords,box){
+        if(typeof coords[0]==='number'){box[0]=Math.min(box[0],coords[0]);box[1]=Math.min(box[1],coords[1]);box[2]=Math.max(box[2],coords[0]);box[3]=Math.max(box[3],coords[1]);return 1;}
+        return coords.reduce((count,part)=>count+visit(part,box),0);
+      }
+      for(const feature of data.features){
+        if(!(feature.properties.route_relation_ids||[]).some(line=>lines.has(line)))continue;
+        const box=[Infinity,Infinity,-Infinity,-Infinity],count=visit(feature.geometry.coordinates,box);
+        if(box[2]<bounds.getWest()||box[0]>bounds.getEast()||box[3]<bounds.getSouth()||box[1]>bounds.getNorth())continue;
+        if(vertices+count>100000||features.length>=6000){document.getElementById('camera-status').textContent='已限制地图细节量，请放大查看';continue;}
+        vertices+=count;features.push(feature);
+      }
+      data={type:'FeatureCollection',features};
+    }
+    map.getSource(id).setData(data||empty);staticSourceState.set(id,key);
+  }
+}
 let railWays=null;
+function railSourceVisible(kind){
+  const zoom=map.getZoom();
+  if(graphicsPaused||document.hidden)return false;
+  if(kind==='rail')return visibility.rail||visibility.railConstruction;
+  return !!visibility[kind]&&zoom>=({railPoints:10,railPlatforms:12,railStationAreas:11}[kind]||0);
+}
+function scheduleRailViewport(){
+  clearTimeout(railTimer);
+  railController?.abort();
+  ++railRequest;
+  for(const kind of populatedRailSources){
+    if(!railSourceVisible(kind)){
+      map.getSource(kind)?.setData(empty);
+      populatedRailSources.delete(kind);
+    }
+  }
+  railTimer=setTimeout(updateRailViewport,180);
+}
 function applyRailWays(){
   const selected=railWays===null?null:['in',['get','osm_way_id'],['literal',railWays]];
   const inactive=['in',['coalesce',['get','construction_status'],['case',['==',['get','construction'],true],'construction','operating']],['literal',['construction','planned','disused']]];
@@ -84,16 +137,22 @@ function applyRailWays(){
   }
 }
 async function updateRailViewport(){
-  if(!config.railViewport||!map.getSource('rail'))return;
+  if(!config.railViewport||!map.getSource('rail')||graphicsPaused||document.hidden)return;
+  railController?.abort();
+  const controller=new AbortController();railController=controller;
   const request=++railRequest,b=map.getBounds();
   const bbox=[Math.max(-180,b.getWest()),Math.max(-85,b.getSouth()),Math.min(180,b.getEast()),Math.min(85,b.getNorth())].join(',');
   try{
     for(const kind of ['rail','railPoints','railPlatforms','railStationAreas']){
-      const data=await fetch(`/api/rail?kind=${kind}&bbox=${bbox}&zoom=${map.getZoom()}`).then(r=>{if(!r.ok)throw new Error('国铁视窗查询失败');return r.json();});
-      if(request!==railRequest)return;map.getSource(kind)?.setData(data);
-      if(kind==='rail')document.getElementById('map-status').title=data.truncated?'国铁要素较多，放大查看完整股道':'国铁按当前地图范围加载';
+      if(!railSourceVisible(kind))continue;
+      const data=await fetch(`/api/rail?kind=${kind}&bbox=${bbox}&zoom=${map.getZoom()}`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('国铁视窗查询失败');return r.json();});
+      if(request!==railRequest||!railSourceVisible(kind))return;
+      if(data.busy){railTimer=setTimeout(updateRailViewport,350);return;}
+      map.getSource(kind)?.setData(data);populatedRailSources.add(kind);
+      if(data.truncated)document.getElementById('camera-status').textContent='已限制地图细节量，请放大查看';
+      if(kind==='rail')document.getElementById('map-status').title=data.truncated?'已达到视窗数据预算，放大查看完整股道':'国铁按当前地图范围加载';
     }
-  }catch(error){report('mapError',String(error));}
+  }catch(error){if(error.name!=='AbortError')report('mapError',String(error));}
 }
 function addLayer(layer) { if (!map.getLayer(layer.id)) map.addLayer(layer); }
 function applyRailStyles(){
@@ -115,7 +174,8 @@ function applyRailStyles(){
 }
 function installLayers() {
   const sources = {...config.sources, vehicles:empty, selection:empty};
-  for (const [id, data] of Object.entries(sources)) addSource(id, data);
+  staticSourceState.clear();populatedRailSources.clear();
+  for (const [id, data] of Object.entries(sources)) addSource(id, ['metro','stations','areas','construction','road','imported'].includes(id)?empty:data);
   addLayer({id:'rail',type:'line',source:'rail',paint:{'line-color':'#667887','line-width':['interpolate',['linear'],['zoom'],4,.4,8,.9,12,2,16,3],'line-opacity':.8}});
   map.setFilter('rail',['!=',['get','construction'],true]);
   addLayer({id:'rail-stripes',type:'line',source:'rail',minzoom:11,filter:['!=',['get','construction'],true],paint:{'line-color':'#ffffff','line-width':2,'line-dasharray':[2,2]}});
@@ -163,7 +223,8 @@ function installLayers() {
   refreshSelection();
   applyRailWays();
   applyRailStyles();
-  updateRailViewport();
+  scheduleRailViewport();
+  updateStaticSources();
 }
 const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes'],railConstruction:['rail-construction'],railPoints:['rail-points','rail-detail-points'],railPlatforms:['rail-platform-fill','rail-platform-outline'],railStationAreas:['rail-station-fill','rail-station-outline'],railVehicles:['rail-vehicles','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 function sharedRailStationFilter(){
@@ -233,7 +294,7 @@ async function setBase(type) {
 function selectFeature(feature) {
   selectedFeature={type:'Feature',properties:feature.properties,geometry:feature.geometry};
   selectedLayer=feature.layer.id;refreshSelection();
-  report('featureSelected',JSON.stringify({layer:feature.layer.id,properties:feature.properties,geometry_type:feature.geometry.type}));
+  report('featureSelected',JSON.stringify({layer:feature.layer.id,properties:feature.properties,geometry:feature.geometry,geometry_type:feature.geometry.type}));
 }
 async function init() {
   config=await (await fetch('/config.json')).json();visibleIds=config.visibleIds;constructionIds=config.constructionIds;
@@ -243,7 +304,18 @@ async function init() {
     if(!response.ok)throw new Error('Vector style request failed');
     standardStyle=styleWorkbench(await response.json());vectorAvailable=true;
   } catch(error) { vectorAvailable=false; }
-  map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false});
+  maplibregl.workerCount=2;
+  map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false,
+    pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0});
+  map.on('webglcontextlost',()=>{
+    graphicsPaused=true;railController?.abort();clearTimeout(railTimer);++railRequest;
+    document.getElementById('loading').style.display='none';
+    document.getElementById('camera-status').textContent='图形资源中断，地图已暂停；可保存计划后重启';
+    report('mapError','图形上下文丢失，已暂停地图数据更新，运行计划仍可保存。');
+  });
+  map.on('webglcontextrestored',()=>{graphicsPaused=false;staticSourceState.clear();updateStaticSources();scheduleRailViewport();});
+  document.addEventListener('visibilitychange',()=>{scheduleRailViewport();updateStaticSources();});
+  map.on('moveend',updateStaticSources);
   // Keep a selected corridor fully visible when the editor changes map size.
   // User navigation releases this framing instead of snapping back later.
   map.on('resize',()=>fitFocusedBounds());
@@ -263,7 +335,7 @@ async function init() {
       report('ready');report('demoState',running);
     }
   });
-  map.on('error',event=>{const message=String(event.error?.message||event.error);if(!mapErrors.includes(message))mapErrors.push(message);});
+  map.on('error',event=>{const message=String(event.error?.message||event.error);if(!mapErrors.includes(message)){mapErrors.push(message);if(mapErrors.length>100)mapErrors.shift();}});
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
   map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';report('cameraChanged',p.lng,p.lat,map.getZoom());});
   map.on('click',event=>{const ids=['rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
@@ -280,7 +352,7 @@ async function init() {
   document.getElementById('fit-visible').onclick=()=>{const bounds=new maplibregl.LngLatBounds();for(const id of visibleIds){const b=config.routeBounds[id];if(b){bounds.extend([b[0],b[1]]);bounds.extend([b[2],b[3]]);}}if(!bounds.isEmpty())map.fitBounds(bounds,{padding:80,maxZoom:13});};
   document.getElementById('follow-train').onclick=()=>{followTrain=!followTrain;document.getElementById('follow-train').textContent=followTrain?'停止跟随':'跟随首列车';};
   map.on('dragstart',()=>{followTrain=false;document.getElementById('follow-train').textContent='跟随首列车';});
-  map.on('moveend',updateRailViewport);
+  map.on('moveend',scheduleRailViewport);
   document.getElementById('tilt').onclick=()=>map.easeTo({pitch:map.getPitch()>20?0:45});
   document.getElementById('focus-china').onclick=()=>{map.fitBounds([[73,18],[135,54]],{padding:80,duration:700});document.getElementById('scene-title').textContent='中国 · 城市轨道交通';};
   document.getElementById('zoom-in').onclick=()=>map.zoomIn();document.getElementById('zoom-out').onclick=()=>map.zoomOut();document.getElementById('north').onclick=()=>map.easeTo({bearing:0,pitch:0});
@@ -295,7 +367,7 @@ async function init() {
     setRailWays(ids){railWays=ids;applyRailWays();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
-    setRailOperatingVehicles(data){config.sources.railVehicles=data;map.getSource('railVehicles')?.setData(data);},
+    setRailOperatingVehicles(data){config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},
     setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){map.setPaintProperty('rail-vehicles','circle-radius',Number(value.size)/2);map.setPaintProperty('rail-vehicles','circle-opacity',value.style==='ring'?0:1);map.setPaintProperty('rail-vehicles','circle-stroke-color',value.style==='ring'?'#486e9a':'#ffffff');}},
     captureMap(){
       map.once('render',()=>{
@@ -308,10 +380,10 @@ async function init() {
         }catch(error){report('imageCaptured','error');}
       });map.triggerRepaint();
     },
-    setVisibility(key,on){visibility[key]=on;applyVisibility();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);},
+    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railPoints','railPlatforms','railStationAreas'].includes(key))scheduleRailViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVehicleAppearance();},
-    setLines(ids){visibleIds=ids;applyLineFilter();},setBase,
+    setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();},setBase,
     setConstruction(ids){constructionIds=ids;applyConstructionFilter();},
     setBaseDetail(key,on){baseDetails[key]=on;applyBaseDetails();},focusDemo,
     focusChina(){document.getElementById('focus-china').click();},
@@ -320,11 +392,11 @@ async function init() {
     setOperatingVehicles(data,clock,playing){
       operatingMode=true;operatingVehicles=data;operatingClock=clock;running=playing;
       travelled=data.features[0]?.properties.distance_m||0;
-      map.getSource('vehicles')?.setData(visibility.vehicles?data:empty);
+      if(!graphicsPaused)map.getSource('vehicles')?.setData(visibility.vehicles?data:empty);
       if(['vehicles','vehicles-symbol'].includes(selectedLayer)&&selectedFeature){selectedFeature=data.features.find(f=>f.properties.vehicle_id===selectedFeature.properties.vehicle_id)||null;refreshSelection();}
       if(followTrain){const vehicle=data.features.find(f=>visibleIds.includes(f.properties.route_relation_id));if(vehicle)map.jumpTo({center:vehicle.geometry.coordinates,zoom:Math.max(map.getZoom(),13)});}
     },
-    imported(data){config.sources.imported=data;map.getSource('imported').setData(data);},
+    imported(data){config.sources.imported=data;staticSourceState.delete('imported');updateStaticSources();},
     testState(){
       const baseSource=vectorAvailable?'openmaptiles':'base';
       const allowsLine1=id=>map.getLayer(id)&&(map.getFilter(id)||[]).some(clause=>Array.isArray(clause)&&clause[0]==='in'&&clause[1]===199200);

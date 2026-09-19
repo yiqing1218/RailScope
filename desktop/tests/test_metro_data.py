@@ -39,6 +39,33 @@ def test_unmatched_areas_do_not_invent_route_membership():
     )
 
 
+def test_name_alias_matches_near_real_boundary_but_ambiguity_stays_unresolved():
+    area = {
+        "properties": {"station_area_tags": {"name:zh": "人民广场站", "alt_name": "广场东站"}},
+        "geometry": {"type": "Polygon", "coordinates": [[
+            [121, 31], [121.001, 31], [121.001, 31.001], [121, 31.001], [121, 31]
+        ]]},
+    }
+    station = {
+        "properties": {
+            "osm_node_id": 1,
+            "name": "People's Square",
+            "station_tags": {"name:zh": "人民广场", "name:en": "People's Square"},
+            "route_relation_ids": [10],
+        },
+        "geometry": {"coordinates": [121.0015, 31.0005]},
+    }
+    matched = associate_station_areas([deepcopy(area)], [station])[0]["properties"]
+    assert matched["associated_station_ids"] == [1]
+    assert matched["association_verification_status"] == "automatic_match"
+
+    competing = deepcopy(station)
+    competing["properties"] = {**competing["properties"], "osm_node_id": 2, "name": "广场东站", "station_tags": {"name": "广场东站"}}
+    unresolved = associate_station_areas([deepcopy(area)], [station, competing])[0]["properties"]
+    assert unresolved["associated_station_ids"] == []
+    assert unresolved["association_candidate_station_ids"] == [1, 2]
+
+
 def test_all_multipolygon_parts_are_associated_and_holes_are_excluded():
     def ring(x):
         return [[x, 31], [x + 0.02, 31], [x + 0.02, 31.02], [x, 31.02], [x, 31]]

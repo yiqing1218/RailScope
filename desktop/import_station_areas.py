@@ -24,28 +24,10 @@ from railscope.services.importers.native_paths import native_path, temporary_dir
 def extract(pbf, output, previous=None):
     import osmium
 
+    pool = osmium.io.ThreadPool(2, 4)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     index = native_path(output.parent / f".station-area-{uuid4().hex}.idx", output=True)
-    tags = osmium.filter.TagFilter(
-        ("station", "subway"),
-        ("station", "light_rail"),
-        ("subway", "yes"),
-        ("subway", "true"),
-        ("railway:station", "subway"),
-        ("railway", "platform"),
-        ("public_transport", "platform"),
-        ("railway", "station"),
-        ("building", "train_station"),
-    )
-    locations = osmium.index.create_map(f"sparse_file_array,{index}")
-    processor = (
-        osmium.FileProcessor(str(native_path(pbf)))
-        .with_locations(locations)
-        .with_areas(tags)
-        .with_filter(osmium.filter.EntityFilter(osmium.osm.AREA))
-        .with_filter(tags)
-    )
     factory = osmium.geom.GeoJSONFactory()
     features, errors = [], []
     stations_path = output.parent / "china_metro_stations.geojson"
@@ -59,13 +41,10 @@ def extract(pbf, output, previous=None):
     # Membership catches platforms whose POI is outside the polygon or whose
     # own tags omit subway=yes. Never infer a footprint from a stop node.
     relations = (
-        osmium.FileProcessor(str(native_path(pbf)))
-        .with_filter(osmium.filter.EntityFilter(osmium.osm.RELATION))
+        osmium.FileProcessor(str(native_path(pbf)), entities=osmium.osm.RELATION, thread_pool=pool)
         .with_filter(
             osmium.filter.TagFilter(
                 ("public_transport", "stop_area"),
-                ("route", "subway"),
-                ("route", "light_rail"),
             )
         )
     )
@@ -79,16 +58,62 @@ def extract(pbf, output, previous=None):
                 or member.role.startswith("platform")
             ):
                 members["way", member.ref].update(station_ids)
-            elif member.type == "r" and member.role.startswith("platform"):
+            elif member.type == "r":
                 members["relation", member.ref].update(station_ids)
-    station_grid = defaultdict(list)
-    for station in known_stations:
-        x, y = station["geometry"]["coordinates"]
-        station_grid[int(x / 0.005), int(y / 0.005)].append(station)
     try:
-        from .metro_data import associate_station_areas
+        from .metro_data import associate_station_areas, station_area_index
+        from .station_search import name_keys, station_names
     except ImportError:
-        from metro_data import associate_station_areas
+        from metro_data import associate_station_areas, station_area_index
+        from station_search import name_keys, station_names
+    association_index = station_area_index(known_stations)
+    known_names = {key for station in known_stations for key in name_keys(station["properties"])}
+    # Select source IDs before expensive polygon assembly. Generic buildings
+    # are candidates only with a station alias or explicit stop_area membership.
+    candidates = {"way": set(), "relation": set()}
+    required_ways = set()
+    objects = (osmium.FileProcessor(str(native_path(pbf)), entities=osmium.osm.WAY | osmium.osm.RELATION, thread_pool=pool)
+        .with_filter(osmium.filter.KeyFilter("railway", "public_transport", "building", "station", "subway", "railway:station")))
+    for obj in objects:
+        raw = dict(obj.tags)
+        kind = "way" if obj.is_way() else "relation"
+        transport = (is_metro_station_area_tags(raw) or raw.get("railway") in ("station", "platform")
+                     or raw.get("public_transport") in ("station", "platform")
+                     or raw.get("building") in ("train_station", "transportation"))
+        named_building = bool(raw.get("building") and name_keys(raw) & known_names)
+        member_building = bool(raw.get("building") and members.get((kind, obj.id)))
+        if transport or named_building or member_building:
+            candidates[kind].add(obj.id)
+            if kind == "relation":
+                required_ways.update(member.ref for member in obj.members if member.type == "w")
+    required_ways.update(candidates["way"])
+    required_nodes = set()
+    def selected_objects(entity, ids):
+        return (osmium.FileProcessor(str(native_path(pbf)), entities=entity, thread_pool=pool)
+                .with_filter(osmium.filter.IdFilter(ids)))
+    for way in selected_objects(osmium.osm.WAY, required_ways):
+        required_nodes.update(node.ref for node in way.nodes)
+    # Area assembly sees only reference-complete station candidates. This
+    # avoids indexing every national OSM node in RAM or a mapped location file.
+    subset = index.with_suffix(".osm.pbf")
+    with osmium.SimpleWriter(str(subset), thread_pool=pool) as writer:
+        for node in selected_objects(osmium.osm.NODE, required_nodes):
+            writer.add_node(node)
+        for way in selected_objects(osmium.osm.WAY, required_ways):
+            writer.add_way(way)
+        for relation in selected_objects(osmium.osm.RELATION, candidates["relation"]):
+            writer.add_relation(relation)
+    subset_counts = {"nodes": len(required_nodes), "ways": len(required_ways), "relations": len(candidates["relation"])}
+    del required_nodes, required_ways
+    locations = osmium.index.create_map(f"sparse_file_array,{index}")
+    processor = (osmium.FileProcessor(str(subset), thread_pool=pool)
+        .with_locations(locations)
+        .with_areas(osmium.filter.IdFilter(candidates["relation"]))
+        .with_filter(osmium.filter.EntityFilter(osmium.osm.AREA))
+        .with_filter(osmium.filter.IdFilter([number * 2 for number in candidates["way"]]
+                                          + [number * 2 + 1 for number in candidates["relation"]])))
+    snapshot = {"file": Path(pbf).name, "bytes": Path(pbf).stat().st_size,
+                "mtime_ns": Path(pbf).stat().st_mtime_ns}
     try:
         for area in processor:
             raw = dict(area.tags)
@@ -96,17 +121,10 @@ def extract(pbf, output, previous=None):
                 raw.get("railway") == "platform"
                 or raw.get("public_transport") == "platform"
             )
-            explicit = raw.get("subway") in ("yes", "true") or raw.get("station") in (
+            explicit = raw.get("subway") in ("yes", "true") or raw.get("railway:station") == "subway" or raw.get("station") in (
                 "subway",
                 "light_rail",
             )
-            if (
-                not is_metro_station_area_tags(raw)
-                and not platform
-                and raw.get("building") != "train_station"
-                and raw.get("railway") != "station"
-            ):
-                continue
             if raw.get("train") == "yes" and not explicit:
                 continue
             try:
@@ -124,20 +142,22 @@ def extract(pbf, output, previous=None):
                     "boundary_kind": "platform"
                     if platform
                     else "station_building"
-                    if raw.get("building") == "train_station"
+                    if raw.get("building")
                     else "station_outline",
                     "source": "OpenStreetMap",
                     "geometry_source": "osm_polygon",
-                    "verification_status": "osm_derived",
+                    "verification_status": "osm_derived" if explicit else "needs_review",
+                    "source_snapshot": snapshot,
+                    "aliases": station_names(raw),
                     "attribution": "© OpenStreetMap contributors",
                     "license": "ODbL 1.0",
-                    "member_station_ids": sorted(members[kind, area.orig_id()]),
+                    "member_station_ids": sorted(members.get((kind, area.orig_id()), set())),
                 },
                 "geometry": geometry,
             }
-            associate_station_areas([feature], [], grid=station_grid)
+            associate_station_areas([feature], [], index=association_index)
             if not explicit and not is_metro_station_area_tags(raw):
-                if not feature["properties"].get("route_relation_ids"):
+                if not feature["properties"].get("associated_station_ids") and not feature["properties"].get("association_candidate_station_ids"):
                     continue
                 feature["properties"]["mode_source"] = "空间关联已知地铁站，待人工复核"
             features.append(feature)
@@ -149,6 +169,7 @@ def extract(pbf, output, previous=None):
         import gc
 
         gc.collect()
+        subset.unlink(missing_ok=True)
         try:
             index.unlink(missing_ok=True)
         except PermissionError:
@@ -194,6 +215,12 @@ def extract(pbf, output, previous=None):
         if (f["properties"].get("osm_way_id"), f["properties"].get("osm_relation_id"))
         not in keys
     )
+    for feature in features:
+        props = feature["properties"]
+        kind = "way" if "osm_way_id" in props else "relation"
+        props["member_station_ids"] = sorted(members.get((kind, props.get("osm_" + kind + "_id")), set()))
+        props.setdefault("source_snapshot", {"file": "previous_snapshot", "verification_status": "unverified"})
+    associate_station_areas(features, [], index=association_index)
     if not features:
         raise RuntimeError("没有获取到有效的真实站区多边形，旧数据未改动")
     backup = None
@@ -216,6 +243,12 @@ def extract(pbf, output, previous=None):
     report = {
         "source": str(pbf),
         "areas": len(features),
+        "association_version": "station-area-v2",
+        "assembly_subset": subset_counts,
+        "source_snapshot": snapshot,
+        "station_nodes": len(known_stations),
+        "associated_station_nodes": len({node for f in features for node in f["properties"].get("associated_station_ids", [])}),
+        "unresolved_areas": sum(not f["properties"].get("associated_station_ids") for f in features),
         "types": dict(
             Counter(
                 "way" if "osm_way_id" in f["properties"] else "relation"

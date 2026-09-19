@@ -5,6 +5,7 @@ from pathlib import Path
 from copy import deepcopy
 
 import pytest
+import sqlite3
 
 
 def reference():
@@ -13,6 +14,54 @@ def reference():
             encoding="utf-8"
         )
     )
+
+
+def install_reference_database(directory):
+    """Create a tiny current-infrastructure database; production never reads the asset."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    data = reference()
+    coordinates = {
+        node: coordinate
+        for edge in data["edges"]
+        for node, coordinate in zip(edge["node_ids"], edge["coordinates"])
+    }
+    points = []
+    for point in data["points"]:
+        props = point["properties"]
+        points.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    **props,
+                    "kind": "station",
+                    "source": "test current railway database",
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": coordinates[props["osm_node_id"]],
+                },
+            }
+        )
+    with sqlite3.connect(directory / "rail.sqlite") as db:
+        db.executescript(
+            "CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT);"
+            "CREATE TABLE edge_aliases(alias TEXT PRIMARY KEY,id TEXT);"
+            "CREATE TABLE features(kind TEXT,data TEXT);"
+        )
+        db.executemany(
+            "INSERT INTO edges VALUES(?,?)",
+            ((edge["id"], json.dumps(edge)) for edge in data["edges"]),
+        )
+        db.executemany(
+            "INSERT INTO edge_aliases VALUES(?,?)",
+            ((edge["id"], edge["id"]) for edge in data["edges"]),
+        )
+        db.executemany(
+            "INSERT INTO features VALUES(?,?)",
+            (("railPoints", json.dumps(point)) for point in points),
+        )
+    return directory / "rail.sqlite"
 
 
 def test_shared_routes_and_change_track_reservation():
@@ -97,6 +146,7 @@ def test_builtin_g1_no_load_buttons_compact_and_train_visibility(tmp_path):
     from desktop.tests.test_operating_ui import MapStub
 
     app = QApplication.instance() or QApplication([])
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
     side = editor.sidebar()
     assert editor.plan.trains[0]["id"] == "G1"
@@ -132,6 +182,7 @@ def test_manual_train_batch_undo_and_reserved_fields_roundtrip(tmp_path):
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
     editor.add_train_number("G3", "G1", 24000)
     assert len(editor.plan.trains) == 2 and len(editor.document()["routes"]) == 1

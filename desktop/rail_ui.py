@@ -97,6 +97,7 @@ class RailEditor(OperationsEditor):
                 ]
         self.rail_payload = None
         self.visible_corridors = set()
+        self.displayed_train_id = ""
         super().__init__(Plan([], "rail"), RailMap(map_view), [], path)
         self.time_scale = 0.055
         self.time_grid_s = 900
@@ -109,8 +110,29 @@ class RailEditor(OperationsEditor):
         if self.rail_payload is None:
             self.apply_payload(self.initial_g1_payload())
             self.message.setText(
-                "内置 G1 · 7站参考时刻 · 已关闭运行；选择车次查看独立时刻表 / 运行图。"
+                "G1 已从当前全国铁路库组合；选择车次查看停站与时刻。"
+                if self.plan.trains
+                else "当前铁路库尚不能组合完整 G1 通道；请先导入覆盖京沪高铁的全国铁路数据。"
             )
+
+    @staticmethod
+    def empty_payload():
+        return {
+            "schema": "railscope.rail-plan.v2",
+            "service_date": "1970-01-01",
+            "timezone": "Asia/Shanghai",
+            "source": "当前全国铁路库",
+            "required_capabilities": [],
+            "extensions": {
+                "railscope.org/assembly": {
+                    "status": "unavailable",
+                    "cached_train_path_used": False,
+                }
+            },
+            "routes": [],
+            "station_routes": [],
+            "trains": [],
+        }
 
     def initial_g1_payload(self):
         if (self.directory / "rail.sqlite").exists():
@@ -122,14 +144,9 @@ class RailEditor(OperationsEditor):
                 payload, _ = assemble_jinghu(self.directory)
                 return payload
             except (ValueError, sqlite3.Error):
-                # Partial regional databases may not contain the Jinghu example.
-                pass
-        reference = json.loads(
-            (Path(__file__).parent / "examples/g1-reference.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        return reference["plan"]
+                # Partial regional databases may not contain a complete Jinghu path.
+                return self.empty_payload()
+        return self.empty_payload()
 
     def canonical_repository(self, identity_path):
         """Expose the shared domain contract; desktop dictionaries are DTOs only."""
@@ -180,12 +197,6 @@ class RailEditor(OperationsEditor):
             for route in original_payload.get("station_routes", [])
             for leg in route["edge_refs"]
         )
-        reference_mode = (
-            payload.get("extensions", {})
-            .get("railscope.org/reference", {})
-            .get("path_status")
-            == "connected_osm_reference_not_dispatch_route"
-        )
         edges = (
             load_edges(self.directory, required)
             if (self.directory / "rail.sqlite").exists()
@@ -197,15 +208,6 @@ class RailEditor(OperationsEditor):
         }
         missing = set(required) - found
         points = []
-        if missing and reference_mode:
-            reference = json.loads(
-                (Path(__file__).parent / "examples/g1-reference.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            edges.extend(e for e in reference["edges"] if e["id"] in missing)
-            points = reference["points"]
-            missing -= {e["id"] for e in edges}
         if missing:
             raise ValueError("铁路库缺少所引用的物理区间，请先导入对应基础设施")
         original_payload = migrate_legacy_train_paths(original_payload, edges)
@@ -215,26 +217,6 @@ class RailEditor(OperationsEditor):
             .get("railscope.org/assembly", {})
             .get("stations", [])
         )
-        if (
-            not mappings
-            and reference_mode
-            and not missing
-            and (self.directory / "rail.sqlite").exists()
-        ):
-            try:
-                try:
-                    from .rail_assembly import assemble_jinghu
-                except ImportError:
-                    from rail_assembly import assemble_jinghu
-                assembled, _ = assemble_jinghu(self.directory)
-                assembly = assembled["extensions"]["railscope.org/assembly"]
-                # Migrate source-station labels only; never replace a saved user's path or times.
-                original_payload["extensions"]["railscope.org/assembly"] = deepcopy(
-                    assembly
-                )
-                mappings = assembly["stations"]
-            except (ValueError, sqlite3.Error):
-                pass
         if (self.directory / "rail.sqlite").exists():
             stop_ids = {s["node_id"] for t in payload["trains"] for s in t["stops"]}
             stop_ids.update(mapping["source_station_node"] for mapping in mappings)
@@ -332,6 +314,7 @@ class RailEditor(OperationsEditor):
         selected = self.current_line()
         if selected:
             self.visible_corridors.add(selected["corridor_id"])
+            self.displayed_train_id = selected["id"].removeprefix("rail/")
         self.push_corridors()
         if hasattr(self, "route_switch"):
             self.route_switch.blockSignals(True)
@@ -344,6 +327,12 @@ class RailEditor(OperationsEditor):
             self.visible_corridors.add(ident)
         else:
             self.visible_corridors.discard(ident)
+            if any(
+                train["id"] == self.displayed_train_id
+                and train["route_id"] == ident
+                for train in (self.rail_payload or {}).get("trains", [])
+            ):
+                self.displayed_train_id = ""
         self.push_corridors()
         if hasattr(self, "route_switch"):
             self.route_switch.blockSignals(True)
@@ -377,7 +366,6 @@ class RailEditor(OperationsEditor):
             props = {
                 "name": route.get("name", corridor_id) if route else "单向参考通道",
                 "source": self.rail_payload["source"],
-                "train_id": trains[0] if trains else "",
                 "corridor_id": corridor_id,
                 "train_ids": trains,
                 "track_changes": (route or {}).get("track_changes", []),
@@ -401,12 +389,18 @@ class RailEditor(OperationsEditor):
                         },
                     }
                 )
+            selected_train = next(
+                (
+                    train
+                    for train in self.rail_payload["trains"]
+                    if train["id"] == self.displayed_train_id
+                    and train["route_id"] == corridor_id
+                ),
+                None,
+            )
             stop_ids = {
-                s["node_id"]
-                for train in self.rail_payload["trains"]
-                if train["route_id"] == corridor_id
-                for s in train["stops"]
-            }
+                s["node_id"] for s in selected_train.get("stops", [])
+            } if selected_train else set()
             for station in self.graph["points"]:
                 data = station["properties"]
                 if data["osm_node_id"] not in stop_ids:
@@ -423,6 +417,7 @@ class RailEditor(OperationsEditor):
                         "properties": {
                             **props,
                             **shared["properties"],
+                            "train_id": selected_train["id"],
                             "infrastructure_id": station_key,
                         },
                         "geometry": shared.get(
@@ -444,7 +439,9 @@ class RailEditor(OperationsEditor):
         self.tabs.setCurrentIndex(0)
         self.refresh_diagram()
         self.message.setText(
-            "G1 · 7站 · 06:30—11:24 · 公开资料参考，非12306实时/实际股道；可编辑到发时刻，按开始仿真才运行。"
+            "G1 · 当前铁路库组合通道 · 公开时刻参考；选择车次显示经停站，按开始仿真才运行。"
+            if self.plan.trains
+            else "无法组合 G1：当前铁路库缺少完整京沪高铁或必要车站定位。"
         )
 
     def reset(self):
@@ -636,15 +633,14 @@ class RailEditor(OperationsEditor):
             for t in self.plan.trains
             if self.plan.lines[t["line_id"]].get("corridor_id") == corridor_id
         ]
-        if trains:
-            ident = (
-                train_id
-                if any(t["id"] == train_id for t in trains)
-                else trains[0]["id"]
+        if train_id and any(t["id"] == train_id for t in trains):
+            self.displayed_train_id = train_id
+            self.line_combo.setCurrentIndex(
+                self.line_combo.findData("rail/" + train_id)
             )
-            self.line_combo.setCurrentIndex(self.line_combo.findData("rail/" + ident))
             self.show_reference_route()
             return
+        self.displayed_train_id = ""
         self.set_corridor_visible(corridor_id, True)
         lookup = {e["id"]: e for e in self.graph["edges"]}
         first, last = route["path"][0], route["path"][-1]

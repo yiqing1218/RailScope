@@ -215,9 +215,12 @@ def test_new_corridor_fills_blank_identity_without_cached_train_path(
     from desktop.corridor_ui import CorridorPanel
     from desktop.rail_ui import RailEditor
     from desktop.tests.test_operating_ui import MapStub
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
+    editor.line_library()
     panel = CorridorPanel(editor)
     existing = editor.corridors_document(table=True)["corridors"][0]["sequence"]
 

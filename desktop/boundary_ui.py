@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,7 +13,13 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
     QMessageBox,
+    QLineEdit,
 )
+
+try:
+    from .station_search import station_names, matches_query
+except ImportError:
+    from station_search import station_names, matches_query
 
 
 def audit(stations, areas):
@@ -37,6 +44,9 @@ def audit(stations, areas):
             {
                 "osm_node_id": node,
                 "name": props.get("name", "未命名"),
+                "aliases": station_names(props),
+                "coordinates": station["geometry"]["coordinates"],
+                "network": props.get("station_tags", {}).get("network", ""),
                 "route_relation_ids": props.get("route_relation_ids", []),
                 "status": status,
                 "boundaries": [
@@ -57,10 +67,12 @@ def audit(stations, areas):
 
 
 class BoundaryDialog(QDialog):
+    located = Signal(dict)
+
     def __init__(self, stations, areas, parent=None, *, records=None):
         super().__init__(parent)
         self.records = audit(stations, areas) if records is None else records
-        self.setWindowTitle("车站真实轮廓覆盖检查")
+        self.setWindowTitle("全国车站与真实轮廓检索")
         self.resize(1000, 700)
         layout = QVBoxLayout(self)
         hint = QLabel(
@@ -68,8 +80,14 @@ class BoundaryDialog(QDialog):
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("搜索全国车站：中文、英文、旧名、别名、网络名称；双击结果定位")
+        layout.addWidget(self.search)
+        self.count = QLabel()
+        layout.addWidget(self.count)
         national = records is not None
         table = QTableWidget(len(self.records), 5 if national else 4)
+        self.table = table
         table.setHorizontalHeaderLabels(
             [
                 "车站",
@@ -101,10 +119,30 @@ class BoundaryDialog(QDialog):
                 values += (record.get("facility_class", "未判定"),)
             for col, value in enumerate(values):
                 table.setItem(row, col, QTableWidgetItem(str(value)))
+            table.item(row, 0).setData(Qt.ItemDataRole.UserRole, row)
         table.setSortingEnabled(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.search.textChanged.connect(self.filter_records)
+        table.cellDoubleClicked.connect(self.locate)
+        self.filter_records("")
         export = QPushButton("导出缺失 / 覆盖清单 JSON…")
         export.clicked.connect(self.export)
         layout.addWidget(export)
+
+    def filter_records(self, query):
+        shown = 0
+        for row in range(self.table.rowCount()):
+            record = self.records[self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)]
+            visible = matches_query(record, query)
+            self.table.setRowHidden(row, not visible)
+            shown += visible
+        self.count.setText(f"找到 {shown:,} / {len(self.records):,} 个源站点（含同站多个站台节点）")
+
+    def locate(self, row, column):
+        record = self.records[self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)]
+        if record.get("coordinates"):
+            self.located.emit(record)
+            self.accept()
 
     def export(self):
         path, _ = QFileDialog.getSaveFileName(

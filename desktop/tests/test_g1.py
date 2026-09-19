@@ -1,13 +1,13 @@
-from pathlib import Path
-import json
-
-
-def test_portable_g1_has_real_continuous_path_and_seven_stops():
+def test_g1_is_assembled_from_current_database_with_seven_stops(tmp_path):
     from desktop.rail import compile_rail_plan
+    from desktop.rail_assembly import assemble_jinghu
+    from desktop.rail_store import load_edges
+    from desktop.tests.test_workspace_revision import install_reference_database
 
-    asset = Path(__file__).parents[1] / "examples/g1-reference.json"
-    data = json.loads(asset.read_text(encoding="utf-8"))
-    plan, lines = compile_rail_plan(data["plan"], data["edges"], data["points"])
+    install_reference_database(tmp_path)
+    payload, points = assemble_jinghu(tmp_path)
+    edges = load_edges(tmp_path, [leg["edge_id"] for leg in payload["routes"][0]["path"]])
+    plan, lines = compile_rail_plan(payload, edges, points)
     assert len(plan.trains) == 1 and plan.trains[0]["id"] == "G1"
     assert [s["name"] for s in lines[0]["stations"]] == [
         "北京南",
@@ -22,13 +22,14 @@ def test_portable_g1_has_real_continuous_path_and_seven_stops():
     assert plan.trains[0]["stops"][-1]["arrival_s"] == 41040
     assert 1250000 < lines[0]["path"]["length_m"] < 1400000
     assert plan.position("G1", 24000)["state"] == "区间运行"
-    legs = data["plan"]["trains"][0]["path"]
+    legs = payload["routes"][0]["path"]
     assert len(legs) == len({leg["edge_id"] for leg in legs}), (
         "参考干线路径不能为了追随站点 POI 在支线来回折返"
     )
+    assert payload["extensions"]["railscope.org/assembly"]["cached_train_path_used"] is False
 
 
-def test_g1_works_without_national_download_and_starts_paused(tmp_path):
+def test_g1_does_not_use_bundled_osm_fallback_without_rail_database(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.tests.test_operating_ui import MapStub
     from desktop.rail_ui import RailEditor
@@ -38,15 +39,12 @@ def test_g1_works_without_national_download_and_starts_paused(tmp_path):
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "user-plan.json")
     sidebar = editor.sidebar()
     editor.load_g1_example()
-    assert editor.plan.trains[0]["id"] == "G1"
-    assert editor.table.rowCount() == 7
+    assert not editor.plan.trains
+    assert editor.table.rowCount() == 0
     assert not editor.enabled and not editor.playing
-    assert editor.clock == 23400
-    editor.write(tmp_path / "g1.json")
-    editor.apply_payload(json.loads((tmp_path / "g1.json").read_text(encoding="utf-8")))
+    assert "当前铁路库" in editor.message.text()
     editor.play()
-    assert editor.current_vehicle_features
-    editor.pause()
+    assert not editor.current_vehicle_features
     editor.timer.stop()
     editor.close()
     sidebar.close()
@@ -58,9 +56,11 @@ def test_rail_and_metro_have_separate_models_clocks_and_vehicle_sources(tmp_path
     from desktop.rail_ui import RailEditor
     from desktop.operating_ui import OperationsEditor
     from desktop.operating import Plan
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     shared_map = MapStub()
     metro = OperationsEditor(Plan([]), shared_map, [], tmp_path / "metro.json")
     rail = RailEditor(shared_map, tmp_path, tmp_path / "rail.json")
@@ -82,8 +82,10 @@ def test_rail_workspace_is_compact_and_has_direct_g1_entry(tmp_path):
     from desktop.tests.test_operating_ui import MapStub
     from desktop.rail_ui import RailEditor
     from desktop.components import THEME
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "rail.json")
     editor.setStyleSheet(THEME)
     editor.resize(1600, 680)
@@ -107,9 +109,11 @@ def test_saved_rail_plan_can_show_reference_route_after_restart(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.tests.test_operating_ui import MapStub
     from desktop.rail_ui import RailEditor
+    from desktop.tests.test_workspace_revision import install_reference_database
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     source = RailEditor(MapStub(), tmp_path, tmp_path / "rail.json")
     source.load_g1_example()
     source.save()

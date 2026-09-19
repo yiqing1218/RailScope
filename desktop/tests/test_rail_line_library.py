@@ -1,6 +1,6 @@
 import pytest
 
-from desktop.tests.test_workspace_revision import reference
+from desktop.tests.test_workspace_revision import reference, install_reference_database
 
 
 def test_endpoint_line_table_reuses_infrastructure_and_rejects_disconnects():
@@ -54,6 +54,7 @@ def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
 
     app = QApplication.instance() or QApplication([])
     assert app
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
     document = editor.corridors_document(table=True)
     assert document["schema"] == "railscope.rail-corridors.v2"
@@ -71,7 +72,7 @@ def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
     editor.save_line_names({ident: "京沪高速铁路主线"})
     assert editor.line_library().lines[ident]["name"].startswith("京沪高速铁路主线")
     assert editor.document() == old, "改名不能破坏通道、车次或物理引用"
-    sections = editor.line_library().sections()
+    sections = list(editor.line_library().sections())
     assert {leg["edge_id"] for section in sections for leg in section["path"]} == set(
         library.edges
     )
@@ -170,6 +171,24 @@ def test_national_line_directory_does_not_load_geometry(tmp_path):
     library.write_export(export_path)
     exported = json.loads(export_path.read_text(encoding="utf-8"))
     assert any(s["line_id"] == ident for s in exported["sections"])
+    editor.merge_corridors(
+        {
+            "schema": "railscope.rail-corridors.v2",
+            "source": "测试",
+            "required_capabilities": [],
+            "extensions": {},
+            "corridors": [
+                {
+                    "id": "COR-TEST",
+                    "name": "测试通道",
+                    "sequence": sequence,
+                    "extensions": {
+                        "railscope.org/path-resolution": {"policy": "strict"}
+                    },
+                }
+            ],
+        }
+    )
     table_document = editor.corridors_document(table=True)
     table_document["corridors"][0]["id"] = "COR-REUSE"
     editor.merge_corridors(table_document)
@@ -225,6 +244,96 @@ def test_disk_sections_split_at_other_line_junction_and_cancel_is_atomic(tmp_pat
     assert not list(tmp_path.glob("*.tmp"))
 
 
+def test_station_building_alias_maps_to_nearby_real_topology_endpoint(tmp_path):
+    import json
+    import sqlite3
+    from desktop.rail_line_store import build_line_index, DiskRailLineLibrary
+
+    source, target = tmp_path / "rail.sqlite", tmp_path / "index.sqlite"
+    edge = {
+        "id": "w1:0-1",
+        "from_node": 10,
+        "to_node": 11,
+        "coordinates": [[121.4500, 31.2500], [121.4520, 31.2500]],
+        "way_tags": {"name": "京沪铁路"},
+    }
+    parallel = {
+        "id": "w2:0-1",
+        "from_node": 20,
+        "to_node": 21,
+        "coordinates": [[121.4500, 31.2530], [121.4520, 31.2530]],
+        "way_tags": {"name": "沪宁城际铁路"},
+    }
+    station = {
+        "type": "Feature",
+        "properties": {
+            "osm_node_id": 100,
+            "name": "上海",
+            "kind": "station",
+        },
+        "geometry": {"type": "Point", "coordinates": [121.4510, 31.2510]},
+    }
+    building = {
+        "type": "Feature",
+        "properties": {
+            "osm_way_id": 200,
+            "source_name": "上海站",
+            "associated_station_ids": [100],
+        },
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[121.45, 31.25], [121.451, 31.25], [121.45, 31.25]]],
+        },
+    }
+    area_only = {
+        "type": "Feature",
+        "properties": {
+            "osm_way_id": 201,
+            "source_name": "仅面要素车站",
+            "associated_station_ids": [],
+        },
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [121.4518, 31.2498],
+                    [121.4521, 31.2498],
+                    [121.4521, 31.2501],
+                    [121.4518, 31.2498],
+                ]
+            ],
+        },
+    }
+    with sqlite3.connect(source) as db:
+        db.executescript(
+            "CREATE TABLE edges(data TEXT); CREATE TABLE features(kind TEXT,data TEXT);"
+        )
+        db.executemany(
+            "INSERT INTO edges VALUES(?)",
+            ((json.dumps(item),) for item in (edge, parallel)),
+        )
+        db.execute("INSERT INTO features VALUES(?,?)", ("railPoints", json.dumps(station)))
+        db.execute(
+            "INSERT INTO features VALUES(?,?)",
+            ("railStationAreas", json.dumps(building)),
+        )
+        db.execute(
+            "INSERT INTO features VALUES(?,?)",
+            ("railStationAreas", json.dumps(area_only)),
+        )
+    build_line_index(source, target, [], [])
+    library = DiskRailLineLibrary(target)
+    results = library.search_nodes("上海站")
+    assert len(results) == 1
+    assert results[0][0] in (10, 11)
+    assert "上海站" in results[0][1] and "邻近轨道端点" in results[0][1]
+    assert library.search_nodes("仅面要素车站")[0][0] == 11
+    from desktop.rail_lines import line_identity
+
+    parallel_line = line_identity(parallel)[0]
+    assert library.search_nodes("上海站", parallel_line)[0][0] in (20, 21)
+
+
 def test_search_choice_keeps_only_bounded_results(qtbot):
     from desktop.corridor_ui import SearchChoice
 
@@ -249,7 +358,9 @@ def test_dialog_creates_corridor_from_search_results_and_renames(qtbot, tmp_path
     from desktop.rail_ui import RailEditor
     from desktop.tests.test_operating_ui import MapStub
 
+    install_reference_database(tmp_path)
     editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
+    editor.line_library()
     panel = CorridorPanel(editor)
     qtbot.addWidget(editor)
     qtbot.addWidget(panel)
