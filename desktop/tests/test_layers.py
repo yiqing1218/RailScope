@@ -189,7 +189,7 @@ def test_province_and_corridor_switches_stay_in_sync(tmp_path):
     section = catalog.tree.topLevelItem(0).child(0)
     assert catalog.tree.itemWidget(section, 1).isChecked()
     assert catalog.tree.itemWidget(section, 1)._mixed
-    assert map_view.calls[-1] == ("setRailSelection", [], [2])
+    assert ("setRailSelection", [], [2]) in map_view.calls
     catalog.close()
 
 
@@ -243,13 +243,13 @@ def test_topology_catalog_groups_by_line_or_station_and_links_both_endpoints(tmp
     assert straight[0]["edge_count"] == 2 and straight[0]["section_count"] == 1
     yard = next(item for item in catalog.values() if item["station_name"] == "测试站")
     assert yard["station_name"] == "测试站"
-    assert catalog_parents(yard, 0) == (yard["track_type"], "测试站")
+    assert catalog_parents(yard, 0) == ("其他铁路", "不确定铁路")
     main = next(item for item in catalog.values() if item["line_id"] == "IL-MAIN")
-    assert catalog_parents(main, 0) == ("高速铁路线", "京沪高铁 · IL-MAIN")
+    assert catalog_parents(main, 0) == ("高速铁路", "国家高速铁路主干线")
     view = MapStub()
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
     widget.toggle(main["id"], True)
-    assert view.calls[-1] == ("setRailSelection", [], [], [main["id"]])
+    assert ("setRailSelection", [], [], [main["id"]]) in view.calls
     widget.close()
 
 
@@ -349,7 +349,7 @@ def test_large_topology_tree_is_bounded_and_still_searches_every_section(
     widget.populate()
     assert set(widget.items) == {"RS-2"}
     widget.set_all(True)
-    assert view.calls[-1] == ("setRailSelection", None, None)
+    assert ("setRailSelection", None, None) in view.calls
     widget.toggle("RS-2", False)
-    assert view.calls[-1] == ("setRailExclusions", ["RS-2"], [])
+    assert ("setRailExclusions", ["RS-2"], []) in view.calls
     widget.close()

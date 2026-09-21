@@ -13,7 +13,7 @@ except ImportError:
     from geometry import distance_m
     from rail_categories import track_type, corridor_for
 
-VERSION = "topology-line-endpoint-catalog-v7"
+VERSION = "topology-line-endpoint-catalog-v9"
 NAMES = {
     "Hainan": "海南省",
     "Taiwan": "台湾省",
@@ -164,6 +164,7 @@ def add_track(catalog, feature, index):
                 "track_type": category,
                 "type_evidence": evidence,
                 "classification": VERSION,
+                "construction": bool(props.get("construction")),
             },
         )
         if props["osm_way_id"] not in record["way_ids"]:
@@ -211,20 +212,25 @@ def _compact_catalog(sections):
                 "way_ids": [],
                 "catalog_group_id": group_id,
                 "classification": VERSION,
+                "construction": bool(section.get("construction")),
             },
         )
         record["section_count"] += 1
         record["edge_count"] += len(section["edge_ids"])
+        record["construction"] = record["construction"] and bool(
+            section.get("construction")
+        )
         if record["type_evidence"] != section["type_evidence"]:
             record["type_evidence"] = "组内线段具有多种可追溯分类依据"
     return result
 
 
 def geographic_catalog(directory):
-    """Build type -> physical line/station -> endpoint section catalog.
+    """Build the business-line catalog and its internal endpoint graph index.
 
-    Provinces and planning corridors are intentionally absent. Each leaf is one
-    maximal RS section between real control points and references shared edges.
+    Provinces and planning corridors are intentionally absent from the line
+    tree.  Endpoint-delimited RS records remain in the disk index for path
+    expansion, migration and graph export; they are not catalog leaves.
     """
     directory = Path(directory)
     cache = directory / "rail_catalog.topology.json"
@@ -334,6 +340,7 @@ def geographic_catalog(directory):
             "station_assignment_status": station_status,
             "station_assignment_confidence": station_confidence,
             "classification": VERSION,
+            "construction": bool(section.get("construction")),
         }
         catalog[section["id"]] = record
         endpoint_sections.setdefault(section["from_node"], []).append(section["id"])

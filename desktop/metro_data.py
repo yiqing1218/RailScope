@@ -3,12 +3,49 @@
 from collections import defaultdict
 from copy import deepcopy
 import heapq
+import json
 import math
+from pathlib import Path
+import re
 
 try:
     from .geometry import build_demo_path, distance_m
 except ImportError:
     from geometry import build_demo_path, distance_m
+
+
+def iter_geojson_features(path, chunk_size=1024 * 1024):
+    """Yield a GeoJSON feature array without retaining the national file."""
+    decoder = json.JSONDecoder()
+    with Path(path).open("r", encoding="utf-8-sig") as stream:
+        buffer = ""
+        while True:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                raise ValueError("GeoJSON 缺少 features 数组")
+            buffer += chunk
+            match = re.search(r'"features"\s*:\s*\[', buffer)
+            if match:
+                buffer = buffer[match.end() :]
+                break
+            if len(buffer) > chunk_size * 4:
+                buffer = buffer[-chunk_size * 2 :]
+        while True:
+            buffer = buffer.lstrip(" \t\r\n,")
+            if buffer.startswith("]"):
+                return
+            try:
+                feature, end = decoder.raw_decode(buffer)
+            except json.JSONDecodeError:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    raise ValueError("GeoJSON features 数组未完整结束")
+                buffer += chunk
+                continue
+            if not isinstance(feature, dict):
+                raise ValueError("GeoJSON feature 必须是对象")
+            yield feature
+            buffer = buffer[end:]
 
 
 def station_area_index(stations):
@@ -171,7 +208,8 @@ def display_station_areas(areas, stations, registry=None):
         )
         tags = props.get("way_tags", props.get("station_area_tags", {}))
         ref = tags.get("ref", tags.get("local_ref", ""))
-        props["name"] = f"{names} · {label}{ref} · {props['infrastructure_id']}"
+        props["display_name"] = f"{names} · {label}{ref}".rstrip()
+        props["name"] = props["display_name"]
     return result
 
 

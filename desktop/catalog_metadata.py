@@ -1,0 +1,239 @@
+"""Editable catalog metadata derived from source data without rewriting it."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+import json
+import math
+from pathlib import Path
+
+try:
+    from .provinces import ProvinceIndex
+except ImportError:
+    from provinces import ProvinceIndex
+
+
+STATION_TYPES = (
+    "客运站",
+    "货运站",
+    "客货运站",
+    "编组站",
+    "区段站",
+    "中间站",
+    "线路所",
+    "乘降所",
+    "越行站",
+    "会让站",
+    "动车所/客整所",
+    "货场",
+    "未定义",
+)
+
+
+def station_type(tags, kind=""):
+    """Use explicit OSM evidence only; ambiguous stations remain 未定义."""
+    tags = tags or {}
+    text = " ".join(
+        str(tags.get(key, ""))
+        for key in ("name", "name:zh", "description", "railway:station_category")
+    )
+    facility = tags.get("railway:facility", "")
+    if kind in {"signal_box", "junction", "crossing"} or "线路所" in text:
+        return "线路所"
+    if any(word in text for word in ("编组站", "编组场")) or facility == "classification_yard":
+        return "编组站"
+    if "区段站" in text:
+        return "区段站"
+    if "越行站" in text:
+        return "越行站"
+    if "会让站" in text:
+        return "会让站"
+    if kind == "halt" or tags.get("railway") == "halt" or "乘降所" in text:
+        return "乘降所"
+    if any(word in text for word in ("动车所", "动车段", "客整所", "客车整备所")):
+        return "动车所/客整所"
+    if "货场" in text or facility in {"freight_terminal", "freight_yard"}:
+        return "货场"
+    passenger = tags.get("passenger")
+    freight = tags.get("freight")
+    if passenger == "yes" and freight == "yes":
+        return "客货运站"
+    if passenger == "yes" and freight in {"no", None, ""}:
+        return "客运站"
+    if freight == "yes" and passenger in {"no", None, ""}:
+        return "货运站"
+    return "未定义"
+
+
+def nearest_city(coordinates, province, regions, tags=None):
+    tags = tags or {}
+    explicit = (
+        tags.get("addr:city")
+        or tags.get("is_in:city")
+        or tags.get("addr:district")
+    )
+    if explicit:
+        return str(explicit).removesuffix("市")
+    if province in {"北京市", "上海市", "天津市", "重庆市"}:
+        return province.removesuffix("市")
+    lon, lat = coordinates[:2]
+    candidates = []
+    for city, region_province, x, y in regions or []:
+        if region_province != province:
+            continue
+        dx = (x - lon) * math.cos(math.radians(lat))
+        distance_km = math.hypot(dx, y - lat) * 111.195
+        candidates.append((distance_km, city))
+    if candidates and min(candidates)[0] <= 180:
+        return min(candidates)[1]
+    return "城市待核对"
+
+
+class CatalogOverrides:
+    """Small atomic workspace layer for names and directory placement."""
+
+    def __init__(self, path, schema):
+        self.path = Path(path)
+        self.schema = schema
+        self.values = {}
+
+    def load(self):
+        if not self.path.exists():
+            return
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        if payload.get("schema") != self.schema or not isinstance(
+            payload.get("overrides"), dict
+        ):
+            raise ValueError("目录编辑文件格式无效")
+        self.values = {
+            str(key): value
+            for key, value in payload["overrides"].items()
+            if isinstance(value, dict)
+        }
+
+    def update(self, key, **changes):
+        proposed = {**self.values}
+        proposed[str(key)] = {**proposed.get(str(key), {}), **changes}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(
+                {"schema": self.schema, "overrides": proposed},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(self.path)
+        self.values = proposed
+
+
+def metro_station_directory(stations, routes, hierarchy, overrides=None):
+    """province -> city -> line -> station, with shared stable station IDs."""
+    overrides = overrides or {}
+    route_lookup = {route["osm_relation_id"]: route for route in routes}
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    by_id = {}
+    for feature in stations:
+        props = feature.get("properties", {})
+        station_id = str(
+            props.get("infrastructure_id")
+            or props.get("station_id")
+            or f"osm-node/{props.get('osm_node_id')}"
+        )
+        custom = overrides.get(station_id, {})
+        record = {
+            "id": station_id,
+            "name": custom.get("display_name") or props.get("name") or "未命名地铁站",
+            "source_name": props.get("name") or "",
+            "coordinates": feature.get("geometry", {}).get("coordinates", []),
+            "route_relation_ids": list(props.get("route_relation_ids", [])),
+            "properties": props,
+        }
+        by_id[station_id] = record
+        for relation_id in record["route_relation_ids"]:
+            route = route_lookup.get(relation_id)
+            if not route:
+                continue
+            province, city, line = hierarchy.parent(route)
+            folder = custom.get("folder_path")
+            if isinstance(folder, list) and len(folder) >= 3:
+                province, city, line = folder[:3]
+            grouped[province][city][line].append(record)
+    for cities in grouped.values():
+        for lines in cities.values():
+            for line, records in lines.items():
+                lines[line] = sorted(records, key=lambda item: item["name"])
+    return grouped, by_id
+
+
+def rail_station_records(directory, regions, query="", limit=4000):
+    """Read a bounded station/control-point catalog directly from the source index."""
+    import sqlite3
+
+    directory = Path(directory)
+    source = directory / "rail.sqlite"
+    if not source.exists():
+        return [], 0
+    where = "kind='railPoints'"
+    args = []
+    if query:
+        where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
+        args.extend([f"%{query}%", f"%{query}%"])
+    else:
+        where += " AND (json_extract(data,'$.properties.kind') IN ('station','halt','signal_box','junction','crossing') OR json_extract(data,'$.properties.name') != CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT))"
+    with sqlite3.connect(source) as db:
+        total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
+        rows = db.execute(
+            f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
+            [*args, limit],
+        ).fetchall()
+    features = [json.loads(row[0]) for row in rows]
+    node_ids = [f["properties"].get("osm_node_id") for f in features]
+    line_map = defaultdict(set)
+    line_names = {}
+    line_db = directory / "rail_lines.sqlite"
+    if line_db.exists() and node_ids:
+        with sqlite3.connect(line_db) as db:
+            line_names = dict(db.execute("SELECT id,source_name FROM lines"))
+            for start in range(0, len(node_ids), 800):
+                batch = node_ids[start : start + 800]
+                marks = ",".join("?" for _ in batch)
+                sql = (
+                    "SELECT a.source_id,l.line_id FROM node_aliases a JOIN line_nodes l ON l.node_id=a.node_id "
+                    f"WHERE a.source_id IN ({marks})"
+                )
+                for node, line_id in db.execute(sql, batch):
+                    line_map[node].add(line_id)
+                alias_sql = (
+                    "SELECT a.station_node_id,l.line_id FROM station_aliases a "
+                    "JOIN line_nodes l ON l.node_id=a.anchor_node "
+                    f"WHERE a.station_node_id IN ({marks})"
+                )
+                for node, line_id in db.execute(alias_sql, batch):
+                    line_map[node].add(line_id)
+    index = ProvinceIndex()
+    result = []
+    for feature in features:
+        props = feature["properties"]
+        coordinates = feature["geometry"]["coordinates"]
+        tags = props.get("node_tags", {})
+        province = index.locate(coordinates)
+        node_id = props.get("osm_node_id")
+        lines = sorted(line_map.get(node_id, set()))
+        result.append(
+            {
+                "id": f"node/{node_id}",
+                "name": props.get("name") or f"节点 {node_id}",
+                "kind": props.get("kind", ""),
+                "station_type": station_type(tags, props.get("kind", "")),
+                "province": province,
+                "city": nearest_city(coordinates, province, regions, tags),
+                "coordinates": coordinates,
+                "osm_node_id": node_id,
+                "line_ids": lines,
+                "line_names": [line_names.get(line, line) for line in lines],
+                "properties": props,
+            }
+        )
+    return result, total

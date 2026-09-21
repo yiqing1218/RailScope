@@ -34,7 +34,7 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
 
     widget, path = make_catalog(qtbot, tmp_path)
     original_file, original_catalog = path.read_bytes(), deepcopy(widget.catalog)
-    original_id = widget.display_name("track20").split("RC-")[1]
+    original_id = "track20"
     menu = widget.item_menu(widget.items["track20"])
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
         "重命名…",
@@ -47,7 +47,7 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
     )
     menu.actions()[0].trigger()
     assert widget.items["track20"].text(0).startswith("虹桥20道（自用）")
-    assert widget.items["track20"].text(0).split("RC-")[1] == original_id
+    assert widget.items["track20"].data(0, 0x0100) == original_id
     widget.move_items({"track20"}, ["我的目录", "虹桥站", "站台"])
     assert widget.parents("track20") == ("我的目录", "虹桥站", "站台")
     widget.toggle("track20", True)

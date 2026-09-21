@@ -17,7 +17,7 @@ except ImportError:
     from rail_categories import track_type
     from geometry import distance_m
 
-INDEX_VERSION = 10
+INDEX_VERSION = 12
 
 
 def fingerprint(source, extras):
@@ -57,7 +57,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             CREATE TABLE nodes(id PRIMARY KEY,label TEXT,kind TEXT,x REAL,y REAL);
             CREATE TABLE node_aliases(source_id PRIMARY KEY,node_id NOT NULL);
             CREATE TABLE line_nodes(line_id TEXT,node_id,PRIMARY KEY(line_id,node_id));
-            CREATE TABLE station_aliases(source_id TEXT,alias TEXT,station_node_id,anchor_node,distance_m REAL,verification_status TEXT,confidence REAL,PRIMARY KEY(source_id,alias,anchor_node));
+            CREATE TABLE station_aliases(source_id TEXT,alias TEXT,station_node_id,anchor_node,distance_m REAL,verification_status TEXT,confidence REAL,source_x REAL,source_y REAL,PRIMARY KEY(source_id,alias,anchor_node));
         """)
 
         def add(edge, replace=True):
@@ -221,8 +221,21 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                         else None
                     )
                     db.execute(
-                        "INSERT OR IGNORE INTO station_aliases VALUES(?,?,?,?,?,?,?)",
-                        (source_id, alias, station_node, anchor, gap, status, confidence),
+                        "INSERT OR IGNORE INTO station_aliases "
+                        "(source_id,alias,station_node_id,anchor_node,distance_m,"
+                        "verification_status,confidence,source_x,source_y) "
+                        "VALUES(?,?,?,?,?,?,?,?,?)",
+                        (
+                            source_id,
+                            alias,
+                            station_node,
+                            anchor,
+                            gap,
+                            status,
+                            confidence,
+                            coordinate[0],
+                            coordinate[1],
+                        ),
                     )
 
             def area_center(geometry):
@@ -279,7 +292,9 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                         source_number = props.get("osm_" + source_kind + "_id")
                         add_alias(
                             alias,
-                            f"{source_kind}/{source_number}",
+                            "node/" + str(station_node)
+                            if station_node is not None
+                            else f"{source_kind}/{source_number}",
                             station_node,
                             coordinate,
                         )
@@ -376,7 +391,7 @@ class DiskRailLineLibrary:
         }.get(kind, "轨道端点")
         return f"{name or '未命名' + label} · {label} · {ident}"
 
-    def search_lines(self, query="", limit=100, offset=0):
+    def search_lines(self, query="", limit=100, offset=0, endpoint=None):
         term = (
             "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         )
@@ -385,13 +400,21 @@ class DiskRailLineLibrary:
             for key, name in self.names.items()
             if query.casefold() in name.casefold()
         ]
-        clause = " OR id IN (" + ",".join("?" for _ in aliases) + ")" if aliases else ""
+        alias_clause = " OR id IN (" + ",".join("?" for _ in aliases) + ")" if aliases else ""
+        endpoint_clause = (
+            " AND id IN (SELECT line_id FROM line_nodes WHERE node_id=?)"
+            if endpoint is not None
+            else ""
+        )
+        endpoint_args = [endpoint] if endpoint is not None else []
         with self.connect() as db:
             rows = db.execute(
-                "SELECT id,source_name,edge_count FROM lines WHERE source_name LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!'"
-                + clause
+                "SELECT id,source_name,edge_count FROM lines WHERE (source_name LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!'"
+                + alias_clause
+                + ")"
+                + endpoint_clause
                 + " ORDER BY source_name,id LIMIT ? OFFSET ?",
-                (term, term, *aliases, limit, offset),
+                (term, term, *aliases, *endpoint_args, limit, offset),
             ).fetchall()
         return [
             {
@@ -402,6 +425,178 @@ class DiskRailLineLibrary:
             }
             for key, name, count in rows
         ]
+
+    def connected_lines(self, node_id, query="", limit=100):
+        """Lines the user can legally choose after the selected endpoint."""
+        nodes = self.endpoint_nodes(node_id)
+        if not nodes:
+            return []
+        term = "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        recommended = (
+            " AND l.source_name NOT LIKE '未命名轨道%' "
+            "AND l.track_type NOT LIKE '%站场%' "
+            "AND l.track_type NOT IN ('渡线 / 道岔连接轨','车辆段 / 检修线','折返线')"
+            if not query.strip()
+            else ""
+        )
+        with self.connect() as db:
+            marks = ",".join("?" for _ in nodes)
+            rows = db.execute(
+                "SELECT DISTINCT l.id,l.source_name,l.edge_count FROM lines l "
+                "JOIN line_nodes n ON n.line_id=l.id "
+                f"WHERE n.node_id IN ({marks}) AND (l.source_name LIKE ? ESCAPE '!' OR l.id LIKE ? ESCAPE '!') "
+                + recommended
+                + " ORDER BY l.source_name,l.id LIMIT ?",
+                (*nodes, term, term, limit),
+            ).fetchall()
+        return [
+            {
+                "id": key,
+                "source_name": name,
+                "name": self.names.get(key, name) + " · " + key,
+                "edge_count": count,
+            }
+            for key, name, count in rows
+        ]
+
+    def endpoint_nodes(self, endpoint):
+        if isinstance(endpoint, str) and endpoint.startswith("station:"):
+            source_id = endpoint.removeprefix("station:")
+            with self.connect() as db:
+                return [
+                    row[0]
+                    for row in db.execute(
+                        "SELECT DISTINCT anchor_node FROM station_aliases "
+                        "WHERE source_id=? AND anchor_node IS NOT NULL ORDER BY distance_m",
+                        (source_id,),
+                    )
+                ]
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT node_id FROM node_aliases WHERE source_id=?", (endpoint,)
+            ).fetchone()
+        return [row[0] if row else endpoint] if endpoint in self.nodes or row else []
+
+    def endpoint_label(self, endpoint):
+        if isinstance(endpoint, str) and endpoint.startswith("station:"):
+            source_id = endpoint.removeprefix("station:")
+            with self.connect() as db:
+                row = db.execute(
+                    "SELECT alias FROM station_aliases WHERE source_id=? ORDER BY distance_m LIMIT 1",
+                    (source_id,),
+                ).fetchone()
+            return row[0] if row else source_id
+        return self.nodes[endpoint] if endpoint in self.nodes else str(endpoint)
+
+    def search_endpoints(self, query="", line_id=None, limit=100):
+        """Logical stations first, followed by exact physical control nodes."""
+        term = "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        with self.connect() as db:
+            line_clause = (
+                " AND a.anchor_node IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
+                if line_id
+                else ""
+            )
+            args = [term, term]
+            if line_id:
+                args.append(line_id)
+            rows = db.execute(
+                "SELECT a.source_id,a.alias,min(a.distance_m) FROM station_aliases a "
+                "WHERE (a.alias LIKE ? ESCAPE '!' OR a.source_id LIKE ? ESCAPE '!')"
+                + line_clause
+                + " AND a.confidence>=0.5 AND a.distance_m<=2500 "
+                "GROUP BY a.source_id,a.alias ORDER BY a.alias,a.source_id NOT LIKE 'node/%',min(a.distance_m) LIMIT ?",
+                (*args, limit * 3),
+            ).fetchall()
+        result, station_keys, station_sources = [], set(), set()
+        for source_id, alias, _ in rows:
+            station_key = "".join(alias.split()).removesuffix("站").casefold()
+            if station_key in station_keys or source_id in station_sources:
+                continue
+            station_keys.add(station_key)
+            station_sources.add(source_id)
+            result.append(("station:" + source_id, alias + " · 车站实体"))
+            if len(result) >= limit:
+                break
+        if len(result) < limit:
+            existing = {item[0] for item in result}
+            result.extend(
+                item
+                for item in self.search_nodes(query, line_id, limit - len(result))
+                if item[0] not in existing
+            )
+        return result[:limit]
+
+    def reachable_nodes(self, from_node, line_id, query="", limit=100):
+        """Named/control endpoints reachable on one selected physical line."""
+        if line_id not in self.lines:
+            return []
+        selected = self.selected_library([line_id])
+        starts = [node for node in self.endpoint_nodes(from_node) if node in selected.nodes]
+        if not starts:
+            return []
+        stack, reachable = list(starts), set(starts)
+        graph = selected.lines[line_id]["graph"]
+        while stack:
+            node = stack.pop()
+            for other, _edge, _direction in graph.get(node, []):
+                if other not in reachable:
+                    reachable.add(other)
+                    stack.append(other)
+        candidates = self.search_endpoints(query, line_id, max(limit * 5, 500))
+        start_name = self.endpoint_label(from_node)
+        start_key = "".join(start_name.split()).removesuffix("站").casefold()
+        result = [
+            item
+            for item in candidates
+            if item[0] != from_node
+            and "".join(self.endpoint_label(item[0]).split()).removesuffix("站").casefold()
+            != start_key
+            and any(node in reachable for node in self.endpoint_nodes(item[0]))
+        ]
+        return result[:limit]
+
+    def resolve_endpoint(self, endpoint, adjacent_lines):
+        if (
+            isinstance(endpoint, str)
+            and endpoint.startswith("station:")
+            and len(set(adjacent_lines)) == 1
+        ):
+            source_id = endpoint.removeprefix("station:")
+            with self.connect() as db:
+                row = db.execute(
+                    "SELECT a.anchor_node FROM station_aliases a "
+                    "JOIN line_nodes l ON l.node_id=a.anchor_node "
+                    "WHERE a.source_id=? AND l.line_id=? "
+                    "ORDER BY a.distance_m,a.anchor_node LIMIT 1",
+                    (source_id, adjacent_lines[0]),
+                ).fetchone()
+            if row:
+                return row[0]
+        candidates = self.endpoint_nodes(endpoint)
+        if not candidates:
+            raise ValueError(f"端点不存在：{endpoint}")
+        with self.connect() as db:
+            matches = []
+            for node in candidates:
+                lines = {
+                    row[0]
+                    for row in db.execute(
+                        "SELECT line_id FROM line_nodes WHERE node_id=?", (node,)
+                    )
+                }
+                if set(adjacent_lines) <= lines:
+                    matches.append(node)
+        if len(matches) == 1:
+            return matches[0]
+        label = self.endpoint_label(endpoint)
+        if not matches:
+            raise ValueError(
+                f"{label} 没有同时连接所选前后线路的真实轨道端点；请补充站内连接线或选择线路所端点"
+            )
+        raise ValueError(
+            f"{label} 在所选线路上有 {len(matches)} 个合法轨道端点，物理径路不唯一；请增加线路所/道岔端点消歧"
+        )
 
     def search_nodes(self, query="", line_id=None, limit=100):
         clause, args = "", []
@@ -509,17 +704,18 @@ class DiskRailLineLibrary:
 
     def normalize_sequence(self, sequence):
         sequence = json.loads(json.dumps(sequence))
-        with self.connect() as db:
-            for index in range(0, len(sequence), 2):
-                entry = sequence[index]
-                if not isinstance(entry, dict) or "node_id" not in entry:
-                    continue
-                row = db.execute(
-                    "SELECT node_id FROM node_aliases WHERE source_id=?",
-                    (entry["node_id"],),
-                ).fetchone()
-                if row:
-                    entry["node_id"] = row[0]
+        for index in range(0, len(sequence), 2):
+            entry = sequence[index]
+            if not isinstance(entry, dict) or "node_id" not in entry:
+                continue
+            adjacent = []
+            if index > 0 and sequence[index - 1].get("kind") == "line":
+                adjacent.append(sequence[index - 1].get("line_id"))
+            if index + 1 < len(sequence) and sequence[index + 1].get("kind") == "line":
+                adjacent.append(sequence[index + 1].get("line_id"))
+            entry["node_id"] = self.resolve_endpoint(
+                entry["node_id"], [value for value in adjacent if value]
+            )
         return sequence
 
     def describe(self, path):
@@ -638,28 +834,64 @@ class DiskRailLineLibrary:
         tmp = path.with_name(path.name + "." + uuid4().hex + ".tmp")
         try:
             with tmp.open("w", encoding="utf-8") as stream, self.connect() as db:
-                stream.write('{"schema":"railscope.rail-lines.v1",')
+                stream.write('{"schema":"railscope.rail-graph.v1",')
                 generators = [
                     (
                         "lines",
                         (
                             {
                                 "id": key,
-                                "name": self.names.get(key, name) + " · " + key,
+                                "name": self.names.get(key, name),
                                 "source_name": name,
                                 "edge_count": count,
+                                "track_type": kind,
+                                "type_evidence": evidence,
                             }
-                            for key, name, count in db.execute(
-                                "SELECT id,source_name,edge_count FROM lines ORDER BY id"
+                            for key, name, count, kind, evidence in db.execute(
+                                "SELECT id,source_name,edge_count,track_type,evidence FROM lines ORDER BY id"
+                            )
+                        ),
+                    ),
+                    (
+                        "station_entities",
+                        (
+                            {
+                                "id": "station:" + row[0],
+                                "name": row[1],
+                                "anchor_node_ids": sorted([
+                                    int(value) if value.isdigit() else value
+                                    for value in row[2].split(",")
+                                ], key=str)
+                                if row[2]
+                                else [],
+                                "connected_line_ids": sorted(set(row[3].split(","))) if row[3] else [],
+                                "verification_status": row[4],
+                                "confidence": row[5],
+                            }
+                            for row in db.execute(
+                                "SELECT a.source_id,min(a.alias),group_concat(DISTINCT a.anchor_node),"
+                                "group_concat(DISTINCT ln.line_id),min(a.verification_status),max(a.confidence) "
+                                "FROM station_aliases a LEFT JOIN line_nodes ln ON ln.node_id=a.anchor_node "
+                                "GROUP BY a.source_id ORDER BY min(a.alias),a.source_id"
                             )
                         ),
                     ),
                     (
                         "endpoints",
                         (
-                            {"node_id": row[0], "name": self.node_label(row)}
+                            {
+                                "node_id": row[0],
+                                "name": self.node_label(row[:3]),
+                                "kind": row[2],
+                                "coordinates": [row[3], row[4]]
+                                if row[3] is not None and row[4] is not None
+                                else None,
+                                "connected_line_ids": sorted(set(row[5].split(","))) if row[5] else [],
+                            }
                             for row in db.execute(
-                                "SELECT id,label,kind FROM nodes ORDER BY id"
+                                "SELECT n.id,n.label,n.kind,n.x,n.y,group_concat(DISTINCT ln.line_id) "
+                                "FROM nodes n LEFT JOIN line_nodes ln ON ln.node_id=n.id "
+                                "GROUP BY n.id ORDER BY n.id"
                             )
                         ),
                     ),
@@ -676,7 +908,12 @@ class DiskRailLineLibrary:
                             stream.write(",")
                         json.dump(value, stream, ensure_ascii=False)
                     stream.write("]")
-                stream.write("}")
+                stream.write(
+                    ',"corridor_format":{"schema":"railscope.rail-corridors.v2",'
+                    '"sequence":"endpoint-line-endpoint-line-endpoint",'
+                    '"path_cache":"ordered NetworkEdge ids with direction",'
+                    '"train_stops":"stored only in TrainRun.stops"}}'
+                )
             progress("完成目录导出…")
             tmp.replace(path)
         except BaseException:

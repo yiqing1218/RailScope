@@ -602,10 +602,12 @@ class RailEditor(OperationsEditor):
             )
             from background_work import prepare_with_progress
         edges = {e["id"]: e for e in self.graph["edges"]}
-        points = list(self.graph["points"])
         database = (self.directory / "rail.sqlite").resolve()
         stamp = database.stat().st_mtime_ns if database.exists() else None
-        signature = (str(database), stamp, tuple(edges))
+        # The national index belongs only to the infrastructure snapshot.
+        # Bundled/loaded plan edges are DTO data and must never change its
+        # fingerprint, otherwise opening a plan rebuilds the 3 GB source index.
+        signature = (str(database), stamp)
         if getattr(self, "_line_library_signature", None) == signature:
             return self._line_library
         names_path = Path(self.path).parent / "rail_line_names.json"
@@ -616,11 +618,10 @@ class RailEditor(OperationsEditor):
         )
         if database.exists():
             index = database.with_name("rail_lines.sqlite")
-            extras = list(edges.values())
-            if not index_ready(index, fingerprint(database, extras)):
+            if not index_ready(index, fingerprint(database, [])):
 
                 def build(progress):
-                    return build_line_index(database, index, extras, points, progress)
+                    return build_line_index(database, index, [], [], progress)
 
                 if interactive:
                     prepare_with_progress(self, "准备铁路命名与端点目录", build)
@@ -628,7 +629,9 @@ class RailEditor(OperationsEditor):
                     build(lambda text: None)
             self._line_library = DiskRailLineLibrary(index, names)
         else:
-            self._line_library = RailLineLibrary(list(edges.values()), points, names)
+            self._line_library = RailLineLibrary(
+                list(edges.values()), list(self.graph["points"]), names
+            )
         self._line_library_signature = signature
         return self._line_library
 
@@ -720,6 +723,11 @@ class RailEditor(OperationsEditor):
                 )
                 # Resolve from the infrastructure every time, including G1 notation.
                 policy = resolution_policy(route["extensions"])
+                # The editor may receive a logical station entity (station:node/…)
+                # rather than one of its physical rail anchors.  Persist the
+                # resolved endpoint sequence so the portable corridor remains
+                # valid without the station-alias index.
+                route["sequence"] = library.normalize_sequence(route["sequence"])
                 if interactive and hasattr(library, "connect"):
                     try:
                         from .background_work import prepare_with_progress
@@ -985,9 +993,9 @@ class RailEditor(OperationsEditor):
     def export_line_library(self):
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "导出铁路命名与可复用端点分段",
-            str(Path(self.path).parent / "rail-lines.json"),
-            "铁路目录 (*.json)",
+            "导出全国铁路图（端点—线路—端点）",
+            str(Path(self.path).parent / "rail-graph.json"),
+            "铁路图数据 (*.json)",
         )
         if path:
             try:
@@ -999,16 +1007,16 @@ class RailEditor(OperationsEditor):
                         from background_work import prepare_with_progress
                     prepare_with_progress(
                         self,
-                        "导出铁路命名与端点分段",
+                        "导出全国铁路图",
                         lambda report: library.write_export(path, report),
                     )
                     return
                 value = {
-                    "schema": "railscope.rail-lines.v1",
+                    "schema": "railscope.rail-graph.v1",
                     "lines": [
                         {
                             "id": key,
-                            "name": record["name"],
+                            "name": record["name"].split(" · ", 1)[0],
                             "source_name": record["source_name"],
                             "edge_count": len(record["edge_ids"]),
                         }
@@ -1019,6 +1027,12 @@ class RailEditor(OperationsEditor):
                         for key, name in sorted(library.nodes.items())
                     ],
                     "sections": library.sections(),
+                    "corridor_format": {
+                        "schema": "railscope.rail-corridors.v2",
+                        "sequence": "endpoint-line-endpoint-line-endpoint",
+                        "path_cache": "ordered NetworkEdge ids with direction",
+                        "train_stops": "stored only in TrainRun.stops",
+                    },
                 }
                 temporary = Path(path).with_suffix(".json.tmp")
                 temporary.write_text(

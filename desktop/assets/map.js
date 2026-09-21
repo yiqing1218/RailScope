@@ -2,9 +2,9 @@
 const maplibregl = window.maplibregl;
 let bridge, map, config, standardStyle, currentBase = 'standard', selectedFeature = null, selectedLayer = null;
 let running = false, travelled = 0;
-const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railPoints:false,railPlatforms:false,railStationAreas:false,railVehicles:false,railPlan:false,road:false, imported:false, vehicles:false};
+const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railStations:false,railControlPoints:false,railVehicles:false,railPlan:false,road:false, imported:false, vehicles:false};
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
-let visibleIds = [], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
+let visibleIds = [], visibleStationIds=[], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
 let followTrain=false;
 let focusedBounds=null;
@@ -86,7 +86,7 @@ function updateStaticSources(){
     const group=id==='areas'?'stations':id;
     const on=!!visibility[group]&&!document.hidden&&zoom>=({stations:9,areas:12}[id]||0);
     const spatial=id==='stations'||id==='areas';
-    const key=on?(spatial?JSON.stringify([visibleIds,bounds.toArray()]):'on'):'off';
+      const key=on?(spatial?JSON.stringify([visibleIds,visibleStationIds,bounds.toArray()]):'on'):'off';
     if(staticSourceState.get(id)===key||!map.getSource(id))continue;
     let data=on?config.sources[id]:empty;
     if(on&&spatial&&data?.features){
@@ -99,7 +99,8 @@ function updateStaticSources(){
         return coords.reduce((count,part)=>count+visit(part,box),0);
       }
       for(const feature of data.features){
-        if(!(feature.properties.route_relation_ids||[]).some(line=>lines.has(line)))continue;
+        const stationIds=id==='areas'?(feature.properties.station_ids||[]):[feature.properties.infrastructure_id||feature.properties.station_id];
+        if(!(feature.properties.route_relation_ids||[]).some(line=>lines.has(line))||!stationIds.some(value=>visibleStationIds.includes(value)))continue;
         const box=[Infinity,Infinity,-Infinity,-Infinity],count=visit(feature.geometry.coordinates,box);
         if(box[2]<bounds.getWest()||box[0]>bounds.getEast()||box[3]<bounds.getSouth()||box[1]>bounds.getNorth())continue;
         if(vertices+count>100000||features.length>=6000){document.getElementById('camera-status').textContent='已限制地图细节量，请放大查看';continue;}
@@ -110,12 +111,15 @@ function updateStaticSources(){
     map.getSource(id).setData(data||empty);staticSourceState.set(id,key);
   }
 }
-let railWays=null,railSections=null,railGroups=null,railExclude=false;
+let railWays=null,railSections=null,railGroups=null,railExclude=false,railPointExclusions=null,railLineIds=null;
 function railSourceVisible(kind){
   const zoom=map.getZoom();
   if(graphicsPaused||document.hidden)return false;
   if(kind==='rail')return visibility.rail||visibility.railConstruction;
-  return !!visibility[kind]&&zoom>=({railPoints:10,railPlatforms:12,railStationAreas:11}[kind]||0);
+  if(kind==='railPoints')return (visibility.railStations||visibility.railControlPoints)&&zoom>=10;
+  if(kind==='railPlatforms')return visibility.railStations&&zoom>=12;
+  if(kind==='railStationAreas')return visibility.railStations&&zoom>=11;
+  return !!visibility[kind];
 }
 function scheduleRailViewport(){
   clearTimeout(railTimer);
@@ -235,11 +239,14 @@ function installLayers() {
   scheduleRailViewport();
   updateStaticSources();
 }
-const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes'],railConstruction:['rail-construction'],railPoints:['rail-points','rail-detail-points'],railPlatforms:['rail-platform-fill','rail-platform-outline'],railStationAreas:['rail-station-fill','rail-station-outline'],railVehicles:['rail-vehicles','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
+const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes'],railConstruction:['rail-construction'],railStations:['rail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'],railControlPoints:['rail-detail-points'],railVehicles:['rail-vehicles','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 function sharedRailStationFilter(){
   if(!map.getLayer('rail-points'))return;
   const nodes=visibility.railPlan?(config.sources.railPlan?.features||[]).filter(f=>f.geometry.type==='Point').map(f=>f.properties.osm_node_id):[];
-  map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]]]);
+  const allowed=['!', ['in',['get','osm_node_id'],['literal',railPointExclusions||[]]]];
+  const onSelectedLine=railLineIds===null?['==',['literal',1],1]:railLineIds.length?['any',...railLineIds.map(id=>['in',id,['coalesce',['get','line_ids'],['literal',[]]]])]:['==',['literal',1],0];
+  map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]],allowed,onSelectedLine]);
+  if(map.getLayer('rail-detail-points'))map.setFilter('rail-detail-points',['all',['!', ['in',['get','kind'],['literal',['station','halt']]]],allowed]);
 }
 function refreshSelection(){
   if(!map.getSource('selection'))return;
@@ -395,10 +402,13 @@ async function init() {
         }catch(error){report('imageCaptured','error');}
       });map.triggerRepaint();
     },
-    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railPoints','railPlatforms','railStationAreas'].includes(key))scheduleRailViewport();},
+    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVehicleAppearance();},
-    setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();},setBase,
+    setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();},
+    setMetroStations(ids){visibleStationIds=ids;applyLineFilter();staticSourceState.delete('stations');staticSourceState.delete('areas');updateStaticSources();},
+    setRailPointExclusions(ids){railPointExclusions=ids;sharedRailStationFilter();},setBase,
+    setRailLineSelection(ids){railLineIds=ids;sharedRailStationFilter();},
     setConstruction(ids){constructionIds=ids;applyConstructionFilter();},
     setBaseDetail(key,on){baseDetails[key]=on;applyBaseDetails();},focusDemo,
     focusChina(){document.getElementById('focus-china').click();},

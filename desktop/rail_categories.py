@@ -164,13 +164,56 @@ def corridor_for(name, category):
 
 
 def catalog_parents(meta, mode):
+    """Return the user-facing national line taxonomy.
+
+    It classifies only from explicit line names/track roles.  Endpoint-delimited
+    RS sections remain available in object details and Corridor editors.
+    """
     category = meta.get("track_type", "未确认类型")
-    if "站场" in category:
-        return (category, meta.get("station_name") or "未关联站场")
-    return (
-        category,
-        meta.get("line_display_name")
-        or meta.get("line_name")
+    name = (
+        meta.get("line_name")
+        or meta.get("line_display_name")
         or meta.get("name")
-        or "未命名物理线路",
-    )
+        or "未命名物理线路"
+    ).split(" · ", 1)[0]
+    compact = name.replace("高速线", "高速铁路").replace("高铁", "高速铁路")
+    prefix = ("在建铁路",) if meta.get("construction") else ()
+    if any(word in name for word in ("市域", "市郊")):
+        city = next((word for word in ("上海", "北京", "成都") if word in name), "其他城市")
+        return prefix + ("市域/市郊铁路", city)
+    if (
+        "城际" in name
+        and category != "高速铁路线"
+        and "高速铁路" not in compact
+    ):
+        region = (
+            "长三角城际"
+            if any(word in name for word in ("沪", "宁", "杭", "苏"))
+            else "珠三角城际"
+            if any(word in name for word in ("广", "珠", "莞", "佛"))
+            else "京津冀城际"
+            if any(word in name for word in ("京", "津", "石"))
+            else "其他城际"
+        )
+        return prefix + ("城际铁路", region)
+    if category == "高速铁路线" or "高速铁路" in compact:
+        if any(word in compact for word in ("京沪高速铁路", "京广高速铁路", "沪昆高速铁路", "徐兰高速铁路")):
+            return prefix + ("高速铁路", "国家高速铁路主干线")
+        if any(word in name for word in ("沪宁城际", "宁杭", "杭甬", "广珠城际")):
+            return prefix + ("高速铁路", "区域高速铁路")
+        if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
+            return prefix + ("高速铁路", "高速铁路联络线")
+        return prefix + ("高速铁路", "区域高速铁路")
+    if category in {"普速铁路线", "支线 / 岔道"}:
+        if any(word in name for word in ("京沪铁路", "京沪线", "京广铁路", "京广线", "陇海", "沪昆铁路", "沪昆线", "京九")):
+            return prefix + ("普速铁路", "国家铁路干线")
+        if category == "支线 / 岔道" or "支线" in name:
+            return prefix + ("普速铁路", "支线铁路")
+        return prefix + ("普速铁路", "区域干线")
+    if category == "货运铁路线":
+        return prefix + ("其他铁路", "货运铁路")
+    if any(word in name for word in ("矿区", "矿山")):
+        return prefix + ("其他铁路", "矿区铁路")
+    if any(word in name for word in ("港口", "港区", "码头")):
+        return prefix + ("其他铁路", "港口铁路")
+    return prefix + ("其他铁路", "不确定铁路")

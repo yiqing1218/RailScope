@@ -1,84 +1,79 @@
 """Build the Jinghu example from shared infrastructure, never a cached train path."""
 
-from collections import Counter
-from contextlib import closing
 import json
 from pathlib import Path
-import sqlite3
 
 try:
     from .geometry import distance_m
-    from .rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY, edge_endpoints
+    from .rail_lines import RESOLUTION_KEY
+    from .rail_line_store import (
+        DiskRailLineLibrary,
+        build_line_index,
+        fingerprint,
+        index_ready,
+    )
+    from .rail_store import load_edges
 except ImportError:
     from geometry import distance_m
-    from rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY, edge_endpoints
+    from rail_lines import RESOLUTION_KEY
+    from rail_line_store import (
+        DiskRailLineLibrary,
+        build_line_index,
+        fingerprint,
+        index_ready,
+    )
+    from rail_store import load_edges
 
 
 def assemble_jinghu(directory, service_path=None):
-    source = Path(directory).resolve() / "rail.sqlite"
+    directory = Path(directory).resolve()
+    source = directory / "rail.sqlite"
+    line_index = directory / "rail_lines.sqlite"
+    signature = fingerprint(source, [])
+    if not index_ready(line_index, signature):
+        build_line_index(source, line_index, [], [], lambda _text: None)
     service_path = service_path or Path(__file__).parent / "examples/g1-service.json"
     service = json.loads(Path(service_path).read_text(encoding="utf-8"))
     names = [stop["name"] for stop in service["stops"]]
-    with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as db:
-        edges = [
-            json.loads(raw)
-            for (raw,) in db.execute(
-                "SELECT data FROM edges WHERE json_extract(data,'$.way_tags.name')='京沪高铁'"
-            )
-        ]
-        station_rows = db.execute(
-            "SELECT data FROM features WHERE kind='railPoints' AND json_extract(data,'$.properties.name') IN ("
-            + ",".join("?" for _ in names)
-            + ") ORDER BY json_extract(data,'$.properties.osm_node_id')",
-            names,
-        ).fetchall()
-    if not edges:
-        raise ValueError("已导入铁路库中没有京沪高铁，请先获取对应基础设施")
-    identities = Counter(
-        line_identity(edge)[0]
-        for edge in edges
-        if not edge.get("construction")
-        and edge.get("way_tags", {}).get("service", "main") == "main"
-    )
-    if not identities:
-        raise ValueError("未找到可用京沪高铁主线")
-    line_id = identities.most_common(1)[0][0]
-    edges = [edge for edge in edges if line_identity(edge)[0] == line_id]
-    stations = {}
-    for (raw,) in station_rows:
-        feature = json.loads(raw)
-        if feature["geometry"]["type"] == "Point" and feature["properties"].get(
-            "kind"
-        ) in ("station", "halt"):
-            stations.setdefault(feature["properties"]["name"], feature)
-    missing = [name for name in names if name not in stations]
-    if missing:
-        raise ValueError("铁路库缺少车站定位：" + "、".join(missing))
-    node_coordinates = {}
-    for edge in edges:
-        a, b = edge_endpoints(edge)
-        node_coordinates[a] = edge["coordinates"][0]
-        node_coordinates[b] = edge["coordinates"][-1]
-
-    def anchor(name):
-        coordinate = stations[name]["geometry"]["coordinates"]
-        node = min(
-            node_coordinates,
-            key=lambda node: (distance_m(node_coordinates[node], coordinate), node),
+    library = DiskRailLineLibrary(line_index)
+    candidates = library.search_lines("京沪高铁", limit=100)
+    aliases = {"京沪高铁", "京沪高速线", "京沪高速铁路"}
+    candidates.sort(
+        key=lambda item: (
+            item["source_name"] not in aliases,
+            -item["edge_count"],
+            item["id"],
         )
-        if distance_m(node_coordinates[node], coordinate) > 2000:
-            raise ValueError(name + "附近没有可用主线端点，不跨越缺失数据连线")
-        return node
-
-    start, finish = anchor(names[0]), anchor(names[-1])
-    library = RailLineLibrary(edges, [])
+    )
+    if not candidates:
+        raise ValueError("已导入铁路库中没有京沪高铁，请先获取对应基础设施")
+    line_id = candidates[0]["id"]
+    logical_stations = {}
+    for name in names:
+        matches = library.search_endpoints(name, line_id, 50)
+        exact = next(
+            (
+                endpoint
+                for endpoint, _label in matches
+                if library.endpoint_label(endpoint) == name
+            ),
+            matches[0][0] if matches else None,
+        )
+        if exact is None:
+            raise ValueError("铁路库缺少车站定位：" + name)
+        logical_stations[name] = exact
     sequence = [
-        {"kind": "endpoint", "node_id": start},
+        {"kind": "endpoint", "node_id": logical_stations[names[0]]},
         {"kind": "line", "line_id": line_id},
-        {"kind": "endpoint", "node_id": finish},
+        {"kind": "endpoint", "node_id": logical_stations[names[-1]]},
     ]
-    path = library.resolve(sequence, "mainline")
-    lookup = library.edges
+    normalized_sequence = library.normalize_sequence(sequence)
+    path = library.resolve(normalized_sequence, "mainline")
+    edges = load_edges(directory, [leg["edge_id"] for leg in path])
+    if len(edges) != len(path):
+        raise ValueError("京沪高铁通道引用的基础设施区间不完整")
+    sequence = normalized_sequence
+    lookup = {edge["id"]: edge for edge in edges}
     nodes, coordinates = [], []
     for leg in path:
         edge = lookup[leg["edge_id"]]
@@ -89,28 +84,42 @@ def assemble_jinghu(directory, service_path=None):
         coordinates.extend(coords if not coordinates else coords[1:])
     stops, mappings = [], []
     previous = -1
-    for index, stop in enumerate(service["stops"]):
-        station = stations[stop["name"]]
-        coordinate = station["geometry"]["coordinates"]
-        position = (
-            0
-            if index == 0
-            else len(nodes) - 1
-            if index == len(names) - 1
-            else min(
-                range(previous + 1, len(nodes)),
-                key=lambda i: (distance_m(coordinates[i], coordinate), i),
-            )
+    for stop in service["stops"]:
+        name = stop["name"]
+        logical_id = logical_stations[name]
+        source_id = (
+            logical_id.removeprefix("station:")
+            if isinstance(logical_id, str)
+            else str(logical_id)
         )
-        offset = distance_m(coordinates[position], coordinate)
-        if offset > 2000 or position <= previous:
+        with library.connect() as db:
+            row = db.execute(
+                "SELECT source_x,source_y FROM station_aliases "
+                "WHERE source_id=? AND source_x IS NOT NULL LIMIT 1",
+                (source_id,),
+            ).fetchone()
+        if not row:
+            raise ValueError(name + "缺少可核验的车站坐标")
+        station_coordinate = [row[0], row[1]]
+        position = min(
+            range(previous + 1, len(nodes)),
+            key=lambda value: (distance_m(coordinates[value], station_coordinate), value),
+        )
+        anchor_node = nodes[position]
+        if position <= previous:
             raise ValueError(stop["name"] + "未能匹配到连续主线中的经停锚点")
         previous = position
+        offset = round(distance_m(coordinates[position], station_coordinate), 1)
+        if offset > 2000:
+            raise ValueError(name + "附近没有可用主线端点，不跨越缺失数据连线")
         mapping = {
-            "station_name": stop["name"],
-            "source_station_node": station["properties"]["osm_node_id"],
-            "anchor_node": nodes[position],
-            "offset_m": round(offset, 1),
+            "station_name": name,
+            "source_station_node": int(source_id.removeprefix("node/"))
+            if source_id.startswith("node/")
+            and source_id.removeprefix("node/").isdigit()
+            else source_id,
+            "anchor_node": anchor_node,
+            "offset_m": offset,
         }
         mappings.append(mapping)
         stops.append(

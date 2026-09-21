@@ -45,7 +45,7 @@ def test_mainline_compatibility_never_silently_chooses_shortest_and_sections_spl
     ]
     with pytest.raises(ValueError, match="分支"):
         library.resolve(sequence)
-    with pytest.raises(ValueError, match="RS 区间"):
+    with pytest.raises(ValueError, match="端点消歧"):
         library.resolve(sequence, "mainline")
     roles = RailLineLibrary(
         [
@@ -237,7 +237,7 @@ def test_new_corridor_fills_blank_identity_without_cached_train_path(
         dialog.findChild(QLineEdit, "corridorName").clear()
         table.cellWidget(0, 0).setEditText(str(existing[0]["node_id"]))
         table.cellWidget(0, 1).setEditText(existing[1]["line_id"])
-        table.cellWidget(0, 3).setEditText(str(existing[2]["node_id"]))
+        table.cellWidget(0, 2).setEditText(str(existing[2]["node_id"]))
         dialog.findChild(QDialogButtonBox).button(
             QDialogButtonBox.StandardButton.Ok
         ).click()

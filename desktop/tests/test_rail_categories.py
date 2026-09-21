@@ -73,7 +73,7 @@ def test_auxiliary_tracks_do_not_become_highspeed_main_lines():
     assert corridor_for("沪昆高速线", "高速铁路线") == "横向 · 沪昆通道"
 
 
-def test_catalog_hierarchy_is_type_then_physical_line_or_station():
+def test_catalog_hierarchy_uses_business_lines_without_province_splitting():
     from desktop.rail_categories import catalog_parents
 
     meta = {
@@ -83,8 +83,12 @@ def test_catalog_hierarchy_is_type_then_physical_line_or_station():
         "section": "分段",
     }
     meta["line_display_name"] = "沪宁线 · IL-TEST"
-    assert catalog_parents(meta, 0) == ("货运铁路线", "沪宁线 · IL-TEST")
+    assert catalog_parents(meta, 0) == ("其他铁路", "货运铁路")
     meta["track_type"] = "高速铁路线"
-    assert catalog_parents(meta, 0) == ("高速铁路线", "沪宁线 · IL-TEST")
+    assert catalog_parents(meta, 0) == ("高速铁路", "区域高速铁路")
+    meta["line_display_name"] = "广珠城际铁路 · IL-TEST"
+    assert catalog_parents(meta, 0) == ("高速铁路", "区域高速铁路")
+    meta.update(track_type="普速铁路线", line_display_name="京沪铁路 · IL-TEST")
+    assert catalog_parents(meta, 0) == ("普速铁路", "国家铁路干线")
     meta.update(track_type="高速铁路站场股道", station_name="上海虹桥站")
-    assert catalog_parents(meta, 0) == ("高速铁路站场股道", "上海虹桥站")
+    assert catalog_parents(meta, 0) == ("其他铁路", "不确定铁路")

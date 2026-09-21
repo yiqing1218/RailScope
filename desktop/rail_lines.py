@@ -408,7 +408,7 @@ class RailLineLibrary:
                 legs.append({"edge_id": edge_id, "direction": direction})
             if any(leg["edge_id"] not in self.bridges(ident) for leg in legs):
                 raise ValueError(
-                    "两个端点之间存在分支 / 多条合法径路；请增加控制端点或选择明确的 RS 区间，不自动采用几何最短路"
+                    "两个端点之间存在分支 / 多条合法径路；请增加车站、线路所或道岔端点消歧，不自动采用几何最短路"
                 )
             path.extend(reversed(legs))
         if sequence[0]["node_id"] == sequence[-1]["node_id"]:

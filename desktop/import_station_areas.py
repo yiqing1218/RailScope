@@ -45,21 +45,34 @@ def extract(pbf, output, previous=None):
         .with_filter(
             osmium.filter.TagFilter(
                 ("public_transport", "stop_area"),
+                ("public_transport", "stop_area_group"),
             )
         )
     )
+    relation_nodes, relation_ways, relation_children = {}, {}, {}
     for relation in relations:
-        station_ids = {
+        relation_nodes[relation.id] = {
             m.ref for m in relation.members if m.type == "n" and m.ref in by_station
         }
-        for member in relation.members:
-            if member.type == "w" and (
-                relation.tags.get("public_transport") == "stop_area"
-                or member.role.startswith("platform")
-            ):
-                members["way", member.ref].update(station_ids)
-            elif member.type == "r":
-                members["relation", member.ref].update(station_ids)
+        relation_ways[relation.id] = [m.ref for m in relation.members if m.type == "w"]
+        relation_children[relation.id] = [m.ref for m in relation.members if m.type == "r"]
+
+    def station_members(relation_id, seen=None):
+        seen = set() if seen is None else seen
+        if relation_id in seen:
+            return set()
+        seen.add(relation_id)
+        result = set(relation_nodes.get(relation_id, set()))
+        for child in relation_children.get(relation_id, []):
+            result.update(station_members(child, seen))
+        return result
+
+    for relation_id in relation_nodes:
+        station_ids = station_members(relation_id)
+        for way_id in relation_ways.get(relation_id, []):
+            members["way", way_id].update(station_ids)
+        for child in relation_children.get(relation_id, []):
+            members["relation", child].update(station_ids)
     try:
         from .metro_data import associate_station_areas, station_area_index
         from .station_search import name_keys, station_names
@@ -79,7 +92,7 @@ def extract(pbf, output, previous=None):
         kind = "way" if obj.is_way() else "relation"
         transport = (is_metro_station_area_tags(raw) or raw.get("railway") in ("station", "platform")
                      or raw.get("public_transport") in ("station", "platform")
-                     or raw.get("building") in ("train_station", "transportation"))
+                     or raw.get("building") in ("train_station", "transportation", "station", "subway_station"))
         named_building = bool(raw.get("building") and name_keys(raw) & known_names)
         member_building = bool(raw.get("building") and members.get((kind, obj.id)))
         if transport or named_building or member_building:
@@ -121,7 +134,7 @@ def extract(pbf, output, previous=None):
                 raw.get("railway") == "platform"
                 or raw.get("public_transport") == "platform"
             )
-            explicit = raw.get("subway") in ("yes", "true") or raw.get("railway:station") == "subway" or raw.get("station") in (
+            explicit = bool(members.get(("way" if area.from_way() else "relation", area.orig_id()))) or raw.get("subway") in ("yes", "true") or raw.get("railway:station") == "subway" or raw.get("station") in (
                 "subway",
                 "light_rail",
             )

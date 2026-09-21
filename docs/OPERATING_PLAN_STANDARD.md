@@ -99,6 +99,6 @@ CSV 是有限列的表格接口，不携带任意 extensions、服务日或来�
 铁路通道默认参考国家发改委《中长期铁路网规划》的“八纵八横”；用户目录分类可以修改，但不能把自行修改的通道名宣称为官方规划。来源：https://www.ndrc.gov.cn/fggz/zcssfz/zcgh/201607/t20160728_1145737.html
 # 端点—线路通道补充规范
 
-国铁通道现在支持 `railscope.rail-corridors.v2` 的端点—线路交替表格；独立通道导出默认使用该格式。内部物理 path 是解析缓存，车次仍引用稳定通道编号。旧通道 v1 和车次计划 v1/v2 兼容读取。
+国铁通道支持 `railscope.rail-corridors.v2` 的端点—线路交替表格；全国基础图可导出为 `railscope.rail-graph.v1`。内部物理 path 是完整有向 NetworkEdge 解析缓存，车次仍引用稳定通道编号。旧通道 v1 和车次计划 v1/v2 兼容读取。
 
 命名、分段、严格字段、导入顺序和完整示例见 [铁路线命名与通道标准](RAIL_LINE_NAMING_AND_CORRIDORS.md)。站台 `platform_id` 继续属于具体车次，不放在通道层。

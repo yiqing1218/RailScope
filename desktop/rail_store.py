@@ -355,6 +355,38 @@ def viewport(directory, kind, bbox, zoom):
             props["track_type"] = classify_track_type(
                 props.get("way_tags", props)
             )[0]
+    elif kind == "railPoints" and features:
+        node_ids = [
+            feature["properties"].get("osm_node_id") for feature in features
+        ]
+        line_path = Path(directory) / "rail_lines.sqlite"
+        if line_path.exists():
+            line_map = {node_id: set() for node_id in node_ids}
+            line_names = {}
+            with closing(sqlite3.connect(str(line_path))) as lines:
+                line_names = dict(lines.execute("SELECT id,source_name FROM lines"))
+                for start in range(0, len(node_ids), 800):
+                    batch = node_ids[start : start + 800]
+                    marks = ",".join("?" for _ in batch)
+                    for node_id, line_id in lines.execute(
+                        "SELECT a.source_id,l.line_id FROM node_aliases a "
+                        "JOIN line_nodes l ON l.node_id=a.node_id "
+                        f"WHERE a.source_id IN ({marks})",
+                        batch,
+                    ):
+                        line_map.setdefault(node_id, set()).add(line_id)
+                    for node_id, line_id in lines.execute(
+                        "SELECT a.station_node_id,l.line_id FROM station_aliases a "
+                        "JOIN line_nodes l ON l.node_id=a.anchor_node "
+                        f"WHERE a.station_node_id IN ({marks})",
+                        batch,
+                    ):
+                        line_map.setdefault(node_id, set()).add(line_id)
+            for feature in features:
+                props = feature["properties"]
+                line_ids = sorted(line_map.get(props.get("osm_node_id"), set()))
+                props["line_ids"] = line_ids
+                props["line_names"] = [line_names.get(value, value) for value in line_ids]
     for feature in features:
         props = feature["properties"]
         if "infrastructure_id" not in props:

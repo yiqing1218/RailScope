@@ -247,6 +247,8 @@ def test_national_line_directory_does_not_load_geometry(tmp_path):
     export_path = tmp_path / "中文 线路.json"
     library.write_export(export_path)
     exported = json.loads(export_path.read_text(encoding="utf-8"))
+    assert exported["schema"] == "railscope.rail-graph.v1"
+    assert exported["corridor_format"]["sequence"] == "endpoint-line-endpoint-line-endpoint"
     assert any(s["line_id"] == ident for s in exported["sections"])
     editor.merge_corridors(
         {
@@ -449,7 +451,7 @@ def test_dialog_creates_corridor_from_search_results_and_renames(qtbot, tmp_path
             dialog.findChild(QLineEdit, "corridorId").setText("COR-UI-TEST")
             dialog.findChild(QLineEdit, "corridorName").setText("表格编制京沪下行")
             table = dialog.findChild(QTableWidget)
-            for col, query in [(1, "京沪"), (0, "北京南"), (3, "上海虹桥")]:
+            for col, query in [(0, "北京南"), (1, "京沪"), (2, "上海虹桥")]:
                 choice = table.cellWidget(0, col)
                 choice.setEditText(query)
                 choice.find_results()
