@@ -43,6 +43,7 @@ class RailCatalog(QWidget):
     classification_failed = Signal(str)
     enabled_requested = Signal()
     station_enabled_requested = Signal(str)
+    station_edit_requested = Signal(str)
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
 
@@ -151,6 +152,10 @@ class RailCatalog(QWidget):
         self.station_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.station_tree.setColumnWidth(1, 62)
         self.station_tree.itemDoubleClicked.connect(self.focus_station_item)
+        self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.station_tree.customContextMenuRequested.connect(
+            self.station_context_menu
+        )
         station_layout.addWidget(self.station_tree)
         self.station_note = text_label("正在读取车站实体目录…", wrap=True)
         station_layout.addWidget(self.station_note)
@@ -415,6 +420,18 @@ class RailCatalog(QWidget):
                 record["name"] = custom["display_name"]
             if custom.get("station_type") in STATION_TYPES:
                 record["station_type"] = custom["station_type"]
+            if isinstance(custom.get("connected_lines"), list):
+                record["line_ids"] = [
+                    value["line_id"]
+                    for value in custom["connected_lines"]
+                    if isinstance(value, dict) and value.get("line_id")
+                ]
+                record["line_names"] = [
+                    self.display_name(line_id)
+                    if line_id in self.catalog
+                    else line_id
+                    for line_id in record["line_ids"]
+                ]
             folder = custom.get("folder_path")
             if isinstance(folder, list) and len(folder) >= 2:
                 record["province"], record["city"] = folder[:2]
@@ -514,6 +531,25 @@ class RailCatalog(QWidget):
         if record:
             self.map.call("focus", *record["coordinates"], 15, record["name"])
 
+    def station_context_menu(self, position):
+        item = self.station_tree.itemAt(position)
+        if not item or not item.data(0, Qt.ItemDataRole.UserRole):
+            return
+        self.station_tree.setCurrentItem(item)
+        menu = self.station_item_menu(item)
+        menu.exec(self.station_tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def station_item_menu(self, item):
+        station_id = item.data(0, Qt.ItemDataRole.UserRole)
+        menu = QMenu(self)
+        menu.addAction(
+            "编辑名称、目录、类型和接轨线路…",
+            lambda: self.station_edit_requested.emit(station_id),
+        )
+        menu.addAction("在地图中定位", lambda: self.focus_station_item(item, 0))
+        return menu
+
     def select_station(self, osm_node_id):
         key = f"node/{osm_node_id}"
         item = self.station_items.get(key)
@@ -533,7 +569,12 @@ class RailCatalog(QWidget):
         return True
 
     def save_station_override(
-        self, station_id, display_name=None, folder_path=None, station_type_value=None
+        self,
+        station_id,
+        display_name=None,
+        folder_path=None,
+        station_type_value=None,
+        connected_lines=None,
     ):
         record = next((r for r in self.station_records if r["id"] == station_id), None)
         if not record:
@@ -552,6 +593,30 @@ class RailCatalog(QWidget):
             if station_type_value not in STATION_TYPES:
                 raise ValueError("车站类型无效")
             change["station_type"] = station_type_value
+        if connected_lines is not None:
+            normalized = []
+            for value in connected_lines:
+                if (
+                    not isinstance(value, dict)
+                    or not isinstance(value.get("line_id"), str)
+                    or not value["line_id"].strip()
+                    or not isinstance(value.get("anchor_node"), (int, str))
+                    or not isinstance(value.get("distance_m"), (int, float))
+                    or value["distance_m"] < 0
+                ):
+                    raise ValueError("接轨线路覆盖数据无效")
+                normalized.append(
+                    {
+                        "line_id": value["line_id"].strip(),
+                        "anchor_node": value["anchor_node"],
+                        "distance_m": round(float(value["distance_m"]), 1),
+                        "source": "manual",
+                        "verification_status": "user_verified",
+                    }
+                )
+            if len({value["line_id"] for value in normalized}) != len(normalized):
+                raise ValueError("接轨线路不能重复")
+            change["connected_lines"] = normalized
         proposed = {**self.overrides, key: change}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".json.tmp")

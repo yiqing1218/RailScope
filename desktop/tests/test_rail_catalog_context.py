@@ -178,3 +178,75 @@ def test_large_directory_prioritizes_named_business_lines_and_omits_station_grou
     assert widget.tree.topLevelItemCount() > 0
     assert widget.tree.verticalScrollBar().value() == 0
     assert widget.tree.y() < 80
+
+
+def test_station_context_menu_requests_the_shared_metadata_editor(
+    qtbot, tmp_path, monkeypatch
+):
+    record = {
+        "id": "node/100",
+        "name": "测试站",
+        "kind": "station",
+        "station_type": "客运站",
+        "province": "安徽省",
+        "city": "合肥市",
+        "coordinates": [117.28, 31.80],
+        "osm_node_id": 100,
+        "line_ids": ["RL-A"],
+        "line_names": ["甲线"],
+        "properties": {},
+    }
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_station_records",
+        lambda *args, **kwargs: ([dict(record)], 1),
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    requested = []
+    widget.station_edit_requested.connect(requested.append)
+    menu = widget.station_item_menu(widget.station_items["node/100"])
+    assert [action.text() for action in menu.actions()] == [
+        "编辑名称、目录、类型和接轨线路…",
+        "在地图中定位",
+    ]
+    menu.actions()[0].trigger()
+    assert requested == ["node/100"]
+
+
+def test_station_connection_override_persists_and_updates_station_directory(
+    qtbot, tmp_path, monkeypatch
+):
+    record = {
+        "id": "node/100",
+        "name": "测试站",
+        "kind": "station",
+        "station_type": "客运站",
+        "province": "安徽省",
+        "city": "合肥市",
+        "coordinates": [117.28, 31.80],
+        "osm_node_id": 100,
+        "line_ids": ["RL-A"],
+        "line_names": ["甲线"],
+        "properties": {},
+    }
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_station_records",
+        lambda *args, **kwargs: ([dict(record)], 1),
+    )
+    settings = tmp_path / "settings.json"
+    widget = RailCatalog(tmp_path, settings, MapStub())
+    qtbot.addWidget(widget)
+    connection = {
+        "line_id": "RL-B",
+        "anchor_node": 300,
+        "distance_m": 52.14,
+        "source": "manual",
+        "verification_status": "user_verified",
+    }
+    widget.save_station_override("node/100", connected_lines=[connection])
+    stored = json.loads(settings.read_text(encoding="utf-8"))
+    assert stored["station:node/100"]["connected_lines"] == [
+        {**connection, "distance_m": 52.1}
+    ]
+    assert widget.station_records[0]["line_ids"] == ["RL-B"]
+    assert "RL-B" in widget.station_items["node/100"].toolTip(0)

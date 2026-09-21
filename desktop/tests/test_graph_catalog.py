@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import pytest
 
 from desktop.catalog_metadata import metro_station_directory, station_type
 from desktop.rail_line_store import DiskRailLineLibrary
@@ -159,3 +160,94 @@ def test_corridor_station_picker_merges_duplicate_station_objects_and_hides_swit
     assert library.endpoint_choice_label(1).startswith("合肥南站 · 接轨：")
     assert {line["id"] for line in library.connected_lines(stations[0][0])} == {"RL-A", "RL-B"}
     assert not library.search_endpoints("道岔")
+
+
+def test_manual_station_connections_replace_detected_lines_and_bind_real_nearby_nodes(
+    tmp_path,
+):
+    path = tmp_path / "rail_lines.sqlite"
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE lines(id TEXT PRIMARY KEY,source_name TEXT,edge_count INTEGER,track_type TEXT,evidence TEXT);
+            CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a,b,construction INTEGER,length_m REAL,track_type TEXT,evidence TEXT,source_way TEXT,direction TEXT);
+            CREATE TABLE nodes(id PRIMARY KEY,label TEXT,kind TEXT,x REAL,y REAL);
+            CREATE TABLE node_aliases(source_id PRIMARY KEY,node_id NOT NULL);
+            CREATE TABLE line_nodes(line_id TEXT,node_id,PRIMARY KEY(line_id,node_id));
+            CREATE TABLE station_aliases(source_id TEXT,alias TEXT,station_node_id,anchor_node,distance_m REAL,verification_status TEXT,confidence REAL,source_x REAL,source_y REAL,PRIMARY KEY(source_id,alias,anchor_node));
+            """
+        )
+        db.executemany(
+            "INSERT INTO lines VALUES(?,?,?,?,?)",
+            [
+                ("RL-A", "甲线", 1, "普速铁路线", "test"),
+                ("RL-B", "乙线", 1, "普速铁路线", "test"),
+                ("RL-FAR", "远方线", 1, "普速铁路线", "test"),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("NE-A", "RL-A", 1, 2, 0, 10, "普速铁路线", "test", "1", "both"),
+                ("NE-B", "RL-B", 3, 4, 0, 10, "普速铁路线", "test", "2", "both"),
+                ("NE-F", "RL-FAR", 5, 6, 0, 10, "普速铁路线", "test", "3", "both"),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO nodes VALUES(?,?,?,?,?)",
+            [
+                (1, None, None, 117.2800, 31.8000),
+                (2, "甲线终点", "station", 117.3000, 31.8000),
+                (3, None, None, 117.2805, 31.8004),
+                (4, "乙线终点", "station", 117.3100, 31.8000),
+                (5, None, None, 118.0000, 32.0000),
+                (6, "远方终点", "station", 118.1000, 32.0000),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO node_aliases VALUES(?,?)", [(value, value) for value in range(1, 7)]
+        )
+        db.executemany(
+            "INSERT INTO line_nodes VALUES(?,?)",
+            [
+                ("RL-A", 1), ("RL-A", 2), ("RL-B", 3),
+                ("RL-B", 4), ("RL-FAR", 5), ("RL-FAR", 6),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO station_aliases VALUES(?,?,?,?,?,?,?,?,?)",
+            [
+                ("node/100", "测试站", 100, 1, 0, "source", 1, 117.2800, 31.8000),
+                ("node/4", "乙线终点", 4, 4, 0, "source", 1, 117.3100, 31.8000),
+            ],
+        )
+    base = DiskRailLineLibrary(path)
+    endpoint = base.search_endpoints("测试站")[0][0]
+    assert [line["id"] for line in base.connected_lines(endpoint)] == ["RL-A"]
+
+    connections = base.station_connection_override(endpoint, ["RL-B"])
+    assert connections == [
+        {
+            "line_id": "RL-B",
+            "anchor_node": 3,
+            "distance_m": pytest.approx(connections[0]["distance_m"]),
+            "source": "manual",
+            "verification_status": "user_verified",
+        }
+    ]
+    assert connections[0]["distance_m"] < 100
+    metadata = {"station:node/100": {"connected_lines": connections}}
+    overridden = DiskRailLineLibrary(path, metadata=metadata)
+    endpoint = overridden.search_endpoints("测试站")[0][0]
+    assert [line["id"] for line in overridden.connected_lines(endpoint)] == ["RL-B"]
+    assert "乙线" in overridden.endpoint_choice_label(endpoint)
+    assert "甲线" not in overridden.endpoint_choice_label(endpoint)
+    assert 3 in overridden.endpoint_nodes(endpoint)
+    assert overridden.resolve_endpoint(endpoint, ["RL-B"]) == 3
+    assert endpoint in {
+        value for value, _label in overridden.search_endpoints("测试站", line_id="RL-B")
+    }
+    assert overridden.reachable_nodes(endpoint, "RL-B", "乙线终点")[0][0] == "station:node/4"
+
+    with pytest.raises(ValueError, match="没有找到.*真实轨道节点"):
+        base.station_connection_override(endpoint, ["RL-FAR"])

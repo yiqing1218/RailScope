@@ -67,6 +67,7 @@ from rail_ui import RailEditor
 from rail_style_ui import load_styles, RailStyleDialog
 from rail_categories import TRACK_TYPES
 from corridor_ui import CorridorPanel
+from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
 from data_install_ui import DataDownloadDialog
@@ -1699,6 +1700,9 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.metadata_changed.connect(
             self.rail_operations.invalidate_line_library
         )
+        self.rail_catalog_widget.station_edit_requested.connect(
+            self.edit_rail_station_metadata
+        )
         self.rail_catalog_widget.enabled_requested.connect(
             self.enable_rail_from_catalog
         )
@@ -2159,7 +2163,7 @@ class Desk(QMainWindow):
             "track_type": "轨道类型",
             "kind": "对象种类",
             "station_type": "车站类型",
-            "line_names": "踏在线路",
+            "line_names": "接轨线路",
             "verification_status": "核验状态",
             "confidence": "置信度",
             "association_source": "关联依据",
@@ -2209,12 +2213,44 @@ class Desk(QMainWindow):
         self.right.show()
         self.detail_rail.setChecked(True)
 
-    def edit_selected_metadata(self):
-        if not self.selected_data:
+    def edit_rail_station_metadata(self, station_id):
+        record = next(
+            (
+                value
+                for value in self.rail_catalog_widget.station_records
+                if value["id"] == station_id
+            ),
+            None,
+        )
+        if record is None:
+            self.rail_catalog_widget.station_query = station_id.split("/", 1)[-1]
+            self.rail_catalog_widget.populate_station_tree()
+            record = next(
+                (
+                    value
+                    for value in self.rail_catalog_widget.station_records
+                    if value["id"] == station_id
+                ),
+                None,
+            )
+        if record is None:
+            QMessageBox.information(self, "不可编辑", "车站目录中不存在该对象。")
+            return
+        props = {
+            **record.get("properties", {}),
+            "osm_node_id": record["osm_node_id"],
+            "display_name": record["name"],
+            "station_type": record["station_type"],
+        }
+        self.edit_selected_metadata({"layer": "rail-points", "properties": props})
+
+    def edit_selected_metadata(self, feature=None):
+        if not isinstance(feature, dict):
+            feature = self.selected_data
+        if not feature:
             return
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout
 
-        feature = self.selected_data
         props = feature.get("properties", {})
         layer = feature.get("layer", "")
         dialog = QDialog(self)
@@ -2280,6 +2316,12 @@ class Desk(QMainWindow):
                 city.setText(record["city"])
                 station_kind.setCurrentText(record["station_type"])
                 form.addRow("车站类型", station_kind)
+                connection_selector = StationConnectionSelector(
+                    self.rail_operations.line_library(),
+                    "station:" + record["id"],
+                )
+                form.addRow("接轨线路", connection_selector)
+                dialog.resize(760, 620)
         else:
             QMessageBox.information(self, "不可编辑", "此对象没有可编辑的工作区目录元数据。")
             return
@@ -2321,8 +2363,13 @@ class Desk(QMainWindow):
                     if line_id:
                         self.rail_operations.save_line_names({line_id: display_name})
                 elif rail_node is not None and record:
+                    connections = connection_selector.connections()
                     self.rail_catalog_widget.save_station_override(
-                        record["id"], name.text(), [province.text(), city.text()], station_kind.currentText()
+                        record["id"],
+                        name.text(),
+                        [province.text(), city.text()],
+                        station_kind.currentText(),
+                        connections,
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")
