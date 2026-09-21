@@ -136,3 +136,45 @@ def test_move_context_action_opens_editable_folder_dialog(qtbot, tmp_path):
     widget.item_menu(widget.items["track20"]).actions()[1].trigger()
     assert not problems
     assert widget.parents("track20") == ("工作区", "站场", "自定义线路")
+
+
+def test_large_directory_prioritizes_named_business_lines_and_omits_station_groups(
+    qtbot, tmp_path
+):
+    source = {
+        **{
+            f"RL-U-{index}": {
+                "name": f"未命名轨道·w{index}",
+                "line_id": f"RL-U-{index}",
+                "way_ids": [index],
+                "track_type": "未确认类型",
+            }
+            for index in range(4100)
+        },
+        "RL-NAMED": {
+            "name": "京沪高速铁路",
+            "line_id": "RL-NAMED",
+            "way_ids": [5000],
+            "track_type": "高速铁路线",
+        },
+        "ST-YARD": {
+            "name": "上海虹桥站",
+            "line_id": None,
+            "way_ids": [5001],
+            "track_type": "高速铁路站场股道",
+        },
+    }
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps(source, ensure_ascii=False), encoding="utf-8"
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    widget.resize(380, 900)
+    widget.show()
+    qtbot.wait(1)
+    assert "RL-NAMED" in widget.items
+    assert "ST-YARD" not in widget.items
+    assert not any(key.startswith("RL-U-") for key in widget.items)
+    assert widget.tree.topLevelItemCount() > 0
+    assert widget.tree.verticalScrollBar().value() == 0
+    assert widget.tree.y() < 80

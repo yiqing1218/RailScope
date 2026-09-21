@@ -65,6 +65,7 @@ from bootstrap import ensure_assets
 from data_install import active_directory, active_rail_directory
 from rail_ui import RailEditor
 from rail_style_ui import load_styles, RailStyleDialog
+from rail_categories import TRACK_TYPES
 from corridor_ui import CorridorPanel
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
@@ -543,6 +544,7 @@ class Desk(QMainWindow):
             self.map,
             active_rail_directory(ROOT),
             ROOT / "data/processed/operations/rail_plan.json",
+            ROOT / "data/user_settings/rail_catalog.json",
         )
         self.build()
         self.switches["vehicles"] = self.operations.vehicle_switch
@@ -729,7 +731,7 @@ class Desk(QMainWindow):
         self.add_action(edit, "线路分类整理 / 目录层级设置…", self.edit_hierarchy)
         self.add_action(
             edit,
-            "国铁线段分类与命名…",
+            "国铁线路分类与目录整理…",
             lambda: self.rail_catalog_widget.organize(),
         )
         edit.addSeparator()
@@ -1691,6 +1693,12 @@ class Desk(QMainWindow):
         self.rail_operations.names_changed.connect(
             lambda: self.rail_catalog_widget.reload_names(names_path)
         )
+        self.rail_catalog_widget.line_names_changed.connect(
+            self.rail_operations.save_line_names
+        )
+        self.rail_catalog_widget.metadata_changed.connect(
+            self.rail_operations.invalidate_line_library
+        )
         self.rail_catalog_widget.enabled_requested.connect(
             self.enable_rail_from_catalog
         )
@@ -1936,6 +1944,16 @@ class Desk(QMainWindow):
             if on
             else set()
         )
+        # Keep the master switches and actual map layers consistent with this
+        # legacy menu action.
+        for key in ("metro", "construction"):
+            self.flags[key] = bool(on)
+            control = self.switches.get(key)
+            if control:
+                control.blockSignals(True)
+                control.setChecked(bool(on))
+                control.blockSignals(False)
+            self.map.call("setVisibility", key, bool(on))
         self.sync_tree_switches()
         self.send_directory_filter()
         self.update_count()
@@ -2036,6 +2054,14 @@ class Desk(QMainWindow):
                     props[key] = json.loads(value)
                 except ValueError:
                     pass
+        rail_group = props.get("catalog_group_id")
+        if rail_group in self.rail_catalog_widget.catalog:
+            catalog_meta = self.rail_catalog_widget.meta(rail_group)
+            props["display_name"] = self.rail_catalog_widget.display_name(rail_group)
+            props["track_type"] = catalog_meta.get(
+                "track_type", props.get("track_type", "未确认类型")
+            )
+            props["folder_path"] = list(self.rail_catalog_widget.parents(rail_group))
         if feature.get("layer") in ("rail-points", "rail-detail-points"):
             props.setdefault(
                 "station_type",
@@ -2235,6 +2261,14 @@ class Desk(QMainWindow):
             province.setText(current[0] if current else "全国铁路线")
             city.setText(current[1] if len(current) > 1 else "")
             folder.setText(current[2] if len(current) > 2 else "")
+            rail_track_type = QComboBox()
+            rail_track_type.addItems(TRACK_TYPES)
+            rail_track_type.setCurrentText(
+                self.rail_catalog_widget.meta(rail_group).get(
+                    "track_type", "未确认类型"
+                )
+            )
+            form.addRow("轨道类型", rail_track_type)
         elif rail_node is not None:
             self.rail_catalog_widget.select_station(rail_node)
             record = next(
@@ -2270,9 +2304,22 @@ class Desk(QMainWindow):
                     )
                     self.populate_station_tree()
                 elif rail_group in self.rail_catalog_widget.catalog:
-                    self.rail_catalog_widget.rename_item(rail_group, name.text())
                     path = [value for value in (province.text(), city.text(), folder.text()) if value.strip()]
-                    self.rail_catalog_widget.move_items({rail_group}, path)
+                    display_name = name.text().strip()
+                    if not display_name:
+                        raise ValueError("名称不能为空")
+                    self.rail_catalog_widget.save_overrides(
+                        {
+                            rail_group: {
+                                "display_name": display_name,
+                                "folder_path": path,
+                                "track_type": rail_track_type.currentText(),
+                            }
+                        }
+                    )
+                    line_id = self.rail_catalog_widget.catalog[rail_group].get("line_id")
+                    if line_id:
+                        self.rail_operations.save_line_names({line_id: display_name})
                 elif rail_node is not None and record:
                     self.rail_catalog_widget.save_station_override(
                         record["id"], name.text(), [province.text(), city.text()], station_kind.currentText()

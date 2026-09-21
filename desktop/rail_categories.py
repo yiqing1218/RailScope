@@ -178,6 +178,8 @@ def catalog_parents(meta, mode):
     ).split(" · ", 1)[0]
     compact = name.replace("高速线", "高速铁路").replace("高铁", "高速铁路")
     prefix = ("在建铁路",) if meta.get("construction") else ()
+    if any(word in name for word in ("地方铁路", "地方线")):
+        return prefix + ("其他铁路", "地方铁路")
     if any(word in name for word in ("市域", "市郊")):
         city = next((word for word in ("上海", "北京", "成都") if word in name), "其他城市")
         return prefix + ("市域/市郊铁路", city)
@@ -204,6 +206,10 @@ def catalog_parents(meta, mode):
         if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
             return prefix + ("高速铁路", "高速铁路联络线")
         return prefix + ("高速铁路", "区域高速铁路")
+    if category == "联络线 / 匝道" and any(
+        word in name for word in ("高速", "高铁", "客专")
+    ):
+        return prefix + ("高速铁路", "高速铁路联络线")
     if category in {"普速铁路线", "支线 / 岔道"}:
         if any(word in name for word in ("京沪铁路", "京沪线", "京广铁路", "京广线", "陇海", "沪昆铁路", "沪昆线", "京九")):
             return prefix + ("普速铁路", "国家铁路干线")

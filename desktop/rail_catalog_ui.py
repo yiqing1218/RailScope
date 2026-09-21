@@ -43,6 +43,8 @@ class RailCatalog(QWidget):
     classification_failed = Signal(str)
     enabled_requested = Signal()
     station_enabled_requested = Signal(str)
+    line_names_changed = Signal(dict)
+    metadata_changed = Signal()
 
     def __init__(self, directory, settings, map_view, parent=None, regions=None):
         super().__init__(parent)
@@ -108,7 +110,7 @@ class RailCatalog(QWidget):
         # Compatibility state for old workspace files/tests.  Search and mode
         # controls live in the map header and are intentionally not in this pane.
         search = QLineEdit()
-        search.setPlaceholderText("筛选物理线路 / 车站 / IL / ST 编号")
+        search.setPlaceholderText("筛选业务线路名称 / RL 编号")
         self.search = search
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
@@ -134,6 +136,7 @@ class RailCatalog(QWidget):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         line_layout.addWidget(self.tree)
+        line_layout.addStretch(1)
         self.tabs.addTab(self.line_page, "线路目录")
         self.station_page = QWidget()
         station_layout = QVBoxLayout(self.station_page)
@@ -151,6 +154,7 @@ class RailCatalog(QWidget):
         station_layout.addWidget(self.station_tree)
         self.station_note = text_label("正在读取车站实体目录…", wrap=True)
         station_layout.addWidget(self.station_note)
+        station_layout.addStretch(1)
         self.tabs.addTab(self.station_page, "车站目录")
         layout.addWidget(self.tabs)
         self.note = text_label(
@@ -209,12 +213,21 @@ class RailCatalog(QWidget):
         )
 
     def catalog_note(self, prefix=""):
-        base = prefix or "按全国铁路业务分类整理；具体端点线段保存在对象属性和通道编辑器中。"
+        base = prefix or (
+            "按全国铁路业务分类整理；默认完整列出有名称的业务线路。"
+            "未命名 OSM 轨道可在主搜索框输入“未命名轨道”后整理。"
+            "具体端点线段保存在对象属性和通道编辑器中。"
+        )
         if len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
+            named = sum(
+                not str(key).startswith("ST-")
+                and not self.display_name(key).startswith("未命名轨道")
+                for key in self.catalog
+            )
             return (
                 base
-                + f" 全国目录共 {len(self.catalog):,} 个线路/站场分组；为控制内存，左侧每次最多显示 "
-                + f"{MAX_CATALOG_TREE_ITEMS:,} 项，请搜索线路、车站或稳定编号。"
+                + f" 当前快照含 {named:,} 条有名称业务线路。"
+                + f"搜索结果过多时每次显示前 {MAX_CATALOG_TREE_ITEMS:,} 项。"
             )
         return base
 
@@ -267,15 +280,31 @@ class RailCatalog(QWidget):
             )
             return query in " ".join(map(str, values)).casefold()
 
-        names = []
-        matched = 0
-        for name in self.catalog:
-            if matches(name):
-                matched += 1
-                if len(names) < MAX_CATALOG_TREE_ITEMS:
-                    names.append(name)
+        # A national snapshot contains tens of thousands of unnamed OSM way
+        # groups.  Taking the first 4,000 insertion-order records used to hide
+        # almost every properly named business line.  Show every matching named
+        # line first and leave station-yard groups to the station directory.
+        candidates = [
+            name
+            for name in self.catalog
+            if not str(name).startswith("ST-")
+            and matches(name)
+            and (
+                bool(query)
+                or not self.display_name(name).startswith("未命名轨道")
+            )
+        ]
+        candidates.sort(
+            key=lambda key: (
+                self.display_name(key).startswith("未命名轨道"),
+                self.display_name(key).casefold(),
+                str(key),
+            )
+        )
+        matched = len(candidates)
+        names = candidates[:MAX_CATALOG_TREE_ITEMS]
         self.catalog_limited = matched > len(names)
-        for name in sorted(names):
+        for name in names:
             record = self.catalog[name]
             meta = self.meta(name)
             parents = self.parents(name)
@@ -336,6 +365,11 @@ class RailCatalog(QWidget):
             self.filter_tree(self.search.text())
         else:
             self.tree.schedule_height()
+        # QTreeWidget retains an internal scroll offset even with its scrollbar
+        # hidden.  After a large result is collapsed/rebuilt that offset appears
+        # as a large blank block above the first directory row.
+        self.tree.scrollToTop()
+        QTimer.singleShot(0, self.tree.scrollToTop)
 
     def search_changed(self, text):
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
@@ -526,6 +560,7 @@ class RailCatalog(QWidget):
         )
         temporary.replace(self.path)
         self.overrides = proposed
+        self.metadata_changed.emit()
         self.populate_station_tree()
 
     def save_overrides(self, changes):
@@ -599,6 +634,9 @@ class RailCatalog(QWidget):
         if not isinstance(name, str) or not name.strip():
             raise ValueError("名称不能为空")
         self.save_overrides({key: {"display_name": name.strip()}})
+        line_id = self.catalog[key].get("line_id")
+        if line_id:
+            self.line_names_changed.emit({line_id: name.strip()})
         self.note.setText("已更新目录显示名称；原始名称、编号和通道引用保留。")
 
     def rename_folder(self, path, name):
@@ -674,7 +712,7 @@ class RailCatalog(QWidget):
         menu.addAction("移动到文件夹…", lambda: self.move_dialog(keys))
         if leaf:
             menu.addAction(
-                "查看线路/站场属性…"
+                "查看线路属性…"
                 if self.meta(leaf).get("catalog_group_id")
                 else "查看端点与相邻线段…",
                 lambda: self.show_topology(leaf),
@@ -692,8 +730,8 @@ class RailCatalog(QWidget):
         if meta.get("catalog_group_id"):
             QMessageBox.information(
                 self,
-                "线路 / 站场属性",
-                f"目录对象：{meta.get('name', key)}\n"
+                "线路属性",
+                f"目录对象：{self.display_name(key)}\n"
                 f"目录编号：{meta['catalog_group_id']}\n"
                 f"轨道类型：{meta.get('track_type', '未确认类型')}\n"
                 f"端点线段：{meta.get('section_count', 0)} 项\n"
@@ -787,6 +825,9 @@ class RailCatalog(QWidget):
         label = record.get("display_name") or (
             aliases[0] if aliases else record.get("name", key)
         )
+        stable = record.get("line_id") or record.get("catalog_group_id")
+        if stable and label.endswith(" · " + str(stable)):
+            label = label[: -(len(str(stable)) + 3)]
         return label
 
     def reload_names(self, path):
@@ -1059,19 +1100,15 @@ class RailCatalog(QWidget):
 
     def organize(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("国铁分类整理 · 轨道类型 / 物理线路 / 车站")
+        dialog.setWindowTitle("国铁线路整理 · 轨道类型 / 业务线路 / 目录")
         dialog.resize(1000, 650)
         layout = QVBoxLayout(dialog)
         layout.addWidget(
             QLabel(
-                "核对轨道类型和目录显示名；端点与相邻线段来自拓扑，不能在这里改断。"
+                "核对轨道类型和目录显示名；原始 OSM 与端点拓扑保持不变。"
             )
         )
-        names = (
-            sorted(self.items)
-            if len(self.catalog) > MAX_CATALOG_TREE_ITEMS
-            else sorted(self.catalog)
-        )
+        names = sorted(self.items)
         if len(names) < len(self.catalog):
             layout.addWidget(
                 QLabel(
@@ -1083,7 +1120,7 @@ class RailCatalog(QWidget):
         table.setHorizontalHeaderLabels(
             [
                 "稳定编号",
-                "物理线路 / 车站",
+                "业务线路",
                 "端点线段数",
                 "轨道类型",
                 "目录显示名称",
@@ -1142,6 +1179,14 @@ class RailCatalog(QWidget):
             )
             tmp.replace(self.path)
             self.overrides = overrides
+            self.metadata_changed.emit()
             self.populate()
+            changed_names = {
+                self.catalog[name].get("line_id"): overrides[name]["display_name"]
+                for name in names
+                if self.catalog[name].get("line_id")
+            }
+            if changed_names:
+                self.line_names_changed.emit(changed_names)
         except OSError as error:
             QMessageBox.warning(self, "无法保存", str(error))

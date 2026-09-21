@@ -383,7 +383,11 @@ class CorridorPanel(QScrollArea):
                         )
 
                     label = (
-                        library.endpoint_label(value)
+                        (
+                            library.endpoint_choice_label(value)
+                            if hasattr(library, "endpoint_choice_label")
+                            else library.endpoint_label(value)
+                        )
                         if value is not None and library.endpoint_nodes(value)
                         else ""
                     )
@@ -393,7 +397,11 @@ class CorridorPanel(QScrollArea):
                         return library.search_endpoints(query)
 
                     label = (
-                        library.endpoint_label(value)
+                        (
+                            library.endpoint_choice_label(value)
+                            if hasattr(library, "endpoint_choice_label")
+                            else library.endpoint_label(value)
+                        )
                         if value is not None and library.endpoint_nodes(value)
                         else ""
                     )
@@ -408,6 +416,42 @@ class CorridorPanel(QScrollArea):
                 choices[col] = combo
                 table.setCellWidget(row, col, combo)
                 combo.currentIndexChanged.connect(suggest_name)
+            start_choice, line_choice, end_choice = (
+                choices[0], choices[1], choices[2]
+            )
+
+            def clear_choice(combo):
+                combo.blockSignals(True)
+                combo.clear()
+                combo.setCurrentIndex(-1)
+                combo.blockSignals(False)
+
+            def start_changed():
+                clear_choice(line_choice)
+                clear_choice(end_choice)
+
+            def line_changed():
+                clear_choice(end_choice)
+
+            start_choice.currentIndexChanged.connect(start_changed)
+            line_choice.currentIndexChanged.connect(line_changed)
+            if row:
+                previous_end = table.cellWidget(row - 1, 2)
+
+                def sync_start():
+                    value = previous_end.currentData()
+                    start_choice.blockSignals(True)
+                    start_choice.clear()
+                    if value is not None and library.endpoint_nodes(value):
+                        start_choice.addItem(library.endpoint_label(value), value)
+                        start_choice.setCurrentIndex(0)
+                    else:
+                        start_choice.setCurrentIndex(-1)
+                    start_choice.blockSignals(False)
+                    start_changed()
+
+                previous_end.currentIndexChanged.connect(sync_start)
+                start_choice.setEnabled(False)
             table.setRowHeight(row, 52)
             suggest_name()
 

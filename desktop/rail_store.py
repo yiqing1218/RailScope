@@ -355,10 +355,18 @@ def viewport(directory, kind, bbox, zoom):
             props["track_type"] = classify_track_type(
                 props.get("way_tags", props)
             )[0]
-    elif kind == "railPoints" and features:
-        node_ids = [
-            feature["properties"].get("osm_node_id") for feature in features
-        ]
+    elif kind in ("railPoints", "railPlatforms", "railStationAreas") and features:
+        if kind == "railPoints":
+            node_ids = [
+                feature["properties"].get("osm_node_id") for feature in features
+            ]
+        else:
+            node_ids = sorted({
+                node
+                for feature in features
+                for node in feature["properties"].get("associated_station_ids", [])
+                if node is not None
+            })
         line_path = Path(directory) / "rail_lines.sqlite"
         if line_path.exists():
             line_map = {node_id: set() for node_id in node_ids}
@@ -384,7 +392,14 @@ def viewport(directory, kind, bbox, zoom):
                         line_map.setdefault(node_id, set()).add(line_id)
             for feature in features:
                 props = feature["properties"]
-                line_ids = sorted(line_map.get(props.get("osm_node_id"), set()))
+                associated = (
+                    [props.get("osm_node_id")]
+                    if kind == "railPoints"
+                    else props.get("associated_station_ids", [])
+                )
+                line_ids = sorted(set().union(
+                    *(line_map.get(node, set()) for node in associated)
+                )) if associated else []
                 props["line_ids"] = line_ids
                 props["line_names"] = [line_names.get(value, value) for value in line_ids]
     for feature in features:

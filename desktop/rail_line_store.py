@@ -335,13 +335,18 @@ class _DirectoryMapping(Mapping):
             raise KeyError(key)
         if self.kind == "lines":
             ident, name, count, kind, evidence = row
+            metadata = self.store.metadata.get(ident, {})
             return {
                 "id": ident,
                 "source_name": name,
-                "name": self.store.names.get(ident, name) + " · " + ident,
+                "name": self.store.line_name(ident, name),
                 "edge_count": count,
-                "track_type": kind,
-                "type_evidence": evidence,
+                "track_type": metadata.get("track_type", kind),
+                "type_evidence": (
+                    "用户工作区分类覆盖；原始依据：" + evidence
+                    if metadata.get("track_type") and metadata.get("track_type") != kind
+                    else evidence
+                ),
             }
         if self.kind == "nodes":
             return self.store.node_label(row)
@@ -361,11 +366,36 @@ class _DirectoryMapping(Mapping):
 
 
 class DiskRailLineLibrary:
-    def __init__(self, path, names=None):
+    def __init__(self, path, names=None, metadata=None):
         self.path, self.names = Path(path), dict(names or {})
+        self.metadata = {
+            key: value
+            for key, value in dict(metadata or {}).items()
+            if isinstance(value, dict)
+        }
+        self._station_groups = {}
+        self._station_group_labels = {}
         self.lines = _DirectoryMapping(self, "lines")
         self.nodes = _DirectoryMapping(self, "nodes")
         self.edges = _DirectoryMapping(self, "edges")
+
+    def line_name(self, ident, source_name):
+        return (
+            self.names.get(ident)
+            or self.metadata.get(ident, {}).get("display_name")
+            or source_name
+        )
+
+    @staticmethod
+    def station_display_name(name):
+        value = (name or "").strip()
+        if (
+            value
+            and any("\u4e00" <= char <= "\u9fff" for char in value)
+            and not value.endswith(("站", "线路所", "信号所", "乘降所"))
+        ):
+            return value + "站"
+        return value
 
     @contextmanager
     def connect(self):
@@ -397,7 +427,14 @@ class DiskRailLineLibrary:
         )
         aliases = [
             key
-            for key, name in self.names.items()
+            for key, name in {
+                **{
+                    key: value.get("display_name", "")
+                    for key, value in self.metadata.items()
+                    if value.get("display_name")
+                },
+                **self.names,
+            }.items()
             if query.casefold() in name.casefold()
         ]
         alias_clause = " OR id IN (" + ",".join("?" for _ in aliases) + ")" if aliases else ""
@@ -420,57 +457,63 @@ class DiskRailLineLibrary:
             {
                 "id": key,
                 "source_name": name,
-                "name": self.names.get(key, name) + " · " + key,
+                "name": self.line_name(key, name),
                 "edge_count": count,
             }
             for key, name, count in rows
         ]
 
     def connected_lines(self, node_id, query="", limit=100):
-        """Lines the user can legally choose after the selected endpoint."""
+        """Named business lines physically connected to the selected endpoint."""
         nodes = self.endpoint_nodes(node_id)
         if not nodes:
             return []
-        term = "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
-        recommended = (
-            " AND l.source_name NOT LIKE '未命名轨道%' "
-            "AND l.track_type NOT LIKE '%站场%' "
-            "AND l.track_type NOT IN ('渡线 / 道岔连接轨','车辆段 / 检修线','折返线')"
-            if not query.strip()
-            else ""
-        )
         with self.connect() as db:
             marks = ",".join("?" for _ in nodes)
             rows = db.execute(
-                "SELECT DISTINCT l.id,l.source_name,l.edge_count FROM lines l "
+                "SELECT DISTINCT l.id,l.source_name,l.edge_count,l.track_type FROM lines l "
                 "JOIN line_nodes n ON n.line_id=l.id "
-                f"WHERE n.node_id IN ({marks}) AND (l.source_name LIKE ? ESCAPE '!' OR l.id LIKE ? ESCAPE '!') "
-                + recommended
-                + " ORDER BY l.source_name,l.id LIMIT ?",
-                (*nodes, term, term, limit),
+                f"WHERE n.node_id IN ({marks}) "
+                "ORDER BY CASE WHEN l.source_name LIKE '未命名轨道%' THEN 1 ELSE 0 END,l.source_name,l.id LIMIT 500",
+                nodes,
             ).fetchall()
-        return [
-            {
+        result = []
+        for key, name, count, kind in rows:
+            effective = self.line_name(key, name)
+            effective_kind = self.metadata.get(key, {}).get("track_type", kind)
+            if (
+                effective.startswith("未命名轨道")
+                or "站场股道" in effective_kind
+                or effective_kind in {
+                    "渡线 / 道岔连接轨",
+                    "车辆段 / 检修线",
+                    "折返线",
+                }
+            ):
+                continue
+            if query.casefold() not in (effective + " " + key + " " + name).casefold():
+                continue
+            result.append({
                 "id": key,
                 "source_name": name,
-                "name": self.names.get(key, name) + " · " + key,
+                "name": effective,
                 "edge_count": count,
-            }
-            for key, name, count in rows
-        ]
+            })
+            if len(result) >= limit:
+                break
+        return result
 
     def endpoint_nodes(self, endpoint):
         if isinstance(endpoint, str) and endpoint.startswith("station:"):
             source_id = endpoint.removeprefix("station:")
+            source_ids = self._station_groups.get(source_id, [source_id])
             with self.connect() as db:
-                return [
-                    row[0]
-                    for row in db.execute(
-                        "SELECT DISTINCT anchor_node FROM station_aliases "
-                        "WHERE source_id=? AND anchor_node IS NOT NULL ORDER BY distance_m",
-                        (source_id,),
-                    )
-                ]
+                marks = ",".join("?" for _ in source_ids)
+                return [row[0] for row in db.execute(
+                    "SELECT anchor_node,min(distance_m) FROM station_aliases "
+                    f"WHERE source_id IN ({marks}) AND anchor_node IS NOT NULL "
+                    "GROUP BY anchor_node ORDER BY min(distance_m)", source_ids
+                )]
         with self.connect() as db:
             row = db.execute(
                 "SELECT node_id FROM node_aliases WHERE source_id=?", (endpoint,)
@@ -480,18 +523,44 @@ class DiskRailLineLibrary:
     def endpoint_label(self, endpoint):
         if isinstance(endpoint, str) and endpoint.startswith("station:"):
             source_id = endpoint.removeprefix("station:")
+            if source_id in self._station_group_labels:
+                return self._station_group_labels[source_id]
             with self.connect() as db:
                 row = db.execute(
                     "SELECT alias FROM station_aliases WHERE source_id=? ORDER BY distance_m LIMIT 1",
                     (source_id,),
                 ).fetchone()
-            return row[0] if row else source_id
+            return self.station_display_name(row[0]) if row else source_id
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT alias FROM station_aliases WHERE anchor_node=? "
+                "ORDER BY distance_m,source_id NOT LIKE 'node/%' LIMIT 1",
+                (endpoint,),
+            ).fetchone()
+        if row:
+            return self.station_display_name(row[0])
         return self.nodes[endpoint] if endpoint in self.nodes else str(endpoint)
 
+    def endpoint_choice_label(self, endpoint):
+        """Human label for an existing physical or logical endpoint."""
+        label = self.endpoint_label(endpoint)
+        candidates = self.search_endpoints(label, limit=30)
+        for candidate, candidate_label in candidates:
+            if endpoint == candidate or endpoint in self.endpoint_nodes(candidate):
+                return candidate_label
+        connected = [line["name"] for line in self.connected_lines(endpoint)]
+        return label + " · 接轨：" + (" / ".join(connected) if connected else "待关联")
+
     def search_endpoints(self, query="", line_id=None, limit=100):
-        """Logical stations first, followed by exact physical control nodes."""
+        """Unique station entities and named line posts, never track switches."""
         term = "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         with self.connect() as db:
+            columns = {row[1] for row in db.execute("PRAGMA table_info(station_aliases)")}
+            coordinates = (
+                ",min(a.source_x),min(a.source_y)"
+                if {"source_x", "source_y"} <= columns
+                else ",NULL,NULL"
+            )
             line_clause = (
                 " AND a.anchor_node IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
                 if line_id
@@ -501,30 +570,97 @@ class DiskRailLineLibrary:
             if line_id:
                 args.append(line_id)
             rows = db.execute(
-                "SELECT a.source_id,a.alias,min(a.distance_m) FROM station_aliases a "
+                "SELECT a.source_id,a.alias,min(a.distance_m)" + coordinates + " FROM station_aliases a "
                 "WHERE (a.alias LIKE ? ESCAPE '!' OR a.source_id LIKE ? ESCAPE '!')"
                 + line_clause
                 + " AND a.confidence>=0.5 AND a.distance_m<=2500 "
                 "GROUP BY a.source_id,a.alias ORDER BY a.alias,a.source_id NOT LIKE 'node/%',min(a.distance_m) LIMIT ?",
-                (*args, limit * 3),
+                (*args, limit * 12),
             ).fetchall()
-        result, station_keys, station_sources = [], set(), set()
-        for source_id, alias, _ in rows:
-            station_key = "".join(alias.split()).removesuffix("站").casefold()
-            if station_key in station_keys or source_id in station_sources:
-                continue
-            station_keys.add(station_key)
-            station_sources.add(source_id)
-            result.append(("station:" + source_id, alias + " · 车站实体"))
-            if len(result) >= limit:
-                break
-        if len(result) < limit:
-            existing = {item[0] for item in result}
-            result.extend(
-                item
-                for item in self.search_nodes(query, line_id, limit - len(result))
-                if item[0] not in existing
-            )
+            # Merge duplicate OSM points/buildings for one named station by a
+            # small coordinate cell.  The selected entity keeps every physical
+            # anchor, so choosing 合肥南站 does not lose any connected line.
+            grouped = {}
+            for source_id, alias, gap, x, y in rows:
+                station_name = "".join(alias.split()).removesuffix("站").casefold()
+                cell = (
+                    round(float(x), 2), round(float(y), 2)
+                ) if x is not None and y is not None else (source_id,)
+                grouped.setdefault((station_name, cell), []).append(
+                    (source_id, alias, gap)
+                )
+
+            def connected_names(nodes):
+                if not nodes:
+                    return []
+                marks = ",".join("?" for _ in nodes)
+                values = []
+                for ident, source_name, kind in db.execute(
+                        "SELECT DISTINCT l.id,l.source_name,l.track_type FROM line_nodes n "
+                        "JOIN lines l ON l.id=n.line_id "
+                        f"WHERE n.node_id IN ({marks}) "
+                        "ORDER BY CASE WHEN l.source_name LIKE '未命名轨道%' THEN 1 ELSE 0 END,l.source_name,l.id",
+                        nodes,
+                    ):
+                    effective = self.line_name(ident, source_name)
+                    effective_kind = self.metadata.get(ident, {}).get("track_type", kind)
+                    if (
+                        effective.startswith("未命名轨道")
+                        or "站场股道" in effective_kind
+                        or effective_kind in {
+                            "渡线 / 道岔连接轨", "车辆段 / 检修线", "折返线"
+                        }
+                    ):
+                        continue
+                    values.append(effective)
+                return list(dict.fromkeys(values))
+
+            result = []
+            for entries in grouped.values():
+                entries.sort(key=lambda item: (item[2], item[0]))
+                primary, alias, _ = entries[0]
+                alias = self.station_display_name(alias)
+                sources = list(dict.fromkeys(item[0] for item in entries))
+                self._station_groups[primary] = sources
+                marks = ",".join("?" for _ in sources)
+                nodes = [row[0] for row in db.execute(
+                    "SELECT DISTINCT anchor_node FROM station_aliases "
+                    f"WHERE source_id IN ({marks}) AND anchor_node IS NOT NULL",
+                    sources,
+                )]
+                connected = connected_names(nodes)
+                self._station_group_labels[primary] = alias
+                result.append((
+                    "station:" + primary,
+                    alias + " · 接轨：" + (" / ".join(connected) if connected else "待关联"),
+                ))
+                if len(result) >= limit:
+                    break
+
+            if len(result) < limit:
+                control_clause = (
+                    " AND n.id IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
+                    if line_id else ""
+                )
+                control_args = [line_id] if line_id else []
+                controls = db.execute(
+                    "SELECT n.id,n.label,n.kind FROM nodes n WHERE "
+                    "((n.kind IN ('junction','signal_box') AND n.label IS NOT NULL) "
+                    "OR (n.kind IN ('topology_junction','line_change','line_terminal') "
+                    "AND n.label IS NOT NULL)) AND "
+                    "(n.label LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!')"
+                    + control_clause
+                    + " ORDER BY n.label,n.id LIMIT ?",
+                    (term, term, *control_args, limit - len(result)),
+                ).fetchall()
+                for node, label, kind in controls:
+                    connected = connected_names([node])
+                    result.append((
+                        node,
+                        self.node_label((node, label, kind))
+                        + " · 接轨："
+                        + (" / ".join(connected) if connected else "待关联"),
+                    ))
         return result[:limit]
 
     def reachable_nodes(self, from_node, line_id, query="", limit=100):
@@ -563,13 +699,15 @@ class DiskRailLineLibrary:
             and len(set(adjacent_lines)) == 1
         ):
             source_id = endpoint.removeprefix("station:")
+            source_ids = self._station_groups.get(source_id, [source_id])
             with self.connect() as db:
+                marks = ",".join("?" for _ in source_ids)
                 row = db.execute(
                     "SELECT a.anchor_node FROM station_aliases a "
                     "JOIN line_nodes l ON l.node_id=a.anchor_node "
-                    "WHERE a.source_id=? AND l.line_id=? "
+                    f"WHERE a.source_id IN ({marks}) AND l.line_id=? "
                     "ORDER BY a.distance_m,a.anchor_node LIMIT 1",
-                    (source_id, adjacent_lines[0]),
+                    (*source_ids, adjacent_lines[0]),
                 ).fetchone()
             if row:
                 return row[0]
@@ -818,6 +956,13 @@ class DiskRailLineLibrary:
                 }
                 library.split_nodes = set(node_rows).intersection(split_nodes)
                 for section in library.sections():
+                    metadata = self.metadata.get(line_id, {})
+                    if metadata.get("track_type"):
+                        section["track_type"] = metadata["track_type"]
+                        section["type_evidence"] = (
+                            "用户工作区分类覆盖；原始依据："
+                            + section.get("type_evidence", "待核对")
+                        )
                     section["from_name"] = library.nodes[section["from_node"]]
                     section["to_name"] = library.nodes[section["to_node"]]
                     section["from_coordinate"] = node_coordinates.get(
@@ -841,11 +986,16 @@ class DiskRailLineLibrary:
                         (
                             {
                                 "id": key,
-                                "name": self.names.get(key, name),
+                                "name": self.line_name(key, name),
                                 "source_name": name,
                                 "edge_count": count,
-                                "track_type": kind,
-                                "type_evidence": evidence,
+                                "track_type": self.metadata.get(key, {}).get("track_type", kind),
+                                "type_evidence": (
+                                    "用户工作区分类覆盖；原始依据：" + evidence
+                                    if self.metadata.get(key, {}).get("track_type")
+                                    and self.metadata[key]["track_type"] != kind
+                                    else evidence
+                                ),
                             }
                             for key, name, count, kind, evidence in db.execute(
                                 "SELECT id,source_name,edge_count,track_type,evidence FROM lines ORDER BY id"

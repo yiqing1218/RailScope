@@ -247,6 +247,11 @@ function sharedRailStationFilter(){
   const onSelectedLine=railLineIds===null?['==',['literal',1],1]:railLineIds.length?['any',...railLineIds.map(id=>['in',id,['coalesce',['get','line_ids'],['literal',[]]]])]:['==',['literal',1],0];
   map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]],allowed,onSelectedLine]);
   if(map.getLayer('rail-detail-points'))map.setFilter('rail-detail-points',['all',['!', ['in',['get','kind'],['literal',['station','halt']]]],allowed]);
+  const areasAllowed=(railPointExclusions||[]).length?['!', ['any',...(railPointExclusions||[]).map(id=>['in',id,['coalesce',['get','associated_station_ids'],['literal',[]]]])]]:['==',['literal',1],1];
+  for(const id of ['rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'])if(map.getLayer(id)){
+    const geometry=id.endsWith('-fill')?['==',['geometry-type'],'Polygon']:['==',['literal',1],1];
+    map.setFilter(id,['all',geometry,areasAllowed,onSelectedLine]);
+  }
 }
 function refreshSelection(){
   if(!map.getSource('selection'))return;

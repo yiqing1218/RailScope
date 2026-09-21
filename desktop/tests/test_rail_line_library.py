@@ -113,6 +113,8 @@ def test_line_resolution_enforces_persisted_track_direction():
 
 
 def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
+    import json
+
     from PySide6.QtWidgets import QApplication
     from PySide6.QtTest import QTest
     from desktop.rail_ui import RailEditor
@@ -121,7 +123,10 @@ def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app
     install_reference_database(tmp_path)
-    editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
+    metadata_path = tmp_path / "settings" / "rail_catalog.json"
+    editor = RailEditor(
+        MapStub(), tmp_path, tmp_path / "plan.json", metadata_path
+    )
     document = editor.corridors_document(table=True)
     assert document["schema"] == "railscope.rail-corridors.v2"
     assert "path" not in document["corridors"][0], (
@@ -135,6 +140,16 @@ def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
     old = editor.document()
     library = editor.line_library()
     ident = sequence[1]["line_id"]
+    metadata_path.parent.mkdir()
+    metadata_path.write_text(
+        json.dumps(
+            {ident: {"display_name": "工作区目录名", "track_type": "城际铁路线"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assert editor.line_library().lines[ident]["name"] == "工作区目录名"
+    assert editor.line_library().lines[ident]["track_type"] == "城际铁路线"
     editor.save_line_names({ident: "京沪高速铁路主线"})
     assert editor.line_library().lines[ident]["name"].startswith("京沪高速铁路主线")
     assert editor.document() == old, "改名不能破坏通道、车次或物理引用"

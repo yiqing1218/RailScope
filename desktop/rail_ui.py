@@ -74,8 +74,13 @@ class RailMap:
 class RailEditor(OperationsEditor):
     names_changed = Signal()
 
-    def __init__(self, map_view, directory, path):
+    def __init__(self, map_view, directory, path, catalog_metadata_path=None):
         self.directory = Path(directory).resolve()
+        self.catalog_metadata_path = (
+            Path(catalog_metadata_path).resolve()
+            if catalog_metadata_path is not None
+            else Path(path).resolve().parent / "rail_catalog.json"
+        )
         self.workspace_identity_path = Path(path).resolve().parent / "workspace.sqlite"
         self.graph = {"edges": [], "points": []}
         self.domain_repo = None
@@ -604,16 +609,27 @@ class RailEditor(OperationsEditor):
         edges = {e["id"]: e for e in self.graph["edges"]}
         database = (self.directory / "rail.sqlite").resolve()
         stamp = database.stat().st_mtime_ns if database.exists() else None
+        names_path = Path(self.path).parent / "rail_line_names.json"
+        metadata_path = self.catalog_metadata_path
         # The national index belongs only to the infrastructure snapshot.
         # Bundled/loaded plan edges are DTO data and must never change its
         # fingerprint, otherwise opening a plan rebuilds the 3 GB source index.
-        signature = (str(database), stamp)
+        signature = (
+            str(database),
+            stamp,
+            names_path.stat().st_mtime_ns if names_path.exists() else None,
+            metadata_path.stat().st_mtime_ns if metadata_path.exists() else None,
+        )
         if getattr(self, "_line_library_signature", None) == signature:
             return self._line_library
-        names_path = Path(self.path).parent / "rail_line_names.json"
         names = (
             json.loads(names_path.read_text(encoding="utf-8"))
             if names_path.exists()
+            else {}
+        )
+        metadata = (
+            json.loads(metadata_path.read_text(encoding="utf-8"))
+            if metadata_path.exists()
             else {}
         )
         if database.exists():
@@ -627,13 +643,16 @@ class RailEditor(OperationsEditor):
                     prepare_with_progress(self, "准备铁路命名与端点目录", build)
                 else:
                     build(lambda text: None)
-            self._line_library = DiskRailLineLibrary(index, names)
+            self._line_library = DiskRailLineLibrary(index, names, metadata)
         else:
             self._line_library = RailLineLibrary(
                 list(edges.values()), list(self.graph["points"]), names
             )
         self._line_library_signature = signature
         return self._line_library
+
+    def invalidate_line_library(self):
+        self._line_library_signature = None
 
     def show_corridor(self, corridor_id, train_id=""):
         route = next(r for r in self.rail_payload["routes"] if r["id"] == corridor_id)
