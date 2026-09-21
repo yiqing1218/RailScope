@@ -92,3 +92,29 @@ def test_map_selected_way_is_revealed_in_rail_directory(tmp_path):
     assert widget.tree.currentItem() is widget.items["line"]
     assert widget.items["line"].parent().isExpanded()
     widget.close()
+
+
+def test_map_selected_endpoint_section_wins_over_shared_osm_way(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app
+    catalog = {
+        ident: {
+            "id": ident,
+            "name": ident,
+            "line_name": "测试线",
+            "track_type": "普通铁路线",
+            "from_node": "NN-A",
+            "from_name": "甲",
+            "to_node": "NN-B",
+            "to_name": "乙",
+            "way_ids": [99],
+        }
+        for ident in ("RS-FIRST", "RS-SECOND")
+    }
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps(catalog), encoding="utf-8"
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    assert widget.select_way(99, section_id="RS-SECOND")
+    assert widget.tree.currentItem() is widget.items["RS-SECOND"]
+    widget.close()

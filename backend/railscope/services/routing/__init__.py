@@ -50,23 +50,32 @@ def suggest_corridor(
                 adjacency.setdefault(edge.to_node_id, []).append(
                     (edge.from_node_id, edge.id, False, _cost(edge))
                 )
-        queue = [(0.0, start, [])]
-        seen: dict[str, float] = {}
-        found = None
-        while queue:
-            total, node, path = heapq.heappop(queue)
-            if node in seen and seen[node] <= total:
-                continue
-            seen[node] = total
-            if node == end:
-                found = path
-                break
-            for target, edge_id, forward, cost in adjacency.get(node, []):
-                heapq.heappush(
-                    queue, (total + cost, target, path + [(edge_id, forward)])
-                )
+        def find(banned_edge=None):
+            queue = [(0.0, start, [])]
+            seen: dict[str, float] = {}
+            while queue:
+                total, node, path = heapq.heappop(queue)
+                if node in seen and seen[node] <= total:
+                    continue
+                seen[node] = total
+                if node == end:
+                    return path
+                for target, edge_id, forward, cost in adjacency.get(node, []):
+                    if edge_id == banned_edge:
+                        continue
+                    heapq.heappush(
+                        queue, (total + cost, target, path + [(edge_id, forward)])
+                    )
+            return None
+
+        found = find()
         if found is None:
             raise ValueError(f"ROUTE_NOT_FOUND: {origin} to {destination}")
+        if any(find(edge_id) is not None for edge_id, _ in found):
+            raise ValueError(
+                f"ROUTE_AMBIGUOUS: {origin} to {destination}; "
+                "specify intermediate control points or exact NetworkEdge sections"
+            )
         all_refs.extend(found)
     refs = path_refs(repo, all_refs)
     return Corridor(

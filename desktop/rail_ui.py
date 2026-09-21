@@ -554,6 +554,8 @@ class RailEditor(OperationsEditor):
         corridors = []
         for route in payload["routes"]:
             sequence = route.get("sequence") or library.describe(route["path"])
+            if hasattr(library, "normalize_sequence"):
+                sequence = library.normalize_sequence(sequence)
             if (
                 library.resolve(sequence, resolution_policy(route["extensions"]))
                 != route["path"]

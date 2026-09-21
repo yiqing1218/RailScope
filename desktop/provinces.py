@@ -1,5 +1,6 @@
 """Geographic catalog metadata, never edits original OSM tags or geometries."""
 
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -12,7 +13,7 @@ except ImportError:
     from geometry import distance_m
     from rail_categories import track_type, corridor_for
 
-VERSION = "geoboundaries-CHN-ADM1-43563684-type-track-span-v4"
+VERSION = "topology-line-endpoint-catalog-v7"
 NAMES = {
     "Hainan": "海南省",
     "Taiwan": "台湾省",
@@ -169,19 +170,184 @@ def add_track(catalog, feature, index):
             record["way_ids"].append(props["osm_way_id"])
 
 
+def _catalog_group(record):
+    if (
+        "站场" in record["track_type"]
+        and record.get("station_name")
+        and record["station_name"] != "未关联站场"
+    ):
+        key = json.dumps(
+            [record["track_type"], record["station_name"]],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return "ST-" + hashlib.sha256(key.encode()).hexdigest()[:20]
+    return record["line_id"]
+
+
+def _compact_catalog(sections):
+    """Keep the sidebar at physical-line/station granularity."""
+    result = {}
+    for section in sections.values():
+        group_id = section["catalog_group_id"]
+        station_group = group_id.startswith("ST-")
+        record = result.setdefault(
+            group_id,
+            {
+                "id": group_id,
+                "name": section["station_name"]
+                if station_group
+                else section["line_display_name"],
+                "line_id": None if station_group else section["line_id"],
+                "line_name": None if station_group else section["line_name"],
+                "line_display_name": None
+                if station_group
+                else section["line_display_name"],
+                "station_name": section["station_name"] if station_group else None,
+                "track_type": section["track_type"],
+                "type_evidence": section["type_evidence"],
+                "section_count": 0,
+                "edge_count": 0,
+                "way_ids": [],
+                "catalog_group_id": group_id,
+                "classification": VERSION,
+            },
+        )
+        record["section_count"] += 1
+        record["edge_count"] += len(section["edge_ids"])
+        if record["type_evidence"] != section["type_evidence"]:
+            record["type_evidence"] = "组内线段具有多种可追溯分类依据"
+    return result
+
+
 def geographic_catalog(directory):
-    """Upgrade an existing dataset without re-downloading/re-importing the PBF."""
+    """Build type -> physical line/station -> endpoint section catalog.
+
+    Provinces and planning corridors are intentionally absent. Each leaf is one
+    maximal RS section between real control points and references shared edges.
+    """
     directory = Path(directory)
-    cache = directory / "rail_catalog.provinces.json"
+    cache = directory / "rail_catalog.topology.json"
     if cache.exists():
         value = json.loads(cache.read_text(encoding="utf-8"))
         if value.get("version") == VERSION:
-            return value["catalog"]
-    index = ProvinceIndex()
+            catalog = value["catalog"]
+            try:
+                from .rail_store import upgrade_render_features
+            except ImportError:
+                from rail_store import upgrade_render_features
+            upgrade_render_features(directory, catalog)
+            return catalog
+    try:
+        from .rail_line_store import (
+            build_line_index,
+            DiskRailLineLibrary,
+            fingerprint,
+            index_ready,
+        )
+    except ImportError:
+        from rail_line_store import (
+            build_line_index,
+            DiskRailLineLibrary,
+            fingerprint,
+            index_ready,
+        )
+    source = directory / "rail.sqlite"
+    line_index = directory / "rail_lines.sqlite"
+    signature = fingerprint(source, [])
+    if not index_ready(line_index, signature):
+        build_line_index(source, line_index, [], [], lambda value: None)
+    library = DiskRailLineLibrary(line_index)
+    with sqlite3.connect(str(line_index)) as db:
+        edge_ways = dict(db.execute("SELECT id,source_way FROM edges"))
+        stations = []
+        seen_stations = set()
+        for alias, anchor, x, y, status, confidence in db.execute(
+            "SELECT a.alias,a.anchor_node,n.x,n.y,a.verification_status,a.confidence "
+            "FROM station_aliases a JOIN nodes n ON n.id=a.anchor_node "
+            "WHERE a.anchor_node IS NOT NULL AND n.x IS NOT NULL AND n.y IS NOT NULL "
+            "ORDER BY a.distance_m,a.alias"
+        ):
+            key = (alias, anchor)
+            if key in seen_stations:
+                continue
+            seen_stations.add(key)
+            stations.append((alias, anchor, x, y, status, confidence))
+
+    station_grid = {}
+    for station in stations:
+        station_grid.setdefault((int(station[2] * 20), int(station[3] * 20)), []).append(station)
+
+    def nearest_station(section):
+        candidates = []
+        for coordinate in (
+            section.get("from_coordinate"),
+            section.get("to_coordinate"),
+        ):
+            if not coordinate:
+                continue
+            cell = int(coordinate[0] * 20), int(coordinate[1] * 20)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for station in station_grid.get((cell[0] + dx, cell[1] + dy), []):
+                        gap = distance_m(coordinate, [station[2], station[3]])
+                        if gap <= 5000:
+                            candidates.append((gap, station))
+        if not candidates:
+            return "未关联站场", "unresolved", None
+        gap, station = min(candidates, key=lambda item: (item[0], item[1][0], str(item[1][1])))
+        status = "source_control_point" if gap < 1 else "automatic_nearby_control_point"
+        confidence = 1.0 if gap < 1 else round(max(0.1, 1 - gap / 5000), 3)
+        return station[0], status, confidence
+
     catalog = {}
-    with sqlite3.connect(str(directory / "rail.sqlite")) as db:
-        for row in db.execute("SELECT data FROM features WHERE kind='rail'"):
-            add_track(catalog, json.loads(row[0]), index)
+    endpoint_sections = {}
+    for section in library.sections():
+        line = library.lines[section["line_id"]]
+        category = section["track_type"]
+        station_name, station_status, station_confidence = (
+            nearest_station(section)
+            if "站场" in category
+            else (None, "not_applicable", None)
+        )
+        edge_ids = [leg["edge_id"] for leg in section["path"]]
+        record = {
+            "id": section["id"],
+            "name": section["name"],
+            "section": section["name"],
+            "line_id": section["line_id"],
+            "line_name": line["source_name"],
+            "line_display_name": line["source_name"] + " · " + section["line_id"],
+            "from_node": section["from_node"],
+            "from_name": section["from_name"],
+            "to_node": section["to_node"],
+            "to_name": section["to_name"],
+            "edge_ids": edge_ids,
+            "way_ids": sorted({
+                int(edge_ways[edge]) if str(edge_ways[edge]).isdigit() else edge_ways[edge]
+                for edge in edge_ids
+                if edge in edge_ways
+            }),
+            "track_type": category,
+            "type_evidence": section["type_evidence"],
+            "station_name": station_name,
+            "station_assignment_status": station_status,
+            "station_assignment_confidence": station_confidence,
+            "classification": VERSION,
+        }
+        catalog[section["id"]] = record
+        endpoint_sections.setdefault(section["from_node"], []).append(section["id"])
+        endpoint_sections.setdefault(section["to_node"], []).append(section["id"])
+    for record in catalog.values():
+        record["from_adjacent_sections"] = sorted(endpoint_sections[record["from_node"]])
+        record["to_adjacent_sections"] = sorted(endpoint_sections[record["to_node"]])
+        record["catalog_group_id"] = _catalog_group(record)
+    try:
+        from .rail_store import upgrade_render_features
+    except ImportError:
+        from rail_store import upgrade_render_features
+    upgrade_render_features(directory, catalog)
+    catalog = _compact_catalog(catalog)
     temporary = cache.with_name(cache.name + "." + uuid4().hex + ".tmp")
     temporary.write_text(
         json.dumps({"version": VERSION, "catalog": catalog}, ensure_ascii=False),

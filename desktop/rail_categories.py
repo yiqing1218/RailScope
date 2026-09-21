@@ -165,8 +165,12 @@ def corridor_for(name, category):
 
 def catalog_parents(meta, mode):
     category = meta.get("track_type", "未确认类型")
-    if mode == 1:
-        return (meta["province"], category)
-    if category == "高速铁路线":
-        return (category, meta["corridor"], meta["province"], meta["section"])
-    return (category, meta["province"])
+    if "站场" in category:
+        return (category, meta.get("station_name") or "未关联站场")
+    return (
+        category,
+        meta.get("line_display_name")
+        or meta.get("line_name")
+        or meta.get("name")
+        or "未命名物理线路",
+    )

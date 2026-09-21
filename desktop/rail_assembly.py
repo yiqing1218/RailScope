@@ -8,10 +8,10 @@ import sqlite3
 
 try:
     from .geometry import distance_m
-    from .rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY
+    from .rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY, edge_endpoints
 except ImportError:
     from geometry import distance_m
-    from rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY
+    from rail_lines import RailLineLibrary, line_identity, RESOLUTION_KEY, edge_endpoints
 
 
 def assemble_jinghu(directory, service_path=None):
@@ -56,8 +56,9 @@ def assemble_jinghu(directory, service_path=None):
         raise ValueError("铁路库缺少车站定位：" + "、".join(missing))
     node_coordinates = {}
     for edge in edges:
-        node_coordinates[edge["from_node"]] = edge["coordinates"][0]
-        node_coordinates[edge["to_node"]] = edge["coordinates"][-1]
+        a, b = edge_endpoints(edge)
+        node_coordinates[a] = edge["coordinates"][0]
+        node_coordinates[b] = edge["coordinates"][-1]
 
     def anchor(name):
         coordinate = stations[name]["geometry"]["coordinates"]

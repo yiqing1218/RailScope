@@ -189,5 +189,167 @@ def test_province_and_corridor_switches_stay_in_sync(tmp_path):
     section = catalog.tree.topLevelItem(0).child(0)
     assert catalog.tree.itemWidget(section, 1).isChecked()
     assert catalog.tree.itemWidget(section, 1)._mixed
-    assert map_view.calls[-1] == ("setRailWays", [2])
+    assert map_view.calls[-1] == ("setRailSelection", [], [2])
     catalog.close()
+
+
+def test_topology_catalog_groups_by_line_or_station_and_links_both_endpoints(tmp_path):
+    import sqlite3
+    from desktop.provinces import geographic_catalog
+    from desktop.rail_categories import catalog_parents
+
+    def edge(ident, source_way, a, b, line_id, line_name, tags=None):
+        return {
+            "id": ident,
+            "osm_way_id": source_way,
+            "from_node": source_way * 10,
+            "to_node": source_way * 10 + 1,
+            "from_node_id": a,
+            "to_node_id": b,
+            "node_ids": [source_way * 10, source_way * 10 + 1],
+            "coordinates": [[120 + source_way / 1000, 30], [120 + source_way / 1000 + 0.005, 30]],
+            "line_id": line_id,
+            "line_name": line_name,
+            "way_tags": {"name": line_name, **(tags or {})},
+            "construction": False,
+        }
+
+    edges = [
+        edge("NE-A", 1, "NN-A", "NN-J", "IL-MAIN", "京沪高铁", {"highspeed": "yes"}),
+        edge("NE-B", 2, "NN-J", "NN-B", "IL-MAIN", "京沪高铁", {"highspeed": "yes"}),
+        edge("NE-C", 3, "NN-J", "NN-C", "IL-BRANCH", "测试联络线", {"service": "spur"}),
+        edge("NE-Y", 4, "NN-J", "NN-Y", "IL-YARD", "测试站场", {"service": "yard", "highspeed": "yes"}),
+        edge("NE-S1", 5, "NN-S1", "NN-S2", "IL-STRAIGHT", "连续测试线", {"highspeed": "yes"}),
+        edge("NE-S2", 6, "NN-S2", "NN-S3", "IL-STRAIGHT", "连续测试线", {"highspeed": "yes"}),
+    ]
+    station = {
+        "type": "Feature",
+        "properties": {
+            "osm_node_id": 11,
+            "infrastructure_node_id": "NN-J",
+            "name": "测试站",
+            "kind": "station",
+        },
+        "geometry": {"type": "Point", "coordinates": edges[0]["coordinates"][-1]},
+    }
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript("CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT); CREATE TABLE features(kind TEXT,data TEXT);")
+        db.executemany("INSERT INTO edges VALUES(?,?)", ((e["id"], json.dumps(e, ensure_ascii=False)) for e in edges))
+        db.execute("INSERT INTO features VALUES(?,?)", ("railPoints", json.dumps(station, ensure_ascii=False)))
+    catalog = geographic_catalog(tmp_path)
+    assert catalog and all("province" not in item and "corridor" not in item for item in catalog.values())
+    straight = [item for item in catalog.values() if item["line_id"] == "IL-STRAIGHT"]
+    assert len(straight) == 1
+    assert straight[0]["edge_count"] == 2 and straight[0]["section_count"] == 1
+    yard = next(item for item in catalog.values() if item["station_name"] == "测试站")
+    assert yard["station_name"] == "测试站"
+    assert catalog_parents(yard, 0) == (yard["track_type"], "测试站")
+    main = next(item for item in catalog.values() if item["line_id"] == "IL-MAIN")
+    assert catalog_parents(main, 0) == ("高速铁路线", "京沪高铁 · IL-MAIN")
+    view = MapStub()
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
+    widget.toggle(main["id"], True)
+    assert view.calls[-1] == ("setRailSelection", [], [], [main["id"]])
+    widget.close()
+
+
+def test_topology_catalog_upgrades_old_way_rendering_without_reimport(tmp_path):
+    import sqlite3
+    from desktop.provinces import geographic_catalog
+
+    edges = [
+        {
+            "id": ident,
+            "osm_way_id": 90,
+            "from_node": a,
+            "to_node": b,
+            "node_ids": [a, b],
+            "coordinates": [[120 + a / 100, 30], [120 + b / 100, 30]],
+            "line_id": "IL-UPGRADE",
+            "line_name": "升级测试线",
+            "way_tags": {"name": "升级测试线"},
+            "construction": False,
+        }
+        for ident, a, b in (("NE-A", 1, 2), ("NE-B", 2, 3))
+    ]
+    old_feature = {
+        "type": "Feature",
+        "properties": {"osm_way_id": 90, "way_tags": {"name": "升级测试线"}},
+        "geometry": {"type": "LineString", "coordinates": [[120.01, 30], [120.03, 30]]},
+    }
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript(
+            "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT);"
+            "CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);"
+            "CREATE TABLE edges(id TEXT PRIMARY KEY,data TEXT);"
+        )
+        db.execute(
+            "INSERT INTO features VALUES(1,'rail','main',?)",
+            (json.dumps(old_feature, ensure_ascii=False),),
+        )
+        db.execute("INSERT INTO bounds VALUES(1,120.01,120.03,30,30)")
+        db.executemany(
+            "INSERT INTO edges VALUES(?,?)",
+            ((edge["id"], json.dumps(edge, ensure_ascii=False)) for edge in edges),
+        )
+    catalog = geographic_catalog(tmp_path)
+    assert len(catalog) == 1
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        rendered = [
+            json.loads(row[0])
+            for row in db.execute("SELECT data FROM features WHERE kind='rail'")
+        ]
+    assert len(rendered) == 2
+    assert {item["properties"]["network_edge_id"] for item in rendered} == {
+        "NE-A",
+        "NE-B",
+    }
+    assert all(
+        item["properties"].get("section_id")
+        and item["properties"].get("catalog_group_id") == "IL-UPGRADE"
+        and item["properties"].get("line_id") == "IL-UPGRADE"
+        for item in rendered
+    )
+
+
+def test_large_topology_tree_is_bounded_and_still_searches_every_section(
+    tmp_path, monkeypatch
+):
+    import desktop.rail_catalog_ui as catalog_module
+
+    monkeypatch.setattr(catalog_module, "MAX_CATALOG_TREE_ITEMS", 2)
+    source = {
+        f"RS-{index}": {
+            "id": f"RS-{index}",
+            "name": f"第 {index} 线段",
+            "line_name": "测试线",
+            "line_display_name": "测试线 · IL-TEST",
+            "track_type": "普通铁路线",
+            "from_node": f"NN-{index}",
+            "from_name": f"端点 {index}",
+            "to_node": f"NN-{index + 1}",
+            "to_name": f"端点 {index + 1}",
+            "edge_ids": [f"NE-{index}"],
+            "way_ids": [index],
+        }
+        for index in range(3)
+    }
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps(source, ensure_ascii=False), encoding="utf-8"
+    )
+    view = MapStub()
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
+    assert len(widget.items) == 2
+    assert all(
+        not widget.tree.itemWidget(group, 1).isEnabled()
+        for group in widget.groups.values()
+    )
+    widget.search.setText("RS-2")
+    widget.search_timer.stop()
+    widget.populate()
+    assert set(widget.items) == {"RS-2"}
+    widget.set_all(True)
+    assert view.calls[-1] == ("setRailSelection", None, None)
+    widget.toggle("RS-2", False)
+    assert view.calls[-1] == ("setRailExclusions", ["RS-2"], [])
+    widget.close()

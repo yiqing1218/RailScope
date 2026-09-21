@@ -110,7 +110,7 @@ function updateStaticSources(){
     map.getSource(id).setData(data||empty);staticSourceState.set(id,key);
   }
 }
-let railWays=null;
+let railWays=null,railSections=null,railGroups=null,railExclude=false;
 function railSourceVisible(kind){
   const zoom=map.getZoom();
   if(graphicsPaused||document.hidden)return false;
@@ -130,7 +130,15 @@ function scheduleRailViewport(){
   railTimer=setTimeout(updateRailViewport,180);
 }
 function applyRailWays(){
-  const selected=railWays===null?null:['in',['get','osm_way_id'],['literal',railWays]];
+  let selected=null;
+  if(railSections!==null||railWays!==null||railGroups!==null){
+    const filters=[];
+    if((railSections||[]).length)filters.push(['in',['get','section_id'],['literal',railSections]]);
+    if((railWays||[]).length)filters.push(['in',['get','osm_way_id'],['literal',railWays]]);
+    if((railGroups||[]).length)filters.push(['in',['get','catalog_group_id'],['literal',railGroups]]);
+    selected=filters.length===0?['==',['literal',1],0]:filters.length===1?filters[0]:['any',...filters];
+    if(railExclude)selected=['!',selected];
+  }
   const inactive=['in',['coalesce',['get','construction_status'],['case',['==',['get','construction'],true],'construction','operating']],['literal',['construction','planned','disused']]];
   for(const id of ['rail','rail-stripes','rail-construction'])if(map.getLayer(id)){
     const construction=id==='rail-construction'?inactive:['!',inactive];
@@ -369,7 +377,9 @@ async function init() {
       document.getElementById('legend-station-label').textContent=rail?'经停控制点':'地铁站';
       document.getElementById('legend-vehicle-label').textContent=rail?'国铁列车':'地铁列车';
     },
-    setRailWays(ids){railWays=ids;applyRailWays();},
+    setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();},
+    setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();},
+    setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
     setRailOperatingVehicles(data){config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},

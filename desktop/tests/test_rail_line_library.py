@@ -46,6 +46,72 @@ def test_branch_does_not_choose_an_arbitrary_track():
         )
 
 
+def test_exact_section_resolves_ambiguous_route_without_overshooting_endpoints():
+    from desktop.rail_lines import RailLineLibrary
+
+    def edge(ident, a, b):
+        return {
+            "id": ident,
+            "from_node": a,
+            "to_node": b,
+            "node_ids": [a, b],
+            "coordinates": [[a, 0], [b, 0]],
+            "construction": False,
+            "way_tags": {"name": "测试线"},
+        }
+
+    library = RailLineLibrary(
+        [edge("main-a", 1, 2), edge("main-b", 2, 3), edge("branch-a", 2, 4), edge("branch-b", 4, 3)],
+        [{"properties": {"osm_node_id": 2, "kind": "switch", "name": "二号道岔"}}],
+    )
+    line_id = next(iter(library.lines))
+    sections = library.search_sections("", line_id)
+    chosen = next(section for section in sections if section["from_node"] == 1)
+    sequence = [
+        {"kind": "endpoint", "node_id": chosen["from_node"]},
+        {"kind": "line", "line_id": line_id, "section_id": chosen["id"]},
+        {"kind": "endpoint", "node_id": chosen["to_node"]},
+    ]
+    resolved = library.resolve(sequence)
+    assert resolved == chosen["path"]
+    first = library.edges[resolved[0]["edge_id"]]
+    last = library.edges[resolved[-1]["edge_id"]]
+    assert first["from_node"] == chosen["from_node"]
+    assert last["to_node"] == chosen["to_node"]
+
+
+def test_line_resolution_enforces_persisted_track_direction():
+    from desktop.rail_lines import RailLineLibrary
+
+    edge = {
+        "id": "one-way",
+        "from_node": 1,
+        "to_node": 2,
+        "node_ids": [1, 2],
+        "coordinates": [[120, 30], [120.01, 30]],
+        "construction": False,
+        "direction": "forward",
+        "way_tags": {"name": "单向测试线"},
+    }
+    library = RailLineLibrary([edge], [])
+    line_id = next(iter(library.lines))
+    assert library.resolve(
+        [
+            {"kind": "endpoint", "node_id": 1},
+            {"kind": "line", "line_id": line_id},
+            {"kind": "endpoint", "node_id": 2},
+        ]
+    ) == [{"edge_id": "one-way", "direction": "forward"}]
+    with pytest.raises(ValueError, match="不连通"):
+        library.resolve(
+            [
+                {"kind": "endpoint", "node_id": 2},
+                {"kind": "line", "line_id": line_id},
+                {"kind": "endpoint", "node_id": 1},
+            ]
+        )
+
+
 def test_table_corridor_roundtrip_renaming_and_shared_sections(tmp_path):
     from PySide6.QtWidgets import QApplication
     from PySide6.QtTest import QTest
@@ -106,6 +172,17 @@ def test_strict_corridor_csv_rows_alternate_endpoints_and_lines():
     with pytest.raises(ValueError, match="序号"):
         import_corridor_csv(text.replace("2,2,RL-B", "3,2,RL-B"))
 
+    stable = (
+        "corridor_id,corridor_name,segment,from_node,line_id,section_id,to_node\n"
+        "COR-S,稳定通道,1,NN-A,IL-A,RS-A,NN-B\n"
+    )
+    parsed = import_corridor_csv(stable)
+    assert parsed["corridors"][0]["sequence"] == [
+        {"kind": "endpoint", "node_id": "NN-A"},
+        {"kind": "line", "line_id": "IL-A", "section_id": "RS-A"},
+        {"kind": "endpoint", "node_id": "NN-B"},
+    ]
+
 
 def test_national_line_directory_does_not_load_geometry(tmp_path):
     import sqlite3
@@ -149,7 +226,7 @@ def test_national_line_directory_does_not_load_geometry(tmp_path):
     library = editor.line_library()
     assert "coordinates" not in library.edges[edge["id"]]
     assert "node_ids" not in library.edges[edge["id"]]
-    assert library.nodes[1] == "测试线路所"
+    assert library.nodes[1] == "测试线路所 · 线路所 · 1"
     assert len(library.search_lines("另一条")) == 1
     from desktop.rail_line_store import DiskRailLineLibrary
     from desktop.rail_lines import line_identity
@@ -164,7 +241,7 @@ def test_national_line_directory_does_not_load_geometry(tmp_path):
     assert library.resolve(sequence) == [
         {"edge_id": edge["id"], "direction": "forward"}
     ]
-    assert library.search_nodes("测试", ident) == [(1, "测试线路所")]
+    assert library.search_nodes("测试", ident) == [(1, "测试线路所 · 线路所 · 1")]
     editor.save_line_names({ident: "试验干线"})
     assert library.search_lines("试验干线")[0]["id"] == ident
     export_path = tmp_path / "中文 线路.json"
@@ -372,7 +449,7 @@ def test_dialog_creates_corridor_from_search_results_and_renames(qtbot, tmp_path
             dialog.findChild(QLineEdit, "corridorId").setText("COR-UI-TEST")
             dialog.findChild(QLineEdit, "corridorName").setText("表格编制京沪下行")
             table = dialog.findChild(QTableWidget)
-            for col, query in [(1, "京沪"), (0, "北京南"), (2, "上海虹桥")]:
+            for col, query in [(1, "京沪"), (0, "北京南"), (3, "上海虹桥")]:
                 choice = table.cellWidget(0, col)
                 choice.setEditText(query)
                 choice.find_results()

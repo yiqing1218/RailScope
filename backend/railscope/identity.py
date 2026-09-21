@@ -180,6 +180,10 @@ class IdentityRegistry:
                     edge['from_node'],edge['to_node']=edge['to_node'],edge['from_node']
                     edge['coordinates'].reverse()
                     edge['node_ids']=list(reversed(edge.get('node_ids',[])))
+                    if edge.get('direction') == 'forward':
+                        edge['direction'] = 'reverse'
+                    elif edge.get('direction') == 'reverse':
+                        edge['direction'] = 'forward'
                 # A source node may be replaced while remaining the same physical
                 # endpoint. Bind its new source alias to the existing RailScope ID.
                 for key, canonical in (("from_node", match['from_node_id']), ("to_node", match['to_node_id'])):

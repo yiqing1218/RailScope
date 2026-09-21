@@ -26,6 +26,27 @@ def test_corridor_validation_shared_trains_and_transfer_reservation():
         validate_corridors([broken], data["edges"])
 
 
+def test_corridor_validation_rejects_disallowed_physical_direction():
+    from desktop.rail import validate_corridors
+
+    edge = {
+        "id": "e-one-way",
+        "from_node": 1,
+        "to_node": 2,
+        "node_ids": [1, 2],
+        "coordinates": [[120, 30], [120.01, 30]],
+        "construction": False,
+        "direction": "forward",
+    }
+    route = {
+        "id": "COR-REVERSE",
+        "path": [{"edge_id": edge["id"], "direction": "reverse"}],
+        "extensions": {},
+    }
+    with pytest.raises(ValueError, match="方向"):
+        validate_corridors([route], [edge])
+
+
 def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     from PySide6.QtWidgets import QApplication
     from desktop.rail_ui import RailEditor

@@ -1,4 +1,4 @@
-"""Editable province or planning-corridor / section catalogs; source tags untouched."""
+"""Topology catalog: track type -> physical line/station -> endpoint section."""
 
 import json
 from pathlib import Path
@@ -27,11 +27,13 @@ from PySide6.QtWidgets import (
 try:
     from .components import Switch, text_label, GrowingTree
     from .provinces import geographic_catalog, VERSION
-    from .rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
+    from .rail_categories import catalog_parents, TRACK_TYPES
 except ImportError:
     from components import Switch, text_label, GrowingTree
     from provinces import geographic_catalog, VERSION
-    from rail_categories import catalog_parents, TRACK_TYPES, CORRIDORS
+    from rail_categories import catalog_parents, TRACK_TYPES
+
+MAX_CATALOG_TREE_ITEMS = 4000
 
 
 class RailCatalog(QWidget):
@@ -48,7 +50,7 @@ class RailCatalog(QWidget):
         self.catalog = (
             json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
         )
-        cache = Path(directory) / "rail_catalog.provinces.json"
+        cache = Path(directory) / "rail_catalog.topology.json"
         if cache.exists():
             value = json.loads(cache.read_text(encoding="utf-8"))
             if value.get("version") == VERSION:
@@ -56,6 +58,8 @@ class RailCatalog(QWidget):
         self.overrides = {}
         self.way_names = {}
         self.visible = set()
+        self.all_visible = False
+        self.excluded = set()
         if self.path.exists():
             try:
                 value = json.loads(self.path.read_text(encoding="utf-8"))
@@ -65,10 +69,6 @@ class RailCatalog(QWidget):
                     k: v
                     for k, v in value.items()
                     if isinstance(v, dict)
-                    and all(
-                        isinstance(v.get(f), str) and v[f].strip()
-                        for f in ("province", "corridor", "section")
-                    )
                     and isinstance(v.get("archived", False), bool)
                     and (
                         "folder_path" not in v
@@ -88,7 +88,8 @@ class RailCatalog(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.setMinimumWidth(0)
         self.mode = QComboBox()
-        self.mode.addItems(["轨道类型 → 高速通道 → 省份", "省份 → 轨道类型"])
+        self.mode.addItems(["轨道类型 → 物理线路 / 车站"])
+        self.mode.setEnabled(False)
         self.mode.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -96,9 +97,13 @@ class RailCatalog(QWidget):
         self.mode.currentIndexChanged.connect(self.populate)
         layout.addWidget(self.mode)
         search = QLineEdit()
-        search.setPlaceholderText("筛选省份 / 线路 / 工程")
-        search.textChanged.connect(self.filter_tree)
+        search.setPlaceholderText("筛选物理线路 / 车站 / IL / ST 编号")
         self.search = search
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(180)
+        self.search_timer.timeout.connect(self.populate)
+        search.textChanged.connect(self.search_changed)
         layout.addWidget(search)
         self.tree = GrowingTree()
         self.tree.setColumnCount(2)
@@ -115,7 +120,7 @@ class RailCatalog(QWidget):
         self.tree.customContextMenuRequested.connect(self.context_menu)
         layout.addWidget(self.tree)
         self.note = text_label(
-            "先按轨道用途分类；高速主线再按八纵八横整理。省份保留，未知类型/通道不猜测。",
+            self.catalog_note(),
             wrap=True,
         )
         layout.addWidget(self.note)
@@ -125,7 +130,7 @@ class RailCatalog(QWidget):
         if (Path(directory) / "rail.sqlite").exists() and not all(
             r.get("classification") == VERSION for r in self.catalog.values()
         ):
-            self.note.setText("正在后台整理轨道类型与省级目录…无需重新导入 PBF。")
+            self.note.setText("正在后台按线路拓扑重建端点线段目录…无需重新导入 PBF。")
 
             def classify():
                 try:
@@ -133,32 +138,55 @@ class RailCatalog(QWidget):
                     self.classified.emit(result)
                 except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
                     try:
-                        self.classification_failed.emit("省界分类未完成：" + str(error))
+                        self.classification_failed.emit("拓扑目录未完成：" + str(error))
                     except RuntimeError:
                         pass  # Window was closed; any completed cache remains reusable.
 
             threading.Thread(target=classify, daemon=True).start()
 
     def apply_classification(self, catalog):
+        was_all = self.all_visible or (
+            bool(self.catalog)
+            and len(self.visible)
+            == sum(
+                not self.meta(key).get("archived", False) for key in self.catalog
+            )
+        )
         ways = {w for key in self.visible for w in self.catalog[key]["way_ids"]}
         self.catalog = catalog
-        self.visible = {
-            key
-            for key, record in catalog.items()
-            if ways.intersection(record["way_ids"])
-            and not self.meta(key).get("archived", False)
-        }
-        if ways:
+        self.excluded = set()
+        if was_all and len(catalog) > MAX_CATALOG_TREE_ITEMS:
+            self.all_visible = True
+            self.visible = set()
+        else:
+            self.all_visible = False
+            self.visible = {
+                key
+                for key, record in catalog.items()
+                if ways.intersection(record["way_ids"])
+                and not self.meta(key).get("archived", False)
+            }
+        if ways or was_all:
             self.send_visibility(False)
         self.populate()
         self.note.setText(
-            "轨道类型来自 OSM 标签；仅高速主线列入通道。编辑菜单可核对类型/通道/省份。"
+            self.catalog_note("目录已按轨道类型和物理线路/车站重建。")
         )
+
+    def catalog_note(self, prefix=""):
+        base = prefix or "按轨道类型和物理线路/车站整理；具体端点线段保存在地图对象属性和通道编辑器中。"
+        if len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
+            return (
+                base
+                + f" 全国目录共 {len(self.catalog):,} 个线路/站场分组；为控制内存，左侧每次最多显示 "
+                + f"{MAX_CATALOG_TREE_ITEMS:,} 项，请搜索线路、车站或稳定编号。"
+            )
+        return base
 
     def meta(self, key):
         record = self.catalog[key]
         legacy = json.dumps(
-            [record["province"], record.get("name", key)],
+            [record.get("province", ""), record.get("name", key)],
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -184,7 +212,36 @@ class RailCatalog(QWidget):
         groups = {}
         self.items = {}
         self.members = {}
-        for name, record in sorted(self.catalog.items()):
+        query = self.search.text().strip().casefold()
+
+        def matches(name):
+            if not query:
+                return True
+            meta = self.meta(name)
+            values = (
+                name,
+                meta.get("name", ""),
+                meta.get("line_name", ""),
+                meta.get("line_display_name", ""),
+                meta.get("station_name", ""),
+                meta.get("from_name", ""),
+                meta.get("to_name", ""),
+                meta.get("from_node", ""),
+                meta.get("to_node", ""),
+                meta.get("track_type", ""),
+            )
+            return query in " ".join(map(str, values)).casefold()
+
+        names = []
+        matched = 0
+        for name in self.catalog:
+            if matches(name):
+                matched += 1
+                if len(names) < MAX_CATALOG_TREE_ITEMS:
+                    names.append(name)
+        self.catalog_limited = matched > len(names)
+        for name in sorted(names):
+            record = self.catalog[name]
             meta = self.meta(name)
             parents = self.parents(name)
             parent = self.tree.invisibleRootItem()
@@ -196,9 +253,21 @@ class RailCatalog(QWidget):
                 parent = groups[key]
             label = self.display_name(name)
             item = QTreeWidgetItem(parent, [label])
+            count = record.get("edge_count") or len(
+                record.get("edge_ids", record["way_ids"])
+            )
+            topology = (
+                f"包含 {record.get('section_count', 0)} 个端点线段；点击地图上的具体线段查看两端点和相邻线段。"
+                if record.get("catalog_group_id")
+                else f"起点：{meta.get('from_name', '旧目录无端点')}\n终点：{meta.get('to_name', '旧目录无端点')}\n"
+                f"起点相邻：{', '.join(meta.get('from_adjacent_sections', [])) or '待重建'}\n"
+                f"终点相邻：{', '.join(meta.get('to_adjacent_sections', [])) or '待重建'}"
+            )
             item.setToolTip(
                 0,
-                f"{label}\n{meta['province']} · {meta.get('track_type', '未确认类型')} · {len(record['way_ids'])} 个轨道段\n依据：{meta.get('type_evidence', '待核对')}",
+                f"{label}\n{meta.get('track_type', '未确认类型')} · {count} 个 NetworkEdge\n"
+                f"{topology}\n"
+                f"依据：{meta.get('type_evidence', '待核对')}",
             )
             self.items[name] = item
             item.setData(0, Qt.ItemDataRole.UserRole, name)
@@ -207,24 +276,37 @@ class RailCatalog(QWidget):
             while ancestor is not self.tree.invisibleRootItem():
                 self.members.setdefault(id(ancestor), set()).add(name)
                 ancestor = ancestor.parent() or self.tree.invisibleRootItem()
-            switch = Switch(name in self.visible)
+            switch = Switch(self.is_visible(name))
             switch.setEnabled(not meta.get("archived", False))
             switch.toggled.connect(lambda on, n=name: self.toggle(n, on))
             self.tree.setItemWidget(item, 1, switch)
         for item in groups.values():
             keys = self.members[id(item)]
             item.setText(0, item.text(0) + f" · {len(keys)} 项")
-            control = Switch(bool(keys & self.visible))
+            visible_keys = {key for key in keys if self.is_visible(key)}
+            control = Switch(bool(visible_keys))
             control.setEnabled(
-                not all(self.meta(k).get("archived", False) for k in keys)
+                not self.catalog_limited
+                and not all(self.meta(k).get("archived", False) for k in keys)
             )
-            control.setMixed(bool(keys & self.visible) and not keys <= self.visible)
+            if self.catalog_limited:
+                control.setToolTip("结果过多，请先搜索具体物理线路、车站或稳定编号。")
+            control.setMixed(bool(visible_keys) and visible_keys != keys)
             control.toggled.connect(lambda on, k=keys: self.toggle_group(k, on))
             self.tree.setItemWidget(item, 1, control)
         for key, item in groups.items():
             item.setExpanded(key in expanded)
         self.groups = groups
-        self.filter_tree(self.search.text())
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.filter_tree(self.search.text())
+        else:
+            self.tree.schedule_height()
+
+    def search_changed(self, text):
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.filter_tree(text)
+        else:
+            self.search_timer.start()
 
     def parents(self, key):
         meta = self.meta(key)
@@ -255,7 +337,6 @@ class RailCatalog(QWidget):
                     )
                     if field in meta
                 },
-                **{field: meta[field] for field in ("province", "corridor", "section")},
                 **change,
             }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -381,6 +462,13 @@ class RailCatalog(QWidget):
         rename_action = menu.addAction("重命名…", rename)
         rename_action.setEnabled(bool(leaf or (folder and folder != ("已归档",))))
         menu.addAction("移动到文件夹…", lambda: self.move_dialog(keys))
+        if leaf:
+            menu.addAction(
+                "查看线路/站场属性…"
+                if self.meta(leaf).get("catalog_group_id")
+                else "查看端点与相邻线段…",
+                lambda: self.show_topology(leaf),
+            )
         menu.addSeparator()
         archived = all(self.meta(key).get("archived", False) for key in keys)
         menu.addAction(
@@ -388,6 +476,34 @@ class RailCatalog(QWidget):
             lambda: perform(lambda: self.archive_items(keys, not archived)),
         )
         return menu
+
+    def show_topology(self, key):
+        meta = self.meta(key)
+        if meta.get("catalog_group_id"):
+            QMessageBox.information(
+                self,
+                "线路 / 站场属性",
+                f"目录对象：{meta.get('name', key)}\n"
+                f"目录编号：{meta['catalog_group_id']}\n"
+                f"轨道类型：{meta.get('track_type', '未确认类型')}\n"
+                f"端点线段：{meta.get('section_count', 0)} 项\n"
+                f"NetworkEdge：{meta.get('edge_count', 0)} 项\n\n"
+                "具体 RS 编号、两端点及相邻线段请点击地图上的轨道线段查看。",
+            )
+            return
+        detail = (
+            f"线段：{meta.get('name', key)}\n"
+            f"线段编号：{meta.get('id', key)}\n"
+            f"物理线路：{meta.get('line_display_name', meta.get('line_name', '旧目录未记录'))}\n"
+            f"轨道类型：{meta.get('track_type', '未确认类型')}\n\n"
+            f"起点：{meta.get('from_name', '旧目录未记录')}\n"
+            f"起点编号：{meta.get('from_node', '旧目录未记录')}\n"
+            f"相接线段：{', '.join(meta.get('from_adjacent_sections', [])) or '无 / 待重建'}\n\n"
+            f"终点：{meta.get('to_name', '旧目录未记录')}\n"
+            f"终点编号：{meta.get('to_node', '旧目录未记录')}\n"
+            f"相接线段：{', '.join(meta.get('to_adjacent_sections', [])) or '无 / 待重建'}"
+        )
+        QMessageBox.information(self, "端点与线段属性", detail)
 
     def move_dialog(self, keys):
         if not keys:
@@ -461,10 +577,12 @@ class RailCatalog(QWidget):
         label = record.get("display_name") or (
             aliases[0] if aliases else record.get("name", key)
         )
-        # A province/type directory entry is not itself a national physical line.
-        # Give these slices unique IDs too, without altering source OSM tags.
-        ident = "RC-" + hashlib.sha256(key.encode()).hexdigest()[:12]
-        return f"{label} · {ident}"
+        ident = (
+            key
+            if key.startswith(("RS-", "RL-", "IL-", "ST-"))
+            else "RC-" + hashlib.sha256(key.encode()).hexdigest()[:12]
+        )
+        return label if ident in label else f"{label} · {ident}"
 
     def reload_names(self, path):
         path = Path(path)
@@ -475,23 +593,42 @@ class RailCatalog(QWidget):
 
     def toggle_group(self, keys, on):
         keys = {key for key in keys if not self.meta(key).get("archived", False)}
-        self.visible.update(keys) if on else self.visible.difference_update(keys)
+        if self.all_visible:
+            self.excluded.difference_update(keys) if on else self.excluded.update(keys)
+        else:
+            self.visible.update(keys) if on else self.visible.difference_update(keys)
         self.send_visibility(on)
         QTimer.singleShot(0, self.populate)
 
     def set_all(self, on):
-        self.visible = (
-            {key for key in self.catalog if not self.meta(key).get("archived", False)}
-            if on
-            else set()
-        )
+        if len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
+            self.all_visible = on
+            self.excluded = set()
+            self.visible = set()
+        else:
+            self.all_visible = False
+            self.excluded = set()
+            self.visible = (
+                {key for key in self.catalog if not self.meta(key).get("archived", False)}
+                if on
+                else set()
+            )
         self.send_visibility(False)
         self.populate()
+
+    def is_visible(self, name):
+        return (
+            self.all_visible
+            and name not in self.excluded
+            and not self.meta(name).get("archived", False)
+        ) or name in self.visible
 
     def toggle(self, name, on):
         if self.meta(name).get("archived", False):
             return
-        if on:
+        if self.all_visible:
+            self.excluded.discard(name) if on else self.excluded.add(name)
+        elif on:
             self.visible.add(name)
         else:
             self.visible.discard(name)
@@ -500,40 +637,112 @@ class RailCatalog(QWidget):
         for key, item in self.items.items():
             control = self.tree.itemWidget(item, 1)
             control.blockSignals(True)
-            control.setChecked(key in self.visible)
+            control.setChecked(self.is_visible(key))
             control.blockSignals(False)
         for item in self.groups.values():
             control = self.tree.itemWidget(item, 1)
             keys = self.members[id(item)]
             control.blockSignals(True)
-            control.setChecked(bool(keys & self.visible))
-            control.setMixed(bool(keys & self.visible) and not keys <= self.visible)
+            visible_keys = {key for key in keys if self.is_visible(key)}
+            control.setChecked(bool(visible_keys))
+            control.setMixed(bool(visible_keys) and visible_keys != keys)
             control.blockSignals(False)
 
     def send_visibility(self, request_enable):
-        ids = [
-            way
-            for name in sorted(self.visible)
-            for way in self.catalog[name]["way_ids"]
-        ]
-        self.map.call("setRailWays", ids)
+        if self.all_visible:
+            hidden = self.excluded | {
+                name
+                for name in self.catalog
+                if self.meta(name).get("archived", False)
+            }
+            if not hidden:
+                self.map.call("setRailSelection", None, None)
+            else:
+                self._send_catalog_filter(hidden, "setRailExclusions")
+            if request_enable:
+                self.enabled_requested.emit()
+            return
+        active_count = sum(
+            not self.meta(name).get("archived", False) for name in self.catalog
+        )
+        if active_count and len(self.visible) == active_count:
+            # Null removes the MapLibre filter. Sending hundreds of thousands
+            # of IDs would waste RAM and can exhaust the WebGL process.
+            self.map.call("setRailSelection", None, None)
+            if request_enable:
+                self.enabled_requested.emit()
+            return
+        self._send_catalog_filter(self.visible, "setRailSelection")
         if request_enable:
             self.enabled_requested.emit()
+
+    def _send_catalog_filter(self, names, method):
+        sections = [
+            self.catalog[name].get("id", name)
+            for name in sorted(names)
+            if self.catalog[name].get("edge_ids")
+        ]
+        ids = [
+            way
+            for name in sorted(names)
+            if not self.catalog[name].get("edge_ids")
+            for way in self.catalog[name]["way_ids"]
+        ]
+        groups = [
+            self.catalog[name]["catalog_group_id"]
+            for name in sorted(names)
+            if self.catalog[name].get("catalog_group_id")
+        ]
+        if groups:
+            self.map.call(method, sections, ids, groups)
+        else:
+            self.map.call(method, sections, ids)
 
     def focus_item(self, item, column):
         if column != 0:
             return  # The switch column only controls visibility.
         keys = self.members.get(id(item), set())
+        edge_ids = sorted(
+            {
+                edge
+                for key in keys
+                for edge in self.catalog[key].get("edge_ids", [])
+            }
+        )
         ways = sorted({w for key in keys for w in self.catalog[key]["way_ids"]})
+        group_ids = sorted(
+            {
+                self.catalog[key]["catalog_group_id"]
+                for key in keys
+                if self.catalog[key].get("catalog_group_id")
+            }
+        )
         database = self.directory / "rail.sqlite"
-        if not ways or not database.exists():
+        if not (ways or edge_ids or group_ids) or not database.exists():
             self.note.setText("无法定位：该目录没有可用的铁路几何数据。")
             return
         bounds = []
         try:
+            if edge_ids:
+                try:
+                    from .rail_store import load_edges
+                except ImportError:
+                    from rail_store import load_edges
+                for edge in load_edges(self.directory, edge_ids):
+                    xs, ys = zip(*edge["coordinates"])
+                    bounds.append((min(xs), min(ys), max(xs), max(ys)))
             # Use the complete disk index, not the currently loaded viewport.
             with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
-                for start in range(0, len(ways), 500):
+                for group_id in group_ids:
+                    row = db.execute(
+                        "SELECT min(b.minx),min(b.miny),max(b.maxx),max(b.maxy) "
+                        "FROM rail_feature_groups g JOIN bounds b ON b.id=g.feature_id "
+                        "WHERE g.group_id=?",
+                        (group_id,),
+                    ).fetchone()
+                    if row and row[0] is not None:
+                        bounds.append(row)
+                for start in range(0, len(ways) if not edge_ids else 0, 500):
                     batch = ways[start : start + 500]
                     row = db.execute(
                         "SELECT min(b.minx),min(b.miny),max(b.maxx),max(b.maxy) "
@@ -562,13 +771,18 @@ class RailCatalog(QWidget):
         )
         self.note.setText("已定位：" + item.text(0) + "；显示开关保持不变。")
 
-    def select_way(self, way_id, province=None):
-        """Reveal a map-selected OSM way in the current catalog hierarchy."""
-        candidates = [
-            key
-            for key, record in self.catalog.items()
-            if way_id in record.get("way_ids", [])
-        ]
+    def select_way(self, way_id, province=None, section_id=None, group_id=None):
+        """Reveal the exact map-selected RS section, with legacy way fallback."""
+        if group_id in self.catalog:
+            candidates = [group_id]
+        elif section_id in self.catalog:
+            candidates = [section_id]
+        else:
+            candidates = [
+                key
+                for key, record in self.catalog.items()
+                if way_id in record.get("way_ids", [])
+            ]
         if province:
             preferred = [
                 key for key in candidates if self.meta(key).get("province") == province
@@ -581,7 +795,11 @@ class RailCatalog(QWidget):
             current.data(0, Qt.ItemDataRole.UserRole) if current is not None else None
         )
         key = current_key if current_key in candidates else sorted(candidates)[0]
-        if self.search.text():
+        if key not in self.items and len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
+            self.search.setText(key)
+            self.search_timer.stop()
+            self.populate()
+        elif self.search.text():
             self.search.clear()
         item = self.items.get(key)
         if item is None:
@@ -597,53 +815,60 @@ class RailCatalog(QWidget):
 
     def organize(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("国铁分类整理 · 轨道类型 / 省份 / 高速通道")
+        dialog.setWindowTitle("国铁分类整理 · 轨道类型 / 物理线路 / 车站")
         dialog.resize(1000, 650)
         layout = QVBoxLayout(dialog)
         layout.addWidget(
             QLabel(
-                "修改类型、省份、通道与分段，保存后重建目录；不修改 OSM 原始属性。仅高速主线参加八纵八横。"
+                "核对轨道类型和目录显示名；端点与相邻线段来自拓扑，不能在这里改断。"
             )
         )
-        table = QTableWidget(len(self.catalog), 6)
+        names = (
+            sorted(self.items)
+            if len(self.catalog) > MAX_CATALOG_TREE_ITEMS
+            else sorted(self.catalog)
+        )
+        if len(names) < len(self.catalog):
+            layout.addWidget(
+                QLabel(
+                    f"为控制内存，本次编辑当前搜索结果中的 {len(names):,} 项；"
+                    "可先在左侧搜索具体线路或车站。"
+                )
+            )
+        table = QTableWidget(len(names), 5)
         table.setHorizontalHeaderLabels(
             [
-                "原始线路 / 工程名称",
-                "省份",
-                "高速规划通道",
-                "通道分段",
+                "稳定编号",
+                "物理线路 / 车站",
+                "端点线段数",
                 "轨道类型",
                 "目录显示名称",
             ]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(table)
-        names = sorted(self.catalog)
         for row, name in enumerate(names):
             meta = self.meta(name)
             for col, value in enumerate(
                 (
-                    self.catalog[name].get("name", name),
-                    meta["province"],
-                    meta["corridor"],
-                    meta["section"],
+                    meta.get("catalog_group_id", name),
+                    meta.get("line_display_name")
+                    or meta.get("station_name")
+                    or meta.get("line_name")
+                    or name,
+                    str(meta.get("section_count", 1)),
                     meta.get("track_type", "未确认类型"),
                     meta.get("display_name", self.catalog[name].get("name", name)),
                 )
             ):
                 item = QTableWidgetItem(value)
-                if col == 0:
+                if col < 3:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 table.setItem(row, col, item)
             kind = QComboBox()
             kind.addItems(TRACK_TYPES)
             kind.setCurrentText(meta.get("track_type", "未确认类型"))
-            table.setCellWidget(row, 4, kind)
-            corridor = QComboBox()
-            corridor.setEditable(True)
-            corridor.addItems(["高速通道待核对", "不适用", *CORRIDORS])
-            corridor.setCurrentText(meta["corridor"])
-            table.setCellWidget(row, 2, corridor)
+            table.setCellWidget(row, 3, kind)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -653,30 +878,18 @@ class RailCatalog(QWidget):
         buttons.rejected.connect(dialog.reject)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        overrides = {
-            name: {
+        overrides = dict(self.overrides)
+        overrides.update(
+            {
+                name: {
                 **self.overrides.get(name, {}),
-                **{
-                    key: (
-                        table.cellWidget(row, 2).currentText()
-                        if col == 2
-                        else table.item(row, col).text()
-                    ).strip()
-                    or (
-                        "未分类省份"
-                        if key == "province"
-                        else "未分配通道"
-                        if key == "corridor"
-                        else "未分配分段"
-                    )
-                    for col, key in enumerate(("province", "corridor", "section"), 1)
-                },
-                "track_type": table.cellWidget(row, 4).currentText(),
-                "display_name": table.item(row, 5).text().strip()
+                "track_type": table.cellWidget(row, 3).currentText(),
+                "display_name": table.item(row, 4).text().strip()
                 or self.catalog[name].get("name", name),
             }
             for row, name in enumerate(names)
-        }
+            }
+        )
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".json.tmp")

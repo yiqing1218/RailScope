@@ -22,9 +22,11 @@ from railscope.services.simulation.geometry import distance_m
 try:
     from .rail import migrate_legacy_train_paths, shared_document
     from .rail_lines import line_identity
+    from .rail_categories import track_type
 except ImportError:
     from rail import migrate_legacy_train_paths, shared_document
     from rail_lines import line_identity
+    from rail_categories import track_type
 
 
 def _length(edge):
@@ -79,7 +81,11 @@ def _build_repository(graph, payload, registry, identity_db):
         to_node = bindings["nodes"][str(edge["to_node"])]
         repo.edges[canonical] = NetworkEdge(
             canonical, from_node, to_node, tuple(tuple(p) for p in edge["coordinates"]),
-            _length(edge), service=edge.get("way_tags", {}).get("service"),
+            _length(edge),
+            railway_type=edge.get("track_type")
+            or track_type(edge.get("way_tags", {}))[0],
+            service=edge.get("way_tags", {}).get("service"),
+            direction=edge.get("direction", "both"),
             infrastructure_line_id=line_id, source_id=source_id,
             construction_status=edge.get("construction_status", "construction" if edge.get("construction") else "operating"),
             snapshot_id=edge.get("snapshot_id"), osm_way_id=str(edge.get("osm_way_id") or "") or None,

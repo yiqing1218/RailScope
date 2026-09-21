@@ -302,13 +302,7 @@ class CorridorPanel(QScrollArea):
         manual_name = [bool(route)]
         name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
         policy = QComboBox()
-        policy.addItem("主线几何拼接 · 沿所选线路组合", "mainline")
-        policy.addItem("精确股道 · 多解时补充端点", "strict")
-        if (
-            route
-            and route["extensions"].get(RESOLUTION_KEY, {}).get("policy") == "strict"
-        ):
-            policy.setCurrentIndex(1)
+        policy.addItem("唯一径路 · 有歧义时选择 RS 区间", "strict")
         form.addRow("拼接方式", policy)
         source = (
             "已导入的全国铁路库"
@@ -319,22 +313,22 @@ class CorridorPanel(QScrollArea):
             text_label(
                 "基础设施来源："
                 + source
-                + "。主线拼接用于通道示意，站台和实际股道由车次细化。",
+                + "。正式通道只接受唯一径路或明确选择的 RS 区间。",
                 wrap=True,
             )
         )
         form.addRow(
             text_label(
-                "每行：起点 → 铁路线 → 终点。相邻行必须共用端点；中间不换线的线路所隐含。站台在车次时刻表中填写。已有车次引用的通道改径路时须另建编号。",
+                "每行：起点 → 铁路线 → 可选 RS 端点区间 → 终点。唯一径路可不选 RS；多股道或分支必须逐段选择。相邻行共用端点；停站和站台仍由车次时刻表定义。",
                 wrap=True,
             )
         )
         sequence = (
             (route.get("sequence") or library.describe(route["path"])) if route else []
         )
-        table = QTableWidget(0, 3)
+        table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(
-            ["起点 / 换线端点", "复用铁路线（稳定编号）", "终点 / 换线端点"]
+            ["起点 / 换线端点", "铁路线（稳定编号）", "精确 RS 区间（有歧义时必选）", "终点 / 换线端点"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
@@ -342,7 +336,7 @@ class CorridorPanel(QScrollArea):
             if manual_name[0] or not table.rowCount():
                 return
             start = table.cellWidget(0, 0)
-            end = table.cellWidget(table.rowCount() - 1, 2)
+            end = table.cellWidget(table.rowCount() - 1, 3)
             if (
                 start
                 and end
@@ -356,11 +350,11 @@ class CorridorPanel(QScrollArea):
                     + " · 单向通道"
                 )
 
-        def add_row(a=None, line=None, b=None):
+        def add_row(a=None, line=None, section=None, b=None):
             row = table.rowCount()
             table.insertRow(row)
             choices = {}
-            for col, value in [(0, a), (1, line), (2, b)]:
+            for col, value in [(0, a), (1, line), (2, section), (3, b)]:
                 if col == 1:
 
                     def search(query):
@@ -371,6 +365,22 @@ class CorridorPanel(QScrollArea):
                     label = (
                         library.lines[value]["name"] if value in library.lines else ""
                     )
+                elif col == 2:
+
+                    def search(query, choices=choices):
+                        line_id = choices.get(1).currentData() if choices.get(1) else None
+                        return [
+                            (item["id"], item["name"])
+                            for item in library.search_sections(query, line_id)
+                        ]
+
+                    if value:
+                        try:
+                            label = library.section(value, line)["name"]
+                        except (ValueError, KeyError):
+                            label = ""
+                    else:
+                        label = ""
                 else:
 
                     def search(query, choices=choices):
@@ -388,6 +398,8 @@ class CorridorPanel(QScrollArea):
                     search,
                     "搜索线路名称 / 编号"
                     if col == 1
+                    else "搜索 RS 稳定区间"
+                    if col == 2
                     else "搜索车站 / 线路所 / 道岔编号",
                     value,
                     label,
@@ -402,6 +414,7 @@ class CorridorPanel(QScrollArea):
             add_row(
                 sequence[index - 1]["node_id"],
                 sequence[index]["line_id"],
+                sequence[index].get("section_id"),
                 sequence[index + 1]["node_id"],
             )
         if not sequence:
@@ -411,9 +424,11 @@ class CorridorPanel(QScrollArea):
         add = QPushButton("添加线路组合段")
         add.clicked.connect(
             lambda: add_row(
-                table.cellWidget(table.rowCount() - 1, 2).currentData()
+                table.cellWidget(table.rowCount() - 1, 3).currentData()
                 if table.rowCount()
-                else None
+                else None,
+                None,
+                None,
             )
         )
         remove = QPushButton("删除所选组合段")
@@ -436,16 +451,16 @@ class CorridorPanel(QScrollArea):
             values = []
             for index in range(table.rowCount()):
                 entries = []
-                for col in range(3):
+                for col in range(4):
                     combo = table.cellWidget(index, col)
                     value = combo.currentData()
                     if combo.currentText() != combo.itemText(combo.currentIndex()):
                         value = combo.currentText().strip()
-                        if col != 1 and value.isdigit():
+                        if col in (0, 3) and value.isdigit():
                             value = int(value)
                     if value is not None and (
                         (col == 1 and value not in library.lines)
-                        or (col != 1 and value not in library.nodes)
+                        or (col in (0, 3) and value not in library.nodes)
                     ):
                         self.note.setText("请先选择有效端点和铁路线，再移动组合段。")
                         return
@@ -453,8 +468,8 @@ class CorridorPanel(QScrollArea):
                 values.append(entries)
             values[row], values[target] = values[target], values[row]
             table.setRowCount(0)
-            for a, line, b in values:
-                add_row(a, line, b)
+            for a, line, section, b in values:
+                add_row(a, line, section, b)
             table.selectRow(target)
 
         up.clicked.connect(lambda: move(-1))
@@ -481,27 +496,25 @@ class CorridorPanel(QScrollArea):
                 result = []
                 for row in range(table.rowCount()):
                     values = []
-                    for col in range(3):
+                    for col in range(4):
                         combo = table.cellWidget(row, col)
                         value = combo.currentData()
                         if combo.currentText() != combo.itemText(combo.currentIndex()):
                             value = combo.currentText().strip()
-                            if col != 1:
+                            if col in (0, 3) and value.isdigit():
                                 value = int(value)
                         values.append(value)
-                    a, line, b = values
+                    a, line, section, b = values
                     if a is None or line is None or b is None:
                         raise ValueError(f"第 {row + 1} 行：请选择起点、铁路线和终点")
                     if row and result[-1]["node_id"] != a:
                         raise ValueError("相邻组合段必须共用同一个端点")
                     if row == 0:
                         result.append({"kind": "endpoint", "node_id": a})
-                    result.extend(
-                        [
-                            {"kind": "line", "line_id": line},
-                            {"kind": "endpoint", "node_id": b},
-                        ]
-                    )
+                    line_entry = {"kind": "line", "line_id": line}
+                    if section:
+                        line_entry["section_id"] = section
+                    result.extend([line_entry, {"kind": "endpoint", "node_id": b}])
                 if not name.text().strip():
                     name.setText(library.nodes[result[0]["node_id"]] + " → " + library.nodes[result[-1]["node_id"]] + " · 单向通道")
                 payload = {

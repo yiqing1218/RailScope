@@ -701,7 +701,7 @@ class Desk(QMainWindow):
         self.add_action(edit, "线路分类整理 / 目录层级设置…", self.edit_hierarchy)
         self.add_action(
             edit,
-            "国铁轨道类型 / 通道分类整理…",
+            "国铁线段分类与命名…",
             lambda: self.rail_catalog_widget.organize(),
         )
         edit.addSeparator()
@@ -1729,7 +1729,11 @@ class Desk(QMainWindow):
             "osm_way_id"
         ) is not None:
             self.open_sidebar(0)
-            self.rail_catalog_widget.select_way(props["osm_way_id"])
+            self.rail_catalog_widget.select_way(
+                props["osm_way_id"],
+                section_id=props.get("section_id"),
+                group_id=props.get("catalog_group_id"),
+            )
         else:
             relation_ids = props.get("route_relation_ids", [])
             if isinstance(relation_ids, str):
@@ -2407,14 +2411,9 @@ def main():
                         checks["g1_does_not_autoplay"] = (
                             not editor.enabled and not editor.playing
                         )
-                        checks["rail_classified_by_province"] = (
-                            len(
-                                {
-                                    r["province"]
-                                    for r in window.rail_catalog_widget.catalog.values()
-                                }
-                            )
-                            >= 30
+                        checks["rail_catalog_topology_mode"] = (
+                            window.rail_catalog_widget.mode.currentText()
+                            == "轨道类型 → 物理线路 / 车站"
                         )
                         window.open_sidebar(2)
                         app.processEvents()
@@ -2451,10 +2450,10 @@ def main():
                             table = dialog.findChild(QTableWidget) if dialog else None
                             checks["corridor_endpoint_table_editable"] = bool(
                                 table
-                                and table.columnCount() == 3
+                                and table.columnCount() == 4
                                 and table.rowCount() == 1
                                 and table.cellWidget(0, 0).currentData() == 9560692742
-                                and table.cellWidget(0, 2).currentData() == 3687619616
+                                and table.cellWidget(0, 3).currentData() == 3687619616
                             )
                             if dialog:
                                 dialog.grab().save(

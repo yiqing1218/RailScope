@@ -67,10 +67,19 @@ def test_actual_rail_import_keeps_switches_platforms_tracks_and_raw_tags(tmp_pat
     assert len(tracks) == 2 and tracks[0]["properties"]["way_tags"]["maxspeed"] == "300"
     graph = json.loads((tmp_path / "out/rail_graph.json").read_text(encoding="utf-8"))
     assert len(graph["edges"]) == 3
+    assert all(edge.get("track_type") for edge in graph["edges"])
+    assert all(edge.get("track_type_evidence") for edge in graph["edges"])
     from desktop.rail_store import viewport, load_edges
 
     visible = viewport(tmp_path / "out", "rail", [120.99, 30.99, 121.03, 31.02], 14)
-    assert len(visible["features"]) == 2 and not visible["truncated"]
+    assert len(visible["features"]) == 3 and not visible["truncated"]
+    assert all(
+        feature["properties"].get("network_edge_id")
+        and feature["properties"].get("section_id")
+        and feature["properties"].get("section_from_node_id") is not None
+        and feature["properties"].get("section_to_node_id") is not None
+        for feature in visible["features"]
+    )
     assert len(load_edges(tmp_path / "out", [graph["edges"][0]["id"]])) == 1
     assert any(f["properties"].get("kind") == "switch" for f in graph["points"])
     assert (
@@ -79,6 +88,33 @@ def test_actual_rail_import_keeps_switches_platforms_tracks_and_raw_tags(tmp_pat
         )["features"][0]["geometry"]["type"]
         == "Polygon"
     )
+
+
+def test_rail_import_indexes_signal_boxes_and_every_topology_decision(tmp_path):
+    pytest.importorskip("osmium")
+    from desktop.import_rail import extract
+
+    source = tmp_path / "control-points.osm"
+    source.write_text(
+        """<osm version="0.6">
+        <node id="1" lon="120" lat="30"/>
+        <node id="2" lon="120.01" lat="30"/>
+        <node id="3" lon="120.02" lat="30"/>
+        <node id="4" lon="120.01" lat="30.01"/>
+        <node id="5" lon="120.03" lat="30"><tag k="railway" v="signal_box"/><tag k="name" v="测试线路所"/></node>
+        <way id="10"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="5"/><tag k="railway" v="rail"/><tag k="name" v="甲线"/></way>
+        <way id="11"><nd ref="2"/><nd ref="4"/><tag k="railway" v="rail"/><tag k="name" v="乙线"/></way>
+        </osm>""",
+        encoding="utf-8",
+    )
+    extract(source, tmp_path / "out")
+    graph = json.loads((tmp_path / "out/rail_graph.json").read_text(encoding="utf-8"))
+    by_source = {p["properties"]["osm_node_id"]: p["properties"] for p in graph["points"]}
+    assert by_source[5]["kind"] == "signal_box"
+    assert by_source[5]["name"] == "测试线路所"
+    assert by_source[2]["kind"] == "topology_junction"
+    assert by_source[2]["infrastructure_node_id"].startswith("NN-")
+    assert any(edge["from_node_id"] == by_source[2]["infrastructure_node_id"] or edge["to_node_id"] == by_source[2]["infrastructure_node_id"] for edge in graph["edges"])
 
 
 def test_national_viewport_has_hard_feature_budget(tmp_path):

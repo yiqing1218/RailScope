@@ -39,6 +39,7 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
         "重命名…",
         "移动到文件夹…",
+        "查看端点与相邻线段…",
         "归档",
     ]
     monkeypatch.setattr(

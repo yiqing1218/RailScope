@@ -28,9 +28,13 @@ def extract(pbf, output, identity_path=None):
             if kind not in (
                 "station",
                 "halt",
+                "stop",
                 "switch",
                 "railway_crossing",
+                "crossing",
+                "level_crossing",
                 "junction",
+                "signal_box",
                 "buffer_stop",
                 "signal",
             ):
@@ -47,7 +51,7 @@ def extract(pbf, output, identity_path=None):
                         "properties": {
                             "osm_node_id": node.id,
                             "kind": kind,
-                            "name": tags.get("name", str(node.id)),
+                            "name": tags.get("name", ""),
                             "node_tags": tags,
                             "source": "OpenStreetMap",
                         },
@@ -144,6 +148,8 @@ def extract(pbf, output, identity_path=None):
     )
     degree = Counter()
     used = set()
+    node_coordinates = {}
+    node_lines = {}
     way_relations = {}
     for relation in relations:
         for member in relation["members"]:
@@ -153,23 +159,71 @@ def extract(pbf, output, identity_path=None):
                 )
     for track in tracks:
         ids = track["properties"]["node_ids"]
+        tags = track["properties"]["way_tags"]
+        line_key = (
+            tags.get("name") or tags.get("full_name") or tags.get("ref") or "",
+            tags.get("ref", ""),
+            tags.get("service", "main"),
+        )
         used.update(ids)
+        for node_id, coordinate in zip(ids, track["geometry"]["coordinates"]):
+            node_coordinates.setdefault(node_id, coordinate)
+            node_lines.setdefault(node_id, set()).add(line_key)
         for a, b in zip(ids, ids[1:]):
             degree[a] += 1
             degree[b] += 1
         track["properties"]["rail_relation_ids"] = way_relations.get(
             track["properties"]["osm_way_id"], []
         )
+    explicit = {p["properties"]["osm_node_id"] for p in points}
+    # Every physical branch, line-membership change and terminal becomes a
+    # searchable control point, even when OSM has no named point feature there.
+    for node_id in sorted(used - explicit):
+        kind = None
+        if degree[node_id] > 2:
+            kind = "topology_junction"
+        elif len(node_lines.get(node_id, ())) > 1:
+            kind = "line_change"
+        elif degree[node_id] == 1:
+            kind = "line_terminal"
+        if kind:
+            points.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "osm_node_id": node_id,
+                        "kind": kind,
+                        "name": "",
+                        "node_tags": {},
+                        "source": "RailScope topology inference from OpenStreetMap",
+                        "verification_status": "OSM-derived",
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": node_coordinates[node_id],
+                    },
+                }
+            )
     # Discard subway-only switches, but retain named rail stations off the track.
     points = [
         p
         for p in points
-        if p["properties"]["kind"] in ("station", "halt", "junction")
+        if p["properties"]["kind"]
+        in (
+            "station",
+            "halt",
+            "stop",
+            "junction",
+            "signal_box",
+            "topology_junction",
+            "line_change",
+            "line_terminal",
+        )
         or p["properties"]["osm_node_id"] in used
     ]
     # Signals/ordinary shape vertices do not become artificial route segments.
     split = {p["properties"]["osm_node_id"] for p in points
-             if p["properties"]["kind"] in {"station", "halt", "switch", "junction", "railway_crossing", "buffer_stop"}} | {
+             if p["properties"]["kind"] in {"station", "halt", "stop", "switch", "junction", "signal_box", "topology_junction", "line_change", "line_terminal", "railway_crossing", "buffer_stop"}} | {
         n for n, d in degree.items() if d != 2
     }
     edges = []
@@ -187,6 +241,13 @@ def extract(pbf, output, identity_path=None):
                         "node_ids": ids[start : i + 1],
                         "coordinates": coords[start : i + 1],
                         "construction": track["properties"]["construction"],
+                        "direction": (
+                            "forward"
+                            if track["properties"]["way_tags"].get("oneway") in ("yes", "1", "true")
+                            else "reverse"
+                            if track["properties"]["way_tags"].get("oneway") == "-1"
+                            else "both"
+                        ),
                         "way_tags": track["properties"]["way_tags"],
                         "rail_relation_ids": track["properties"]["rail_relation_ids"],
                     }
@@ -200,6 +261,18 @@ def extract(pbf, output, identity_path=None):
                                now[:10], str(Path(pbf).stat().st_mtime_ns))
     prepared = registry.prepare(edges, snapshot)
     edges = prepared.edges
+    try:
+        from .rail_categories import track_type
+    except ImportError:
+        from rail_categories import track_type
+    for edge in edges:
+        edge["track_type"], edge["track_type_evidence"] = track_type(
+            edge.get("way_tags", {})
+        )
+    for point in points:
+        alias = "osm/node/" + str(point["properties"]["osm_node_id"])
+        if alias in prepared.nodes:
+            point["properties"]["infrastructure_node_id"] = prepared.nodes[alias]["id"]
     by_way = {}
     for edge in edges:
         by_way.setdefault(str(edge["osm_way_id"]), []).append(edge["id"])

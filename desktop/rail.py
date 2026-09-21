@@ -10,10 +10,12 @@ try:
     from .operating import Plan, strict_fields
     from .geometry import distance_m
     from .operating import parse_time
+    from .rail_lines import traversal_allowed
 except ImportError:
     from operating import Plan, strict_fields
     from geometry import distance_m
     from operating import parse_time
+    from rail_lines import traversal_allowed
 
 
 def expanded_document(payload):
@@ -88,8 +90,8 @@ def train_path(base_path, overrides, edges):
         ):
             raise ValueError("轨道区间编号或方向无效")
         edge = lookup.get(leg["edge_id"])
-        if not edge:
-            raise ValueError("通道引用的轨道不存在")
+        if not edge or not traversal_allowed(edge, leg["direction"]):
+            raise ValueError("通道引用的轨道不存在或不允许该运行方向")
         a, b = edge["from_node"], edge["to_node"]
         if leg["direction"] == "reverse":
             a, b = b, a
@@ -140,6 +142,7 @@ def train_path(base_path, overrides, edges):
                 not edge
                 or not edge_is_operating(edge)
                 or leg["direction"] not in ("forward", "reverse")
+                or not traversal_allowed(edge, leg["direction"])
             ):
                 raise ValueError("站场径路引用不存在、在建或方向错误的轨道")
             a, b = edge["from_node"], edge["to_node"]
@@ -378,6 +381,8 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 raise ValueError("径路区间不存在或尚在建设，不能运营")
             if leg["direction"] not in ("forward", "reverse"):
                 raise ValueError("区间方向无效")
+            if not traversal_allowed(edge, leg["direction"]):
+                raise ValueError("径路区间不允许该运行方向")
             forward = leg["direction"] == "forward"
             ids = edge.get("node_ids", [edge["from_node"], edge["to_node"]])
             geometry = edge["coordinates"]
@@ -601,6 +606,7 @@ def validate_corridors(routes, edges):
                 not edge
                 or not edge_is_operating(edge)
                 or leg["direction"] not in ("forward", "reverse")
+                or not traversal_allowed(edge, leg["direction"])
             ):
                 raise ValueError("通道区间不存在、在建或方向无效")
             ids = edge.get("node_ids", [edge["from_node"], edge["to_node"]])
