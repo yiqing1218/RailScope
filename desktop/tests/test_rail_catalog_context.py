@@ -38,7 +38,7 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
     menu = widget.item_menu(widget.items["track20"])
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
         "重命名…",
-        "移动到文件夹…",
+        "移动到",
         "查看端点与相邻线段…",
         "归档",
     ]
@@ -112,30 +112,23 @@ def test_failed_directory_save_leaves_state_and_map_unchanged(
     assert widget.map.calls == previous_calls
 
 
-def test_move_context_action_opens_editable_folder_dialog(qtbot, tmp_path):
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QComboBox, QDialogButtonBox
-
+def test_move_context_action_uses_existing_folder_cascade_without_rebuild(
+    qtbot, tmp_path, monkeypatch
+):
     widget, _ = make_catalog(qtbot, tmp_path)
-    problems = []
-
-    def choose():
-        dialog = QApplication.activeModalWidget()
-        try:
-            destination = dialog.findChild(QComboBox)
-            destination.setCurrentText("工作区 / 站场 / 自定义线路")
-            dialog.findChild(QDialogButtonBox).button(
-                QDialogButtonBox.StandardButton.Ok
-            ).click()
-        except Exception as error:
-            problems.append(error)
-        finally:
-            dialog.reject()
-
-    QTimer.singleShot(30, choose)
-    widget.item_menu(widget.items["track20"]).actions()[1].trigger()
-    assert not problems
-    assert widget.parents("track20") == ("工作区", "站场", "自定义线路")
+    widget.move_items({"track21"}, ["上海市", "上海市", "虹桥站"])
+    original_item = widget.items["track20"]
+    monkeypatch.setattr(
+        widget,
+        "populate",
+        lambda: (_ for _ in ()).throw(AssertionError("移动不应重建整棵线路树")),
+    )
+    move = widget.item_menu(original_item).actions()[1].menu()
+    province = next(action.menu() for action in move.actions() if action.text() == "上海市")
+    city = next(action.menu() for action in province.actions() if action.text() == "上海市")
+    next(action for action in city.actions() if action.text() == "虹桥站").trigger()
+    assert widget.parents("track20") == ("上海市", "上海市", "虹桥站")
+    assert widget.items["track20"] is original_item
 
 
 def test_large_directory_prioritizes_named_business_lines_and_omits_station_groups(
@@ -207,10 +200,18 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     menu = widget.station_item_menu(widget.station_items["node/100"])
     assert [action.text() for action in menu.actions()] == [
         "编辑名称、目录、类型和接轨线路…",
-        "批量移动到文件夹…",
+        "移动到",
         "在地图中定位",
         "归档",
     ]
+    destinations = []
+    widget.save_station_changes = (
+        lambda ids, **changes: destinations.append((set(ids), changes["folder_path"]))
+    )
+    move = menu.actions()[1].menu()
+    province = next(action.menu() for action in move.actions() if action.text() == "安徽省")
+    next(action for action in province.actions() if action.text() == "合肥市").trigger()
+    assert destinations == [({"node/100"}, ["安徽省", "合肥市"])]
     menu.actions()[0].trigger()
     assert requested == ["node/100"]
 
@@ -276,12 +277,19 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     )
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     qtbot.addWidget(widget)
+    original_item = widget.station_items["node/100"]
+    monkeypatch.setattr(
+        widget,
+        "populate_station_tree",
+        lambda: (_ for _ in ()).throw(AssertionError("编辑站点不应重建全国站点树")),
+    )
     widget.save_station_override(
         "node/100",
         folder_path=["自定义站点"],
         overview_attributes={"foreign_name": "Yanzhoubei Railway Station"},
         custom_attributes={"年货运量": "611.9百万吨"},
     )
+    assert widget.station_items["node/100"] is original_item
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
     widget.save_station_changes({"node/100"}, archived=True)
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")

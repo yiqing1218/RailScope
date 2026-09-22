@@ -2443,25 +2443,31 @@ class Desk(QMainWindow):
                 )
                 self.refresh_hierarchy({int(relation)})
             else:
+                changed = {}
+                if value["display_name"] != display_name:
+                    changed["display_name"] = value["display_name"]
+                if value["folder_path"] != list(current_path):
+                    changed["folder_path"] = value["folder_path"]
+                if value["track_type"] != primary.get("track_type", "未确认类型"):
+                    changed["track_type"] = value["track_type"]
+                if value["technical_attributes"] != attributes:
+                    changed["technical_attributes"] = value["technical_attributes"]
                 changes = {
-                    key: {
-                        "display_name": value["display_name"],
-                        "folder_path": value["folder_path"],
-                        "track_type": value["track_type"],
-                        "technical_attributes": value["technical_attributes"],
+                    key: dict(changed)
+                    for key in rail_groups
+                }
+                if changed:
+                    self.rail_catalog_widget.save_overrides(changes)
+                if "display_name" in changed:
+                    line_names = {
+                        self.rail_catalog_widget.catalog[key].get("line_id"): value[
+                            "display_name"
+                        ]
+                        for key in rail_groups
+                        if self.rail_catalog_widget.catalog[key].get("line_id")
                     }
-                    for key in rail_groups
-                }
-                self.rail_catalog_widget.save_overrides(changes)
-                line_names = {
-                    self.rail_catalog_widget.catalog[key].get("line_id"): value[
-                        "display_name"
-                    ]
-                    for key in rail_groups
-                    if self.rail_catalog_widget.catalog[key].get("line_id")
-                }
-                if line_names:
-                    self.rail_catalog_widget.line_names_changed.emit(line_names)
+                    if line_names:
+                        self.rail_catalog_widget.line_names_changed.emit(line_names)
             self.load_status.setText("  线路概览已保存到工作区；原始 OSM 数据未修改")
             self.display_feature(feature)
         except (ValueError, OSError) as error:

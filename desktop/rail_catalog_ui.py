@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import threading
 import sqlite3
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QInputDialog,
-    QFormLayout,
     QTabWidget,
     QAbstractItemView,
 )
@@ -45,6 +44,8 @@ MAX_STATION_TREE_ITEMS = 25000
 
 
 class CatalogTree(GrowingTree):
+    MIME_TYPE = "application/x-railscope-catalog-items"
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.drop_callback = None
@@ -54,7 +55,65 @@ class CatalogTree(GrowingTree):
         selected = self.selectedItems()
         if target and selected and callable(self.drop_callback):
             self.drop_callback(selected, target)
+            event.acceptProposedAction()
+            return
         event.ignore()
+
+    def mimeData(self, items):
+        """Do not serialize thousands of selected tree rows for an internal move."""
+        data = QMimeData()
+        data.setData(self.MIME_TYPE, b"move")
+        return data
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(self.MIME_TYPE):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(self.MIME_TYPE):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+
+def add_folder_move_menu(menu, paths, callback):
+    """Build an existing-folder cascade and return the created root actions."""
+    tree = {}
+    terminal = "__railscope_folder__"
+    for path in paths:
+        clean = tuple(str(part).strip() for part in path if str(part).strip())
+        if not clean or clean[0] == "已归档":
+            continue
+        node = tree
+        for part in clean:
+            node = node.setdefault(part, {})
+        node[terminal] = True
+
+    def populate(parent, node, prefix=()):
+        for label in sorted(key for key in node if key != terminal):
+            child = node[label]
+            path = (*prefix, label)
+            descendants = [key for key in child if key != terminal]
+            if descendants:
+                submenu = parent.addMenu(label)
+                if child.get(terminal):
+                    submenu.addAction(
+                        "移动到这里", lambda checked=False, value=path: callback(list(value))
+                    )
+                    submenu.addSeparator()
+                populate(submenu, child, path)
+            else:
+                parent.addAction(
+                    label, lambda checked=False, value=path: callback(list(value))
+                )
+
+    populate(menu, tree)
+    if not tree:
+        action = menu.addAction("暂无可用文件夹")
+        action.setEnabled(False)
+    return menu.actions()
 
 
 class RailCatalog(QWidget):
@@ -93,6 +152,8 @@ class RailCatalog(QWidget):
         self.station_query = ""
         self.station_masters = {"station": False, "control": False}
         self.station_excluded = set()
+        self.station_folder_paths = set()
+        self.line_folder_paths = set()
         if self.path.exists():
             try:
                 value = json.loads(self.path.read_text(encoding="utf-8"))
@@ -436,6 +497,10 @@ class RailCatalog(QWidget):
         for key, item in groups.items():
             item.setExpanded(key in expanded)
         self.groups = groups
+        self.line_group_paths = {id(item): path for path, item in groups.items()}
+        self.line_folder_paths.update(
+            path[1:] if path and path[0] == "已归档" else path for path in groups
+        )
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
             self.filter_tree(self.search.text())
         else:
@@ -485,39 +550,24 @@ class RailCatalog(QWidget):
         self.station_records, self.station_total = rail_station_records(
             self.directory, self.regions, self.station_query, MAX_STATION_TREE_ITEMS
         )
+        self.station_record_by_id = {
+            record["id"]: record for record in self.station_records
+        }
+        self.station_tree.setUpdatesEnabled(False)
         self.station_tree.clear()
         self.station_items = {}
         self.station_members = {}
         groups = {}
         for record in self.station_records:
-            custom = self.overrides.get("station:" + record["id"], {})
-            if custom.get("display_name"):
-                record["name"] = custom["display_name"]
-            if custom.get("station_type") in STATION_TYPES:
-                record["station_type"] = custom["station_type"]
-            if isinstance(custom.get("connected_lines"), list):
-                record["line_ids"] = [
-                    value["line_id"]
-                    for value in custom["connected_lines"]
-                    if isinstance(value, dict) and value.get("line_id")
-                ]
-                record["line_names"] = [
-                    self.display_name(line_id)
-                    if line_id in self.catalog
-                    else line_id
-                    for line_id in record["line_ids"]
-                ]
-            record["archived"] = bool(custom.get("archived", False))
-            record["overview_attributes"] = custom.get("overview_attributes", {})
-            record["custom_attributes"] = custom.get("custom_attributes", {})
-            folder = custom.get("folder_path")
-            path = (
-                tuple(folder)
-                if isinstance(folder, list) and folder
-                else (record["province"], record["city"])
+            record["_source_name"] = record["name"]
+            record["_source_station_type"] = record["station_type"]
+            record["_source_line_ids"] = list(record["line_ids"])
+            record["_source_line_names"] = list(record["line_names"])
+            self._apply_station_override(record)
+            path = self._station_path(record)
+            self.station_folder_paths.add(
+                tuple(path[1:] if path and path[0] == "已归档" else path)
             )
-            if record["archived"]:
-                path = ("已归档", *path)
             parent = self.station_tree.invisibleRootItem()
             current = ()
             for label in path:
@@ -528,12 +578,7 @@ class RailCatalog(QWidget):
             label = record["name"]
             item = QTreeWidgetItem(parent, [label, ""])
             item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
-            item.setToolTip(
-                0,
-                f"{label}\n车站类型：{record['station_type']}\n"
-                f"所在铁路：{', '.join(record['line_names']) or '待关联'}\n"
-                f"稳定编号：{record['id']}",
-            )
+            item.setToolTip(0, self._station_tooltip(record))
             control = Switch(self.station_is_visible(record))
             control.setEnabled(not record["archived"])
             control.toggled.connect(
@@ -549,12 +594,61 @@ class RailCatalog(QWidget):
         for path, item in groups.items():
             item.setText(0, item.text(0) + f" · {item.childCount()} 项")
         self.station_groups = groups
+        self.station_group_paths = {id(item): path for path, item in groups.items()}
         shown = len(self.station_records)
         suffix = "；结果已限制，请在主地图搜索框继续缩小范围" if shown < self.station_total else ""
         self.station_note.setText(
             f"共匹配 {self.station_total:,} 个车站、线路所或道岔，当前列出 {shown:,} 项{suffix}。"
         )
         self.station_tree.schedule_height()
+        self.station_tree.setUpdatesEnabled(True)
+
+    def _apply_station_override(self, record):
+        custom = self.overrides.get("station:" + record["id"], {})
+        record["name"] = custom.get("display_name") or record.get(
+            "_source_name", record["name"]
+        )
+        source_type = record.get("_source_station_type", record["station_type"])
+        record["station_type"] = (
+            custom.get("station_type")
+            if custom.get("station_type") in STATION_TYPES
+            else source_type
+        )
+        record["line_ids"] = list(record.get("_source_line_ids", record["line_ids"]))
+        record["line_names"] = list(
+            record.get("_source_line_names", record["line_names"])
+        )
+        if isinstance(custom.get("connected_lines"), list):
+            record["line_ids"] = [
+                value["line_id"]
+                for value in custom["connected_lines"]
+                if isinstance(value, dict) and value.get("line_id")
+            ]
+            record["line_names"] = [
+                self.display_name(line_id) if line_id in self.catalog else line_id
+                for line_id in record["line_ids"]
+            ]
+        record["archived"] = bool(custom.get("archived", False))
+        record["overview_attributes"] = custom.get("overview_attributes", {})
+        record["custom_attributes"] = custom.get("custom_attributes", {})
+
+    def _station_path(self, record):
+        custom = self.overrides.get("station:" + record["id"], {})
+        folder = custom.get("folder_path")
+        path = (
+            tuple(folder)
+            if isinstance(folder, list) and folder
+            else (record["province"], record["city"])
+        )
+        return ("已归档", *path) if record.get("archived") else path
+
+    @staticmethod
+    def _station_tooltip(record):
+        return (
+            f"{record['name']}\n车站类型：{record['station_type']}\n"
+            f"所在铁路：{', '.join(record['line_names']) or '待关联'}\n"
+            f"稳定编号：{record['id']}"
+        )
 
     @staticmethod
     def station_group(record):
@@ -661,11 +755,14 @@ class RailCatalog(QWidget):
         item = self.station_tree.itemAt(position)
         if not item or not item.data(0, Qt.ItemDataRole.UserRole):
             return
-        self.station_tree.setCurrentItem(item)
         selected = self.station_tree.selectedItems()
+        if item not in selected:
+            self.station_tree.clearSelection()
+            self.station_tree.setCurrentItem(item)
+            selected = [item]
         ids = {
             station_id
-            for selected_item in (selected if item in selected else [item])
+            for selected_item in selected
             for station_id in self.station_members.get(id(selected_item), set())
         }
         menu = self.station_item_menu(item, ids)
@@ -681,7 +778,12 @@ class RailCatalog(QWidget):
             lambda: self.station_edit_requested.emit(station_id),
         )
         edit.setEnabled(len(station_ids) == 1 and bool(station_id))
-        menu.addAction("批量移动到文件夹…", lambda: self.move_station_dialog(station_ids))
+        move = menu.addMenu("移动到")
+        add_folder_move_menu(
+            move,
+            self.station_destination_paths(),
+            lambda path: self.save_station_changes(station_ids, folder_path=path),
+        )
         menu.addAction("在地图中定位", lambda: self.focus_station_item(item, 0))
         archived = all(
             self.overrides.get("station:" + value, {}).get("archived", False)
@@ -693,20 +795,17 @@ class RailCatalog(QWidget):
         )
         return menu
 
-    def move_station_dialog(self, station_ids):
-        if not station_ids:
-            return
-        value, accepted = QInputDialog.getText(
-            self,
-            "批量移动站点",
-            "目标文件夹路径（使用 / 分隔，可为任意层级）",
-        )
-        if accepted:
-            folders = [part.strip() for part in value.split("/") if part.strip()]
-            if not folders:
-                QMessageBox.warning(self, "站点未移动", "请填写至少一级文件夹")
-                return
-            self.save_station_changes(station_ids, folder_path=folders)
+    def station_destination_paths(self):
+        paths = set(self.station_folder_paths)
+        for path in self.station_groups:
+            clean = path[1:] if path and path[0] == "已归档" else path
+            if clean:
+                paths.add(tuple(clean))
+        for key, value in self.overrides.items():
+            folder = value.get("folder_path") if key.startswith("station:") else None
+            if isinstance(folder, list) and folder:
+                paths.add(tuple(folder))
+        return paths
 
     def drop_station_items(self, items, target):
         path = next(
@@ -726,6 +825,92 @@ class RailCatalog(QWidget):
         if path and station_ids:
             clean = list(path[1:] if path[0] == "已归档" else path)
             self.save_station_changes(station_ids, folder_path=clean)
+
+    def _station_group_path(self, item):
+        return self.station_group_paths.get(id(item)) if item is not None else None
+
+    def _ensure_station_group(self, path):
+        parent = self.station_tree.invisibleRootItem()
+        current = ()
+        for label in path:
+            current += (label,)
+            if current not in self.station_groups:
+                self.station_groups[current] = QTreeWidgetItem(parent, [label, ""])
+                self.station_members[id(self.station_groups[current])] = set()
+                self.station_group_paths[id(self.station_groups[current])] = current
+            parent = self.station_groups[current]
+        return parent
+
+    def _refresh_station_items(self, station_ids):
+        affected_paths = set()
+        selected = None
+        self.station_tree.setUpdatesEnabled(False)
+        try:
+            for station_id in station_ids:
+                record = self.station_record_by_id.get(station_id)
+                item = self.station_items.get(station_id)
+                if record is None or item is None:
+                    continue
+                was_selected = item.isSelected()
+                old_parent = item.parent()
+                old_path = self._station_group_path(old_parent)
+                if old_path:
+                    for length in range(1, len(old_path) + 1):
+                        prefix = old_path[:length]
+                        affected_paths.add(prefix)
+                        group = self.station_groups.get(prefix)
+                        if group:
+                            self.station_members.setdefault(id(group), set()).discard(
+                                station_id
+                            )
+                control = self.station_tree.itemWidget(item, 1)
+                self.station_tree.removeItemWidget(item, 1)
+                if old_parent:
+                    old_parent.takeChild(old_parent.indexOfChild(item))
+                self._apply_station_override(record)
+                new_path = self._station_path(record)
+                clean = new_path[1:] if new_path and new_path[0] == "已归档" else new_path
+                if clean:
+                    self.station_folder_paths.add(tuple(clean))
+                new_parent = self._ensure_station_group(new_path)
+                new_parent.addChild(item)
+                for length in range(1, len(new_path) + 1):
+                    prefix = new_path[:length]
+                    affected_paths.add(prefix)
+                    group = self.station_groups[prefix]
+                    self.station_members.setdefault(id(group), set()).add(station_id)
+                item.setText(0, record["name"])
+                item.setToolTip(0, self._station_tooltip(record))
+                if control is not None:
+                    self.station_tree.setItemWidget(item, 1, control)
+                    control.blockSignals(True)
+                    control.setEnabled(not record.get("archived", False))
+                    control.setChecked(self.station_is_visible(record))
+                    control.blockSignals(False)
+                item.setSelected(was_selected)
+                selected = item if was_selected or selected is None else selected
+
+            for path in sorted(affected_paths, key=len, reverse=True):
+                group = self.station_groups.get(path)
+                if group is None or group.childCount():
+                    continue
+                parent = group.parent() or self.station_tree.invisibleRootItem()
+                parent.takeChild(parent.indexOfChild(group))
+                self.station_members.pop(id(group), None)
+                self.station_group_paths.pop(id(group), None)
+                del self.station_groups[path]
+                clean = path[1:] if path and path[0] == "已归档" else path
+                self.station_folder_paths.discard(tuple(clean))
+            for path in sorted(affected_paths, key=len):
+                group = self.station_groups.get(path)
+                if group is not None:
+                    group.setText(0, f"{path[-1]} · {group.childCount()} 项")
+            if selected is not None:
+                self.station_tree.setCurrentItem(selected)
+                self.station_tree.scrollToItem(selected)
+            self.station_tree.schedule_height()
+        finally:
+            self.station_tree.setUpdatesEnabled(True)
 
     def select_station(self, osm_node_id):
         key = f"node/{osm_node_id}"
@@ -756,7 +941,7 @@ class RailCatalog(QWidget):
         custom_attributes=None,
         archived=None,
     ):
-        record = next((r for r in self.station_records if r["id"] == station_id), None)
+        record = self.station_record_by_id.get(station_id)
         if not record:
             raise ValueError("车站目录中不存在该对象，请先通过主搜索框定位")
         key = "station:" + station_id
@@ -816,9 +1001,22 @@ class RailCatalog(QWidget):
         temporary.replace(self.path)
         self.overrides = proposed
         self.metadata_changed.emit()
-        self.populate_station_tree()
+        self._refresh_station_items({station_id})
+        self.send_station_visibility()
 
     def save_station_changes(self, station_ids, **changes):
+        station_ids = set(station_ids)
+        if not station_ids:
+            return
+        if "folder_path" in changes:
+            folder = changes["folder_path"]
+            if (
+                not isinstance(folder, list)
+                or not folder
+                or any(not isinstance(value, str) or not value.strip() for value in folder)
+            ):
+                raise ValueError("请选择有效的目标文件夹")
+            changes["folder_path"] = [value.strip() for value in folder]
         proposed = {**self.overrides}
         for station_id in station_ids:
             key = "station:" + station_id
@@ -831,14 +1029,37 @@ class RailCatalog(QWidget):
         temporary.replace(self.path)
         self.overrides = proposed
         self.metadata_changed.emit()
-        self.populate_station_tree()
+        self._refresh_station_items(station_ids)
+        self.send_station_visibility()
 
     def save_overrides(self, changes):
         """Persist presentation metadata atomically; never write the GIS source."""
-        proposed = {**self.overrides}
+        effective = {}
         for key, change in changes.items():
             if key not in self.catalog:
                 raise ValueError("目录项已变化，请重新选择")
+            meta = self.meta(key)
+            current_path = list(self.parents(key))
+            if current_path and current_path[0] == "已归档":
+                current_path = current_path[1:]
+            values = {}
+            for field, value in change.items():
+                current = (
+                    self.display_name(key)
+                    if field == "display_name"
+                    else current_path
+                    if field == "folder_path"
+                    else meta.get(field)
+                )
+                if value != current:
+                    values[field] = value
+            if values:
+                effective[key] = values
+        if not effective:
+            return
+
+        proposed = {**self.overrides}
+        for key, change in effective.items():
             meta = self.meta(key)
             proposed[key] = {
                 **self.overrides.get(key, {}),
@@ -865,9 +1086,11 @@ class RailCatalog(QWidget):
             key for key in self.visible if not self.meta(key).get("archived", False)
         }
         self.send_visibility(False)
-        self.populate()
-        if changes:
-            item = self.items.get(sorted(changes)[0])
+        folder_only = all(set(change) <= {"folder_path"} for change in effective.values())
+        if not (folder_only and self._move_line_items_in_tree(set(effective))):
+            self.populate()
+        if effective:
+            item = self.items.get(sorted(effective)[0])
             if item:
                 ancestor = item.parent()
                 while ancestor:
@@ -886,6 +1109,7 @@ class RailCatalog(QWidget):
         )
 
     def move_items(self, keys, folders):
+        keys = set(keys)
         if (
             not isinstance(folders, list)
             or not folders
@@ -895,10 +1119,136 @@ class RailCatalog(QWidget):
         folders = [f.strip() for f in folders]
         if folders[0] == "已归档":
             raise ValueError("「已归档」是保留目录；请使用归档功能")
-        self.save_overrides({key: {"folder_path": folders} for key in keys})
+        proposed = {**self.overrides}
+        for key in keys:
+            if key not in self.catalog:
+                raise ValueError("目录项已变化，请重新选择")
+            proposed[key] = {
+                **self.overrides.get(key, {}),
+                "folder_path": folders,
+            }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary.replace(self.path)
+        self.overrides = proposed
+        self.metadata_changed.emit()
+        if not self._move_line_items_in_tree(keys):
+            self.populate()
         self.note.setText(
             "已移动目录项：" + " / ".join(folders) + "；原始分类和数据保留。"
         )
+
+    def _line_group_path(self, item):
+        return self.line_group_paths.get(id(item)) if item is not None else None
+
+    def _ensure_line_group(self, path):
+        parent = self.tree.invisibleRootItem()
+        current = ()
+        for label in path:
+            current += (label,)
+            if current not in self.groups:
+                self.groups[current] = QTreeWidgetItem(parent, [label, ""])
+                self.members[id(self.groups[current])] = set()
+                self.line_group_paths[id(self.groups[current])] = current
+            parent = self.groups[current]
+        return parent
+
+    def _sync_line_group(self, path):
+        item = self.groups.get(path)
+        if item is None:
+            return
+        keys = self.members.setdefault(id(item), set())
+        displayed = {id(self.items[key]) for key in keys if key in self.items}
+        item.setText(0, f"{path[-1]} · {len(displayed)} 项")
+        control = self.tree.itemWidget(item, 1)
+        if control is None:
+            control = Switch(False)
+            control.toggled.connect(lambda on, values=keys: self.toggle_group(values, on))
+            self.tree.setItemWidget(item, 1, control)
+        visible = {key for key in keys if self.is_visible(key)}
+        control.blockSignals(True)
+        control.setChecked(bool(visible))
+        control.setMixed(bool(visible) and visible != keys)
+        control.setEnabled(
+            not self.catalog_limited
+            and bool(keys)
+            and not all(self.meta(key).get("archived", False) for key in keys)
+        )
+        control.blockSignals(False)
+
+    def _move_line_items_in_tree(self, keys):
+        items = {id(self.items[key]): self.items[key] for key in keys if key in self.items}
+        moves = []
+        for item in items.values():
+            members = set(self.members.get(id(item), set()))
+            if not members or not members.issubset(keys):
+                return False
+            destinations = {self.parents(key) for key in members}
+            if len(destinations) != 1:
+                return False
+            moves.append((item, members, destinations.pop()))
+        if not moves:
+            return True
+
+        affected = set()
+        selected = None
+        self.tree.setUpdatesEnabled(False)
+        try:
+            for item, members, destination in moves:
+                old_parent = item.parent()
+                old_path = self._line_group_path(old_parent)
+                if old_path:
+                    for length in range(1, len(old_path) + 1):
+                        prefix = old_path[:length]
+                        affected.add(prefix)
+                        group = self.groups.get(prefix)
+                        if group:
+                            self.members.setdefault(id(group), set()).difference_update(
+                                members
+                            )
+                was_selected = item.isSelected()
+                control = self.tree.itemWidget(item, 1)
+                self.tree.removeItemWidget(item, 1)
+                if old_parent:
+                    old_parent.takeChild(old_parent.indexOfChild(item))
+                new_parent = self._ensure_line_group(destination)
+                new_parent.addChild(item)
+                for length in range(1, len(destination) + 1):
+                    prefix = destination[:length]
+                    affected.add(prefix)
+                    group = self.groups[prefix]
+                    self.members.setdefault(id(group), set()).update(members)
+                    group.setExpanded(True)
+                if control is not None:
+                    self.tree.setItemWidget(item, 1, control)
+                item.setSelected(was_selected)
+                selected = item if was_selected or selected is None else selected
+                clean = destination[1:] if destination[0] == "已归档" else destination
+                self.line_folder_paths.add(tuple(clean))
+
+            for path in sorted(affected, key=len, reverse=True):
+                group = self.groups.get(path)
+                if group is None or group.childCount():
+                    continue
+                parent = group.parent() or self.tree.invisibleRootItem()
+                parent.takeChild(parent.indexOfChild(group))
+                self.members.pop(id(group), None)
+                self.line_group_paths.pop(id(group), None)
+                del self.groups[path]
+                clean = path[1:] if path and path[0] == "已归档" else path
+                self.line_folder_paths.discard(tuple(clean))
+            for path in sorted(affected, key=len):
+                self._sync_line_group(path)
+            if selected is not None:
+                self.tree.setCurrentItem(selected)
+                self.tree.scrollToItem(selected)
+            self.tree.schedule_height()
+            return True
+        finally:
+            self.tree.setUpdatesEnabled(True)
 
     def rename_item(self, key, name):
         if not isinstance(name, str) or not name.strip():
@@ -953,11 +1303,14 @@ class RailCatalog(QWidget):
         item = self.tree.itemAt(position)
         if not item:
             return
-        self.tree.setCurrentItem(item)
         selected = self.tree.selectedItems()
+        if item not in selected:
+            self.tree.clearSelection()
+            self.tree.setCurrentItem(item)
+            selected = [item]
         keys = {
             key
-            for selected_item in (selected if item in selected else [item])
+            for selected_item in selected
             for key in self.members.get(id(selected_item), set())
         }
         menu = self.item_menu(item, keys)
@@ -1001,7 +1354,12 @@ class RailCatalog(QWidget):
 
         rename_action = menu.addAction("重命名…", rename)
         rename_action.setEnabled(bool(leaf or (folder and folder != ("已归档",))))
-        menu.addAction("移动到文件夹…", lambda: self.move_dialog(keys))
+        move = menu.addMenu("移动到")
+        add_folder_move_menu(
+            move,
+            self.line_destination_paths(),
+            lambda path: perform(lambda: self.move_items(keys, path)),
+        )
         if leaf:
             menu.addAction(
                 "查看线路属性…"
@@ -1016,6 +1374,19 @@ class RailCatalog(QWidget):
             lambda: perform(lambda: self.archive_items(keys, not archived)),
         )
         return menu
+
+    def line_destination_paths(self):
+        paths = set(self.line_folder_paths)
+        paths.update(self.station_destination_paths())
+        for path in self.groups:
+            clean = path[1:] if path and path[0] == "已归档" else path
+            if clean:
+                paths.add(tuple(clean))
+        for key, value in self.overrides.items():
+            folder = value.get("folder_path") if key in self.catalog else None
+            if isinstance(folder, list) and folder:
+                paths.add(tuple(folder))
+        return paths
 
     def drop_line_items(self, items, target):
         path = next((path for path, folder in self.groups.items() if folder is target), None)
@@ -1058,48 +1429,6 @@ class RailCatalog(QWidget):
             f"相接线段：{', '.join(meta.get('to_adjacent_sections', [])) or '无 / 待重建'}"
         )
         QMessageBox.information(self, "端点与线段属性", detail)
-
-    def move_dialog(self, keys):
-        if not keys:
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle("移动目录项 · 原始数据保留")
-        dialog.resize(520, 180)
-        form = QFormLayout(dialog)
-        form.addRow(
-            text_label(
-                f"移动 {len(keys)} 个目录项。选择已有目录，或输入新的多级路径。",
-                wrap=True,
-            )
-        )
-        destination = QComboBox()
-        destination.setEditable(True)
-        paths = {self.parents(key) for key in self.catalog}
-        paths = {p[1:] if p[0] == "已归档" else p for p in paths}
-        destination.addItems(sorted(" / ".join(path) for path in paths))
-        current = self.parents(sorted(keys)[0])
-        if current[0] == "已归档":
-            current = current[1:]
-        destination.setCurrentText(" / ".join(current))
-        form.addRow("目标文件夹", destination)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("移动")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.rejected.connect(dialog.reject)
-
-        def accept():
-            try:
-                folders = destination.currentText().split("/")
-                self.move_items(keys, folders)
-                dialog.accept()
-            except (ValueError, OSError) as error:
-                QMessageBox.warning(dialog, "目录未移动", str(error))
-
-        buttons.accepted.connect(accept)
-        form.addRow(buttons)
-        dialog.exec()
 
     def filter_tree(self, text):
         query = text.strip().lower()
