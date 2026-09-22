@@ -1,7 +1,7 @@
 import json
 from copy import deepcopy
 
-from desktop.rail_catalog_ui import RailCatalog
+from desktop.rail_catalog_ui import CatalogTree, RailCatalog
 from desktop.tests.test_operating_ui import MapStub
 
 
@@ -25,6 +25,38 @@ def make_catalog(qtbot, tmp_path):
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     qtbot.addWidget(widget)
     return widget, path
+
+
+def test_catalog_drop_finishes_after_qt_drop_event_returns(qtbot, monkeypatch):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtWidgets import QTreeWidgetItem
+
+    tree = CatalogTree()
+    qtbot.addWidget(tree)
+    source = QTreeWidgetItem(tree, ["源对象"])
+    target = QTreeWidgetItem(tree, ["目标文件夹"])
+    source.setSelected(True)
+    calls = []
+    tree.drop_callback = lambda selected, folder: calls.append((selected, folder))
+    monkeypatch.setattr(tree, "itemAt", lambda position: target)
+
+    class Event:
+        accepted = False
+
+        def position(self):
+            return QPointF(1, 1)
+
+        def acceptProposedAction(self):
+            self.accepted = True
+
+        def ignore(self):
+            pass
+
+    event = Event()
+    tree.dropEvent(event)
+    assert event.accepted and calls == []
+    qtbot.waitUntil(lambda: bool(calls))
+    assert calls == [([source], target)]
 
 
 def test_context_rename_move_archive_restore_persist_without_source_edits(
@@ -127,8 +159,12 @@ def test_move_context_action_uses_existing_folder_cascade_without_rebuild(
     province = next(action.menu() for action in move.actions() if action.text() == "上海市")
     city = next(action.menu() for action in province.actions() if action.text() == "上海市")
     next(action for action in city.actions() if action.text() == "虹桥站").trigger()
+    qtbot.waitUntil(
+        lambda: widget.parents("track20") == ("上海市", "上海市", "虹桥站")
+    )
     assert widget.parents("track20") == ("上海市", "上海市", "虹桥站")
-    assert widget.items["track20"] is original_item
+    assert widget.items["track20"] is not original_item
+    assert widget.tree.itemWidget(widget.items["track20"], 1) is not None
 
 
 def test_large_directory_prioritizes_named_business_lines_and_omits_station_groups(
@@ -211,6 +247,7 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     move = menu.actions()[1].menu()
     province = next(action.menu() for action in move.actions() if action.text() == "安徽省")
     next(action for action in province.actions() if action.text() == "合肥市").trigger()
+    qtbot.waitUntil(lambda: bool(destinations))
     assert destinations == [({"node/100"}, ["安徽省", "合肥市"])]
     menu.actions()[0].trigger()
     assert requested == ["node/100"]
@@ -289,7 +326,8 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
         overview_attributes={"foreign_name": "Yanzhoubei Railway Station"},
         custom_attributes={"年货运量": "611.9百万吨"},
     )
-    assert widget.station_items["node/100"] is original_item
+    assert widget.station_items["node/100"] is not original_item
+    assert widget.station_tree.itemWidget(widget.station_items["node/100"], 1) is not None
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
     widget.save_station_changes({"node/100"}, archived=True)
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")

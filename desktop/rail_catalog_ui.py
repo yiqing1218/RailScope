@@ -52,12 +52,21 @@ class CatalogTree(GrowingTree):
 
     def dropEvent(self, event):
         target = self.itemAt(event.position().toPoint())
-        selected = self.selectedItems()
+        selected = list(self.selectedItems())
         if target and selected and callable(self.drop_callback):
-            self.drop_callback(selected, target)
+            callback = self.drop_callback
             event.acceptProposedAction()
+            QTimer.singleShot(
+                0, lambda: self._finish_drop(callback, selected, target)
+            )
             return
         event.ignore()
+
+    def _finish_drop(self, callback, selected, target):
+        try:
+            callback(selected, target)
+        except (ValueError, OSError, RuntimeError) as error:
+            QMessageBox.warning(self, "目录未移动", str(error))
 
     def mimeData(self, items):
         """Do not serialize thousands of selected tree rows for an internal move."""
@@ -92,6 +101,9 @@ def add_folder_move_menu(menu, paths, callback):
         node[terminal] = True
 
     def populate(parent, node, prefix=()):
+        def schedule(path):
+            QTimer.singleShot(0, lambda value=list(path): callback(value))
+
         for label in sorted(key for key in node if key != terminal):
             child = node[label]
             path = (*prefix, label)
@@ -100,13 +112,13 @@ def add_folder_move_menu(menu, paths, callback):
                 submenu = parent.addMenu(label)
                 if child.get(terminal):
                     submenu.addAction(
-                        "移动到这里", lambda checked=False, value=path: callback(list(value))
+                        "移动到这里", lambda checked=False, value=path: schedule(value)
                     )
                     submenu.addSeparator()
                 populate(submenu, child, path)
             else:
                 parent.addAction(
-                    label, lambda checked=False, value=path: callback(list(value))
+                    label, lambda checked=False, value=path: schedule(value)
                 )
 
     populate(menu, tree)
@@ -773,6 +785,13 @@ class RailCatalog(QWidget):
         station_id = item.data(0, Qt.ItemDataRole.UserRole)
         station_ids = set(station_ids or ([station_id] if station_id else []))
         menu = QMenu(self)
+
+        def perform(action):
+            try:
+                action()
+            except (ValueError, OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "目录修改未保存", str(error))
+
         edit = menu.addAction(
             "编辑名称、目录、类型和接轨线路…",
             lambda: self.station_edit_requested.emit(station_id),
@@ -782,7 +801,9 @@ class RailCatalog(QWidget):
         add_folder_move_menu(
             move,
             self.station_destination_paths(),
-            lambda path: self.save_station_changes(station_ids, folder_path=path),
+            lambda path: perform(
+                lambda: self.save_station_changes(station_ids, folder_path=path)
+            ),
         )
         menu.addAction("在地图中定位", lambda: self.focus_station_item(item, 0))
         archived = all(
@@ -791,7 +812,9 @@ class RailCatalog(QWidget):
         )
         menu.addAction(
             "取消归档 / 恢复" if archived else "归档",
-            lambda: self.save_station_changes(station_ids, archived=not archived),
+            lambda: perform(
+                lambda: self.save_station_changes(station_ids, archived=not archived)
+            ),
         )
         return menu
 
@@ -843,16 +866,18 @@ class RailCatalog(QWidget):
 
     def _refresh_station_items(self, station_ids):
         affected_paths = set()
-        selected = None
+        self.station_tree.setCurrentItem(None)
         self.station_tree.setUpdatesEnabled(False)
         try:
             for station_id in station_ids:
                 record = self.station_record_by_id.get(station_id)
-                item = self.station_items.get(station_id)
-                if record is None or item is None:
+                old_item = self.station_items.get(station_id)
+                if record is None or old_item is None:
                     continue
-                was_selected = item.isSelected()
-                old_parent = item.parent()
+                was_selected = old_item.isSelected()
+                if was_selected:
+                    old_item.setSelected(False)
+                old_parent = old_item.parent()
                 old_path = self._station_group_path(old_parent)
                 if old_path:
                     for length in range(1, len(old_path) + 1):
@@ -863,51 +888,56 @@ class RailCatalog(QWidget):
                             self.station_members.setdefault(id(group), set()).discard(
                                 station_id
                             )
-                control = self.station_tree.itemWidget(item, 1)
-                self.station_tree.removeItemWidget(item, 1)
+                control = self.station_tree.itemWidget(old_item, 1)
+                self.station_tree.removeItemWidget(old_item, 1)
+                if control is not None:
+                    control.deleteLater()
+                self.station_items.pop(station_id, None)
+                self.station_members.pop(id(old_item), None)
+                detached = None
                 if old_parent:
-                    old_parent.takeChild(old_parent.indexOfChild(item))
+                    detached = old_parent.takeChild(old_parent.indexOfChild(old_item))
                 self._apply_station_override(record)
                 new_path = self._station_path(record)
                 clean = new_path[1:] if new_path and new_path[0] == "已归档" else new_path
                 if clean:
                     self.station_folder_paths.add(tuple(clean))
                 new_parent = self._ensure_station_group(new_path)
-                new_parent.addChild(item)
+                item = QTreeWidgetItem(new_parent, [record["name"], ""])
+                item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+                item.setToolTip(0, self._station_tooltip(record))
+                control = Switch(self.station_is_visible(record))
+                control.setEnabled(not record.get("archived", False))
+                control.toggled.connect(
+                    lambda on, station=record: self.toggle_station(station, on)
+                )
+                self.station_tree.setItemWidget(item, 1, control)
+                self.station_items[station_id] = item
+                self.station_members[id(item)] = {station_id}
                 for length in range(1, len(new_path) + 1):
                     prefix = new_path[:length]
                     affected_paths.add(prefix)
                     group = self.station_groups[prefix]
                     self.station_members.setdefault(id(group), set()).add(station_id)
-                item.setText(0, record["name"])
-                item.setToolTip(0, self._station_tooltip(record))
-                if control is not None:
-                    self.station_tree.setItemWidget(item, 1, control)
-                    control.blockSignals(True)
-                    control.setEnabled(not record.get("archived", False))
-                    control.setChecked(self.station_is_visible(record))
-                    control.blockSignals(False)
                 item.setSelected(was_selected)
-                selected = item if was_selected or selected is None else selected
+                del detached
 
             for path in sorted(affected_paths, key=len, reverse=True):
                 group = self.station_groups.get(path)
                 if group is None or group.childCount():
                     continue
                 parent = group.parent() or self.station_tree.invisibleRootItem()
-                parent.takeChild(parent.indexOfChild(group))
+                detached = parent.takeChild(parent.indexOfChild(group))
                 self.station_members.pop(id(group), None)
                 self.station_group_paths.pop(id(group), None)
                 del self.station_groups[path]
                 clean = path[1:] if path and path[0] == "已归档" else path
                 self.station_folder_paths.discard(tuple(clean))
+                del detached
             for path in sorted(affected_paths, key=len):
                 group = self.station_groups.get(path)
                 if group is not None:
                     group.setText(0, f"{path[-1]} · {group.childCount()} 项")
-            if selected is not None:
-                self.station_tree.setCurrentItem(selected)
-                self.station_tree.scrollToItem(selected)
             self.station_tree.schedule_height()
         finally:
             self.station_tree.setUpdatesEnabled(True)
@@ -1194,10 +1224,13 @@ class RailCatalog(QWidget):
             return True
 
         affected = set()
-        selected = None
+        self.tree.setCurrentItem(None)
         self.tree.setUpdatesEnabled(False)
         try:
             for item, members, destination in moves:
+                label = item.text(0)
+                tooltip = item.toolTip(0)
+                leaf = item.data(0, Qt.ItemDataRole.UserRole)
                 old_parent = item.parent()
                 old_path = self._line_group_path(old_parent)
                 if old_path:
@@ -1210,41 +1243,64 @@ class RailCatalog(QWidget):
                                 members
                             )
                 was_selected = item.isSelected()
+                if was_selected:
+                    item.setSelected(False)
                 control = self.tree.itemWidget(item, 1)
                 self.tree.removeItemWidget(item, 1)
+                if control is not None:
+                    control.deleteLater()
+                self.members.pop(id(item), None)
+                detached = None
                 if old_parent:
-                    old_parent.takeChild(old_parent.indexOfChild(item))
+                    detached = old_parent.takeChild(old_parent.indexOfChild(item))
                 new_parent = self._ensure_line_group(destination)
-                new_parent.addChild(item)
+                item = QTreeWidgetItem(new_parent, [label, ""])
+                item.setData(0, Qt.ItemDataRole.UserRole, leaf)
+                item.setToolTip(0, tooltip)
+                visible_members = {value for value in members if self.is_visible(value)}
+                control = Switch(bool(visible_members))
+                control.setMixed(
+                    bool(visible_members) and len(visible_members) != len(members)
+                )
+                control.setEnabled(
+                    not all(self.meta(value).get("archived", False) for value in members)
+                )
+                control.toggled.connect(
+                    lambda on, values=set(members): self.toggle_group(values, on)
+                )
+                self.tree.setItemWidget(item, 1, control)
+                self.members[id(item)] = set(members)
+                for value in members:
+                    self.items[value] = item
                 for length in range(1, len(destination) + 1):
                     prefix = destination[:length]
                     affected.add(prefix)
                     group = self.groups[prefix]
                     self.members.setdefault(id(group), set()).update(members)
                     group.setExpanded(True)
-                if control is not None:
-                    self.tree.setItemWidget(item, 1, control)
                 item.setSelected(was_selected)
-                selected = item if was_selected or selected is None else selected
                 clean = destination[1:] if destination[0] == "已归档" else destination
                 self.line_folder_paths.add(tuple(clean))
+                del detached
 
             for path in sorted(affected, key=len, reverse=True):
                 group = self.groups.get(path)
                 if group is None or group.childCount():
                     continue
                 parent = group.parent() or self.tree.invisibleRootItem()
-                parent.takeChild(parent.indexOfChild(group))
+                control = self.tree.itemWidget(group, 1)
+                self.tree.removeItemWidget(group, 1)
+                if control is not None:
+                    control.deleteLater()
+                detached = parent.takeChild(parent.indexOfChild(group))
                 self.members.pop(id(group), None)
                 self.line_group_paths.pop(id(group), None)
                 del self.groups[path]
                 clean = path[1:] if path and path[0] == "已归档" else path
                 self.line_folder_paths.discard(tuple(clean))
+                del detached
             for path in sorted(affected, key=len):
                 self._sync_line_group(path)
-            if selected is not None:
-                self.tree.setCurrentItem(selected)
-                self.tree.scrollToItem(selected)
             self.tree.schedule_height()
             return True
         finally:
