@@ -199,6 +199,16 @@ function applyRailStyles(){
     map.setPaintProperty('rail-stripes','line-opacity',['case',['in',['get','track_type'],['literal',solid]],0,1]);
   }
 }
+function applyMetroStyles(){
+  const styles=config.metroStyles||{};
+  const curve=Array.isArray(styles.zoom_curve)&&styles.zoom_curve.length>=2
+    ?styles.zoom_curve
+    :[{zoom:3,scale:.3},{zoom:8,scale:.6},{zoom:12,scale:1},{zoom:16,scale:1.25},{zoom:19,scale:1.45}];
+  const zoomScale=['interpolate',['linear'],['zoom']];
+  for(const point of curve)zoomScale.push(Number(point.zoom),Number(point.scale));
+  if(map.getLayer('metro'))map.setPaintProperty('metro','line-width',['*',Number(styles.operating_width)||5,zoomScale]);
+  if(map.getLayer('construction'))map.setPaintProperty('construction','line-width',['*',Number(styles.construction_width)||5,zoomScale]);
+}
 function installLayers() {
   const sources = {...config.sources, vehicles:empty, selection:empty};
   staticSourceState.clear();populatedRailSources.clear();
@@ -251,6 +261,7 @@ function installLayers() {
   refreshSelection();
   applyRailWays();
   applyRailStyles();
+  applyMetroStyles();
   scheduleRailViewport();
   updateStaticSources();
 }
@@ -408,6 +419,7 @@ async function init() {
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
+    setMetroStyles(value){config.metroStyles=value;applyMetroStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
     setRailOperatingVehicles(data){const signature=JSON.stringify(data);if(signature===lastRailVehicleSignature)return;lastRailVehicleSignature=signature;config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},
     setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){const size=Math.max(8,Math.min(40,Number(value.size)||14));map.setPaintProperty('rail-vehicles','circle-radius',['/', ['coalesce',['get','display_size'],size],2]);}},

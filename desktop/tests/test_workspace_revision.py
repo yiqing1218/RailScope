@@ -281,3 +281,48 @@ def test_legacy_styles_receive_recommended_zoom_width_curve(tmp_path):
     path.write_text(json.dumps(legacy), encoding="utf-8")
     loaded = load_styles(path)
     assert loaded[ZOOM_CURVE_KEY][-1] == {"zoom": 19.0, "scale": 1.8}
+
+
+def test_metro_line_width_and_business_metadata_are_workspace_values(tmp_path):
+    from desktop.catalog_metadata import CatalogOverrides
+    from desktop.line_metadata import source_line_attributes
+    from desktop.metro_style_ui import defaults, load_styles
+
+    styles = defaults()
+    styles["operating_width"] = 6.5
+    style_path = tmp_path / "metro-styles.json"
+    style_path.write_text(json.dumps(styles), encoding="utf-8")
+    assert load_styles(style_path)["operating_width"] == 6.5
+
+    store = CatalogOverrides(tmp_path / "metro-lines.json", "railscope.metro-line-catalog.v1")
+    store.update(
+        "199200",
+        display_name="上海地铁1号线",
+        technical_attributes={"vehicle_type": "A 型", "opening_date": "1993"},
+    )
+    restored = CatalogOverrides(store.path, store.schema)
+    restored.load()
+    attributes = source_line_attributes(
+        {"relation_tags": {"maxspeed": "80"}},
+        "metro",
+        restored.values["199200"]["technical_attributes"],
+    )
+    assert attributes == {
+        "operating_status": "运营中",
+        "max_speed_kmh": "80",
+        "vehicle_type": "A 型",
+        "opening_date": "1993",
+    }
+
+
+def test_unnamed_stop_is_shown_as_nearest_chinese_recommendation():
+    from desktop.rail_ui import RailEditor
+
+    editor = RailEditor.__new__(RailEditor)
+    editor.corridor_ordered_nodes = lambda: [10, 20, 30, 40, 50]
+    candidates = [("合肥南站", 10), ("巢湖东站", 30), ("芜湖站", 50)]
+    assert editor.stop_display_name(30, 1, 3, candidates) == ("巢湖东站", False)
+    assert editor.stop_display_name(20, 1, 3, candidates) == (
+        "合肥南站（推荐）",
+        True,
+    )

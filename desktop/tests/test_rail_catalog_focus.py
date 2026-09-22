@@ -74,6 +74,30 @@ def test_rail_directory_without_geometry_does_not_move_map(tmp_path):
     widget.close()
 
 
+def test_same_named_rail_fragments_share_one_directory_leaf(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app
+    catalog = {
+        key: {
+            "name": "渝厦高速线",
+            "folder_path": ["高速铁路", "区域高速铁路"],
+            "track_type": "高速铁路线",
+            "way_ids": [way],
+            "edge_count": 2,
+        }
+        for key, way in (("part-a", 11), ("part-b", 12))
+    }
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps(catalog, ensure_ascii=False), encoding="utf-8"
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    assert widget.items["part-a"] is widget.items["part-b"]
+    leaf = widget.items["part-a"]
+    assert widget.members[id(leaf)] == {"part-a", "part-b"}
+    assert "已合并 2 个同名线路片段" in leaf.toolTip(0)
+    widget.close()
+
+
 def test_map_selected_way_is_revealed_in_rail_directory(tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app

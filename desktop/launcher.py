@@ -64,7 +64,10 @@ from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
 from data_install import active_directory, active_rail_directory
 from rail_ui import RailEditor
-from rail_style_ui import load_styles, RailStyleDialog
+from rail_style_ui import load_styles as load_rail_styles, RailStyleDialog
+from metro_style_ui import load_styles as load_metro_styles, MetroStyleDialog
+from line_metadata import FIELD_LABELS, source_line_attributes
+from line_metadata_ui import LineMetadataDialog
 from rail_categories import TRACK_TYPES
 from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
@@ -538,6 +541,16 @@ class Desk(QMainWindow):
             self.hierarchy_load_error = (
                 self.hierarchy_load_error + "\n" if self.hierarchy_load_error else ""
             ) + str(error)
+        self.metro_line_overrides = CatalogOverrides(
+            ROOT / "data/user_settings/metro_line_catalog.json",
+            "railscope.metro-line-catalog.v1",
+        )
+        try:
+            self.metro_line_overrides.load()
+        except (ValueError, OSError) as error:
+            self.hierarchy_load_error = (
+                self.hierarchy_load_error + "\n" if self.hierarchy_load_error else ""
+            ) + str(error)
         self.station_exclusions = set()
         self.station_directory = {}
         self.station_lookup = {}
@@ -577,7 +590,7 @@ class Desk(QMainWindow):
 
     def edit_rail_styles(self):
         path = ROOT / "data/user_settings/rail_styles.json"
-        dialog = RailStyleDialog(load_styles(path), self)
+        dialog = RailStyleDialog(load_rail_styles(path), self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             value = dialog.value()
             try:
@@ -591,6 +604,23 @@ class Desk(QMainWindow):
                 self.map.call("setRailStyles", value)
             except OSError as error:
                 QMessageBox.warning(self, "铁路样式未保存", str(error))
+
+    def edit_metro_styles(self):
+        path = ROOT / "data/user_settings/metro_styles.json"
+        dialog = MetroStyleDialog(load_metro_styles(path), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            value = dialog.value()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".json.tmp")
+                temporary.write_text(
+                    json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                temporary.replace(path)
+                self.config["metroStyles"] = value
+                self.map.call("setMetroStyles", value)
+            except OSError as error:
+                QMessageBox.warning(self, "地铁线路样式未保存", str(error))
 
     def make_config(self):
         sources = {
@@ -641,7 +671,8 @@ class Desk(QMainWindow):
         sources["imported"] = EMPTY
         return {
             "sources": sources,
-            "railStyles": load_styles(ROOT / "data/user_settings/rail_styles.json"),
+            "railStyles": load_rail_styles(ROOT / "data/user_settings/rail_styles.json"),
+            "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
@@ -728,77 +759,62 @@ class Desk(QMainWindow):
     def build_menus(self):
         bar = self.menuBar()
         file = bar.addMenu("文件")
-        self.add_action(file, "导入 GeoJSON 图层…", self.import_file, "Ctrl+I")
-        self.add_action(file, "自动下载全国地铁数据…", self.open_data_download)
-        self.add_action(file, "导出可见图层…", self.export_visible, "Ctrl+E")
-        shots = file.addMenu("截图")
-        self.add_action(shots, "当前地图 PNG…", self.capture_map, "Ctrl+Shift+S")
-        self.add_action(shots, "完整运行图 PNG…", self.capture_diagram)
+        self.add_action(file, "导入 GeoJSON…", self.import_file, "Ctrl+I")
+        self.add_action(file, "导入国铁运行通道…", self.rail_operations.import_corridors)
+        self.add_action(file, "导出国铁运行通道…", self.rail_operations.export_corridors)
+        self.add_action(file, "导出当前可见图层…", self.export_visible, "Ctrl+E")
+        shots = file.addMenu("导出截图")
+        self.add_action(shots, "导出当前地图 PNG…", self.capture_map, "Ctrl+Shift+S")
+        self.add_action(shots, "导出完整运行图 PNG…", self.capture_diagram)
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
         edit = bar.addMenu("编辑")
-        self.add_action(edit, "线路分类整理 / 目录层级设置…", self.edit_hierarchy)
+        self.add_action(edit, "地铁线路目录整理…", self.edit_hierarchy)
         self.add_action(
             edit,
-            "国铁线路分类与目录整理…",
+            "国铁线路目录整理…",
             lambda: self.rail_catalog_widget.organize(),
         )
-        edit.addSeparator()
         self.add_action(
-            edit, "铁路线规范命名 / 改名…", self.rail_operations.organize_lines
+            edit, "国铁物理线路规范命名…", self.rail_operations.organize_lines
         )
-        self.add_action(
-            file, "导出全国铁路图（端点—线路—端点）…", self.rail_operations.export_line_library
-        )
-        self.add_action(edit, "显示全部地铁线路", lambda: self.set_all_lines(True))
-        self.add_action(edit, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
-        self.add_action(edit, "清除导入图层", self.clear_imported)
         map_menu = bar.addMenu("地图")
-        self.add_action(map_menu, "地图图层控制", lambda: self.open_sidebar(0))
-        self.add_action(map_menu, "铁路颜色 / 视角线宽曲线…", self.edit_rail_styles)
-        self.add_action(map_menu, "国铁运行通道管理", lambda: self.open_sidebar(2))
-        self.add_action(
-            self.menuBar().actions()[0].menu(),
-            "导入国铁运行通道…",
-            self.rail_operations.import_corridors,
-        )
-        self.add_action(
-            self.menuBar().actions()[0].menu(),
-            "导出国铁运行通道…",
-            self.rail_operations.export_corridors,
-        )
-        self.add_action(map_menu, "查看全国路网", lambda: self.map.call("focusChina"))
+        self.add_action(map_menu, "打开图层控制", lambda: self.open_sidebar(0))
+        styles = map_menu.addMenu("线路显示样式")
+        self.add_action(styles, "地铁线路样式…", self.edit_metro_styles)
+        self.add_action(styles, "国铁线路样式…", self.edit_rail_styles)
+        map_menu.addSeparator()
+        self.add_action(map_menu, "显示全部地铁线路", lambda: self.set_all_lines(True))
+        self.add_action(map_menu, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
+        self.add_action(map_menu, "清除导入图层", self.clear_imported)
+        map_menu.addSeparator()
+        self.add_action(map_menu, "定位全国路网", lambda: self.map.call("focusChina"))
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
         run_menu = bar.addMenu("运行")
-        run = run_menu.addMenu("地铁 · 交路 / 车辆循环")
+        run = run_menu.addMenu("地铁运行")
         self.add_action(
-            run, "地铁 · 大小交路 / 循环与车辆投放…", self.operations.open_cycles
+            run, "交路、车辆循环与投放…", self.operations.open_cycles
         )
         self.add_action(
-            run, "导出地铁线路 / 车站参考目录（供 AI）…", self.export_plan_references
+            run, "导出线路与车站参考目录…", self.export_plan_references
         )
-        self.add_action(run, "地铁运行控制", self.open_metro_operations)
+        self.add_action(run, "打开运行工作台", self.open_metro_operations)
         self.add_action(
             run,
             "开始地铁仿真",
             lambda: (self.open_metro_operations(), self.operations.play()),
         )
-        self.add_action(run, "暂停列车演示", self.pause_demo)
+        self.add_action(run, "暂停地铁仿真", self.pause_demo)
         self.add_action(run, "关闭运行展示", lambda: self.operations.set_enabled(False))
-        self.add_action(run, "重新从起点运行", self.reset_demo)
-        self.add_action(
-            run,
-            "打开可编辑运行表 / 运行图",
-            self.open_metro_operations,
-        )
+        self.add_action(run, "回到始发时刻", self.reset_demo)
         self.add_action(run, "保存地铁计划", self.operations.save)
         self.add_action(
             run,
             "导入地铁计划…",
             lambda: (self.open_metro_operations(), self.operations.import_plan()),
         )
-        self.add_action(run, "导出运行计划…", self.operations.export_plan)
-        rail_run = run_menu.addMenu("国铁 · 车次 / 跨线运行图")
+        self.add_action(run, "导出地铁运行计划…", self.operations.export_plan)
+        rail_run = run_menu.addMenu("国铁运行")
         self.add_action(
             rail_run, "批量导入国铁车次表（CSV）…", self.rail_operations.import_table
         )
@@ -806,16 +822,16 @@ class Desk(QMainWindow):
             rail_run, "导出国铁车次表 / CSV 模板…", self.rail_operations.export_table
         )
         self.add_action(
-            rail_run, "打开国铁运行表 / 运行图", lambda: self.open_rail_operations()
+            rail_run, "打开车次运行工作台", lambda: self.open_rail_operations()
         )
         self.add_action(
             rail_run,
             "开始国铁仿真",
             lambda: (self.open_rail_operations(), self.rail_operations.play()),
         )
-        self.add_action(rail_run, "暂停", self.rail_operations.pause)
+        self.add_action(rail_run, "暂停国铁仿真", self.rail_operations.pause)
         self.add_action(
-            rail_run, "关闭", lambda: self.rail_operations.set_enabled(False)
+            rail_run, "关闭国铁运行展示", lambda: self.rail_operations.set_enabled(False)
         )
         self.add_action(
             rail_run,
@@ -840,15 +856,20 @@ class Desk(QMainWindow):
             "Ctrl+S",
         )
         data = bar.addMenu("数据源")
-        self.add_action(data, "自动下载 / 更新全国地铁…", self.open_data_download)
-        self.add_action(data, "下载 / 提取全国国铁…", self.open_rail_download)
-        self.add_action(data, "全国地铁站 / 真实区域检索…", self.audit_station_boundaries)
+        self.add_action(data, "下载或更新全国地铁数据…", self.open_data_download)
+        self.add_action(data, "下载或更新全国铁路数据…", self.open_rail_download)
+        self.add_action(data, "检查全国地铁车站建筑覆盖…", self.audit_station_boundaries)
         self.add_action(
-            data, "全国铁路站区 / 站台轮廓覆盖检查…", self.audit_rail_boundaries
+            data, "检查全国铁路站区与站台覆盖…", self.audit_rail_boundaries
         )
         self.add_action(data, "查看数据概览", self.show_data_summary)
-        self.add_action(data, "导入 GeoJSON 图层…", self.import_file)
         topology = bar.addMenu("拓扑")
+        self.add_action(topology, "打开国铁运行通道编排", lambda: self.open_sidebar(2))
+        self.add_action(
+            topology,
+            "导出铁路拓扑图（端点—线路—端点）…",
+            self.rail_operations.export_line_library,
+        )
         self.add_action(topology, "校验基础设施连通性", self.show_topology)
         view = bar.addMenu("视图")
         self.add_action(view, "展开 / 收起左侧栏", self.toggle_left)
@@ -1810,7 +1831,7 @@ class Desk(QMainWindow):
         copy.clicked.connect(
             lambda: QApplication.clipboard().setText(self.raw.toPlainText())
         )
-        edit_metadata = QPushButton("编辑名称与目录位置")
+        edit_metadata = QPushButton("编辑对象信息")
         edit_metadata.clicked.connect(self.edit_selected_metadata)
         self.edit_metadata_button = edit_metadata
         layout.addWidget(edit_metadata)
@@ -2084,9 +2105,10 @@ class Desk(QMainWindow):
                     == route["id"]
                 )
                 props["track_changes"] = route.get("track_changes", [])
-        relation = props.get("route_relation_id")
+        relation = props.get("route_relation_id", props.get("osm_relation_id"))
         if relation in self.route_lookup:
             route = self.route_lookup[relation]
+            props["route_relation_id"] = relation
             props["relation_tags"] = route.get("relation_tags", {})
             props["relation_members"] = route.get("members", [])
             for key in (
@@ -2100,6 +2122,14 @@ class Desk(QMainWindow):
             ):
                 if key not in props:
                     props[key] = route.get(key)
+            custom = self.metro_line_overrides.values.get(str(relation), {})
+            props["display_name"] = custom.get("display_name") or self.hierarchy.parent(route)[2]
+            props["folder_path"] = list(self.hierarchy.parent(route))
+            props.update(
+                source_line_attributes(
+                    props, "metro", custom.get("technical_attributes", {})
+                )
+            )
         for key, value in props.items():
             if isinstance(value, str) and value[:1] in ("{", "["):
                 try:
@@ -2114,6 +2144,30 @@ class Desk(QMainWindow):
                 "track_type", props.get("track_type", "未确认类型")
             )
             props["folder_path"] = list(self.rail_catalog_widget.parents(rail_group))
+            props.update(
+                source_line_attributes(
+                    props,
+                    "rail",
+                    catalog_meta.get("technical_attributes", {}),
+                )
+            )
+        merged_groups = props.get("merged_catalog_ids", [])
+        if merged_groups:
+            first = next(
+                (
+                    self.rail_catalog_widget.meta(key)
+                    for key in merged_groups
+                    if key in self.rail_catalog_widget.catalog
+                ),
+                {},
+            )
+            props.update(
+                source_line_attributes(
+                    {**first, **props},
+                    "rail",
+                    first.get("technical_attributes", {}),
+                )
+            )
         if feature.get("layer") in ("rail-points", "rail-detail-points"):
             props.setdefault(
                 "station_type",
@@ -2221,12 +2275,16 @@ class Desk(QMainWindow):
             "province": "省级行政区",
             "city": "城市",
             "line_count": "线路数量",
+            "section_count": "端点线段数量",
+            "edge_count": "物理轨道段数量",
+            "merged_catalog_ids": "合并的目录对象编号",
             "folder_path": "目录位置",
             "line_ids": "接轨线路编号",
             "name": "名称",
             "display_name": "显示名称",
             "source_name": "原始名称",
             "line_name": "线路名称",
+            **FIELD_LABELS,
         }
         for key in translated:
             if key in props and props[key] is not None:
@@ -2299,6 +2357,93 @@ class Desk(QMainWindow):
         }
         self.edit_selected_metadata({"layer": "rail-points", "properties": props})
 
+    def edit_line_metadata(self, feature, kind, relation=None, rail_groups=None):
+        props = feature.get("properties", {})
+        rail_groups = [
+            key
+            for key in (rail_groups or [])
+            if key in self.rail_catalog_widget.catalog
+        ]
+        if kind == "metro":
+            route = self.route_lookup[relation]
+            current_path = list(self.hierarchy.parent(route))
+            custom = self.metro_line_overrides.values.get(str(relation), {})
+            display_name = custom.get("display_name") or current_path[2]
+            attributes = source_line_attributes(
+                {**route, **props}, "metro", custom.get("technical_attributes", {})
+            )
+            dialog = LineMetadataDialog(
+                "metro", display_name, current_path, attributes, parent=self
+            )
+        else:
+            if not rail_groups:
+                return
+            primary = self.rail_catalog_widget.meta(rail_groups[0])
+            current_path = list(self.rail_catalog_widget.parents(rail_groups[0]))
+            display_name = props.get("display_name") or self.rail_catalog_widget.display_name(
+                rail_groups[0]
+            )
+            attributes = source_line_attributes(
+                {**primary, **props},
+                "rail",
+                primary.get("technical_attributes", {}),
+            )
+            dialog = LineMetadataDialog(
+                "rail",
+                display_name,
+                current_path,
+                attributes,
+                TRACK_TYPES,
+                primary.get("track_type", "未确认类型"),
+                self,
+            )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            value = dialog.values()
+            if not value["display_name"]:
+                raise ValueError("显示名称不能为空")
+            if len(value["folder_path"]) < 3:
+                raise ValueError("线路目录需要填写完整的三级路径")
+            if kind == "metro":
+                self.hierarchy.set_parent(
+                    {int(relation)},
+                    value["folder_path"][0],
+                    value["folder_path"][1],
+                    value["folder_path"][2],
+                )
+                self.hierarchy.save()
+                self.metro_line_overrides.update(
+                    str(relation),
+                    display_name=value["display_name"],
+                    technical_attributes=value["technical_attributes"],
+                )
+                self.refresh_hierarchy({int(relation)})
+            else:
+                changes = {
+                    key: {
+                        "display_name": value["display_name"],
+                        "folder_path": value["folder_path"],
+                        "track_type": value["track_type"],
+                        "technical_attributes": value["technical_attributes"],
+                    }
+                    for key in rail_groups
+                }
+                self.rail_catalog_widget.save_overrides(changes)
+                line_names = {
+                    self.rail_catalog_widget.catalog[key].get("line_id"): value[
+                        "display_name"
+                    ]
+                    for key in rail_groups
+                    if self.rail_catalog_widget.catalog[key].get("line_id")
+                }
+                if line_names:
+                    self.rail_catalog_widget.line_names_changed.emit(line_names)
+            self.load_status.setText("  线路概览已保存到工作区；原始 OSM 数据未修改")
+            self.display_feature(feature)
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "线路信息未保存", str(error))
+
     def edit_selected_metadata(self, feature=None):
         if not isinstance(feature, dict):
             feature = self.selected_data
@@ -2308,6 +2453,16 @@ class Desk(QMainWindow):
 
         props = feature.get("properties", {})
         layer = feature.get("layer", "")
+        relation = props.get("route_relation_id", props.get("osm_relation_id"))
+        if relation in self.route_lookup and layer == "metro":
+            self.edit_line_metadata(feature, "metro", relation=relation)
+            return
+        merged_groups = props.get("merged_catalog_ids", [])
+        rail_group = props.get("catalog_group_id")
+        rail_groups = merged_groups or ([rail_group] if rail_group else [])
+        if rail_groups and layer in ("rail", "rail-construction"):
+            self.edit_line_metadata(feature, "rail", rail_groups=rail_groups)
+            return
         dialog = QDialog(self)
         dialog.setWindowTitle("编辑工作区名称与目录 · 原始 OSM 数据保留")
         form = QFormLayout(dialog)
@@ -2323,9 +2478,7 @@ class Desk(QMainWindow):
         form.addRow("省级目录", province)
         form.addRow("市级目录", city)
         form.addRow("线路 / 分类目录", folder)
-        relation = props.get("route_relation_id")
         station_id = str(props.get("infrastructure_id") or props.get("station_id") or "")
-        rail_group = props.get("catalog_group_id")
         rail_node = props.get("osm_node_id") if layer in ("rail-points", "rail-detail-points") else None
         if relation in self.route_lookup:
             current = self.hierarchy.parent(self.route_lookup[relation])

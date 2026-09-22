@@ -310,10 +310,16 @@ class RailCatalog(QWidget):
         matched = len(candidates)
         names = candidates[:MAX_CATALOG_TREE_ITEMS]
         self.catalog_limited = matched > len(names)
+        merged_lines = {}
         for name in names:
+            merged_lines.setdefault(
+                (self.parents(name), self.display_name(name).strip().casefold()), []
+            ).append(name)
+        for (parents, _normalized_label), component_names in merged_lines.items():
+            component_names = sorted(component_names)
+            name = component_names[0]
             record = self.catalog[name]
             meta = self.meta(name)
-            parents = self.parents(name)
             parent = self.tree.invisibleRootItem()
             key = ()
             for label in parents:
@@ -323,36 +329,56 @@ class RailCatalog(QWidget):
                 parent = groups[key]
             label = self.display_name(name)
             item = QTreeWidgetItem(parent, [label])
-            count = record.get("edge_count") or len(
-                record.get("edge_ids", record["way_ids"])
+            count = sum(
+                component.get("edge_count")
+                or len(component.get("edge_ids", component["way_ids"]))
+                for component in (self.catalog[value] for value in component_names)
             )
             topology = (
-                f"包含 {record.get('section_count', 0)} 个端点线段；点击地图上的具体线段查看两端点和相邻线段。"
+                f"包含 {sum(self.catalog[value].get('section_count', 0) for value in component_names)} 个端点线段；点击地图上的具体线段查看两端点和相邻线段。"
                 if record.get("catalog_group_id")
                 else f"起点：{meta.get('from_name', '旧目录无端点')}\n终点：{meta.get('to_name', '旧目录无端点')}\n"
                 f"起点相邻：{', '.join(meta.get('from_adjacent_sections', [])) or '待重建'}\n"
                 f"终点相邻：{', '.join(meta.get('to_adjacent_sections', [])) or '待重建'}"
             )
+            merged_note = (
+                f"已合并 {len(component_names)} 个同名线路片段。\n"
+                if len(component_names) > 1
+                else ""
+            )
             item.setToolTip(
                 0,
                 f"{label}\n{meta.get('track_type', '未确认类型')} · {count} 个 NetworkEdge\n"
+                f"{merged_note}"
                 f"{topology}\n"
                 f"依据：{meta.get('type_evidence', '待核对')}",
             )
-            self.items[name] = item
+            for component_name in component_names:
+                self.items[component_name] = item
             item.setData(0, Qt.ItemDataRole.UserRole, name)
-            self.members[id(item)] = {name}
+            self.members[id(item)] = set(component_names)
             ancestor = parent
             while ancestor is not self.tree.invisibleRootItem():
-                self.members.setdefault(id(ancestor), set()).add(name)
+                self.members.setdefault(id(ancestor), set()).update(component_names)
                 ancestor = ancestor.parent() or self.tree.invisibleRootItem()
-            switch = Switch(self.is_visible(name))
-            switch.setEnabled(not meta.get("archived", False))
-            switch.toggled.connect(lambda on, n=name: self.toggle(n, on))
+            visible_components = {
+                value for value in component_names if self.is_visible(value)
+            }
+            switch = Switch(bool(visible_components))
+            switch.setMixed(
+                bool(visible_components) and len(visible_components) != len(component_names)
+            )
+            switch.setEnabled(
+                not all(self.meta(value).get("archived", False) for value in component_names)
+            )
+            switch.toggled.connect(
+                lambda on, values=set(component_names): self.toggle_group(values, on)
+            )
             self.tree.setItemWidget(item, 1, switch)
         for item in groups.values():
             keys = self.members[id(item)]
-            item.setText(0, item.text(0) + f" · {len(keys)} 项")
+            displayed_items = {id(self.items[key]) for key in keys if key in self.items}
+            item.setText(0, item.text(0) + f" · {len(displayed_items)} 项")
             visible_keys = {key for key in keys if self.is_visible(key)}
             control = Switch(bool(visible_keys))
             control.setEnabled(
@@ -724,6 +750,22 @@ class RailCatalog(QWidget):
             self.line_names_changed.emit({line_id: name.strip()})
         self.note.setText("已更新目录显示名称；原始名称、编号和通道引用保留。")
 
+    def rename_items(self, keys, name):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("名称不能为空")
+        value = name.strip()
+        self.save_overrides({key: {"display_name": value} for key in keys})
+        line_names = {
+            self.catalog[key].get("line_id"): value
+            for key in keys
+            if self.catalog[key].get("line_id")
+        }
+        if line_names:
+            self.line_names_changed.emit(line_names)
+        self.note.setText(
+            f"已统一更新 {len(keys)} 个同名线路片段；稳定编号和通道引用保留。"
+        )
+
     def rename_folder(self, path, name):
         if (
             not isinstance(name, str)
@@ -786,7 +828,7 @@ class RailCatalog(QWidget):
             if accepted:
                 perform(
                     lambda: (
-                        self.rename_item(leaf, value)
+                        self.rename_items(keys, value)
                         if leaf
                         else self.rename_folder(folder, value)
                     )
@@ -1078,11 +1120,21 @@ class RailCatalog(QWidget):
                 key = next(iter(keys))
                 props = {**self.meta(key), "display_name": self.display_name(key)}
             else:
+                ordered_keys = sorted(keys)
+                primary = self.meta(ordered_keys[0])
                 props = {
+                    **primary,
                     "display_name": item.text(0).split(" · ", 1)[0],
-                    "kind": "目录分组",
+                    "kind": "合并线路目录",
+                    "merged_catalog_ids": ordered_keys,
                     "line_count": len(keys),
-                    "line_names": [self.display_name(key) for key in sorted(keys)[:100]],
+                    "section_count": sum(
+                        self.catalog[key].get("section_count", 0) for key in keys
+                    ),
+                    "edge_count": sum(
+                        self.catalog[key].get("edge_count", 0) for key in keys
+                    ),
+                    "line_names": [self.display_name(key) for key in ordered_keys[:100]],
                 }
             self.feature_activated.emit({"layer": "rail", "properties": props})
         edge_ids = sorted(

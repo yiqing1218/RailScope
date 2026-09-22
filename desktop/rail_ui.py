@@ -484,22 +484,33 @@ class RailEditor(OperationsEditor):
 
     def corridor_stop_candidates(self):
         """Return named stations/control points on the current complete corridor."""
+        ordered = self.corridor_ordered_nodes()
         line = self.current_line()
-        if not line:
+        if not line or not ordered:
             return []
-        ordered = []
-        edge_lookup = {value["id"]: value for value in self.graph["edges"]}
-        for edge in line.get("rail_path", line.get("resolved_rail_path", [])):
-            record = edge_lookup.get(edge["edge_id"])
-            if not record:
-                continue
-            ids = list(record.get("node_ids", [record["from_node"], record["to_node"]]))
-            if edge["direction"] == "reverse":
-                ids.reverse()
-            ordered.extend(ids if not ordered else ids[1:])
-        names = {int(station["id"]): station["name"] for station in line.get("stations", []) if str(station["id"]).isdigit()}
+        names = {int(station["id"]): station["name"] for station in line.get("stations", []) if str(station["id"]).isdigit() and station.get("name") and not str(station["name"]).isdigit()}
+        line_index = self.directory / "rail_lines.sqlite"
+        if line_index.exists():
+            library = self.line_library()
+            with sqlite3.connect(line_index) as db:
+                for start in range(0, len(ordered), 800):
+                    batch = ordered[start : start + 800]
+                    marks = ",".join("?" for _ in batch)
+                    for alias, anchor in db.execute(
+                        "SELECT alias,anchor_node FROM station_aliases "
+                        f"WHERE anchor_node IN ({marks}) AND confidence>=0.5 "
+                        "ORDER BY distance_m",
+                        batch,
+                    ):
+                        display_name = (
+                            library.station_display_name(alias)
+                            if hasattr(library, "station_display_name")
+                            else alias
+                        )
+                        if display_name and not str(display_name).isdigit():
+                            names.setdefault(int(anchor), str(display_name))
         source = self.directory / "rail.sqlite"
-        if source.exists() and ordered:
+        if source.exists():
             with sqlite3.connect(source) as db:
                 for start in range(0, len(ordered), 800):
                     batch = ordered[start : start + 800]
@@ -529,6 +540,44 @@ class RailEditor(OperationsEditor):
             choice = choice or min(values, key=lambda value: position[value[1]])
             candidates.append(choice)
         return sorted(candidates, key=lambda value: position[value[1]])
+
+    def corridor_ordered_nodes(self):
+        line = self.current_line()
+        if not line:
+            return []
+        ordered = []
+        edge_lookup = {value["id"]: value for value in self.graph["edges"]}
+        for edge in line.get("rail_path", line.get("resolved_rail_path", [])):
+            record = edge_lookup.get(edge["edge_id"])
+            if not record:
+                continue
+            ids = list(record.get("node_ids", [record["from_node"], record["to_node"]]))
+            if edge["direction"] == "reverse":
+                ids.reverse()
+            ordered.extend(ids if not ordered else ids[1:])
+        return ordered
+
+    def recommended_stop_candidate(self, node_id, index, count, candidates=None):
+        candidates = candidates if candidates is not None else self.corridor_stop_candidates()
+        if not candidates:
+            return None
+        exact = next((value for value in candidates if value[1] == node_id), None)
+        if exact:
+            return exact
+        ordered = self.corridor_ordered_nodes()
+        positions = {node: position for position, node in enumerate(ordered)}
+        if node_id in positions:
+            return min(candidates, key=lambda value: abs(positions.get(value[1], 0) - positions[node_id]))
+        target = 0 if count <= 1 else round(index * (len(candidates) - 1) / (count - 1))
+        return candidates[max(0, min(len(candidates) - 1, target))]
+
+    def stop_display_name(self, node_id, index, count, candidates=None):
+        candidates = candidates if candidates is not None else self.corridor_stop_candidates()
+        exact = next((name for name, node in candidates if node == node_id), None)
+        if exact:
+            return exact, False
+        recommended = self.recommended_stop_candidate(node_id, index, count, candidates)
+        return ((recommended[0] + "（推荐）", True) if recommended else ("未命名控制点", True))
 
     def set_reference_visible(self, on):
         if on and self.plan.trains:
@@ -1145,8 +1194,19 @@ class RailEditor(OperationsEditor):
         for column, width in enumerate((75, 45, 40, 105, 80, 80, 55, 70, 70, 95, 80)):
             self.table.setColumnWidth(column, width)
         row = 0
+        candidates = self.corridor_stop_candidates()
         for train in self.displayed_trains():
             for index, stop in enumerate(train["stops"]):
+                node_id = int(stop["station_id"])
+                display_name, recommended = self.stop_display_name(
+                    node_id, index, len(train["stops"]), candidates
+                )
+                station_item = self.table.item(row, 3)
+                station_item.setText(display_name)
+                station_item.setToolTip(
+                    ("推荐采用该通道上的已命名车站；" if recommended else "")
+                    + f"内部稳定节点编号：{node_id}"
+                )
                 change = (
                     stop.get("extensions", {})
                     .get("railscope.org/rail-stop", {})
@@ -1273,14 +1333,22 @@ class RailEditor(OperationsEditor):
             station.setEditable(True)
             station.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
             station.setPlaceholderText("搜索并选择通道经过的车站或线路所")
+            existing = stop.get("node_id")
+            recommended = self.recommended_stop_candidate(
+                existing, row, max(2, len(train["stops"])), candidates
+            )
+            if recommended:
+                station.addItem("★ 推荐：" + recommended[0], recommended[1])
             for name, node in candidates:
-                station.addItem(name, node)
+                if not recommended or node != recommended[1]:
+                    station.addItem(name, node)
             station.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             station.completer().setFilterMode(Qt.MatchFlag.MatchContains)
-            existing = stop.get("node_id")
             index = station.findData(existing)
             if index >= 0:
                 station.setCurrentIndex(index)
+            elif recommended:
+                station.setCurrentIndex(0)
             else:
                 station.setCurrentIndex(-1)
             station.setProperty("originalStop", deepcopy(stop))
@@ -1323,7 +1391,8 @@ class RailEditor(OperationsEditor):
                     station = table.cellWidget(row, 0)
                     node_id = station.currentData()
                     if node_id is None:
-                        exact = next((node for name, node in candidates if name == station.currentText().strip()), None)
+                        entered = station.currentText().strip().removeprefix("★ 推荐：")
+                        exact = next((node for name, node in candidates if name == entered), None)
                         node_id = exact
                     if node_id is None:
                         raise ValueError(f"第 {row + 1} 行必须从当前通道经过的车站或线路所中选择")
