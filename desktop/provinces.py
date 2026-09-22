@@ -225,7 +225,7 @@ def _compact_catalog(sections):
     return result
 
 
-def geographic_catalog(directory):
+def geographic_catalog(directory, force=False):
     """Build the business-line catalog and its internal endpoint graph index.
 
     Provinces and planning corridors are intentionally absent from the line
@@ -234,6 +234,8 @@ def geographic_catalog(directory):
     """
     directory = Path(directory)
     cache = directory / "rail_catalog.topology.json"
+    if force:
+        cache.unlink(missing_ok=True)
     if cache.exists():
         value = json.loads(cache.read_text(encoding="utf-8"))
         if value.get("version") == VERSION:

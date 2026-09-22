@@ -29,6 +29,60 @@ STATION_TYPES = (
     "未定义",
 )
 
+STATION_OVERVIEW_FIELDS = (
+    ("chinese_name", "中文名"),
+    ("foreign_name", "外文名"),
+    ("commissioning_date", "投用日期"),
+    ("region", "所属地区"),
+    ("station_grade", "车站等级"),
+    ("main_lines", "主要线路"),
+    ("regional_management", "区域管理"),
+    ("platform_scale", "站台规模"),
+    ("annual_freight_volume", "年货运量"),
+    ("address", "车站地址"),
+)
+
+
+def station_overview(properties, record=None, custom=None):
+    properties, record, custom = properties or {}, record or {}, custom or {}
+    tags = properties.get("node_tags", {})
+    result = {
+        "chinese_name": record.get("name") or properties.get("name") or tags.get("name:zh", ""),
+        "foreign_name": tags.get("name:en", ""),
+        "commissioning_date": tags.get("opening_date") or tags.get("start_date", ""),
+        "region": "".join(
+            value for value in (record.get("province", ""), record.get("city", "")) if value
+        ),
+        "station_grade": tags.get("railway:station_category") or tags.get("station:class", ""),
+        "main_lines": "、".join(record.get("line_names", [])),
+        "regional_management": tags.get("operator") or properties.get("operator", ""),
+        "platform_scale": tags.get("platforms") or tags.get("tracks", ""),
+        "annual_freight_volume": tags.get("freight:annual") or tags.get("annual_freight", ""),
+        "address": tags.get("addr:full") or "".join(
+            str(tags.get(key, ""))
+            for key in ("addr:province", "addr:city", "addr:district", "addr:street", "addr:housenumber")
+        ),
+    }
+    result.update(custom.get("overview_attributes", {}))
+    result.update(custom.get("custom_attributes", {}))
+    return {key: str(value).strip() for key, value in result.items() if value not in (None, "")}
+
+
+def normalize_station_attributes(values, custom=False):
+    if not isinstance(values, dict):
+        raise ValueError("站点概览属性必须是对象")
+    allowed = {key for key, _label in STATION_OVERVIEW_FIELDS}
+    if not custom and set(values) - allowed:
+        raise ValueError("站点概览包含未知标准字段")
+    result = {}
+    for key, value in values.items():
+        name, text = str(key).strip(), str(value).strip()
+        if not name or len(name) > 60 or len(text) > 1000:
+            raise ValueError("自定义属性名称或内容过长")
+        if text:
+            result[name] = text
+    return result
+
 
 def station_type(tags, kind=""):
     """Use explicit OSM evidence only; ambiguous stations remain 未定义."""
@@ -177,7 +231,7 @@ def rail_station_records(directory, regions, query="", limit=4000):
         return [], 0
     where = "kind='railPoints'"
     args = []
-    normalized_query = query.strip().removesuffix("市").casefold()
+    normalized_query = query.strip().removesuffix("市").removesuffix("站").casefold()
     region_match = next(
         (
             (city, province, lon, lat)
@@ -195,7 +249,7 @@ def rail_station_records(directory, regions, query="", limit=4000):
         args.extend([lon - 2.0, lon + 2.0, lat - 2.0, lat + 2.0])
     elif query:
         where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
-        args.extend([f"%{query}%", f"%{query}%"])
+        args.extend([f"%{normalized_query}%", f"%{query.strip()}%"])
     else:
         where += " AND (json_extract(data,'$.properties.kind') IN ('station','halt','signal_box','junction','crossing') OR json_extract(data,'$.properties.name') != CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT))"
     with sqlite3.connect(source) as db:

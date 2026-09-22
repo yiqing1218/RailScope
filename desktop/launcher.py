@@ -82,6 +82,8 @@ from catalog_metadata import (
     metro_station_directory,
     station_type,
     STATION_TYPES,
+    STATION_OVERVIEW_FIELDS,
+    station_overview,
 )
 
 EMPTY = {"type": "FeatureCollection", "features": []}
@@ -858,6 +860,9 @@ class Desk(QMainWindow):
         data = bar.addMenu("数据源")
         self.add_action(data, "下载或更新全国地铁数据…", self.open_data_download)
         self.add_action(data, "下载或更新全国铁路数据…", self.open_rail_download)
+        self.add_action(
+            data, "刷新铁路目录", lambda: self.rail_catalog_widget.refresh_catalog()
+        )
         self.add_action(data, "检查全国地铁车站建筑覆盖…", self.audit_station_boundaries)
         self.add_action(
             data, "检查全国铁路站区与站台覆盖…", self.audit_rail_boundaries
@@ -2186,6 +2191,13 @@ class Desk(QMainWindow):
                 props["city"] = record["city"]
                 props["line_ids"] = record["line_ids"]
                 props["line_names"] = record["line_names"]
+                props["station_overview"] = station_overview(
+                    props,
+                    record,
+                    self.rail_catalog_widget.overrides.get(
+                        "station:" + record["id"], {}
+                    ),
+                )
         feature["properties"] = props
         self.selected_data = feature
         self._last_operating_detail = None
@@ -2268,6 +2280,8 @@ class Desk(QMainWindow):
             "kind": "对象种类",
             "station_type": "车站类型",
             "line_names": "接轨线路",
+            "station_names": "途经站点",
+            "connected_line_names": "联络 / 相接线路",
             "verification_status": "核验状态",
             "confidence": "置信度",
             "association_source": "关联依据",
@@ -2289,6 +2303,10 @@ class Desk(QMainWindow):
         for key in translated:
             if key in props and props[key] is not None:
                 rows.append((translated[key], str(props[key])))
+        for key, value in props.get("station_overview", {}).items():
+            label = dict(STATION_OVERVIEW_FIELDS).get(key, key)
+            if not any(existing == label for existing, _value in rows):
+                rows.append((label, str(value)))
         tags = {**props.get("way_tags", {}), **props.get("relation_tags", {})}
         for key, title in [
             ("from", "起点"),
@@ -2314,7 +2332,7 @@ class Desk(QMainWindow):
             rows.append(("开放街图关系成员数量", str(len(props["relation_members"]))))
         unknown = {}
         for key, value in props.items():
-            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members"):
+            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members", "station_overview"):
                 continue
             unknown[key] = value
         if unknown:
@@ -2403,8 +2421,13 @@ class Desk(QMainWindow):
             value = dialog.values()
             if not value["display_name"]:
                 raise ValueError("显示名称不能为空")
-            if len(value["folder_path"]) < 3:
-                raise ValueError("线路目录需要填写完整的三级路径")
+            required_levels = 3 if kind == "metro" else 1
+            if len(value["folder_path"]) < required_levels:
+                raise ValueError(
+                    "地铁线路目录需要填写完整的省、市、线路三级路径"
+                    if kind == "metro"
+                    else "国铁线路目录至少需要一级文件夹"
+                )
             if kind == "metro":
                 self.hierarchy.set_parent(
                     {int(relation)},
@@ -2474,6 +2497,9 @@ class Desk(QMainWindow):
         folder = QLineEdit()
         station_kind = QComboBox()
         station_kind.addItems(STATION_TYPES)
+        station_overview_controls = {}
+        station_custom = None
+        record = None
         form.addRow("显示名称", name)
         form.addRow("省级目录", province)
         form.addRow("市级目录", city)
@@ -2529,7 +2555,25 @@ class Desk(QMainWindow):
                     "station:" + record["id"],
                 )
                 form.addRow("接轨线路", connection_selector)
-                dialog.resize(760, 620)
+                custom = self.rail_catalog_widget.overrides.get(
+                    "station:" + record["id"], {}
+                )
+                overview = station_overview(props, record, custom)
+                for key, label in STATION_OVERVIEW_FIELDS:
+                    control = QLineEdit(overview.get(key, ""))
+                    form.addRow(label, control)
+                    station_overview_controls[key] = control
+                station_custom = QPlainTextEdit()
+                station_custom.setPlaceholderText("每行填写：属性名=属性值")
+                station_custom.setPlainText(
+                    "\n".join(
+                        f"{key}={value}"
+                        for key, value in custom.get("custom_attributes", {}).items()
+                    )
+                )
+                station_custom.setMaximumHeight(100)
+                form.addRow("自定义属性", station_custom)
+                dialog.resize(800, 900)
         else:
             QMessageBox.information(self, "不可编辑", "此对象没有可编辑的工作区目录元数据。")
             return
@@ -2572,15 +2616,34 @@ class Desk(QMainWindow):
                         self.rail_operations.save_line_names({line_id: display_name})
                 elif rail_node is not None and record:
                     connections = connection_selector.connections()
+                    custom_attributes = {}
+                    for line in station_custom.toPlainText().splitlines():
+                        if not line.strip():
+                            continue
+                        separator = "=" if "=" in line else "：" if "：" in line else None
+                        if not separator:
+                            raise ValueError("自定义属性每行应为“属性名=属性值”")
+                        key, value = line.split(separator, 1)
+                        custom_attributes[key.strip()] = value.strip()
                     self.rail_catalog_widget.save_station_override(
                         record["id"],
                         name.text(),
-                        [province.text(), city.text()],
+                        [
+                            value.strip()
+                            for value in (province.text(), city.text(), folder.text())
+                            if value.strip()
+                        ],
                         station_kind.currentText(),
                         connections,
+                        {
+                            key: control.text()
+                            for key, control in station_overview_controls.items()
+                        },
+                        custom_attributes,
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")
+                self.display_feature(feature)
             except (ValueError, OSError) as error:
                 QMessageBox.warning(dialog, "目录修改未保存", str(error))
 

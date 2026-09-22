@@ -25,3 +25,21 @@ def test_city_search_matches_station_directory_location_not_only_station_name(tm
     )
     assert total == 1
     assert records[0]["name"] == "虹桥站" and records[0]["city"] == "上海"
+
+
+def test_station_search_accepts_optional_station_suffix(tmp_path):
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "osm_node_id": 9354508778,
+            "name": "济宁北",
+            "kind": "station",
+            "node_tags": {"railway": "station"},
+        },
+        "geometry": {"type": "Point", "coordinates": [116.7, 35.5]},
+    }
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.execute("CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,data TEXT)")
+        db.execute("INSERT INTO features VALUES(1,'railPoints',?)", (json.dumps(feature),))
+    records, total = rail_station_records(tmp_path, [], "济宁北站")
+    assert total == 1 and records[0]["name"] == "济宁北"

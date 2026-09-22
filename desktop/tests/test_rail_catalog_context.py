@@ -207,7 +207,9 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     menu = widget.station_item_menu(widget.station_items["node/100"])
     assert [action.text() for action in menu.actions()] == [
         "编辑名称、目录、类型和接轨线路…",
+        "批量移动到文件夹…",
         "在地图中定位",
+        "归档",
     ]
     menu.actions()[0].trigger()
     assert requested == ["node/100"]
@@ -250,3 +252,40 @@ def test_station_connection_override_persists_and_updates_station_directory(
     ]
     assert widget.station_records[0]["line_ids"] == ["RL-B"]
     assert "RL-B" in widget.station_items["node/100"].toolTip(0)
+
+
+def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
+    qtbot, tmp_path, monkeypatch
+):
+    record = {
+        "id": "node/100",
+        "name": "兖州北站",
+        "kind": "station",
+        "station_type": "货运站",
+        "province": "山东省",
+        "city": "济宁市",
+        "coordinates": [116.8, 35.5],
+        "osm_node_id": 100,
+        "line_ids": ["RL-A"],
+        "line_names": ["京沪铁路"],
+        "properties": {},
+    }
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_station_records",
+        lambda *args, **kwargs: ([dict(record)], 1),
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    widget.save_station_override(
+        "node/100",
+        folder_path=["自定义站点"],
+        overview_attributes={"foreign_name": "Yanzhoubei Railway Station"},
+        custom_attributes={"年货运量": "611.9百万吨"},
+    )
+    assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
+    widget.save_station_changes({"node/100"}, archived=True)
+    assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
+    assert widget.station_items["node/100"].parent().parent().text(0).startswith("已归档")
+    stored = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert stored["station:node/100"]["overview_attributes"]["foreign_name"].startswith("Yanzhoubei")
+    assert stored["station:node/100"]["custom_attributes"]["年货运量"] == "611.9百万吨"
