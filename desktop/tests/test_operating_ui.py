@@ -147,3 +147,28 @@ def test_native_table_and_diagram_drag_edit_same_plan(tmp_path):
     assert editor.table.item(0, 4).text() == "07:00:15"
     editor.timer.stop()
     editor.close()
+
+
+def test_vehicle_source_updates_are_throttled_and_per_train_style_is_embedded(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    line = {
+        "id": "sh-1", "ref": "1", "relation_id": 199200, "name": "1号线",
+        "color": "#c82732", "variants": [],
+        "path": {"coordinates": [[121, 31], [121.01, 31]], "length_m": 1000, "cumulative": [0, 1000]},
+        "stations": [{"id": "a", "name": "A", "distance_m": 0}, {"id": "b", "name": "B", "distance_m": 1000}],
+    }
+    plan = Plan([line])
+    train = plan.add_train("sh-1", "T1", 25200)
+    train["extensions"] = {"railscope.org/display": {"style": "ring", "size": 22, "color": "#123456"}}
+    view = MapStub()
+    editor = OperationsEditor(plan, view, [line], tmp_path / "plan.json")
+    editor.set_enabled(True)
+    before = len([call for call in view.calls if call[0] == "setOperatingVehicles"])
+    editor.push_positions(throttled=True)
+    editor.push_positions(throttled=True)
+    after = [call for call in view.calls if call[0] == "setOperatingVehicles"]
+    assert len(after) == before
+    props = editor.current_vehicle_features[0]["properties"]
+    assert (props["display_style"], props["display_size"], props["display_color"]) == ("ring", 22, "#123456")
+    editor.timer.stop()
+    editor.close()

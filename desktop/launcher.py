@@ -817,9 +817,6 @@ class Desk(QMainWindow):
         self.add_action(rail_run, "导出国铁运行计划…", self.rail_operations.export_plan)
         self.add_action(rail_run, "保存国铁计划", self.rail_operations.save)
         self.add_action(
-            rail_run, "编辑当前车次停站 / 站台 / 到发线…", self.rail_operations.edit_station_paths
-        )
-        self.add_action(
             rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references
         )
         run_menu.addSeparator()
@@ -877,6 +874,8 @@ class Desk(QMainWindow):
         )
         help = bar.addMenu("帮助")
         self.add_action(help, "图层与数据说明", self.show_data_summary)
+        self.add_action(help, "车次导入指南", self.show_train_import_guide)
+        self.add_action(help, "下载车次导入模板…", self.rail_operations.export_template)
         self.add_action(help, "运行计划交换标准 / AI 编写说明", self.show_plan_standard)
         self.map.bridge.screenshot.connect(self.save_map_capture)
 
@@ -900,6 +899,21 @@ class Desk(QMainWindow):
         stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
         dialog = BoundaryDialog(stations, self.station_areas["features"], self)
         dialog.located.connect(self.locate_station_record)
+        dialog.exec()
+
+    def show_train_import_guide(self):
+        from PySide6.QtWidgets import QTextBrowser
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("国铁车次导入指南")
+        dialog.resize(900, 700)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        browser.setMarkdown((ROOT / "docs/TRAIN_IMPORT_GUIDE.md").read_text(encoding="utf-8"))
+        layout.addWidget(browser)
+        download = QPushButton("下载导入模板…")
+        download.clicked.connect(self.rail_operations.export_template)
+        layout.addWidget(download)
         dialog.exec()
 
     def locate_station_record(self, record):
@@ -1398,6 +1412,13 @@ class Desk(QMainWindow):
         )
         if station and station["coordinates"]:
             self.map.call("focus", *station["coordinates"], 15, station["name"])
+            self.display_feature(
+                {
+                    "layer": "stations",
+                    "properties": station.get("properties", station),
+                    "geometry": {"type": "Point", "coordinates": station["coordinates"]},
+                }
+            )
 
     def select_metro_station_item(self, station_id):
         candidates = [
@@ -1500,6 +1521,8 @@ class Desk(QMainWindow):
 
     def filter_tree(self, text):
         query = text.strip().lower()
+        self.tree.set_filter_active(bool(query))
+        self.station_tree.set_filter_active(bool(query))
 
         def match(item, inherited=False):
             own = inherited or query in item.text(0).lower()
@@ -1532,6 +1555,21 @@ class Desk(QMainWindow):
             )
             if point:
                 self.map.call("focus", *point, 11)
+        routes = [self.route_lookup[relation] for relation in ids if relation in self.route_lookup]
+        if len(routes) == 1:
+            self.display_feature({"layer": "metro", "properties": routes[0]})
+        elif routes:
+            self.display_feature(
+                {
+                    "layer": "metro",
+                    "properties": {
+                        "name": item.text(0).split(" · ", 1)[0],
+                        "kind": "目录分组",
+                        "line_count": len(routes),
+                        "line_names": [route.get("name", "") for route in routes],
+                    },
+                }
+            )
 
     def select_metro_tree_item(self, relation_ids):
         relation_ids = {int(value) for value in relation_ids if value is not None}
@@ -1703,6 +1741,7 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
         )
+        self.rail_catalog_widget.feature_activated.connect(self.display_feature)
         self.rail_catalog_widget.enabled_requested.connect(
             self.enable_rail_from_catalog
         )
@@ -1968,6 +2007,7 @@ class Desk(QMainWindow):
         layer = feature.get("layer", "")
         if props.get("corridor_id") and layer in (
             "rail-vehicles",
+            "rail-vehicle-symbols",
             "rail-vehicle-labels",
             "rail-plan-path",
             "rail-plan-stations",
@@ -2086,6 +2126,7 @@ class Desk(QMainWindow):
                 props["line_names"] = record["line_names"]
         feature["properties"] = props
         self.selected_data = feature
+        self._last_operating_detail = None
         if props.get("line_name") and props.get("from_name") and props.get("to_name"):
             title = f"{props['line_name']} · {props['from_name']}→{props['to_name']}"
         else:
@@ -2113,6 +2154,7 @@ class Desk(QMainWindow):
             "rail-platform-outline": "国铁站台轮廓",
             "rail-construction": "在建国铁轨道",
             "rail-vehicles": "国铁车次",
+            "rail-vehicle-symbols": "国铁车次",
             "rail-plan-path": "国铁参考径路（非实际联锁进路）",
             "rail-plan-stations": "国铁参考经停站",
             "metro": "地铁线路",
@@ -2130,7 +2172,7 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
-            "corridor_id": "单向运行通道 ID",
+            "corridor_id": "单向运行通道编号",
             "corridor_name": "运行通道",
             "shared_trains": "共用通道的车次",
             "boundary_kind": "边界类型",
@@ -2140,19 +2182,19 @@ class Desk(QMainWindow):
             "network": "所属网络",
             "operator": "运营方",
             "source": "数据来源",
-            "osm_way_id": "OSM Way",
-            "osm_node_id": "OSM Node",
-            "route_relation_id": "OSM Relation",
+            "osm_way_id": "开放街图轨道编号",
+            "osm_node_id": "开放街图节点编号",
+            "route_relation_id": "开放街图关系编号",
             "state": "运行状态",
             "vehicle_id": "车辆编号",
-            "distance_km": "已行驶 km",
+            "distance_km": "已行驶里程（千米）",
             "speed_multiplier": "演示速度",
             "color_raw": "原始颜色",
             "color_source": "颜色来源",
             "infrastructure_id": "稳定基础设施编号",
             "station_id": "唯一车站编号",
             "area_id": "真实轮廓编号",
-            "network_edge_id": "NetworkEdge 编号",
+            "network_edge_id": "物理轨道段编号",
             "section_id": "端点线段编号",
             "catalog_group_id": "目录对象编号",
             "line_id": "物理线路编号",
@@ -2168,6 +2210,15 @@ class Desk(QMainWindow):
             "confidence": "置信度",
             "association_source": "关联依据",
             "geometry_source": "几何来源",
+            "province": "省级行政区",
+            "city": "城市",
+            "line_count": "线路数量",
+            "folder_path": "目录位置",
+            "line_ids": "接轨线路编号",
+            "name": "名称",
+            "display_name": "显示名称",
+            "source_name": "原始名称",
+            "line_name": "线路名称",
         }
         for key in translated:
             if key in props and props[key] is not None:
@@ -2177,9 +2228,9 @@ class Desk(QMainWindow):
             ("from", "起点"),
             ("to", "终点"),
             ("distance", "标注距离"),
-            ("gauge", "轨距 mm"),
-            ("voltage", "电压 V"),
-            ("frequency", "频率 Hz"),
+            ("gauge", "轨距（毫米）"),
+            ("voltage", "电压（伏）"),
+            ("frequency", "频率（赫兹）"),
             ("electrified", "电气化"),
             ("maxspeed", "最高速度"),
             ("opening_date", "开通日期"),
@@ -2187,27 +2238,23 @@ class Desk(QMainWindow):
             ("tunnel", "隧道"),
             ("bridge", "桥梁"),
             ("railway:cbtc", "信号系统"),
-            ("website", "官网"),
-            ("wikipedia", "维基百科"),
-            ("wikidata", "Wikidata"),
+            ("website", "官方网站"),
+            ("wikipedia", "维基百科页面"),
+            ("wikidata", "维基数据编号"),
         ]:
             if tags.get(key):
                 rows.append((title, str(tags[key])))
         if props.get("relation_members"):
-            rows.append(("OSM 关系成员", str(len(props["relation_members"]))))
-        shown = {label for label, _ in rows}
+            rows.append(("开放街图关系成员数量", str(len(props["relation_members"]))))
+        unknown = {}
         for key, value in props.items():
-            if value is None or isinstance(value, (dict, list)) or key in translated:
+            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members"):
                 continue
-            label = key.replace("_", " ")
-            if label not in shown:
-                rows.append((label, str(value)))
+            unknown[key] = value
+        if unknown:
+            rows.append(("其他原始属性", json.dumps(unknown, ensure_ascii=False, separators=(",", ":"))))
         if not rows:
-            rows = [
-                (key, str(value))
-                for key, value in props.items()
-                if not isinstance(value, (dict, list))
-            ]
+            rows = [("对象信息", "暂无可显示的已翻译属性")]
         self.set_property_rows(rows)
         self.raw.setPlainText(json.dumps(feature, ensure_ascii=False, indent=2))
         self.right.show()
@@ -2421,19 +2468,20 @@ class Desk(QMainWindow):
     def refresh_operating_selection(self):
         if (
             self.selected_data.get("layer")
-            not in ("vehicles", "vehicles-symbol", "rail-vehicles")
+            not in ("vehicles", "vehicles-symbol", "rail-vehicles", "rail-vehicle-symbols")
             or not self.right.isVisible()
         ):
             return
         vehicle_id = self.selected_data["properties"].get("vehicle_id")
+        editor = (
+            self.rail_operations
+            if self.selected_data.get("layer") in ("rail-vehicles", "rail-vehicle-symbols")
+            else self.operations
+        )
         feature = next(
             (
                 f
-                for f in (
-                    self.rail_operations
-                    if self.selected_data.get("layer") == "rail-vehicles"
-                    else self.operations
-                ).current_vehicle_features
+                for f in editor.current_vehicle_features
                 if f["properties"]["vehicle_id"] == vehicle_id
             ),
             None,
@@ -2441,16 +2489,26 @@ class Desk(QMainWindow):
         if feature:
             properties = self.selected_data["properties"]
             properties.update(feature["properties"])
+            signature = (
+                vehicle_id,
+                properties.get("distance_km"),
+                properties.get("state"),
+                properties.get("simulation_time"),
+            )
+            if signature == getattr(self, "_last_operating_detail", None):
+                return
+            self._last_operating_detail = signature
             for row in range(self.properties.rowCount()):
                 title = self.properties.item(row, 0).text()
-                if title == "已行驶 km":
+                if title == "已行驶里程（千米）":
                     self.properties.item(row, 1).setText(str(properties["distance_km"]))
                 if title == "运行状态":
                     self.properties.item(row, 1).setText(properties["state"])
-            self.raw.setPlainText(
-                json.dumps(self.selected_data, ensure_ascii=False, indent=2)
-            )
-        elif not self.operations.enabled:
+            if self.detail_tabs.currentIndex() == 1:
+                raw = json.dumps(self.selected_data, ensure_ascii=False, indent=2)
+                if self.raw.toPlainText() != raw:
+                    self.raw.setPlainText(raw)
+        elif not editor.enabled:
             self.selected_data = {}
             self.selected_title.setText("选择地图对象")
             self.selected_type.setText("运行展示已关闭")
@@ -2563,8 +2621,18 @@ class Desk(QMainWindow):
     def search_map(self):
         query = self.search.text().strip()
         if not query:
+            self.rail_catalog_widget.set_query("", self.search_type.currentText())
+            self.line_search.clear()
+            self.load_status.setText("  已清除目录筛选")
             return
         kind = self.search_type.currentText()
+        for city, province, lon, lat in REGIONS if kind in ("全部", "城市") else []:
+            if query in (city, city + "市"):
+                self.map.call("focus", lon, lat, 11, city + " · 轨道交通")
+                self.rail_catalog_widget.set_query(query, "铁路车站")
+                self.line_search.setText(city)
+                self.open_sidebar(0)
+                return
         if kind in ("全部", "铁路线", "铁路车站", "线路所及道岔"):
             self.open_sidebar(0)
             self.rail_catalog_widget.set_query(query, kind)
@@ -2575,12 +2643,6 @@ class Desk(QMainWindow):
             self.map.call("focusDemo")
             self._show_demo_details()
             return
-        for city, province, lon, lat in REGIONS if kind in ("全部", "城市") else []:
-            if query == city or query == city + "市":
-                self.map.call("focus", lon, lat, 11, city + " · 轨道交通")
-                self.line_search.setText(city)
-                self.open_sidebar(0)
-                return
         result = next(
             (
                 station for station in self.display_stations["features"]

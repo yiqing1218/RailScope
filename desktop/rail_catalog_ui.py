@@ -46,6 +46,7 @@ class RailCatalog(QWidget):
     station_edit_requested = Signal(str)
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
+    feature_activated = Signal(dict)
 
     def __init__(self, directory, settings, map_view, parent=None, regions=None):
         super().__init__(parent)
@@ -395,6 +396,10 @@ class RailCatalog(QWidget):
     def set_query(self, text, search_type="全部"):
         """Receive the single map-header search instead of owning a second box."""
         value = text.strip()
+        self.tree.set_filter_active(bool(value) and search_type in ("全部", "铁路线"))
+        self.station_tree.set_filter_active(
+            bool(value) and search_type in ("全部", "铁路车站", "线路所及道岔")
+        )
         if search_type in ("全部", "铁路线"):
             self.search.blockSignals(True)
             self.search.setText(value)
@@ -530,6 +535,21 @@ class RailCatalog(QWidget):
         record = next((r for r in self.station_records if r["id"] == station_id), None)
         if record:
             self.map.call("focus", *record["coordinates"], 15, record["name"])
+            self.feature_activated.emit(
+                {
+                    "layer": "rail-points",
+                    "properties": {
+                        **record.get("properties", {}),
+                        "display_name": record["name"],
+                        "station_type": record["station_type"],
+                        "province": record["province"],
+                        "city": record["city"],
+                        "line_ids": record["line_ids"],
+                        "line_names": record["line_names"],
+                    },
+                    "geometry": {"type": "Point", "coordinates": record["coordinates"]},
+                }
+            )
 
     def station_context_menu(self, position):
         item = self.station_tree.itemAt(position)
@@ -862,6 +882,7 @@ class RailCatalog(QWidget):
 
     def filter_tree(self, text):
         query = text.strip().lower()
+        self.tree.set_filter_active(bool(query))
 
         def visit(item, inherited=False):
             matches = inherited or query in item.text(0).lower()
@@ -1052,6 +1073,18 @@ class RailCatalog(QWidget):
         if column != 0:
             return  # The switch column only controls visibility.
         keys = self.members.get(id(item), set())
+        if keys:
+            if len(keys) == 1:
+                key = next(iter(keys))
+                props = {**self.meta(key), "display_name": self.display_name(key)}
+            else:
+                props = {
+                    "display_name": item.text(0).split(" · ", 1)[0],
+                    "kind": "目录分组",
+                    "line_count": len(keys),
+                    "line_names": [self.display_name(key) for key in sorted(keys)[:100]],
+                }
+            self.feature_activated.emit({"layer": "rail", "properties": props})
         edge_ids = sorted(
             {
                 edge

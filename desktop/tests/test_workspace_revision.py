@@ -120,6 +120,27 @@ def test_csv_batches_are_strict_and_reference_existing_routes():
         merge_csv(output.getvalue().replace("route_id", "extra"), base)
 
 
+def test_train_csv_exports_readable_stop_names_and_accepts_legacy_header():
+    from desktop.rail import shared_document
+    from desktop.rail_tables import COLUMNS, LEGACY_COLUMNS, export_csv, merge_csv
+
+    base = shared_document(reference()["plan"])
+    text = export_csv(base)
+    assert "stop_name" in text.splitlines()[0]
+    assert len(COLUMNS) == len(LEGACY_COLUMNS) + 1
+
+    rows = list(csv.DictReader(io.StringIO(text)))
+    for row in rows:
+        row["train_id"] = "G9"
+    old = io.StringIO()
+    writer = csv.DictWriter(old, fieldnames=LEGACY_COLUMNS)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({key: row[key] for key in LEGACY_COLUMNS})
+    merged = merge_csv(old.getvalue(), base)
+    assert merged["trains"][-1]["id"] == "G9"
+
+
 def test_tree_grows_without_inner_scrollbar():
     from PySide6.QtWidgets import QApplication, QTreeWidgetItem
     from PySide6.QtCore import Qt
@@ -137,6 +158,11 @@ def test_tree_grows_without_inner_scrollbar():
     app.processEvents()
     assert tree.height() > collapsed + 300
     assert tree.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    tree.set_filter_active(True)
+    for i in range(parent.childCount()):
+        parent.child(i).setHidden(True)
+    tree.fit_content()
+    assert tree.height() >= 320, "搜索结果不能把目录压缩成难以使用的小块"
     tree.close()
 
 
@@ -158,6 +184,13 @@ def test_builtin_g1_no_load_buttons_compact_and_train_visibility(tmp_path):
     assert not any(
         "G1" in b.text() for w in (editor, side) for b in w.findChildren(QPushButton)
     )
+    assert editor.import_train_button.text() == "导入车次"
+    assert editor.edit_stops_button.text() == "编辑停站计划"
+    assert not any("编辑当前车次停站计划" in b.text() for b in side.findChildren(QPushButton))
+    editor.marker_style.setCurrentIndex(editor.marker_style.findData("train"))
+    editor.marker_size.setValue(24)
+    display = editor.document()["trains"][0]["extensions"]["railscope.org/display"]
+    assert display["style"] == "train" and display["size"] == 24
     editor.resize(1100, 650)
     editor.show()
     app.processEvents()

@@ -7,6 +7,7 @@ const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], visibleStationIds=[], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
 let animationStarted = false, constructionIds=[], operatingMode=false, operatingVehicles=emptyPlaceholder(), operatingClock=25200;
 let followTrain=false;
+let trainFollowMoving=false,trainFollowTimer=null,lastRailVehicleSignature='',lastCameraStatus='';
 let focusedBounds=null;
 const overlays={title:false,tools:true,legend:true,status:true,scale:true};
 let vehicleAppearance={size:14,style:'glow'};
@@ -199,7 +200,8 @@ function installLayers() {
   addLayer({id:'rail-platform-outline',type:'line',source:'railPlatforms',minzoom:12,paint:{'line-color':'#466979','line-width':1.5}});
   addLayer({id:'rail-station-fill',type:'fill',source:'railStationAreas',minzoom:11,paint:{'fill-color':'#688191','fill-opacity':.2}});
   addLayer({id:'rail-station-outline',type:'line',source:'railStationAreas',minzoom:11,paint:{'line-color':'#486979','line-width':1.5}});
-  addLayer({id:'rail-vehicles',type:'circle',source:'railVehicles',paint:{'circle-radius':7,'circle-color':'#486e9a','circle-stroke-color':'#ffffff','circle-stroke-width':2}});
+  addLayer({id:'rail-vehicles',type:'circle',source:'railVehicles',paint:{'circle-radius':['/', ['coalesce',['get','display_size'],14],2],'circle-color':['coalesce',['get','display_color'],'#486e9a'],'circle-opacity':['case',['in',['get','display_style'],['literal',['ring','train']]],0,1],'circle-stroke-color':['case',['==',['get','display_style'],'ring'],['coalesce',['get','display_color'],'#486e9a'],'#ffffff'],'circle-stroke-width':2}});
+  addLayer({id:'rail-vehicle-symbols',type:'symbol',source:'railVehicles',filter:['==',['get','display_style'],'train'],layout:{'text-field':'车','text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':['coalesce',['get','display_size'],14],'text-allow-overlap':true},paint:{'text-color':['coalesce',['get','display_color'],'#486e9a'],'text-halo-color':'#ffffff','text-halo-width':2}});
   addLayer({id:'rail-vehicle-labels',type:'symbol',source:'railVehicles',layout:{'text-field':['get','trip_id'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,-1.4],'text-allow-overlap':true},paint:{'text-color':'#20313d','text-halo-color':'#ffffff','text-halo-width':2}});
   if(!map.getSource('railPlan'))map.addSource('railPlan',{type:'geojson',data:config.sources.railPlan||empty});
   addLayer({id:'rail-plan-path',type:'line',source:'railPlan',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#466979','line-width':3}});
@@ -239,7 +241,7 @@ function installLayers() {
   scheduleRailViewport();
   updateStaticSources();
 }
-const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes'],railConstruction:['rail-construction'],railStations:['rail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'],railControlPoints:['rail-detail-points'],railVehicles:['rail-vehicles','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
+const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes'],railConstruction:['rail-construction'],railStations:['rail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'],railControlPoints:['rail-detail-points'],railVehicles:['rail-vehicles','rail-vehicle-symbols','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 function sharedRailStationFilter(){
   if(!map.getLayer('rail-points'))return;
   const nodes=visibility.railPlan?(config.sources.railPlan?.features||[]).filter(f=>f.geometry.type==='Point').map(f=>f.properties.osm_node_id):[];
@@ -362,9 +364,9 @@ async function init() {
     if(!target.includes(message)){target.push(message);if(target.length>100)target.shift();}
   });
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
-  map.on('moveend',()=>{const p=map.getCenter();document.getElementById('camera-status').textContent=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';report('cameraChanged',p.lng,p.lat,map.getZoom());});
-  map.on('click',event=>{const ids=['rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
-  map.on('mousemove',event=>{const ids=['vehicles-symbol','vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'';});
+  map.on('moveend',()=>{const p=map.getCenter(),status=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;if(status!==lastCameraStatus){lastCameraStatus=status;document.getElementById('camera-status').textContent=status;report('cameraChanged',p.lng,p.lat,map.getZoom());}const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';});
+  map.on('click',event=>{const ids=['rail-vehicle-symbols','rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-construction','rail','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));const f=map.queryRenderedFeatures(event.point,{layers:ids})[0];if(f)selectFeature(f);});
+  map.on('mousemove',event=>{const ids=['rail-vehicle-symbols','rail-vehicles','vehicles-symbol','vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'';});
   const locationButton=document.getElementById('location-menu'), locationPanel=document.getElementById('location-panel');
   locationButton.onclick=()=>{locationPanel.hidden=!locationPanel.hidden;locationButton.setAttribute('aria-expanded',String(!locationPanel.hidden));};
   const citySelect=document.getElementById('city-view'), lineSelect=document.getElementById('line-view');
@@ -377,7 +379,7 @@ async function init() {
   document.getElementById('fit-visible').onclick=()=>{const bounds=new maplibregl.LngLatBounds();for(const id of visibleIds){const b=config.routeBounds[id];if(b){bounds.extend([b[0],b[1]]);bounds.extend([b[2],b[3]]);}}if(!bounds.isEmpty())map.fitBounds(bounds,{padding:80,maxZoom:13});};
   document.getElementById('follow-train').onclick=()=>{followTrain=!followTrain;document.getElementById('follow-train').textContent=followTrain?'停止跟随':'跟随首列车';};
   map.on('dragstart',()=>{followTrain=false;document.getElementById('follow-train').textContent='跟随首列车';});
-  map.on('moveend',scheduleRailViewport);
+  map.on('moveend',()=>{if(!trainFollowMoving)scheduleRailViewport();});
   document.getElementById('tilt').onclick=()=>map.easeTo({pitch:map.getPitch()>20?0:45});
   document.getElementById('focus-china').onclick=()=>{map.fitBounds([[73,18],[135,54]],{padding:80,duration:700});document.getElementById('scene-title').textContent='中国 · 城市轨道交通';};
   document.getElementById('zoom-in').onclick=()=>map.zoomIn();document.getElementById('zoom-out').onclick=()=>map.zoomOut();document.getElementById('north').onclick=()=>map.easeTo({bearing:0,pitch:0});
@@ -394,8 +396,8 @@ async function init() {
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
-    setRailOperatingVehicles(data){config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},
-    setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){map.setPaintProperty('rail-vehicles','circle-radius',Number(value.size)/2);map.setPaintProperty('rail-vehicles','circle-opacity',value.style==='ring'?0:1);map.setPaintProperty('rail-vehicles','circle-stroke-color',value.style==='ring'?'#486e9a':'#ffffff');}},
+    setRailOperatingVehicles(data){const signature=JSON.stringify(data);if(signature===lastRailVehicleSignature)return;lastRailVehicleSignature=signature;config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},
+    setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){const size=Math.max(8,Math.min(40,Number(value.size)||14));map.setPaintProperty('rail-vehicles','circle-radius',['/', ['coalesce',['get','display_size'],size],2]);}},
     captureMap(){
       map.once('render',()=>{
         try{
@@ -424,7 +426,7 @@ async function init() {
       travelled=data.features[0]?.properties.distance_m||0;
       if(!graphicsPaused)map.getSource('vehicles')?.setData(visibility.vehicles?data:empty);
       if(['vehicles','vehicles-symbol'].includes(selectedLayer)&&selectedFeature){selectedFeature=data.features.find(f=>f.properties.vehicle_id===selectedFeature.properties.vehicle_id)||null;refreshSelection();}
-      if(followTrain){const vehicle=data.features.find(f=>visibleIds.includes(f.properties.route_relation_id));if(vehicle)map.jumpTo({center:vehicle.geometry.coordinates,zoom:Math.max(map.getZoom(),13)});}
+      if(followTrain){const vehicle=data.features.find(f=>visibleIds.includes(f.properties.route_relation_id));if(vehicle){trainFollowMoving=true;clearTimeout(trainFollowTimer);map.easeTo({center:vehicle.geometry.coordinates,zoom:Math.max(map.getZoom(),13),duration:240,easing:t=>t});trainFollowTimer=setTimeout(()=>{trainFollowMoving=false;scheduleRailViewport();},500);}}
     },
     imported(data){config.sources.imported=data;staticSourceState.delete('imported');updateStaticSources();},
     testState(){

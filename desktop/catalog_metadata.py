@@ -177,7 +177,23 @@ def rail_station_records(directory, regions, query="", limit=4000):
         return [], 0
     where = "kind='railPoints'"
     args = []
-    if query:
+    normalized_query = query.strip().removesuffix("市").casefold()
+    region_match = next(
+        (
+            (city, province, lon, lat)
+            for city, province, lon, lat in regions
+            if normalized_query == str(city).removesuffix("市").casefold()
+        ),
+        None,
+    )
+    if region_match:
+        _, _, lon, lat = region_match
+        where += (
+            " AND json_extract(data,'$.geometry.coordinates[0]') BETWEEN ? AND ?"
+            " AND json_extract(data,'$.geometry.coordinates[1]') BETWEEN ? AND ?"
+        )
+        args.extend([lon - 2.0, lon + 2.0, lat - 2.0, lat + 2.0])
+    elif query:
         where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
         args.extend([f"%{query}%", f"%{query}%"])
     else:
@@ -186,7 +202,7 @@ def rail_station_records(directory, regions, query="", limit=4000):
         total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
         rows = db.execute(
             f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
-            [*args, limit],
+            [*args, limit * 4 if region_match else limit],
         ).fetchall()
     features = [json.loads(row[0]) for row in rows]
     node_ids = [f["properties"].get("osm_node_id") for f in features]
@@ -236,4 +252,9 @@ def rail_station_records(directory, regions, query="", limit=4000):
                 "properties": props,
             }
         )
+    if region_match:
+        city = region_match[0].removesuffix("市")
+        result = [record for record in result if record["city"].removesuffix("市") == city]
+        total = len(result)
+        result = result[:limit]
     return result, total

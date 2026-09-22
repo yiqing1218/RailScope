@@ -10,7 +10,7 @@ except ImportError:
     from operating import parse_time, format_time
     from rail import shared_document
 
-COLUMNS = (
+LEGACY_COLUMNS = (
     "train_id",
     "route_id",
     "sequence",
@@ -23,20 +23,29 @@ COLUMNS = (
     "via_node",
     "change_time",
 )
+COLUMNS = LEGACY_COLUMNS[:3] + ("stop_name",) + LEGACY_COLUMNS[3:]
 
 
 def merge_csv(text, payload):
     result = shared_document(payload)
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if reader.fieldnames != list(COLUMNS):
+    if reader.fieldnames not in (list(COLUMNS), list(LEGACY_COLUMNS)):
         raise ValueError("CSV 表头必须严格为：" + ",".join(COLUMNS))
+    readable = "stop_name" in reader.fieldnames
     routes = {r["id"]: r for r in result["routes"]}
+    station_names = {
+        int(item["node_id"]): item.get("name", "")
+        for item in result.get("extensions", {}).get("railscope.org/assembly", {}).get("stations", [])
+        if isinstance(item, dict) and str(item.get("node_id", "")).isdigit()
+    }
     existing = {t["id"] for t in result["trains"]}
     pending = {}
     for line, row in enumerate(reader, 2):
         if None in row or any(v is None for v in row.values()):
             raise ValueError(f"第 {line} 行列数不符")
         row = {k: v.strip() for k, v in row.items()}
+        if not readable:
+            row["stop_name"] = ""
         ident = row["train_id"]
         if not ident or ident in existing:
             raise ValueError(f"第 {line} 行车次为空或重复：{ident}")
@@ -61,8 +70,12 @@ def merge_csv(text, payload):
             raise ValueError(f"第 {line} 行径路不一致或站序不连续（从 1 开始）")
         if not row["node_id"].isdigit():
             raise ValueError(f"第 {line} 行节点须为整数 OSM ID")
+        node_id = int(row["node_id"])
+        known_name = station_names.get(node_id)
+        if row["stop_name"] and known_name and row["stop_name"].removesuffix("站") != known_name.removesuffix("站"):
+            raise ValueError(f"第 {line} 行车站名称与节点编号不一致：{row['stop_name']} / {known_name}")
         stop = {
-            "node_id": int(row["node_id"]),
+            "node_id": node_id,
             "arrival_s": parse_time(row["arrival"]),
             "departure_s": parse_time(row["departure"]),
             "track_change": {k: row[k] for k in ("from_track", "to_track", "via_node")},
@@ -85,6 +98,11 @@ def export_csv(payload):
     writer = csv.DictWriter(output, fieldnames=COLUMNS)
     writer.writeheader()
     routes = {r["id"]: r for r in payload["routes"]}
+    assembly_names = {
+        int(item["node_id"]): item.get("name", "")
+        for item in payload.get("extensions", {}).get("railscope.org/assembly", {}).get("stations", [])
+        if isinstance(item, dict) and str(item.get("node_id", "")).isdigit()
+    }
     for train in payload["trains"]:
         if train.get("station_paths"):
             raise ValueError("含站场径路的车次请导出 JSON；CSV 不能无损保存嵌套路径")
@@ -107,6 +125,7 @@ def export_csv(payload):
                     "train_id": train["id"],
                     "route_id": train["route_id"],
                     "sequence": sequence,
+                    "stop_name": assembly_names.get(stop["node_id"], ""),
                     "node_id": stop["node_id"],
                     "arrival": format_time(stop["arrival_s"]),
                     "departure": format_time(stop["departure_s"]),
@@ -120,4 +139,39 @@ def export_csv(payload):
                     "change_time": change.get("time", ""),
                 }
             )
+    return output.getvalue()
+
+
+def export_template(payload):
+    """Create an importable example while keeping station names human readable."""
+    payload = shared_document(payload)
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=COLUMNS)
+    writer.writeheader()
+    if not payload["trains"]:
+        return output.getvalue()
+    train = payload["trains"][0]
+    assembly_names = {
+        int(item["node_id"]): item.get("name", "")
+        for item in payload.get("extensions", {}).get("railscope.org/assembly", {}).get("stations", [])
+        if isinstance(item, dict) and str(item.get("node_id", "")).isdigit()
+    }
+    for sequence, stop in enumerate(train["stops"], 1):
+        change = stop.get("track_change", {})
+        writer.writerow(
+            {
+                "train_id": "示例车次_请修改",
+                "route_id": train["route_id"],
+                "sequence": sequence,
+                "stop_name": assembly_names.get(stop["node_id"], ""),
+                "node_id": stop["node_id"],
+                "arrival": format_time(stop["arrival_s"]),
+                "departure": format_time(stop["departure_s"]),
+                "platform_id": stop.get("platform_id", ""),
+                "from_track": change.get("from_track", ""),
+                "to_track": change.get("to_track", ""),
+                "via_node": change.get("via_node", ""),
+                "change_time": change.get("time", ""),
+            }
+        )
     return output.getvalue()

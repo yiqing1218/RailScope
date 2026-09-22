@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeWidgetItem,
     QApplication,
+    QColorDialog,
 )
 
 try:
@@ -132,6 +133,9 @@ class OperationsEditor(QFrame):
         self._visibility_timer.timeout.connect(self.refresh_vehicle_tree)
         self._ticks = 0
         self._last_tick = monotonic()
+        self._last_vehicle_push = 0.0
+        self._sidebar_state = None
+        self._appearance_loading = False
         self.plot_left = 125
         self.time_scale = 0.35
         self.time_grid_s = 300
@@ -195,6 +199,15 @@ class OperationsEditor(QFrame):
             button = QPushButton(title)
             button.clicked.connect(method)
             actions.addWidget(button)
+            if title.startswith("新增"):
+                self.add_train_button = button
+        if plan.system == "rail":
+            self.import_train_button = QPushButton("导入车次")
+            self.import_train_button.clicked.connect(self.import_table)
+            actions.addWidget(self.import_train_button)
+            self.edit_stops_button = QPushButton("编辑停站计划")
+            self.edit_stops_button.clicked.connect(self.edit_train_stops)
+            actions.addWidget(self.edit_stops_button)
         more = QToolButton()
         more.setText("编辑 ▾")
         more.setMenu(editing)
@@ -212,6 +225,21 @@ class OperationsEditor(QFrame):
         if plan.system == "rail":
             train_caption.hide()
             self.train_combo.hide()
+            selection.addWidget(QLabel("当前车次标记"))
+            self.marker_style = QComboBox()
+            for label, value in (("光晕圆点", "glow"), ("空心圆环", "ring"), ("列车图标", "train")):
+                self.marker_style.addItem(label, value)
+            self.marker_style.currentIndexChanged.connect(self.change_appearance)
+            selection.addWidget(self.marker_style)
+            self.marker_size = QSlider(Qt.Orientation.Horizontal)
+            self.marker_size.setRange(8, 40)
+            self.marker_size.setValue(14)
+            self.marker_size.setFixedWidth(90)
+            self.marker_size.valueChanged.connect(self.change_appearance)
+            selection.addWidget(self.marker_size)
+            self.marker_color = QPushButton("颜色")
+            self.marker_color.clicked.connect(self.choose_marker_color)
+            selection.addWidget(self.marker_color)
         self.message = text_label("编辑到发时刻；运行图节点可水平拖动。", "muted")
         self.message.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         controls.addLayout(actions)
@@ -249,7 +277,10 @@ class OperationsEditor(QFrame):
         )
         self.diagram.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.diagram.setBackgroundBrush(QColor("#fbfcfd"))
-        self.tabs.addTab(self.diagram, "运行图 · 时间 / 里程")
+        self.tabs.addTab(
+            self.diagram,
+            "运行图 · 拖动调整到发时刻" if plan.system == "rail" else "运行图 · 时间 / 里程",
+        )
         layout.addWidget(self.tabs, 1)
         self.status = text_label("", wrap=True)
         self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -351,26 +382,21 @@ class OperationsEditor(QFrame):
             )
         )
         self.refresh_vehicle_tree()
-        layout.addWidget(text_label("列车标记", "sectionLabel"))
-        self.marker_style = QComboBox()
-        for label, value in (
-            ("光晕圆点", "glow"),
-            ("空心圆环", "ring"),
-            ("列车图标", "train"),
-        ):
-            if self.plan.system == "rail" and value == "train":
-                continue
-            self.marker_style.addItem(label, value)
-        self.marker_style.currentIndexChanged.connect(self.change_appearance)
-        layout.addWidget(self.marker_style)
-        self.marker_size_label = text_label("图标大小  14 px", "muted")
-        layout.addWidget(self.marker_size_label)
-        self.marker_size = QSlider(Qt.Orientation.Horizontal)
-        self.marker_size.setRange(8, 40)
-        self.marker_size.setValue(14)
-        self.marker_size.setAccessibleName("列车图标大小")
-        self.marker_size.valueChanged.connect(self.change_appearance)
-        layout.addWidget(self.marker_size)
+        if self.plan.system != "rail":
+            layout.addWidget(text_label("列车标记", "sectionLabel"))
+            self.marker_style = QComboBox()
+            for label, value in (("光晕圆点", "glow"), ("空心圆环", "ring"), ("列车图标", "train")):
+                self.marker_style.addItem(label, value)
+            self.marker_style.currentIndexChanged.connect(self.change_appearance)
+            layout.addWidget(self.marker_style)
+            self.marker_size_label = text_label("图标大小  14 px", "muted")
+            layout.addWidget(self.marker_size_label)
+            self.marker_size = QSlider(Qt.Orientation.Horizontal)
+            self.marker_size.setRange(8, 40)
+            self.marker_size.setValue(14)
+            self.marker_size.setAccessibleName("列车图标大小")
+            self.marker_size.valueChanged.connect(self.change_appearance)
+            layout.addWidget(self.marker_size)
         show = QPushButton(
             "打开国铁时刻表 / 运行图"
             if self.plan.system == "rail"
@@ -469,6 +495,7 @@ class OperationsEditor(QFrame):
         self.status.setText(
             f"{len(self.plan.trains)} 车次 · 当前 {len(trains)} 车次 · 未验证联锁"
         )
+        self.load_selected_appearance()
 
     def set_trains_visible(self, ids, on):
         self.hidden_trains.difference_update(ids) if on else self.hidden_trains.update(
@@ -761,14 +788,44 @@ class OperationsEditor(QFrame):
         self.updated.emit()
 
     def change_appearance(self):
-        if not hasattr(self, "marker_size"):
+        if not hasattr(self, "marker_size") or self._appearance_loading:
             return
         self.appearance = {
             "size": self.marker_size.value(),
             "style": self.marker_style.currentData(),
         }
-        self.marker_size_label.setText(f"图标大小  {self.appearance['size']} px")
+        if hasattr(self, "marker_size_label"):
+            self.marker_size_label.setText(f"图标大小  {self.appearance['size']} px")
+        if self.plan.system == "rail" and self.selected_train:
+            train = self.plan.train(self.selected_train)
+            display = train.setdefault("extensions", {}).setdefault("railscope.org/display", {})
+            display.update(self.appearance)
+            display.setdefault("color", self.current_line().get("color", "#466979"))
+            self.push_positions()
+            self.message.setText(f"{self.selected_train} 已使用独立列车标记")
         self.map.call("setVehicleAppearance", self.appearance)
+
+    def choose_marker_color(self):
+        if self.plan.system != "rail" or not self.selected_train:
+            return
+        train = self.plan.train(self.selected_train)
+        display = train.setdefault("extensions", {}).setdefault("railscope.org/display", {})
+        color = QColorDialog.getColor(QColor(display.get("color", "#466979")), self, "选择车次标记颜色")
+        if color.isValid():
+            display["color"] = color.name()
+            self.push_positions()
+            self.message.setText(f"{self.selected_train} 已使用独立标记颜色")
+
+    def load_selected_appearance(self):
+        if self.plan.system != "rail" or not hasattr(self, "marker_style"):
+            return
+        display = {}
+        if self.selected_train:
+            display = self.plan.train(self.selected_train).get("extensions", {}).get("railscope.org/display", {})
+        self._appearance_loading = True
+        self.marker_style.setCurrentIndex(max(0, self.marker_style.findData(display.get("style", "glow"))))
+        self.marker_size.setValue(int(display.get("size", 14)))
+        self._appearance_loading = False
 
     def reset(self):
         self.clock = 25200
@@ -797,23 +854,28 @@ class OperationsEditor(QFrame):
         if self.clock >= 172799:
             self.playing = False
         if advancing:
-            self.push_positions()
+            self.push_positions(throttled=True)
         self._ticks += 1
-        if self._ticks % 5 == 0:
+        if self._ticks % 10 == 0:
             self.updated.emit()
         if hasattr(self, "cursor_line") and self.cursor_line:
             x = self.plot_left + (self.clock - self.start_time) * self.time_scale
             self.cursor_line.setLine(x, 30, x, self.diagram_height)
 
-    def push_positions(self):
+    def push_positions(self, throttled=False):
         if not self.map.is_ready:
             return
+        now = monotonic()
+        if throttled and now - self._last_vehicle_push < 0.25:
+            return
+        self._last_vehicle_push = now
         features = []
         for train, position in (
             self.plan.vehicle_positions(self.clock) if self.enabled else []
         ):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
+                display = train.get("extensions", {}).get("railscope.org/display", {})
                 features.append(
                     {
                         "type": "Feature",
@@ -828,7 +890,9 @@ class OperationsEditor(QFrame):
                             "distance_km": round(position["distance_m"] / 1000, 3),
                             "simulation_time": format_time(self.clock),
                             "source": train["source"],
-                            "display_color": line["color"],
+                            "display_style": display.get("style", "glow"),
+                            "display_size": max(8, min(40, int(display.get("size", 14)))),
+                            "display_color": display.get("color", line["color"]),
                             **(
                                 {"corridor_id": line["corridor_id"]}
                                 if line.get("corridor_id")
@@ -864,18 +928,23 @@ class OperationsEditor(QFrame):
 
     def update_sidebar(self, active):
         if hasattr(self, "clock_label") and isValid(self.clock_label):
-            self.clock_label.setText(format_time(self.clock))
-            self.count_label.setText(
-                f"{len(self.base_lines)} 条线路 · {len(self.plan.trains)} 列车计划 · {active} 列车在运行"
-            )
-            self.play_button.setText("暂停仿真" if self.playing else "开始仿真")
-            self.session_label.setText(
+            state = (
+                format_time(self.clock),
+                f"{len(self.base_lines)} 条线路 · {len(self.plan.trains)} 列车计划 · {active} 列车在运行",
+                "暂停仿真" if self.playing else "开始仿真",
                 "运行中 · 按运行表推进"
                 if self.playing
                 else "已暂停 · 保留列车位置"
                 if self.enabled
-                else "已关闭 · 地图浏览模式"
+                else "已关闭 · 地图浏览模式",
             )
+            if state == self._sidebar_state:
+                return
+            self._sidebar_state = state
+            self.clock_label.setText(state[0])
+            self.count_label.setText(state[1])
+            self.play_button.setText(state[2])
+            self.session_label.setText(state[3])
 
     def refresh_diagram(self):
         if QApplication.mouseButtons() != Qt.MouseButton.NoButton:

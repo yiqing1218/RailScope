@@ -94,6 +94,7 @@ class GrowingTree(QTreeWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self._height_pending = False
+        self._filter_height_floor = 0
         self._height_timer = QTimer(self)
         self._height_timer.setSingleShot(True)
         self._height_timer.timeout.connect(self.fit_content)
@@ -108,6 +109,14 @@ class GrowingTree(QTreeWidget):
         if not self._height_pending:
             self._height_pending = True
             self._height_timer.start(0)
+
+    def set_filter_active(self, active):
+        """Keep a useful directory viewport while rows are temporarily filtered."""
+        if active:
+            self._filter_height_floor = max(self._filter_height_floor, min(900, max(320, self.height())))
+        else:
+            self._filter_height_floor = 0
+        self.schedule_height()
 
     def fit_content(self):
         self._height_pending = False
@@ -130,7 +139,9 @@ class GrowingTree(QTreeWidget):
         )
         self.setFixedHeight(
             max(
-                32, total + 4 + (0 if self.isHeaderHidden() else self.header().height())
+                32,
+                self._filter_height_floor,
+                total + 4 + (0 if self.isHeaderHidden() else self.header().height()),
             )
         )
 

@@ -32,7 +32,7 @@ try:
         resolve_edge_aliases,
     )
     from .operating import strict_fields
-    from .rail_tables import merge_csv, export_csv
+    from .rail_tables import merge_csv, export_csv, export_template
     from .operating import parse_time, format_time
     from .rail_lines import resolution_policy, RESOLUTION_KEY
 except ImportError:
@@ -47,7 +47,7 @@ except ImportError:
         resolve_edge_aliases,
     )
     from operating import strict_fields
-    from rail_tables import merge_csv, export_csv
+    from rail_tables import merge_csv, export_csv, export_template
     from operating import parse_time, format_time
     from rail_lines import resolution_policy, RESOLUTION_KEY
 
@@ -479,11 +479,56 @@ class RailEditor(OperationsEditor):
         body.widget().layout().insertWidget(
             2, switch_row("共享运行通道 / 控制点", self.route_switch)
         )
-        edit_stops = QPushButton("编辑当前车次停站计划…")
-        edit_stops.clicked.connect(self.edit_train_stops)
-        body.widget().layout().insertWidget(3, edit_stops)
         self.time_input.setText(format_time(self.clock))
         return body
+
+    def corridor_stop_candidates(self):
+        """Return named stations/control points on the current complete corridor."""
+        line = self.current_line()
+        if not line:
+            return []
+        ordered = []
+        edge_lookup = {value["id"]: value for value in self.graph["edges"]}
+        for edge in line.get("rail_path", line.get("resolved_rail_path", [])):
+            record = edge_lookup.get(edge["edge_id"])
+            if not record:
+                continue
+            ids = list(record.get("node_ids", [record["from_node"], record["to_node"]]))
+            if edge["direction"] == "reverse":
+                ids.reverse()
+            ordered.extend(ids if not ordered else ids[1:])
+        names = {int(station["id"]): station["name"] for station in line.get("stations", []) if str(station["id"]).isdigit()}
+        source = self.directory / "rail.sqlite"
+        if source.exists() and ordered:
+            with sqlite3.connect(source) as db:
+                for start in range(0, len(ordered), 800):
+                    batch = ordered[start : start + 800]
+                    marks = ",".join("?" for _ in batch)
+                    sql = (
+                        "SELECT data FROM features WHERE kind='railPoints' "
+                        "AND json_extract(data,'$.properties.kind') IN ('station','halt','signal_box','junction') "
+                        f"AND json_extract(data,'$.properties.osm_node_id') IN ({marks})"
+                    )
+                    for (raw,) in db.execute(sql, batch):
+                        props = json.loads(raw).get("properties", {})
+                        node = props.get("osm_node_id")
+                        name = props.get("name")
+                        if isinstance(node, int) and name and name != str(node):
+                            names[node] = name
+        position = {node: index for index, node in enumerate(ordered)}
+        preferred = {int(stop["station_id"]) for stop in self.plan.train(self.selected_train)["stops"]} if self.selected_train else set()
+        grouped = {}
+        for node, raw_name in names.items():
+            name = raw_name.strip()
+            normalized = name.removesuffix("站").casefold()
+            if normalized and node in position:
+                grouped.setdefault(normalized, []).append((name, node))
+        candidates = []
+        for values in grouped.values():
+            choice = next((value for value in values if value[1] in preferred), None)
+            choice = choice or min(values, key=lambda value: position[value[1]])
+            candidates.append(choice)
+        return sorted(candidates, key=lambda value: position[value[1]])
 
     def set_reference_visible(self, on):
         if on and self.plan.trains:
@@ -1213,33 +1258,52 @@ class RailEditor(OperationsEditor):
         )
         hint.setWordWrap(True)
         form.addRow(hint)
+        candidates = self.corridor_stop_candidates()
         table = QTableWidget(0, 6)
         table.setHorizontalHeaderLabels(
-            ["停靠节点", "到达", "发车", "站台引用", "到发线编号", "车站进路编号"]
+            ["车站 / 线路所", "到达", "发车", "站台引用", "到发线编号", "车站进路编号"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
-        def add_row(stop=None):
+        def add_row(stop=None, row=None):
             stop = stop or {}
-            row = table.rowCount()
+            row = table.rowCount() if row is None else row
             table.insertRow(row)
+            station = QComboBox()
+            station.setEditable(True)
+            station.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            station.setPlaceholderText("搜索并选择通道经过的车站或线路所")
+            for name, node in candidates:
+                station.addItem(name, node)
+            station.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            station.completer().setFilterMode(Qt.MatchFlag.MatchContains)
+            existing = stop.get("node_id")
+            index = station.findData(existing)
+            if index >= 0:
+                station.setCurrentIndex(index)
+            else:
+                station.setCurrentIndex(-1)
+            station.setProperty("originalStop", deepcopy(stop))
+            table.setCellWidget(row, 0, station)
             values = [
-                stop.get("node_id", ""),
                 format_time(stop["arrival_s"]) if "arrival_s" in stop else "",
                 format_time(stop["departure_s"]) if "departure_s" in stop else "",
                 stop.get("platform_ref", stop.get("platform_id", "")),
                 stop.get("station_track_id", ""),
                 stop.get("station_route_id", ""),
             ]
-            for column, value in enumerate(values):
+            for column, value in enumerate(values, 1):
                 table.setItem(row, column, QTableWidgetItem(str(value)))
-            table.item(row, 0).setData(Qt.ItemDataRole.UserRole, deepcopy(stop))
 
         for stop in train["stops"]:
             add_row(stop)
         form.addRow(table)
-        add = QPushButton("添加停站（按通道方向填写）")
-        add.clicked.connect(lambda: add_row())
+        add = QPushButton("在选中行后插入停站")
+        add.clicked.connect(
+            lambda: add_row(
+                row=table.currentRow() + 1 if table.currentRow() >= 0 else table.rowCount()
+            )
+        )
         remove = QPushButton("删除选中停站")
         remove.clicked.connect(
             lambda: (
@@ -1256,14 +1320,17 @@ class RailEditor(OperationsEditor):
             try:
                 stops = []
                 for row in range(table.rowCount()):
-                    values = [
-                        table.item(row, column).text().strip() for column in range(6)
-                    ]
-                    stop = deepcopy(
-                        table.item(row, 0).data(Qt.ItemDataRole.UserRole) or {}
-                    )
+                    station = table.cellWidget(row, 0)
+                    node_id = station.currentData()
+                    if node_id is None:
+                        exact = next((node for name, node in candidates if name == station.currentText().strip()), None)
+                        node_id = exact
+                    if node_id is None:
+                        raise ValueError(f"第 {row + 1} 行必须从当前通道经过的车站或线路所中选择")
+                    values = ["", *[table.item(row, column).text().strip() for column in range(1, 6)]]
+                    stop = deepcopy(station.property("originalStop") or {})
                     stop.update(
-                        node_id=int(values[0]),
+                        node_id=int(node_id),
                         arrival_s=parse_time(values[1]),
                         departure_s=parse_time(values[2]),
                     )
@@ -1451,6 +1518,20 @@ class RailEditor(OperationsEditor):
                 Path(path).write_text(export_csv(self.document()), encoding="utf-8-sig")
             except (ValueError, OSError) as error:
                 QMessageBox.warning(self, "导出失败", str(error))
+
+    def export_template(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "下载国铁车次导入模板",
+            str(Path(self.path).parent / "国铁车次导入模板.csv"),
+            "UTF-8 CSV (*.csv)",
+        )
+        if path:
+            try:
+                Path(path).write_text(export_template(self.document()), encoding="utf-8-sig")
+                self.message.setText("国铁车次导入模板已保存")
+            except (ValueError, OSError) as error:
+                QMessageBox.warning(self, "模板未保存", str(error))
 
     def write(self, path):
         payload = self.document()

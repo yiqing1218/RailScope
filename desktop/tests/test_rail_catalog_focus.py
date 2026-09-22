@@ -37,6 +37,8 @@ def test_rail_directory_double_click_fits_full_line_without_toggling(tmp_path):
                 (ident, "rail", json.dumps({"properties": {"osm_way_id": way}})),
             )
             db.execute("INSERT INTO bounds VALUES(?,?,?,?,?)", (ident, *bounds))
+    opened = []
+    widget.feature_activated.connect(opened.append)
     widget.tree.itemDoubleClicked.emit(widget.items["line"], 0)
     assert view.calls[-1] == (
         "fit",
@@ -44,6 +46,7 @@ def test_rail_directory_double_click_fits_full_line_without_toggling(tmp_path):
         widget.items["line"].text(0),
     )
     assert widget.visible == set(), "定位不能更改显示开关"
+    assert opened[-1]["layer"] == "rail" and opened[-1]["properties"]["display_name"] == "测试铁路"
     before = len(view.calls)
     widget.tree.itemDoubleClicked.emit(widget.items["line"], 1)
     assert len(view.calls) == before, "双击开关列不能触发定位"
