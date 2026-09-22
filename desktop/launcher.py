@@ -227,12 +227,20 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 from rail_store import viewport
 
                 query = parse_qs(urlsplit(self.path).query)
+                selection = {}
+                for query_name in ("sections", "ways", "groups"):
+                    if query_name in query:
+                        value = json.loads(query[query_name][0])
+                        if not isinstance(value, list):
+                            raise ValueError("线路选择无效")
+                        selection[query_name] = value
                 payload = json.dumps(
                     viewport(
                         active_rail_directory(ROOT),
                         query["kind"][0],
                         [float(v) for v in query["bbox"][0].split(",")],
                         float(query["zoom"][0]),
+                        selection or None,
                     ),
                     ensure_ascii=False,
                 ).encode("utf-8")
@@ -747,7 +755,7 @@ class Desk(QMainWindow):
         self.add_action(edit, "清除导入图层", self.clear_imported)
         map_menu = bar.addMenu("地图")
         self.add_action(map_menu, "地图图层控制", lambda: self.open_sidebar(0))
-        self.add_action(map_menu, "铁路类型颜色 / 线宽…", self.edit_rail_styles)
+        self.add_action(map_menu, "铁路颜色 / 视角线宽曲线…", self.edit_rail_styles)
         self.add_action(map_menu, "国铁运行通道管理", lambda: self.open_sidebar(2))
         self.add_action(
             self.menuBar().actions()[0].menu(),

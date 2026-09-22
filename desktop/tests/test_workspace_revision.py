@@ -254,13 +254,30 @@ def test_manual_train_batch_undo_and_reserved_fields_roundtrip(tmp_path):
 
 
 def test_styles_strict_width_color_and_persistence(tmp_path):
-    from desktop.rail_style_ui import defaults, validate_styles, load_styles
+    from desktop.rail_style_ui import (
+        ZOOM_CURVE_KEY,
+        defaults,
+        validate_styles,
+        load_styles,
+    )
 
     styles = defaults()
     styles["高速铁路线"] = {"color": "#127ac2", "width": 3.5}
     path = tmp_path / "styles.json"
     path.write_text(json.dumps(styles), encoding="utf-8")
     assert load_styles(path) == styles
+    assert styles[ZOOM_CURVE_KEY][0] == {"zoom": 3.0, "scale": 0.8}
     styles["高速铁路线"]["width"] = float("nan")
     with pytest.raises(ValueError):
         validate_styles(styles)
+
+
+def test_legacy_styles_receive_recommended_zoom_width_curve(tmp_path):
+    from desktop.rail_style_ui import ZOOM_CURVE_KEY, defaults, load_styles
+
+    legacy = defaults()
+    legacy.pop(ZOOM_CURVE_KEY)
+    path = tmp_path / "styles.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    loaded = load_styles(path)
+    assert loaded[ZOOM_CURVE_KEY][-1] == {"zoom": 19.0, "scale": 1.8}

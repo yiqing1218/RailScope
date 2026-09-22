@@ -159,7 +159,13 @@ async function updateRailViewport(){
   try{
     for(const kind of ['rail','railPoints','railPlatforms','railStationAreas']){
       if(!railSourceVisible(kind))continue;
-      const data=await fetch(`/api/rail?kind=${kind}&bbox=${bbox}&zoom=${map.getZoom()}`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('国铁视窗查询失败');return r.json();});
+      const params=new URLSearchParams({kind,bbox,zoom:String(map.getZoom())});
+      if(kind==='rail'&&!railExclude){
+        if((railSections||[]).length)params.set('sections',JSON.stringify(railSections));
+        if((railWays||[]).length)params.set('ways',JSON.stringify(railWays));
+        if((railGroups||[]).length)params.set('groups',JSON.stringify(railGroups));
+      }
+      const data=await fetch(`/api/rail?${params}`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('国铁视窗查询失败');return r.json();});
       if(request!==railRequest||!railSourceVisible(kind))return;
       if(data.busy){railTimer=setTimeout(updateRailViewport,350);return;}
       map.getSource(kind)?.setData(data);populatedRailSources.add(kind);
@@ -171,18 +177,25 @@ async function updateRailViewport(){
 function addLayer(layer) { if (!map.getLayer(layer.id)) map.addLayer(layer); }
 function applyRailStyles(){
   const styles=config.railStyles||{};
+  const entries=Object.entries(styles).filter(([type,style])=>type!=='_zoom_width_curve'&&style&&typeof style==='object');
+  const curve=Array.isArray(styles._zoom_width_curve)&&styles._zoom_width_curve.length>=2
+    ?styles._zoom_width_curve
+    :[{zoom:3,scale:.8},{zoom:5,scale:.9},{zoom:8,scale:1.05},{zoom:12,scale:1.25},{zoom:16,scale:1.5},{zoom:19,scale:1.8}];
   const colors=['match',['get','track_type']],widths=['match',['get','track_type']];
-  for(const [type,style] of Object.entries(styles)){
+  for(const [type,style] of entries){
     colors.push(type,style.color);widths.push(type,Number(style.width));
   }
   colors.push('#667887');widths.push(2);
+  const zoomScale=['interpolate',['linear'],['zoom']];
+  for(const point of curve)zoomScale.push(Number(point.zoom),Number(point.scale));
+  const baseWidth=entries.length?widths:2;
   for(const id of ['rail','rail-stripes','rail-construction'])if(map.getLayer(id)){
-    map.setPaintProperty(id,'line-color',id==='rail-stripes'?'#ffffff':Object.keys(styles).length?colors:'#667887');
-    map.setPaintProperty(id,'line-width',['interpolate',['linear'],['zoom'],4,['*',.2,Object.keys(styles).length?widths:2],12,Object.keys(styles).length?widths:2,16,['*',1.5,Object.keys(styles).length?widths:2]]);
+    map.setPaintProperty(id,'line-color',id==='rail-stripes'?'#ffffff':entries.length?colors:'#667887');
+    map.setPaintProperty(id,'line-width',['*',baseWidth,zoomScale]);
   }
   if(map.getLayer('rail-construction'))map.setPaintProperty('rail-construction','line-opacity',.65);
   if(map.getLayer('rail-stripes')){
-    const solid=Object.entries(styles).filter(([,style])=>style.pattern==='solid').map(([type])=>type);
+    const solid=entries.filter(([,style])=>style.pattern==='solid').map(([type])=>type);
     map.setPaintProperty('rail-stripes','line-opacity',['case',['in',['get','track_type'],['literal',solid]],0,1]);
   }
 }
@@ -391,9 +404,9 @@ async function init() {
       document.getElementById('legend-station-label').textContent=rail?'经停控制点':'地铁站';
       document.getElementById('legend-vehicle-label').textContent=rail?'国铁列车':'地铁列车';
     },
-    setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();},
-    setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();},
-    setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();},
+    setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();scheduleRailViewport();},
+    setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();scheduleRailViewport();},
+    setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
     setRailOperatingVehicles(data){const signature=JSON.stringify(data);if(signature===lastRailVehicleSignature)return;lastRailVehicleSignature=signature;config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},

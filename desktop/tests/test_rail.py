@@ -143,3 +143,27 @@ def test_national_viewport_has_hard_feature_budget(tmp_path):
     visible = viewport(tmp_path, "railPoints", [120, 30, 122, 32], 14)
     assert len(visible["features"]) == VIEWPORT_FEATURES
     assert visible["truncated"] is True
+
+
+def test_selected_rail_line_is_loaded_even_at_national_zoom(tmp_path):
+    from desktop.rail_store import viewport
+
+    def feature(way, service):
+        return json.dumps(
+            {
+                "type": "Feature",
+                "properties": {"osm_way_id": way, "service": service, "way_tags": {"railway": "rail"}},
+                "geometry": {"type": "LineString", "coordinates": [[110, 30], [111, 31]]},
+            }
+        )
+
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript(
+            "CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT);"
+            "CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);"
+        )
+        db.execute("INSERT INTO features VALUES(1,'rail','yard',?)", (feature(101, "yard"),))
+        db.execute("INSERT INTO features VALUES(2,'rail','main',?)", (feature(202, "main"),))
+        db.executemany("INSERT INTO bounds VALUES(?,?,?,?,?)", [(1, 110, 111, 30, 31), (2, 110, 111, 30, 31)])
+    data = viewport(tmp_path, "rail", [73, 18, 135, 54], 4, {"ways": [101]})
+    assert [item["properties"]["osm_way_id"] for item in data["features"]] == [101]

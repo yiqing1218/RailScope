@@ -18,6 +18,9 @@ VIEWPORT_FEATURES = 6000
 VIEWPORT_BYTES = 8 * 1024 * 1024
 VIEWPORT_VERTICES = 100000
 VIEWPORT_FEATURE_BYTES = 1024 * 1024
+SELECTED_VIEWPORT_FEATURES = 12000
+SELECTED_VIEWPORT_BYTES = 32 * 1024 * 1024
+SELECTED_VIEWPORT_VERTICES = 1000000
 _viewport_gate = BoundedSemaphore(1)
 
 
@@ -303,7 +306,7 @@ def upgrade_render_features(directory, catalog):
     return True
 
 
-def viewport(directory, kind, bbox, zoom):
+def viewport(directory, kind, bbox, zoom, selection=None):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
@@ -317,6 +320,19 @@ def viewport(directory, kind, bbox, zoom):
     minimum_zoom = {"railPoints": 10, "railPlatforms": 12, "railStationAreas": 11}
     if zoom < minimum_zoom.get(kind, 0):
         return {"type": "FeatureCollection", "features": [], "truncated": False}
+    selection = selection if kind == "rail" and isinstance(selection, dict) else {}
+    selected_values = {}
+    for name in ("sections", "ways", "groups"):
+        values = selection.get(name, [])
+        if not isinstance(values, list) or len(values) > 5000:
+            raise ValueError("线路选择无效")
+        if any(not isinstance(value, (str, int)) or isinstance(value, bool) for value in values):
+            raise ValueError("线路选择无效")
+        selected_values[name] = list(dict.fromkeys(values))
+    selected = any(selected_values.values())
+    feature_limit = SELECTED_VIEWPORT_FEATURES if selected else VIEWPORT_FEATURES
+    byte_limit = SELECTED_VIEWPORT_BYTES if selected else VIEWPORT_BYTES
+    vertex_limit = SELECTED_VIEWPORT_VERTICES if selected else VIEWPORT_VERTICES
     # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
     if not _viewport_gate.acquire(blocking=False):
         return {"type": "FeatureCollection", "features": [], "busy": True}
@@ -324,24 +340,48 @@ def viewport(directory, kind, bbox, zoom):
     try:
         with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             db.execute("PRAGMA cache_size=-2048")
+            clauses = [
+                "f.kind=?",
+                "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
+            ]
+            parameters = [kind, west, east, south, north]
+            if selected:
+                selectors = []
+                for name, property_name in (
+                    ("sections", "section_id"),
+                    ("ways", "osm_way_id"),
+                    ("groups", "catalog_group_id"),
+                ):
+                    values = selected_values[name]
+                    if values:
+                        placeholders = ",".join("?" for _ in values)
+                        selectors.append(
+                            f"json_extract(f.data, '$.properties.{property_name}') IN ({placeholders})"
+                        )
+                        parameters.extend(values)
+                clauses.append("(" + " OR ".join(selectors) + ")")
+            else:
+                clauses.append('(? >= 10 OR f.service="main")')
+                parameters.append(zoom)
+            parameters.append(feature_limit + 1)
             rows = db.execute(
                 'SELECT CASE WHEN length(f.data)<=? THEN f.data ELSE NULL END '
-                'FROM features f JOIN bounds b ON f.id=b.id WHERE f.kind=? '
-                'AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? '
-                'AND (? >= 10 OR f.service="main") LIMIT ?',
-                (VIEWPORT_FEATURE_BYTES, kind, west, east, south, north, zoom, VIEWPORT_FEATURES + 1),
+                "FROM features f JOIN bounds b ON f.id=b.id WHERE "
+                + " AND ".join(clauses)
+                + " LIMIT ?",
+                (VIEWPORT_FEATURE_BYTES, *parameters),
             )
             for (raw,) in rows:
                 if raw is None:
                     truncated = True
                     continue
                 size = len(raw.encode("utf-8"))
-                if len(features) >= VIEWPORT_FEATURES or byte_count + size > VIEWPORT_BYTES:
+                if len(features) >= feature_limit or byte_count + size > byte_limit:
                     truncated = True
                     break
                 feature = json.loads(raw)
                 count = coordinate_count(feature["geometry"]["coordinates"])
-                if vertices + count > VIEWPORT_VERTICES:
+                if vertices + count > vertex_limit:
                     truncated = True
                     continue
                 features.append(feature)
