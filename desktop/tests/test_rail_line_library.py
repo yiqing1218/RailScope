@@ -1,6 +1,35 @@
 import pytest
+import sqlite3
 
 from desktop.tests.test_workspace_revision import reference, install_reference_database
+
+
+def test_resolved_path_reports_only_traversed_switches_and_signal_box(tmp_path):
+    from desktop.rail_line_store import DiskRailLineLibrary
+
+    index = tmp_path / "rail_lines.sqlite"
+    with sqlite3.connect(index) as db:
+        db.executescript(
+            "CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a INTEGER,b INTEGER,"
+            "construction INTEGER,length_m REAL,track_type TEXT,evidence TEXT,source_way TEXT,direction TEXT);"
+            "CREATE TABLE nodes(id INTEGER PRIMARY KEY,label TEXT,kind TEXT);"
+        )
+        db.executemany(
+            "INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [("e1", "line", 1, 2, 0, 1, "rail", "test", "1", "both"),
+             ("e2", "line", 2, 3, 0, 1, "rail", "test", "2", "both"),
+             ("e3", "line", 2, 4, 0, 1, "rail", "test", "3", "both")],
+        )
+        db.executemany("INSERT INTO nodes VALUES(?,?,?)", [(1, "A", "station"), (2, "2", "switch"), (3, "B", "station")])
+    library = DiskRailLineLibrary(index, metadata={"station:signalbox/test": {"display_name": "测试线路所", "member_switch_ids": [2]}})
+    assert library.switches_on_path([{"edge_id": "e1", "direction": "forward"}, {"edge_id": "e2", "direction": "forward"}]) == [
+        {"source_node_id": 2, "signal_box": "测试线路所"}
+    ]
+    assert library.switches_on_path([{"edge_id": "e2", "direction": "reverse"}, {"edge_id": "e3", "direction": "forward"}]) == [
+        {"source_node_id": 2, "signal_box": "测试线路所"}
+    ]
+    with pytest.raises(ValueError, match="不连续"):
+        library.switches_on_path([{"edge_id": "e1", "direction": "forward"}, {"edge_id": "e2", "direction": "reverse"}])
 
 
 def test_endpoint_line_table_reuses_infrastructure_and_rejects_disconnects():

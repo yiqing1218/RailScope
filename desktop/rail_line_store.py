@@ -1031,6 +1031,44 @@ class DiskRailLineLibrary:
             raise ValueError("选择 RS 区间前必须先选择铁路线")
         return self.selected_library([line_id]).section(section_id, line_id)
 
+    def switches_on_path(self, path):
+        """Report only real switches traversed by this resolved physical path."""
+        visited_nodes = []
+        previous_end = None
+        for leg in path:
+            edge = self.edges[leg["edge_id"]]
+            start, end = (edge["from_node"], edge["to_node"])
+            if leg["direction"] == "reverse":
+                start, end = end, start
+            if previous_end is not None and start != previous_end:
+                raise ValueError("通道物理路径不连续")
+            if previous_end is None:
+                visited_nodes.append(start)
+            visited_nodes.append(end)
+            previous_end = end
+        if not visited_nodes:
+            return []
+        matches = set()
+        with self.connect() as db:
+            for offset in range(0, len(visited_nodes), 800):
+                batch = visited_nodes[offset:offset+800]
+                marks = ",".join("?" for _ in batch)
+                matches.update(row[0] for row in db.execute(
+                    f"SELECT id FROM nodes WHERE kind='switch' AND id IN ({marks})", batch
+                ))
+        owners = {
+            int(node): custom.get("display_name", "未命名线路所")
+            for key, custom in self.metadata.items()
+            if key.startswith("station:signalbox/")
+            for node in custom.get("member_switch_ids", [])
+            if str(node).isdigit()
+        }
+        return [
+            {"source_node_id": node, "signal_box": owners.get(node)}
+            for node in dict.fromkeys(visited_nodes)
+            if node in matches
+        ]
+
     def resolve(self, sequence, policy="strict"):
         if not isinstance(sequence, list):
             raise ValueError("通道序列必须是数组")

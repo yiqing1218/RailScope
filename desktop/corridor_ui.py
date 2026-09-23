@@ -7,7 +7,6 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QScrollArea,
     QLineEdit,
     QTreeWidgetItem,
     QPushButton,
@@ -88,16 +87,13 @@ class SearchChoice(QComboBox):
         super().showPopup()
 
 
-class CorridorPanel(QScrollArea):
+class CorridorPanel(QWidget):
     selected = Signal(str, str)
 
     def __init__(self, editor, parent=None):
         super().__init__(parent)
         self.editor = editor
-        self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        body = QWidget()
-        layout = QVBoxLayout(body)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 5, 0)
         layout.addWidget(
             text_label("完整物理路径 → 单向 Corridor → 多个 TrainRun", "muted", True)
@@ -137,7 +133,6 @@ class CorridorPanel(QScrollArea):
         )
         layout.addWidget(self.note)
         layout.addStretch()
-        self.setWidget(body)
         self._signature = None
         editor.updated.connect(self.refresh)
         self.refresh()
@@ -596,6 +591,8 @@ class CorridorPanel(QScrollArea):
                     "policy": policy.currentData()
                 }
                 self.editor.merge_corridors(payload, interactive=True)
+                applied = next((route for route in self.editor.rail_payload["routes"] if route["id"] == code.text().strip()), None)
+                switches = library.switches_on_path(applied["path"]) if applied and hasattr(library, "switches_on_path") else []
                 dialog.accept()
                 self.refresh()
                 for index in range(self.tree.topLevelItemCount()):
@@ -604,9 +601,16 @@ class CorridorPanel(QScrollArea):
                         self.tree.setCurrentItem(item)
                         self.tree.scrollToItem(item)
                         break
-                self.note.setText(
-                    "通道已应用。点击目录可在地图查看；使用「保存通道与国铁车次」保存到本机。"
-                )
+                switch_note = (
+                    f"；物理路径经过 {len(switches)} 个真实道岔："
+                    + "、".join(
+                        f"SW-{entry['source_node_id']}"
+                        + (f"（{entry['signal_box']}）" if entry['signal_box'] else "")
+                        for entry in switches[:8]
+                    )
+                    + ("…" if len(switches) > 8 else "")
+                ) if switches else "；物理路径未经过已索引道岔"
+                self.note.setText("通道已应用" + switch_note + "。可点击目录查看并保存。")
                 self.selected.emit(code.text().strip(), "")
             except (ValueError, KeyError, TypeError, OSError, sqlite3.Error) as error:
                 QMessageBox.warning(dialog, "通道未修改", str(error))

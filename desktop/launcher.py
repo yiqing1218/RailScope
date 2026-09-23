@@ -281,6 +281,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
 class Bridge(QObject):
     selected = Signal(str)
     selections = Signal(str)
+    contextRequested = Signal()
     initialized = Signal()
     dataLoaded = Signal()
     progress = Signal(float, float, bool)
@@ -302,6 +303,10 @@ class Bridge(QObject):
     @Slot(str)
     def featuresSelected(self, data):
         self.selections.emit(data)
+
+    @Slot()
+    def mapContextRequested(self):
+        self.contextRequested.emit()
 
     @Slot()
     def ready(self):
@@ -1233,6 +1238,23 @@ class Desk(QMainWindow):
         logo.setPixmap(logo_pixmap())
         layout.addWidget(logo)
         layout.addWidget(text_label("RailScope", "brand"))
+        self.selection_buttons = {}
+        for mode, glyph, color, tip in (
+            ("click", "✋", "#526775", "抓手与单击选择（默认）"),
+            ("box_switch", "◇", "#b86b32", "框选道岔；右键可合成线路所"),
+            ("box_line", "━", "#266b9a", "框选铁路线；右键批量移动目录"),
+            ("box_station", "●", "#16866d", "框选站点；右键批量移动目录"),
+        ):
+            button = QToolButton()
+            button.setText(glyph)
+            button.setToolTip(tip)
+            button.setCheckable(True)
+            button.setFixedSize(32, 32)
+            button.setStyleSheet(f"QToolButton {{ color: {color}; font-size: 18px; }}")
+            button.clicked.connect(lambda checked=False, value=mode: self.set_map_selection_mode(value))
+            layout.addWidget(button)
+            self.selection_buttons[mode] = button
+        self.selection_buttons["click"].setChecked(True)
         title = QVBoxLayout()
         title.setSpacing(2)
         title.addWidget(QLabel("轨道交通工作台"))
@@ -1247,7 +1269,7 @@ class Desk(QMainWindow):
         layout.addWidget(self.search_type)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索名称或稳定编号   Ctrl+F")
-        self.search.setMinimumWidth(260)
+        self.search.setMinimumWidth(190)
         self.search.setMaximumWidth(345)
         self.search.returnPressed.connect(self.search_map)
         completer = QCompleter(
@@ -2032,15 +2054,13 @@ class Desk(QMainWindow):
         layout.addWidget(self.run_mode)
         self.run_pages = QStackedWidget()
         self.run_pages.addWidget(self.operations.sidebar())
-        self.rail_run_split = QSplitter(Qt.Orientation.Vertical)
         rail_sidebar = self.rail_operations.sidebar()
         self.rail_operations.vehicle_tree.parentWidget().hide()
-        self.rail_run_split.addWidget(rail_sidebar)
         self.corridor_panel = CorridorPanel(self.rail_operations)
         self.corridor_panel.selected.connect(self.show_corridor)
-        self.rail_run_split.addWidget(self.corridor_panel)
-        self.rail_run_split.setSizes([430, 500])
-        self.run_pages.addWidget(self.rail_run_split)
+        rail_layout = rail_sidebar.widget().layout()
+        rail_layout.insertWidget(rail_layout.count() - 1, self.corridor_panel)
+        self.run_pages.addWidget(rail_sidebar)
         layout.addWidget(self.run_pages)
         self.run_mode.currentIndexChanged.connect(self.change_run_mode)
         return body
@@ -2253,6 +2273,7 @@ class Desk(QMainWindow):
         bridge = self.map.bridge
         bridge.selected.connect(self.select_map_feature)
         bridge.selections.connect(self.map_selection_changed)
+        bridge.contextRequested.connect(self.map_context_menu)
         bridge.dataLoaded.connect(
             lambda: self.load_status.setText(
                 "  本地路网已载入 · 地图就绪"
@@ -2299,11 +2320,23 @@ class Desk(QMainWindow):
 
     def set_map_selection_mode(self, mode):
         self.map.call("setSelectionMode", mode)
+        for key, button in getattr(self, "selection_buttons", {}).items():
+            button.setChecked(key == mode)
         self.load_status.setText(
             "  框选工具已启用：在地图上拖出矩形，Ctrl 可追加选择"
-            if mode == "box"
+            if mode.startswith("box")
             else "  单击选择工具已启用：Ctrl + 单击可多选"
         )
+
+    def map_context_menu(self):
+        menu = QMenu(self)
+        switches = self.selected_switch_ids()
+        menu.addAction("由所选道岔新建线路所…", self.create_signal_box_from_selection).setEnabled(len(switches) >= 2)
+        menu.addAction("移动所选对象到目录…", self.move_map_selection).setEnabled(bool(self.selected_features))
+        menu.addAction("重命名所选对象…", self.rename_map_selection).setEnabled(bool(self.selected_features))
+        menu.addAction("归档所选对象", self.archive_map_selection).setEnabled(bool(self.selected_features))
+        menu.exec(QCursor.pos())
+        menu.deleteLater()
 
     def selected_switch_ids(self):
         return sorted({
@@ -2546,8 +2579,17 @@ class Desk(QMainWindow):
         )
 
     def toggle_right(self):
-        self.right.setVisible(not self.right.isVisible())
+        opening = not self.right.isVisible()
+        self.right.setVisible(opening)
+        if opening:
+            self._restore_inspector_width()
         self.detail_rail.setChecked(self.right.isVisible())
+
+    def _restore_inspector_width(self):
+        sizes = self.splitter.sizes()
+        if len(sizes) == 3 and sizes[2] < 275:
+            needed = 300 - sizes[2]
+            self.splitter.setSizes([sizes[0], max(300, sizes[1] - needed), 300])
 
     def set_flag(self, key, on):
         self.flags[key] = on
@@ -2935,6 +2977,7 @@ class Desk(QMainWindow):
         self.set_property_rows(rows)
         self.raw.setPlainText(json.dumps(feature, ensure_ascii=False, indent=2))
         self.right.show()
+        self._restore_inspector_width()
         self.detail_rail.setChecked(True)
 
     def edit_rail_station_metadata(self, station_id):
@@ -3617,18 +3660,6 @@ class Desk(QMainWindow):
         self.server.shutdown()
         self.server.server_close()
         super().closeEvent(event)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if (
-            hasattr(self, "operations")
-            and self.operations.isVisible()
-            and self.width() < 1250
-            and hasattr(self, "right")
-        ):
-            self.right.hide()
-            self.detail_rail.setChecked(False)
-
 
 def main():
     parser = argparse.ArgumentParser()

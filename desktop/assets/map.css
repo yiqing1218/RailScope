@@ -2,6 +2,9 @@
 * { box-sizing:border-box; }
 html,body,#map { margin:0; width:100%; height:100%; overflow:hidden; background:#e8eef1; color:var(--text); font-family:'Aptos','Microsoft YaHei UI',sans-serif; }
 #selection-box { position:absolute; z-index:8; border:2px solid #0c9184; background:rgba(12,145,132,.12); pointer-events:none; }
+#selection-box[data-mode="box_switch"] { border-color:#b86b32; background:rgba(184,107,50,.15); }
+#selection-box[data-mode="box_line"] { border-color:#266b9a; background:rgba(38,107,154,.15); }
+#selection-box[data-mode="box_station"] { border-color:#16866d; background:rgba(22,134,109,.15); }
 .glass { position:absolute; z-index:3; background:rgba(255,255,255,.82); border:1px solid rgba(255,255,255,.92); border-radius:12px; box-shadow:0 4px 22px rgba(35,57,71,.12),0 1px 3px rgba(35,57,71,.08); backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%); }
 .glass[hidden] { display:none; }
 .map-title { top:20px; left:20px; padding:14px 18px; pointer-events:none; }

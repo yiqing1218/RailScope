@@ -1,8 +1,45 @@
 import json
+import sqlite3
 from copy import deepcopy
 
 from desktop.rail_catalog_ui import CatalogTree, RailCatalog
 from desktop.tests.test_operating_ui import MapStub
+
+
+def test_real_platform_lines_and_switches_are_browsable_without_map_selection(qtbot, tmp_path):
+    from desktop.provinces import VERSION
+
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps({"ST-YARD": {"name": "测试站", "station_name": "测试站", "provinces": ["省界外 / 待核对"], "way_ids": [8], "track_type": "站场股道", "classification": VERSION}}),
+        encoding="utf-8",
+    )
+    station = {"type": "Feature", "properties": {"osm_node_id": 1, "kind": "station", "name": "测试站"}, "geometry": {"type": "Point", "coordinates": [120, 30]}}
+    switches = [
+        {"type": "Feature", "properties": {"osm_node_id": node, "kind": "switch", "name": str(node)}, "geometry": {"type": "Point", "coordinates": [120 + node / 100000, 30]}}
+        for node in (2, 3)
+    ]
+    platform = {"type": "Feature", "properties": {"osm_way_id": 8, "name": "1站台"}, "geometry": {"type": "LineString", "coordinates": [[120, 30], [120.0001, 30]]}}
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript("CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,data TEXT);CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);")
+        for index, (kind, feature) in enumerate([("railPoints", station), *( ("railPoints", value) for value in switches), ("railPlatforms", platform)], 1):
+            db.execute("INSERT INTO features VALUES(?,?,?)", (index, kind, json.dumps(feature, ensure_ascii=False)))
+            x, y = feature["geometry"]["coordinates"][0] if kind == "railPlatforms" else feature["geometry"]["coordinates"]
+            db.execute("INSERT INTO bounds VALUES(?,?,?,?,?)", (index, x, x, y, y))
+    map_view = MapStub()
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", map_view)
+    qtbot.addWidget(widget)
+    assert widget.yard_tree.topLevelItemCount() == 1
+    item = widget.station_items["node/1"]
+    assert any(item.child(i).text(0).startswith("真实站台线") for i in range(item.childCount()))
+    widget.tabs.setCurrentWidget(widget.switch_page)
+    assert widget.switch_tree.topLevelItemCount() == 2
+    assert "2 个道岔" in widget.switch_count.text()
+    widget.focus_switch_item(widget.switch_tree.topLevelItem(0), 0)
+    assert any(call[0] == "focus" and "道岔" in call[-1] for call in map_view.calls)
+    widget.tabs.setCurrentWidget(widget.platform_page)
+    assert widget.platform_tree.topLevelItemCount() == 1
+    widget.focus_platform_item(widget.platform_tree.topLevelItem(0), 0)
+    assert any(call[0] == "focus" for call in map_view.calls)
 
 
 def make_catalog(qtbot, tmp_path):
@@ -168,7 +205,7 @@ def test_move_context_action_uses_existing_folder_cascade_without_rebuild(
     assert widget.tree.itemWidget(widget.items["track20"], 1) is not None
 
 
-def test_large_directory_prioritizes_named_business_lines_and_omits_station_groups(
+def test_large_directory_prioritizes_named_business_lines_and_includes_station_yards(
     qtbot, tmp_path
 ):
     source = {
@@ -203,7 +240,8 @@ def test_large_directory_prioritizes_named_business_lines_and_omits_station_grou
     widget.show()
     qtbot.wait(1)
     assert "RL-NAMED" in widget.items
-    assert "ST-YARD" not in widget.items
+    assert "ST-YARD" in widget.items
+    assert widget.yard_tree.topLevelItemCount() >= 1
     assert not any(key.startswith("RL-U-") for key in widget.items)
     assert widget.tree.topLevelItemCount() > 0
     assert widget.tree.verticalScrollBar().value() == 0

@@ -6,12 +6,14 @@ from copy import deepcopy
 from pathlib import Path
 import threading
 import sqlite3
+import math
 from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QComboBox,
     QTreeWidgetItem,
+    QTreeWidget,
     QDialog,
     QLabel,
     QTableWidget,
@@ -24,6 +26,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QTabWidget,
     QAbstractItemView,
+    QSpinBox,
+    QHBoxLayout,
 )
 
 try:
@@ -305,6 +309,45 @@ class RailCatalog(QWidget):
         station_layout.addWidget(self.station_note)
         station_layout.addStretch(1)
         self.tabs.addTab(self.station_page, "车站目录")
+        self.yard_page = QWidget()
+        yard_layout = QVBoxLayout(self.yard_page)
+        yard_layout.setContentsMargins(0, 0, 0, 0)
+        self.yard_tree = QTreeWidget()
+        self.yard_tree.setHeaderHidden(True)
+        self.yard_tree.itemDoubleClicked.connect(self.focus_yard_item)
+        yard_layout.addWidget(self.yard_tree)
+        self.tabs.addTab(self.yard_page, "站场股道")
+        self.switch_page = QWidget()
+        switch_layout = QVBoxLayout(self.switch_page)
+        switch_layout.setContentsMargins(0, 0, 0, 0)
+        self.switch_search = QLineEdit()
+        self.switch_search.setPlaceholderText("搜索道岔源节点编号")
+        self.switch_search.returnPressed.connect(self.populate_switch_tree)
+        switch_layout.addWidget(self.switch_search)
+        self.switch_tree = QTreeWidget()
+        self.switch_tree.setHeaderHidden(True)
+        self.switch_tree.itemDoubleClicked.connect(self.focus_switch_item)
+        switch_layout.addWidget(self.switch_tree)
+        pager = QHBoxLayout()
+        self.switch_page_number = QSpinBox()
+        self.switch_page_number.setMinimum(1)
+        self.switch_page_number.valueChanged.connect(self.populate_switch_tree)
+        pager.addWidget(text_label("页码"))
+        pager.addWidget(self.switch_page_number)
+        self.switch_count = text_label("")
+        pager.addWidget(self.switch_count, 1)
+        switch_layout.addLayout(pager)
+        self.tabs.addTab(self.switch_page, "道岔目录")
+        self.platform_page = QWidget()
+        platform_layout = QVBoxLayout(self.platform_page)
+        platform_layout.setContentsMargins(0, 0, 0, 0)
+        self.platform_tree = QTreeWidget()
+        self.platform_tree.setHeaderHidden(True)
+        self.platform_tree.itemDoubleClicked.connect(self.focus_platform_item)
+        platform_layout.addWidget(self.platform_tree)
+        self.tabs.addTab(self.platform_page, "站台线目录")
+        self.tabs.currentChanged.connect(self._load_catalog_tab)
+        self.station_tree.itemExpanded.connect(self._load_station_switches)
         layout.addWidget(self.tabs)
         self.note = text_label(
             self.catalog_note(),
@@ -313,6 +356,7 @@ class RailCatalog(QWidget):
         layout.addWidget(self.note)
         self.populate()
         self.populate_station_tree()
+        self.populate_yard_tree()
         self.classified.connect(self.apply_classification)
         self.classification_failed.connect(self.note.setText)
         if (Path(directory) / "rail.sqlite").exists() and not all(
@@ -359,6 +403,7 @@ class RailCatalog(QWidget):
             self.send_visibility(False)
         self.populate()
         self.populate_station_tree()
+        self.populate_yard_tree()
         self.note.setText(
             self.catalog_note("目录已按轨道类型和物理线路/车站重建。")
         )
@@ -443,8 +488,7 @@ class RailCatalog(QWidget):
         )
         if len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
             named = sum(
-                not str(key).startswith("ST-")
-                and not self.display_name(key).startswith("未命名轨道")
+                not self.display_name(key).startswith("未命名轨道")
                 for key in self.catalog
             )
             return (
@@ -505,13 +549,12 @@ class RailCatalog(QWidget):
 
         # A national snapshot contains tens of thousands of unnamed OSM way
         # groups.  Taking the first 4,000 insertion-order records used to hide
-        # almost every properly named business line.  Show every matching named
-        # line first and leave station-yard groups to the station directory.
+        # almost every properly named business line.  Named yard groups are
+        # included and can also be reached from their station owner.
         candidates = [
             name
             for name in self.catalog
-            if not str(name).startswith("ST-")
-            and matches(name)
+            if matches(name)
             and (
                 bool(query)
                 or not self.display_name(name).startswith("未命名轨道")
@@ -659,6 +702,172 @@ class RailCatalog(QWidget):
         elif search_type == "铁路线":
             self.tabs.setCurrentWidget(self.line_page)
 
+    def _load_catalog_tab(self, index):
+        if self.tabs.widget(index) is self.yard_page:
+            self.populate_yard_tree()
+        elif self.tabs.widget(index) is self.switch_page:
+            self.populate_switch_tree()
+        elif self.tabs.widget(index) is self.platform_page:
+            self.populate_platform_tree()
+
+    def _platform_records(self):
+        if hasattr(self, "platform_records"):
+            return self.platform_records
+        self.platform_records = []
+        source = self.directory / "rail.sqlite"
+        if source.exists():
+            with sqlite3.connect(source) as db:
+                for (raw,) in db.execute("SELECT data FROM features WHERE kind='railPlatforms'"):
+                    feature = json.loads(raw)
+                    if feature.get("geometry", {}).get("type") != "LineString":
+                        continue
+                    coords = feature["geometry"].get("coordinates") or []
+                    if not coords:
+                        continue
+                    point = coords[len(coords)//2]
+                    props = feature.get("properties", {})
+                    self.platform_records.append({
+                        "way_id": props.get("osm_way_id"),
+                        "name": props.get("name") or props.get("way_tags", {}).get("ref") or "未命名站台线",
+                        "coordinates": point,
+                        "properties": props,
+                    })
+        return self.platform_records
+
+    def populate_platform_tree(self):
+        if self.platform_tree.topLevelItemCount():
+            return
+        for record in self._platform_records():
+            item = QTreeWidgetItem(self.platform_tree, [f"站台线 {record['name']} · OSM {record['way_id']}"])
+            item.setData(0, Qt.ItemDataRole.UserRole, record["way_id"])
+            item.setToolTip(0, "真实 OSM railway=platform 线；目录显示不代表已核验停靠股道")
+
+    def populate_yard_tree(self):
+        self.yard_tree.clear()
+        groups = {}
+        for key, group in sorted(self.catalog.items(), key=lambda value: (str(value[1].get("station_name") or ""), value[0])):
+            if not str(key).startswith("ST-"):
+                continue
+            provinces = group.get("provinces") or []
+            province = provinces[0] if len(provinces) == 1 else "跨省同名 / 区域待核对"
+            parent = groups.get(province)
+            if parent is None:
+                parent = QTreeWidgetItem(self.yard_tree, [province])
+                groups[province] = parent
+            item = QTreeWidgetItem(parent, [f"{self.display_name(key)} · {group.get('track_type', '')}"])
+            item.setData(0, Qt.ItemDataRole.UserRole, key)
+            item.setToolTip(0, f"稳定目录编号：{key}\n{group.get('type_evidence', '分类待核对')}")
+
+    def focus_yard_item(self, item, column):
+        key = item.data(0, Qt.ItemDataRole.UserRole)
+        if key in self.catalog:
+            self.focus_catalog_key(key, column)
+
+    def focus_catalog_key(self, key, column=0):
+        line_item = self.items.get(key)
+        if line_item is not None:
+            self.focus_item(line_item, column)
+            return
+        proxy = QTreeWidgetItem([self.display_name(key)])
+        self.members[id(proxy)] = {key}
+        try:
+            self.focus_item(proxy, column)
+        finally:
+            self.members.pop(id(proxy), None)
+
+    def focus_platform_item(self, item, column):
+        way_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(way_id, tuple):
+            way_id = way_id[1]
+        record = next((value for value in self._platform_records() if value["way_id"] == way_id), None)
+        if record:
+            self.map.call("focus", *record["coordinates"], 17, str(record["name"]))
+            self.feature_activated.emit({"layer": "rail-platform-line", "properties": record["properties"]})
+
+    def populate_switch_tree(self, *_args):
+        source = self.directory / "rail.sqlite"
+        if not source.exists():
+            self.switch_count.setText("尚未导入道岔数据")
+            return
+        query = self.switch_search.text().strip().removeprefix("SW-")
+        clause = "kind='railPoints' AND json_extract(data,'$.properties.kind')='switch'"
+        args = []
+        if query:
+            clause += " AND CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?"
+            args.append(f"%{query}%")
+        with sqlite3.connect(source) as db:
+            total = db.execute(f"SELECT count(*) FROM features WHERE {clause}", args).fetchone()[0]
+            pages = max(1, (total + 499) // 500)
+            self.switch_page_number.blockSignals(True)
+            self.switch_page_number.setMaximum(pages)
+            self.switch_page_number.setValue(min(self.switch_page_number.value(), pages))
+            self.switch_page_number.blockSignals(False)
+            rows = db.execute(
+                f"SELECT json_extract(data,'$.properties.osm_node_id') FROM features WHERE {clause} "
+                "ORDER BY CAST(json_extract(data,'$.properties.osm_node_id') AS INTEGER) LIMIT 500 OFFSET ?",
+                [*args, (self.switch_page_number.value() - 1) * 500],
+            ).fetchall()
+        self.switch_tree.clear()
+        for (node_id,) in rows:
+            item = QTreeWidgetItem(self.switch_tree, [f"道岔 · SW-{node_id}"])
+            item.setData(0, Qt.ItemDataRole.UserRole, int(node_id))
+            item.setToolTip(0, "OSM 来源节点；双击定位并查看所属车站或线路所")
+        self.switch_count.setText(f"{total:,} 个道岔 · 第 {self.switch_page_number.value()}/{pages} 页")
+
+    def focus_switch_item(self, item, column):
+        node_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if node_id is not None:
+            self.focus_switch_node(node_id)
+
+    def focus_switch_node(self, node_id):
+        source = self.directory / "rail.sqlite"
+        if not source.exists():
+            return
+        with sqlite3.connect(source) as db:
+            row = db.execute(
+                "SELECT data FROM features WHERE kind='railPoints' "
+                "AND json_extract(data,'$.properties.kind')='switch' "
+                "AND json_extract(data,'$.properties.osm_node_id')=? LIMIT 1",
+                (node_id,),
+            ).fetchone()
+        if row:
+            feature = json.loads(row[0])
+            self.map.call("focus", *feature["geometry"]["coordinates"], 17, f"道岔 SW-{node_id}")
+            self.feature_activated.emit({"layer": "rail-detail-points", **feature})
+            self.station_owner_for_node(node_id)
+
+    def _load_station_switches(self, item):
+        station_id = item.data(0, Qt.ItemDataRole.UserRole)
+        record = self.station_record_by_id.get(station_id)
+        if record is None or item.data(0, Qt.ItemDataRole.UserRole + 2):
+            return
+        item.setData(0, Qt.ItemDataRole.UserRole + 2, True)
+        source = self.directory / "rail.sqlite"
+        point = record.get("coordinates") or []
+        if not source.exists() or len(point) < 2:
+            return
+        lon, lat = point[:2]
+        dx = .003 / max(.2, math.cos(math.radians(lat)))
+        with sqlite3.connect(source) as db:
+            rows = db.execute(
+                "SELECT json_extract(f.data,'$.properties.osm_node_id') FROM bounds b "
+                "JOIN features f ON f.id=b.id WHERE f.kind='railPoints' "
+                "AND json_extract(f.data,'$.properties.kind')='switch' "
+                "AND b.minx BETWEEN ? AND ? AND b.miny BETWEEN ? AND ?",
+                (lon-dx, lon+dx, lat-.003, lat+.003),
+            ).fetchall()
+        known = set(record.get("member_switch_ids", []))
+        for (switch_id,) in rows:
+            if switch_id in known:
+                continue
+            owner = rail_switch_owner(self.directory, switch_id, self.regions, self.overrides)
+            if owner and owner["id"] == station_id:
+                known.add(switch_id)
+                leaf = QTreeWidgetItem(item, [f"道岔 SW-{switch_id}", ""])
+                leaf.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
+                leaf.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
+        record["member_switch_ids"] = sorted(known)
+
     def populate_station_tree(self):
         self.station_records, self.station_total = rail_station_records(
             self.directory,
@@ -676,6 +885,34 @@ class RailCatalog(QWidget):
         self.station_record_by_id = {
             record["id"]: record for record in self.station_records
         }
+        by_name = {}
+        station_grid = {}
+        for record in self.station_records:
+            by_name.setdefault((record["name"].removesuffix("站").casefold(), record["province"]), []).append(record["id"])
+            point = record.get("coordinates") or []
+            if len(point) >= 2:
+                station_grid.setdefault((int(point[0]*100), int(point[1]*100)), []).append(record)
+        yards = {}
+        for key, group in self.catalog.items():
+            if not str(key).startswith("ST-"):
+                continue
+            candidates = {sid for province in group.get("provinces", []) for sid in by_name.get((str(group.get("station_name") or "").removesuffix("站").casefold(), province), [])}
+            if len(candidates) == 1:
+                yards.setdefault(next(iter(candidates)), []).append(key)
+        platforms = {}
+        for platform in self._platform_records():
+            lon, lat = platform["coordinates"][:2]
+            nearby = []
+            cell = (int(lon*100), int(lat*100))
+            for x in range(cell[0]-1, cell[0]+2):
+                for y in range(cell[1]-1, cell[1]+2):
+                    for station in station_grid.get((x,y), []):
+                        gap = math.hypot((lon-station["coordinates"][0])*math.cos(math.radians(lat)), lat-station["coordinates"][1])*111195
+                        if gap <= 250:
+                            nearby.append((gap, station["id"]))
+            nearby.sort()
+            if nearby and (len(nearby) == 1 or nearby[1][0] - nearby[0][0] >= 75):
+                platforms.setdefault(nearby[0][1], []).append(platform)
         self.station_tree.setUpdatesEnabled(False)
         self.station_tree.clear()
         self.station_items = {}
@@ -710,6 +947,7 @@ class RailCatalog(QWidget):
             self.station_tree.setItemWidget(item, 1, control)
             self.station_items[record["id"]] = item
             self.station_members[id(item)] = {record["id"]}
+            self._add_station_assets(item, record, yards.get(record["id"], []), platforms.get(record["id"], []))
             ancestor = parent
             while ancestor is not self.station_tree.invisibleRootItem():
                 self.station_members.setdefault(id(ancestor), set()).add(record["id"])
@@ -717,7 +955,8 @@ class RailCatalog(QWidget):
             for switch_id in record.get("member_switch_ids", []):
                 switch_item = QTreeWidgetItem(item, [f"道岔 SW-{switch_id}", ""])
                 switch_item.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
-                switch_item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
+                switch_item.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
+            item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
         for path, item in groups.items():
             members = self.station_members.get(id(item), set())
             item.setText(0, item.text(0) + f" · {len(members)} 项")
@@ -735,10 +974,25 @@ class RailCatalog(QWidget):
         shown = len(self.station_records)
         suffix = "；结果已限制，请在主地图搜索框继续缩小范围" if shown < self.station_total else ""
         self.station_note.setText(
-            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；道岔归入所属对象{suffix}。"
+            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；已关联道岔列在站点下，其余可到道岔目录检索{suffix}。"
         )
         self.station_tree.schedule_height()
         self.station_tree.setUpdatesEnabled(True)
+
+    def _add_station_assets(self, item, record, yards, platforms):
+        if yards:
+            folder = QTreeWidgetItem(item, ["站场股道", ""])
+            for key in sorted(yards):
+                group = self.catalog[key]
+                leaf = QTreeWidgetItem(folder, [f"{self.display_name(key)} · {group.get('track_type', '')}", ""])
+                leaf.setData(0, Qt.ItemDataRole.UserRole, ("yard", key))
+                leaf.setToolTip(0, f"目录编号：{key}\n来源：{group.get('type_evidence', '待核对')}")
+        if platforms:
+            folder = QTreeWidgetItem(item, ["真实站台线（邻近推断，待核验）", ""])
+            for platform in platforms:
+                leaf = QTreeWidgetItem(folder, [f"站台线 {platform['name']}", ""])
+                leaf.setData(0, Qt.ItemDataRole.UserRole, ("platform", platform["way_id"]))
+                leaf.setToolTip(0, f"OSM 来源轨道：{platform['way_id']}；邻近关联，非运行股道认定")
 
     def _apply_station_override(self, record):
         custom = self.overrides.get("station:" + record["id"], {})
@@ -934,6 +1188,15 @@ class RailCatalog(QWidget):
         if column != 0:
             return
         station_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(station_id, tuple):
+            kind, ident = station_id
+            if kind == "switch":
+                self.focus_switch_node(ident)
+            elif kind == "platform":
+                self.focus_platform_item(item, column)
+            elif kind == "yard":
+                self.focus_catalog_key(ident, column)
+            return
         record = next((r for r in self.station_records if r["id"] == station_id), None)
         if record:
             self.map.call("focus", *record["coordinates"], 15, record["name"])
@@ -1084,7 +1347,7 @@ class RailCatalog(QWidget):
                 switch_item.setToolTip(
                     0, f"归属：{current['name']}\nOSM 道岔节点：{switch_id}"
                 )
-                switch_item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+                switch_item.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
             if additions:
                 current["member_switch_ids"] = sorted(known | set(additions))
             return existing
@@ -1102,6 +1365,7 @@ class RailCatalog(QWidget):
             self.station_folder_paths.add(tuple(clean))
         parent = self._ensure_station_group(path)
         item = QTreeWidgetItem(parent, [record["name"], ""])
+        item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
         item.setData(0, Qt.ItemDataRole.UserRole, station_id)
         item.setToolTip(0, self._station_tooltip(record))
         control = Switch(self.station_is_visible(record))
@@ -1113,7 +1377,7 @@ class RailCatalog(QWidget):
         for switch_id in record.get("member_switch_ids", []):
             switch_item = QTreeWidgetItem(item, [f"道岔 SW-{switch_id}", ""])
             switch_item.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
-            switch_item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+            switch_item.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
         for length in range(1, len(path) + 1):
             prefix = path[:length]
             group = self.station_groups[prefix]
@@ -1161,6 +1425,7 @@ class RailCatalog(QWidget):
                 self.station_tree.removeItemWidget(old_item, 1)
                 if control is not None:
                     control.deleteLater()
+                children = old_item.takeChildren()
                 self.station_items.pop(station_id, None)
                 self.station_members.pop(id(old_item), None)
                 detached = None
@@ -1173,6 +1438,8 @@ class RailCatalog(QWidget):
                     self.station_folder_paths.add(tuple(clean))
                 new_parent = self._ensure_station_group(new_path)
                 item = QTreeWidgetItem(new_parent, [record["name"], ""])
+                item.addChildren(children)
+                item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
                 item.setData(0, Qt.ItemDataRole.UserRole, station_id)
                 item.setToolTip(0, self._station_tooltip(record))
                 control = Switch(self.station_is_visible(record))
