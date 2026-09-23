@@ -1,0 +1,1985 @@
+{
+  "RL-c8571845ec3c691fb169": {
+    "track_type": "高速铁路线",
+    "display_name": "沪宁沿江高速",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f2b1dec5971012fc9df6": {
+    "track_type": "高速铁路线",
+    "display_name": "京沪高速线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-bdb634836ef8aa238f7d": {
+    "track_type": "高速铁路线",
+    "display_name": "盐通高速线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "station:node/267225237": {
+    "display_name": "南京",
+    "folder_path": [
+      "江苏省",
+      "南京"
+    ],
+    "station_type": "客货运站"
+  },
+  "RL-0aa2db8ffdcb411f6922": {
+    "track_type": "联络线 / 匝道",
+    "display_name": "市域铁机场联络线",
+    "folder_path": [
+      "市域/市郊铁路",
+      "上海市"
+    ]
+  },
+  "RL-33098ea5ac1f5d39ce3c": {
+    "track_type": "货运铁路线",
+    "display_name": "七宝北线",
+    "folder_path": [
+      "其他铁路",
+      "不确定铁路"
+    ]
+  },
+  "RL-375ad9cee060dc957f53": {
+    "track_type": "未确认类型"
+  },
+  "RL-1248a47ddf580b1ff598": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "京哈高速线"
+  },
+  "RL-26f6214b9c6f1dc6bb0f": {
+    "track_type": "高速铁路线",
+    "display_name": "秦沈客运专线",
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3bd9b2f509ca24092c3d": {
+    "track_type": "高速铁路线",
+    "display_name": "丹大快速铁路",
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-0443d7b219c4906f4a16": {
+    "track_type": "高速铁路线",
+    "display_name": "沪苏湖高速线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b05ac13d385fb8e2066e": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-76e72e5591bb4f16f4ce": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-794163b6a0436ed65f9f": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-22b6a91dbfd06713d0c0": {
+    "track_type": "高速铁路线",
+    "display_name": "济青高速线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-d4eec9ea74ce86e78388": {
+    "track_type": "高速铁路线",
+    "display_name": "京港高速线"
+  },
+  "RL-4c9da3677cb8528eac17": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2c0a28d56b951de4f6c4": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-8e71a30649b3ed2f9f16": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-c1d200afa7ea365ecd1c": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f8c91c7c50ef03f1b443": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-7b6e12e0bfa39f6d3655": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1a88b8b8c1aff3ff3354": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-586de0d1e69009b06402": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-fcaf2c5ddfcd840c3152": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-e40a1de43066841e9271": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4f71d594ea4965153256": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-38059c04255dda080c0c": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-59ee4034f96678b1d9aa": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-453380029b0e0ec2c94a": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-70a869ae23d4fb9071a3": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "兰新客专线"
+  },
+  "RL-5d1932c00c4c7f7953c2": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-d9e73ef653ed33631d3e": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-af873da8147f2c312f05": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "广深港高速线"
+  },
+  "RL-bb589cf30fb64ff452f6": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "广深港高速线"
+  },
+  "RL-c00fbc2575108aadc663": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1e3dfcd8f0b71a1f5761": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-7ae241d6e23efb9f73c1": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-25997be3e3afd10c7826": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-ce51cf431a7f594c93e1": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-00c5b73824b2e80d9816": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5495bab492b2336848ef": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4aac9dcee5fffee82c17": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b97b0d70fdf985aa0f46": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-010c6e31557f17ea0a64": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-d13e0401dfd5ecb93f0e": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-52879f7a41b51b1183be": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-43287d4f2a5dde0e31e5": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "station:node/7171261760": {
+    "display_name": "上海南",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "客运站"
+  },
+  "station:node/4585491663": {
+    "display_name": "东营",
+    "folder_path": [
+      "山东省",
+      "东营"
+    ],
+    "station_type": "客货运站"
+  },
+  "station:node/10120263942": {
+    "display_name": "临沂",
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ],
+    "station_type": "客货运站"
+  },
+  "station:node/8432585812": {
+    "display_name": "山家林",
+    "folder_path": [
+      "山东省",
+      "枣庄"
+    ],
+    "station_type": "货运站"
+  },
+  "station:node/1673581107": {
+    "display_name": "临沂东",
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/8452913704": {
+    "display_name": "兖州",
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ],
+    "station_type": "客货运站"
+  },
+  "station:node/8455171505": {
+    "display_name": "兖州北",
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ],
+    "station_type": "编组站"
+  },
+  "station:node/928056895": {
+    "display_name": "厦门",
+    "folder_path": [
+      "福建省",
+      "厦门"
+    ],
+    "station_type": "客运站"
+  },
+  "station:node/6527623010": {
+    "display_name": "厦门北",
+    "folder_path": [
+      "福建省",
+      "厦门"
+    ],
+    "station_type": "客运站"
+  },
+  "station:node/9854691986": {
+    "display_name": "丁公",
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ],
+    "station_type": "编组站"
+  },
+  "station:node/8429529323": {
+    "display_name": "宁阳东",
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/9354508778": {
+    "display_name": "济宁北",
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ],
+    "station_type": "客运站"
+  },
+  "station:node/8446034574": {
+    "display_name": "兖州西",
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ],
+    "station_type": "货运站"
+  },
+  "station:node/2061664087": {
+    "display_name": "博山",
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ],
+    "station_type": "未定义"
+  },
+  "RL-16ef002e54781e41c43b": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-22666f1b161069aa56d5": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2bed4feb70dfe42165cd": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1daf53efe43a9ce674f5": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-c8645f76ae7530447419": {
+    "track_type": "高速铁路线",
+    "display_name": "青盐线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-d46857852aa840d44071": {
+    "track_type": "高速铁路线"
+  },
+  "RL-33bd407010bf9b9b2b54": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-96b70ab550cc1346254c": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-125f9143ef1f48efafda": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "京广高速线"
+  },
+  "RL-5a98cedd9f866196b17d": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "沪昆高速线"
+  },
+  "RL-c516cef4247b11ebdd60": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ],
+    "display_name": "徐兰高速线"
+  },
+  "RL-5ecad97ddef55e2e5a72": {
+    "track_type": "高速铁路线",
+    "display_name": "南广线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-54a005b78d9989bef57f": {
+    "track_type": "高速铁路线",
+    "display_name": "南昆高速线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-23278e973a6d705a5116": {
+    "track_type": "高速铁路线",
+    "display_name": "徐连高速线",
+    "folder_path": [
+      "高速铁路",
+      "干线",
+      "其他/速度待核对"
+    ]
+  },
+  "station:node/7777687788": {
+    "display_name": "秦皇岛东",
+    "folder_path": [
+      "省界外 / 待核对",
+      "唐山"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/8429540365": {
+    "folder_path": [
+      "山东省",
+      "济南"
+    ]
+  },
+  "station:node/8093813886": {
+    "display_name": "临淄",
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ],
+    "station_type": "客货运站"
+  },
+  "station:node/12125759371": {
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ]
+  },
+  "station:node/8463026934": {
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ]
+  },
+  "station:node/9255881284": {
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ]
+  },
+  "station:node/6216630894": {
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ]
+  },
+  "station:node/3855828881": {
+    "display_name": "东营南",
+    "folder_path": [
+      "山东省",
+      "东营"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/8429540714": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/8447564477": {
+    "folder_path": [
+      "山东省",
+      "济南"
+    ]
+  },
+  "station:node/12501009358": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/12501009355": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/6844103016": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ],
+    "display_name": "泰安",
+    "station_type": "未定义"
+  },
+  "station:node/8429540384": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/1613209999": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/9354508776": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/6193950294": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/272494359": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/9354508777": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/808126191": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/9262897538": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/8455171506": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/8456964130": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/6225072999": {
+    "display_name": "聊城",
+    "folder_path": [
+      "山东省",
+      "聊城"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/6427566587": {
+    "folder_path": [
+      "山东省",
+      "聊城"
+    ]
+  },
+  "station:node/10650882519": {
+    "folder_path": [
+      "山东省",
+      "聊城"
+    ]
+  },
+  "station:node/2651716243": {
+    "folder_path": [
+      "山东省",
+      "聊城"
+    ]
+  },
+  "station:node/13026034783": {
+    "display_name": "莱芜",
+    "folder_path": [
+      "山东省",
+      "莱芜"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/8418956434": {
+    "folder_path": [
+      "山东省",
+      "莱芜"
+    ]
+  },
+  "station:node/7837330995": {
+    "folder_path": [
+      "山东省",
+      "莱芜"
+    ]
+  },
+  "station:node/10277100557": {
+    "folder_path": [
+      "山东省",
+      "莱芜"
+    ]
+  },
+  "station:node/9251972108": {
+    "display_name": "龙口北",
+    "folder_path": [
+      "山东省",
+      "烟台"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/5075522332": {
+    "folder_path": [
+      "山东省",
+      "烟台"
+    ]
+  },
+  "station:node/7128808616": {
+    "folder_path": [
+      "山东省",
+      "烟台"
+    ]
+  },
+  "station:node/6202567108": {
+    "folder_path": [
+      "山东省",
+      "淄博"
+    ]
+  },
+  "station:node/8069276053": {
+    "folder_path": [
+      "山东省",
+      "东营"
+    ]
+  },
+  "station:node/9251972105": {
+    "folder_path": [
+      "山东省",
+      "东营"
+    ]
+  },
+  "station:node/8069276054": {
+    "folder_path": [
+      "山东省",
+      "东营"
+    ]
+  },
+  "station:node/9242869561": {
+    "display_name": "东庄",
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ],
+    "station_type": "货运站"
+  },
+  "RL-41f2106cb9e4f7a8375a": {
+    "track_type": "支线 / 岔道",
+    "folder_path": [
+      "其他铁路",
+      "矿区铁路"
+    ]
+  },
+  "station:node/10120263951": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/3341441115": {
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ]
+  },
+  "station:node/9255881280": {
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ]
+  },
+  "station:node/2417820308": {
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ]
+  },
+  "station:node/2913762899": {
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ]
+  },
+  "station:node/3178717101": {
+    "folder_path": [
+      "山东省",
+      "临沂"
+    ]
+  },
+  "station:node/1565198993": {
+    "display_name": "威海",
+    "folder_path": [
+      "山东省",
+      "威海"
+    ],
+    "station_type": "客货运站"
+  },
+  "station:node/1709861023": {
+    "display_name": "南翔",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "编组站"
+  },
+  "station:node/9242148031": {
+    "display_name": "南翔北",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/7168621492": {
+    "display_name": "新龙华",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "编组站"
+  },
+  "station:node/7168565706": {
+    "display_name": "莘庄",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/11029495367": {
+    "display_name": "石湖荡",
+    "folder_path": [
+      "上海市",
+      "上海"
+    ],
+    "station_type": "货运站"
+  },
+  "station:node/2483530943": {
+    "display_name": "南京南",
+    "folder_path": [
+      "江苏省",
+      "南京"
+    ],
+    "station_type": "客运站"
+  },
+  "RL-29a54fbebff8a166fce8": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-22c230771d129d80b05f": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-78d14cc7f03e7518b7c5": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a91a4bc008e318772be8": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-9d5e1c8735c5a88e5ce4": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a17cb7eb6cc4bbc0341c": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5dcad4ab578fbe5928b0": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-e5a3c54c13dbba1c491a": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b16839efe578759b1c3e": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1d0c9a2135e43958eef3": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-74518a94d0f484501b72": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线",
+    "display_name": "渝厦高速线（渝长段）"
+  },
+  "RL-177e1d89d62abb403eeb": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-57b1e0bbbc22316b9d10": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-9d18bacede8266b8f65e": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "渡线 / 道岔连接轨"
+  },
+  "RL-de186663889b9c33bd4e": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-20c749c86d3cd74bba87": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "未确认类型"
+  },
+  "RL-b5d99773177bc56e0c71": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "渡线 / 道岔连接轨"
+  },
+  "RL-687833265d2673980e31": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4632c5a09738d58f4531": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-0e2346afe5aac057e9c3": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-fb48f0abe93ceb1982a9": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-090085eb69725456c269": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-f614237408e94b83c543": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-b408898c8495eb2812cd": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-5175c857a1b9ae9bd47c": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "普速铁路线"
+  },
+  "RL-3fb33dbcdae5f95c00fc": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ],
+    "track_type": "高速铁路线"
+  },
+  "RL-3f0cc1ee935d39c29fa9": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-39636d80503612286580": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-6cd8cb188463895ccedc": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-0988ab221eeeabaa178c": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-6c1e2e7f5d3ea93f916d": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-caaeb161429a04a4039c": {
+    "track_type": "高速铁路线",
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-fbe0bf3ed87d9cbaf0a1": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1bb444f4b8a2cc1a60f0": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-86801c7b43604937d453": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-8a3cb617c6ad409e6563": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-377d8767468405e21e26": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-9190eff087e08e38fd5e": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-eda97786f0efc40459ef": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-ea2a0f6c1fd73e01b676": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3ed5b4b532ada26fdd48": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-cef2335b3bfda8923bed": {
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4b51250491394bd4af5f": {
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4d21787c7cdd7ed39102": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-fea7d2dad79681c13c55": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4b68f103fde36df8a1e3": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-20c506239176488a32f9": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4d05f5d629fa9f69f677": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-9b09531145a394f5813c": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-8f5a2f73c1aa1f896d7f": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a819e1f16f9e891fbbc3": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3481bfdd6174de73d800": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3329ab810c4e9e6d769d": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2b59b69cb6798930d977": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b9e7c5ac36b906142236": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b7de8657f3e13854be34": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a2f36a937fcdad7cdeea": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-29ac4b3d8dd94ea8ab35": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-6584804f3f1c5a66dd02": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-67b5d2b2b430f4b9bb28": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-ec975721732b294a7789": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-799f807b05bf13f1261c": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-55f2523304c63040dedc": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-35174f04ae9036dde492": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-02212ad4c6967b8ad45f": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a5cc96116faf484e5132": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-94b7b98a6d131584f4e6": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1dd9ca4a5b8e41686595": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-04a8b0a6709ce023dcf8": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-d746639a27421484367d": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-75ffd4223d1fc25ff9dc": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-cf79ec6ea41804246e41": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-8b96e3df37824c3f2d16": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-044b6ab1f0ab19e3052c": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3f2b2fd72b0d24bd5419": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-c3005b351d85038530f4": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-ae06d52cb880eca5a31c": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3e8f935d0f4f3f739066": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2b52dab37963c079a4bc": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-49714fa4c916d86a8c4b": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-e4103b51c0c5bc6c8cb2": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f0a9958702068b4244db": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-9d032ef9ad81d924b4ab": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5632f73b3a39024a02fc": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-495216a2e9a67c31be82": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-eb8ad1d9846950df8768": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-3b4a9ac074c40aee51c9": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-cc3540bf86dbf7fb9d58": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-6f9ae34d986116c2fb0b": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2a428482988764db8a9c": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2a65c0a585da76a705c6": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-08617cdb2436a33e29f3": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f562b552b0acee13e237": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-484e20b689135c8d8282": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-316be9db88b1b1c5406d": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-af2fbccc9bf54cc2a2c2": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5dec0c1ee51998e3d27c": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-863b5bde05133e5eb9e6": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-4d337d2255d0fdf53bb0": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-67c563124d9e56c74676": {
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-063c4a53a087731c4bd1": {
+    "folder_path": [
+      "高速铁路",
+      "华北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-b6d88e3e17dd30beb895": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-6a08fbd4c75ec5004438": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-23e67a2ec0bbfb3c105e": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-7844b11db196b754ac27": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-245197ed46f242389c0e": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-84d29482a88d0743f11a": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-dbd13ba2063abba98032": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-c8eae52343ca629aac34": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-22e5972442b9d9111ac6": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5ac7621b199f38beff81": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-41bdc12359a62526fd32": {
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-c04b1aabbb957c3bbc22": {
+    "folder_path": [
+      "高速铁路",
+      "东北",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-2ac84aa86008a2b38744": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-0dd3b31a5cef7bbd3037": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-bfa8ff43f81750711db0": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f871a6d4f84142f0e5f9": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-0714a873621ca5cc44b0": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-1bdd2c67d75b827f07cc": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-47d657bf39260fbcf507": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-808c8d872e67fd55d134": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-e62ebd2df9e1a9888db0": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a09438174f0ebd36f59f": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a2d44032a8b9836ae630": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-5e4e6c3104e56d62ca84": {
+    "track_type": "高速铁路线"
+  },
+  "RL-b27cb42caa9c91dfb5fd": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-82d0adafbb9953444fe7": {
+    "folder_path": [
+      "高速铁路",
+      "华东",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-714c852f2073bbbfa984": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-f1c32cac26a7a3a4ec7d": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-7295a66cb5852e68c1d0": {
+    "folder_path": [
+      "高速铁路",
+      "中南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-a6d27ef78b12b4d499a0": {
+    "folder_path": [
+      "高速铁路",
+      "西南",
+      "其他/速度待核对"
+    ]
+  },
+  "RL-fbef052ad49dbdd3e583": {
+    "folder_path": [
+      "高速铁路",
+      "西北",
+      "其他/速度待核对"
+    ]
+  },
+  "station:node/8438213461": {
+    "display_name": "济西",
+    "folder_path": [
+      "山东省",
+      "济南"
+    ],
+    "station_type": "编组站"
+  },
+  "station:node/8429754475": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/6198704798": {
+    "display_name": "德州",
+    "folder_path": [
+      "山东省",
+      "德州"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/6214911057": {
+    "folder_path": [
+      "山东省",
+      "德州"
+    ]
+  },
+  "station:node/8418956317": {
+    "folder_path": [
+      "山东省",
+      "泰安"
+    ]
+  },
+  "station:node/2727040405": {
+    "folder_path": [
+      "山东省",
+      "潍坊"
+    ]
+  },
+  "station:node/7733885005": {
+    "display_name": "济南西",
+    "folder_path": [
+      "山东省",
+      "济南"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/9354508779": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/808126207": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/3265625561": {
+    "display_name": "玉符河所",
+    "folder_path": [
+      "山东省",
+      "济南"
+    ],
+    "station_type": "未定义"
+  },
+  "station:node/3176631800": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/1672448034": {
+    "folder_path": [
+      "山东省",
+      "济宁"
+    ]
+  },
+  "station:node/6654827885": {
+    "display_name": "郑州东",
+    "folder_path": [
+      "河南省",
+      "郑州"
+    ],
+    "station_type": "未定义"
+  }
+}

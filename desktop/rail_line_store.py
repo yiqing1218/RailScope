@@ -656,6 +656,9 @@ class DiskRailLineLibrary:
     def endpoint_label(self, endpoint):
         if isinstance(endpoint, str) and endpoint.startswith("station:"):
             source_id = endpoint.removeprefix("station:")
+            custom = self.metadata.get(self._station_metadata_key(source_id), {})
+            if custom.get("display_name"):
+                return str(custom["display_name"])
             if source_id in self._station_group_labels:
                 return self._station_group_labels[source_id]
             with self.connect() as db:
@@ -763,6 +766,29 @@ class DiskRailLineLibrary:
                 return list(dict.fromkeys(values))
 
             result = []
+            query_key = query.casefold()
+            for key, metadata in sorted(self.metadata.items()):
+                if not key.startswith("station:signalbox/"):
+                    continue
+                source_id = key.removeprefix("station:")
+                label = str(metadata.get("display_name") or "未命名线路所")
+                if query_key not in (label + " " + source_id).casefold():
+                    continue
+                connections = metadata.get("connected_lines", [])
+                if line_id and not any(
+                    isinstance(value, dict) and value.get("line_id") == line_id
+                    for value in connections
+                ):
+                    continue
+                self._station_groups[source_id] = [source_id]
+                self._station_group_labels[source_id] = label
+                connected = [line["name"] for line in self.connected_lines("station:" + source_id)]
+                result.append((
+                    "station:" + source_id,
+                    label + " · 接轨：" + (" / ".join(connected) if connected else "待关联"),
+                ))
+                if len(result) >= limit:
+                    return result
             for entries in grouped.values():
                 entries.sort(key=lambda item: (item[2], item[0]))
                 primary, alias, _ = entries[0]

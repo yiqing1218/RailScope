@@ -101,6 +101,7 @@ class RailEditor(OperationsEditor):
                     )
                 ]
         self.rail_payload = None
+        self._autosave_ready = False
         self.visible_corridors = set()
         self.displayed_train_id = ""
         super().__init__(Plan([], "rail"), RailMap(map_view), [], path)
@@ -119,6 +120,15 @@ class RailEditor(OperationsEditor):
                 if self.plan.trains
                 else "当前铁路库尚不能组合完整 G1 通道；请先导入覆盖京沪高铁的全国铁路数据。"
             )
+        self._autosave_ready = True
+
+    def changed(self, message):
+        super().changed(message)
+        if getattr(self, "_autosave_ready", False):
+            try:
+                self.write(self.path)
+            except (OSError, ValueError) as error:
+                self.message.setText("自动保存失败：" + str(error))
 
     def map_ready(self):
         super().map_ready()
@@ -407,6 +417,14 @@ class RailEditor(OperationsEditor):
                 ),
                 None,
             )
+            stop_names = {}
+            if selected_train:
+                profile = self.plan.lines.get("rail/" + selected_train["id"], {})
+                stop_names = {
+                    int(item["id"]): item["name"]
+                    for item in profile.get("stations", [])
+                    if str(item.get("id", "")).isdigit()
+                }
             stop_ids = {
                 s["node_id"] for s in selected_train.get("stops", [])
             } if selected_train else set()
@@ -416,6 +434,11 @@ class RailEditor(OperationsEditor):
                     continue
                 source_node = data.get("source_station_node", data["osm_node_id"])
                 shared = self.shared_station_features.get(source_node, station)
+                display_name = shared["properties"].get("name") or data.get("name")
+                if not display_name or str(display_name).isdigit():
+                    display_name = stop_names.get(data["osm_node_id"]) or stop_names.get(source_node)
+                if not display_name or str(display_name).isdigit():
+                    display_name = "未命名铁路控制点"
                 station_key = "node/" + str(source_node)
                 if station_key in drawn_stations:
                     continue
@@ -426,6 +449,7 @@ class RailEditor(OperationsEditor):
                         "properties": {
                             **props,
                             **shared["properties"],
+                            "name": display_name,
                             "train_id": selected_train["id"],
                             "infrastructure_id": station_key,
                         },
@@ -875,8 +899,6 @@ class RailEditor(OperationsEditor):
                 {"name", "track_changes", "sequence"},
                 "单向运行通道",
             )
-            if route["id"] in routes and route["path"] != routes[route["id"]]["path"]:
-                raise ValueError("已有通道物理径路不能覆盖；新径路请使用新的通道 ID")
             routes[route["id"]] = {**routes.get(route["id"], {}), **deepcopy(route)}
             routes[route["id"]]["extensions"].setdefault(
                 "railscope.org/provenance", {"source": value["source"]}
@@ -1311,7 +1333,7 @@ class RailEditor(OperationsEditor):
         train = next(t for t in self.document()["trains"] if t["id"] == ident)
         dialog = QDialog(self)
         dialog.setWindowTitle(ident + " · 停站、站台与到发线")
-        dialog.resize(880, 600)
+        dialog.resize(1040, 760)
         form = QFormLayout(dialog)
         hint = QLabel(
             "这里只定义本车次实际停站；未填写的中间车站自然通过，不拆分通道。保留两端即为直达，可添加或删除中间停站。节点必须位于完整通道且顺序一致；其他跨线路径请另建完整通道。"
@@ -1321,9 +1343,11 @@ class RailEditor(OperationsEditor):
         candidates = self.corridor_stop_candidates()
         table = QTableWidget(0, 6)
         table.setHorizontalHeaderLabels(
-            ["车站 / 线路所", "到达", "发车", "站台引用", "到发线编号", "车站进路编号"]
+            ["车站 / 线路所", "到达", "发车", "真实站台编号", "到发股道编号", "站场进路编号"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setMinimumHeight(420)
+        table.verticalHeader().setDefaultSectionSize(42)
 
         def add_row(stop=None, row=None):
             stop = stop or {}
@@ -1338,7 +1362,7 @@ class RailEditor(OperationsEditor):
                 existing, row, max(2, len(train["stops"])), candidates
             )
             if recommended:
-                station.addItem("★ 推荐：" + recommended[0], recommended[1])
+                station.addItem(recommended[0], recommended[1])
             for name, node in candidates:
                 if not recommended or node != recommended[1]:
                     station.addItem(name, node)
@@ -1391,7 +1415,7 @@ class RailEditor(OperationsEditor):
                     station = table.cellWidget(row, 0)
                     node_id = station.currentData()
                     if node_id is None:
-                        entered = station.currentText().strip().removeprefix("★ 推荐：")
+                        entered = station.currentText().strip()
                         exact = next((node for name, node in candidates if name == entered), None)
                         node_id = exact
                     if node_id is None:

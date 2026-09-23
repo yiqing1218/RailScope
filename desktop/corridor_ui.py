@@ -119,9 +119,7 @@ class CorridorPanel(QScrollArea):
         self.tree.setColumnWidth(1, 58)
         self.tree.setHeaderHidden(True)
         self.tree.itemClicked.connect(self.choose)
-        self.tree.itemDoubleClicked.connect(
-            lambda item, column: self.edit_table(item.data(0, Qt.ItemDataRole.UserRole))
-        )
+        self.tree.itemDoubleClicked.connect(self.open_item_editor)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         layout.addWidget(self.tree)
@@ -152,6 +150,7 @@ class CorridorPanel(QScrollArea):
         signature = (
             id(payload),
             tuple(t["id"] for t in self.editor.plan.trains),
+            tuple(sorted(self.editor.hidden_trains)),
             self.search.text(),
             tuple(sorted(self.editor.visible_corridors)),
         )
@@ -197,6 +196,11 @@ class CorridorPanel(QScrollArea):
                 child = QTreeWidgetItem(root, [train["id"]])
                 child.setData(0, Qt.ItemDataRole.UserRole, route["id"])
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, train["id"])
+                train_switch = Switch(train["id"] not in self.editor.hidden_trains)
+                train_switch.toggled.connect(
+                    lambda on, ident=train["id"]: self.editor.set_trains_visible({ident}, on)
+                )
+                self.tree.setItemWidget(child, 1, train_switch)
         self.tree.schedule_height()
 
     def choose(self, item, column):
@@ -204,6 +208,16 @@ class CorridorPanel(QScrollArea):
             item.data(0, Qt.ItemDataRole.UserRole),
             item.data(0, Qt.ItemDataRole.UserRole + 1) or "",
         )
+
+    def open_item_editor(self, item, column):
+        train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if train_id:
+            self.editor.line_combo.setCurrentIndex(
+                self.editor.line_combo.findData("rail/" + train_id)
+            )
+            self.editor.edit_train_stops()
+        else:
+            self.edit_table(item.data(0, Qt.ItemDataRole.UserRole))
 
     def focus_item(self, route_id, train_id=""):
         """Reveal the map-selected corridor or TrainRun in the left directory."""

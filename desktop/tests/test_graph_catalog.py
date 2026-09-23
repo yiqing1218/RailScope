@@ -2,7 +2,11 @@ import sqlite3
 import json
 import pytest
 
-from desktop.catalog_metadata import metro_station_directory, station_type
+from desktop.catalog_metadata import (
+    metro_station_directory,
+    rail_switch_owner,
+    station_type,
+)
 from desktop.rail_line_store import DiskRailLineLibrary
 from desktop.metro_data import iter_geojson_features
 
@@ -25,7 +29,7 @@ def test_national_geojson_can_be_scanned_without_loading_the_whole_file(tmp_path
     assert list(iter_geojson_features(path, chunk_size=17)) == features
 
 
-def test_shared_metro_station_has_two_directory_aliases_but_one_entity():
+def test_interchange_station_has_line_platform_objects_linked_to_one_physical_station():
     routes = [
         {"osm_relation_id": 1, "name": "1号线"},
         {"osm_relation_id": 2, "name": "2号线"},
@@ -41,9 +45,58 @@ def test_shared_metro_station_has_two_directory_aliases_but_one_entity():
     grouped, entities = metro_station_directory(
         [station], routes, HierarchyStub()
     )
-    assert set(entities) == {"MS-SHARED"}
-    assert grouped["上海市"]["上海"]["1号线"][0]["id"] == "MS-SHARED"
-    assert grouped["上海市"]["上海"]["2号线"][0]["id"] == "MS-SHARED"
+    assert set(entities) == {"MS-SHARED@line-1", "MS-SHARED@line-2"}
+    assert grouped["上海市"]["上海"]["1号线"][0]["id"] == "MS-SHARED@line-1"
+    assert grouped["上海市"]["上海"]["2号线"][0]["id"] == "MS-SHARED@line-2"
+    assert {value["physical_station_id"] for value in entities.values()} == {"MS-SHARED"}
+
+
+def test_true_shared_operation_platform_is_referenced_by_multiple_line_directories():
+    routes = [
+        {"osm_relation_id": 3, "name": "3号线"},
+        {"osm_relation_id": 4, "name": "4号线"},
+    ]
+    station = {
+        "properties": {
+            "infrastructure_id": "MS-ZHONGTAN",
+            "name": "中潭路",
+            "route_relation_ids": [3, 4],
+            "shared_platform_relation_groups": [[3, 4]],
+        },
+        "geometry": {"type": "Point", "coordinates": [121.44, 31.25]},
+    }
+    grouped, entities = metro_station_directory([station], routes, HierarchyStub())
+    assert set(entities) == {"MS-ZHONGTAN@shared-1"}
+    assert grouped["上海市"]["上海"]["3号线"][0] is grouped["上海市"]["上海"]["4号线"][0]
+
+
+def test_duplicate_source_station_is_shown_once_per_line():
+    route = {"osm_relation_id": 1, "name": "1号线"}
+    station = {
+        "properties": {"infrastructure_id": "MS-ONE", "name": "测试站", "route_relation_ids": [1]},
+        "geometry": {"type": "Point", "coordinates": [121.47, 31.23]},
+    }
+    grouped, entities = metro_station_directory([station, station], [route], HierarchyStub())
+    assert len(entities) == 1
+    assert len(grouped["上海市"]["上海"]["1号线"]) == 1
+
+
+def test_manual_signal_box_is_the_stable_owner_of_all_member_switches(tmp_path):
+    overrides = {
+        "station:signalbox/RSB-TEST": {
+            "display_name": "测试线路所",
+            "coordinates": [117.28, 31.80],
+            "folder_path": ["安徽省", "合肥市"],
+            "member_switch_ids": [101, 102],
+            "connected_lines": [{"line_id": "RL-A", "anchor_node": 1}],
+            "line_names": ["甲线"],
+        }
+    }
+    owner = rail_switch_owner(tmp_path, 102, [], overrides)
+    assert owner["id"] == "signalbox/RSB-TEST"
+    assert owner["name"] == "测试线路所"
+    assert owner["member_switch_ids"] == [101, 102]
+    assert owner["province"] == "安徽省" and owner["city"] == "合肥市"
 
 
 def test_station_type_never_invents_an_unstated_role():

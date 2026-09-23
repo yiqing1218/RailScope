@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import hashlib
 import json
 import math
 from pathlib import Path
+import sqlite3
 
 try:
     from .provinces import ProvinceIndex
@@ -46,13 +48,15 @@ STATION_OVERVIEW_FIELDS = (
 def station_overview(properties, record=None, custom=None):
     properties, record, custom = properties or {}, record or {}, custom or {}
     tags = properties.get("node_tags", {})
+    folder = custom.get("folder_path")
+    region_parts = folder[:2] if isinstance(folder, list) and folder else (
+        record.get("province", ""), record.get("city", "")
+    )
     result = {
         "chinese_name": record.get("name") or properties.get("name") or tags.get("name:zh", ""),
         "foreign_name": tags.get("name:en", ""),
         "commissioning_date": tags.get("opening_date") or tags.get("start_date", ""),
-        "region": "".join(
-            value for value in (record.get("province", ""), record.get("city", "")) if value
-        ),
+        "region": "".join(value for value in region_parts if value),
         "station_grade": tags.get("railway:station_category") or tags.get("station:class", ""),
         "main_lines": "、".join(record.get("line_names", [])),
         "regional_management": tags.get("operator") or properties.get("operator", ""),
@@ -65,6 +69,8 @@ def station_overview(properties, record=None, custom=None):
     }
     result.update(custom.get("overview_attributes", {}))
     result.update(custom.get("custom_attributes", {}))
+    if isinstance(folder, list) and folder:
+        result["region"] = "".join(value for value in region_parts if value)
     return {key: str(value).strip() for key, value in result.items() if value not in (None, "")}
 
 
@@ -166,8 +172,14 @@ class CatalogOverrides:
         }
 
     def update(self, key, **changes):
+        self.update_many({str(key): changes})
+
+    def update_many(self, changes):
         proposed = {**self.values}
-        proposed[str(key)] = {**proposed.get(str(key), {}), **changes}
+        for key, value in changes.items():
+            if not isinstance(value, dict):
+                raise ValueError("目录批量修改内容无效")
+            proposed[str(key)] = {**proposed.get(str(key), {}), **value}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_text(
@@ -182,8 +194,23 @@ class CatalogOverrides:
         self.values = proposed
 
 
+def _metro_platform_id(properties, entity_id, relation_id):
+    """Return a line-platform ID while retaining explicit shared-platform facts."""
+    mapping = properties.get("line_platform_ids")
+    if isinstance(mapping, dict):
+        value = mapping.get(str(relation_id), mapping.get(relation_id))
+        if value:
+            return str(value)
+    shared = properties.get("shared_platform_relation_groups", [])
+    if isinstance(shared, list):
+        for index, group in enumerate(shared):
+            if isinstance(group, list) and relation_id in group:
+                return f"{entity_id}@shared-{index + 1}"
+    return f"{entity_id}@line-{relation_id}"
+
+
 def metro_station_directory(stations, routes, hierarchy, overrides=None):
-    """province -> city -> line -> station, with shared stable station IDs."""
+    """province -> city -> line -> platform object, linked to a physical station."""
     overrides = overrides or {}
     route_lookup = {route["osm_relation_id"]: route for route in routes}
     grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -195,25 +222,40 @@ def metro_station_directory(stations, routes, hierarchy, overrides=None):
             or props.get("station_id")
             or f"osm-node/{props.get('osm_node_id')}"
         )
-        custom = overrides.get(station_id, {})
-        record = {
-            "id": station_id,
-            "name": custom.get("display_name") or props.get("name") or "未命名地铁站",
-            "source_name": props.get("name") or "",
-            "coordinates": feature.get("geometry", {}).get("coordinates", []),
-            "route_relation_ids": list(props.get("route_relation_ids", [])),
-            "properties": props,
-        }
-        by_id[station_id] = record
-        for relation_id in record["route_relation_ids"]:
+        relation_ids = list(props.get("route_relation_ids", []))
+        for relation_id in relation_ids:
             route = route_lookup.get(relation_id)
             if not route:
                 continue
+            platform_id = _metro_platform_id(props, station_id, relation_id)
+            custom = overrides.get(platform_id, overrides.get(station_id, {}))
+            record = {
+                "id": platform_id,
+                "physical_station_id": station_id,
+                "name": custom.get("display_name") or props.get("name") or "未命名地铁站",
+                "source_name": props.get("name") or "",
+                "coordinates": feature.get("geometry", {}).get("coordinates", []),
+                "route_relation_ids": [relation_id],
+                "properties": props,
+                "archived": bool(custom.get("archived", False)),
+            }
+            existing = by_id.get(platform_id)
+            if existing is not None:
+                existing["route_relation_ids"] = list(dict.fromkeys(
+                    [*existing["route_relation_ids"], relation_id]
+                ))
+                record = existing
+            else:
+                by_id[platform_id] = record
             province, city, line = hierarchy.parent(route)
             folder = custom.get("folder_path")
             if isinstance(folder, list) and len(folder) >= 3:
                 province, city, line = folder[:3]
-            grouped[province][city][line].append(record)
+            if record["archived"]:
+                province, city, line = "已归档", province, city + " / " + line
+            entries = grouped[province][city][line]
+            if not any(item["id"] == platform_id for item in entries):
+                entries.append(record)
     for cities in grouped.values():
         for lines in cities.values():
             for line, records in lines.items():
@@ -221,15 +263,185 @@ def metro_station_directory(stations, routes, hierarchy, overrides=None):
     return grouped, by_id
 
 
-def rail_station_records(directory, regions, query="", limit=4000):
-    """Read a bounded station/control-point catalog directly from the source index."""
-    import sqlite3
+def _distance_m(a, b):
+    lat = math.radians((float(a[1]) + float(b[1])) / 2)
+    return math.hypot(
+        (float(a[0]) - float(b[0])) * math.cos(lat),
+        float(a[1]) - float(b[1]),
+    ) * 111_195
 
+
+def custom_signal_box_records(overrides, regions):
+    """Materialise user-created signal boxes from the workspace override layer."""
+    index = ProvinceIndex()
+    result = []
+    for key, custom in (overrides or {}).items():
+        if not key.startswith("station:signalbox/"):
+            continue
+        coordinates = custom.get("coordinates")
+        switches = custom.get("member_switch_ids")
+        if (
+            not isinstance(coordinates, list)
+            or len(coordinates) < 2
+            or not all(isinstance(value, (int, float)) for value in coordinates[:2])
+            or not isinstance(switches, list)
+            or len(switches) < 2
+        ):
+            continue
+        ident = key.removeprefix("station:")
+        province = index.locate(coordinates)
+        folder = custom.get("folder_path")
+        city = nearest_city(coordinates, province, regions)
+        if isinstance(folder, list) and folder:
+            province = folder[0]
+            if len(folder) > 1:
+                city = folder[1]
+        lines = [
+            value.get("line_id") for value in custom.get("connected_lines", [])
+            if isinstance(value, dict) and value.get("line_id")
+        ]
+        result.append({
+            "id": ident,
+            "name": custom.get("display_name") or "未命名线路所",
+            "kind": "signal_box",
+            "station_type": "线路所",
+            "province": province,
+            "city": city,
+            "coordinates": coordinates[:2],
+            "osm_node_id": None,
+            "line_ids": lines,
+            "line_names": list(custom.get("line_names", lines)),
+            "member_switch_ids": [int(value) for value in switches if str(value).isdigit()],
+            "properties": {
+                "infrastructure_id": ident,
+                "kind": "signal_box",
+                "source": "RailScope workspace",
+            },
+        })
+    return result
+
+
+def rail_switch_owner(directory, osm_node_id, regions, overrides=None):
+    """Resolve a switch to a stable station/signal-box owner without listing it alone."""
+    switch_id = int(osm_node_id)
+    for record in custom_signal_box_records(overrides, regions):
+        if switch_id in record.get("member_switch_ids", []):
+            return record
+    directory = Path(directory)
+    source = directory / "rail.sqlite"
+    line_db = directory / "rail_lines.sqlite"
+    if not source.exists() or not line_db.exists():
+        return None
+    with sqlite3.connect(source) as db:
+        row = db.execute(
+            "SELECT data FROM features WHERE kind='railPoints' "
+            "AND json_extract(data,'$.properties.osm_node_id')=? LIMIT 1",
+            (switch_id,),
+        ).fetchone()
+    if not row:
+        return None
+    feature = json.loads(row[0])
+    if feature.get("properties", {}).get("kind") != "switch":
+        return None
+    coordinates = feature.get("geometry", {}).get("coordinates", [])
+    if len(coordinates) < 2:
+        return None
+    owner = None
+    with sqlite3.connect(line_db) as db:
+        columns = {value[1] for value in db.execute("PRAGMA table_info(station_aliases)")}
+        if {"source_x", "source_y"} <= columns:
+            candidates = db.execute(
+                "SELECT source_id,alias,source_x,source_y FROM station_aliases "
+                "WHERE source_x BETWEEN ? AND ? AND source_y BETWEEN ? AND ? "
+                "AND source_x IS NOT NULL AND source_y IS NOT NULL "
+                "ORDER BY confidence DESC,distance_m LIMIT 300",
+                (coordinates[0] - .04, coordinates[0] + .04,
+                 coordinates[1] - .04, coordinates[1] + .04),
+            ).fetchall()
+            ranked = sorted(
+                (
+                    (_distance_m(coordinates, [x, y]), str(source_id), alias, [x, y])
+                    for source_id, alias, x, y in candidates
+                ),
+                key=lambda value: (value[0], value[1]),
+            )
+            if ranked and ranked[0][0] <= 2500:
+                _gap, source_id, alias, point = ranked[0]
+                owner = (source_id, alias, point, "station")
+        topology = db.execute(
+            "SELECT id,label,x,y,kind FROM nodes WHERE kind IN ('junction','signal_box') "
+            "AND label IS NOT NULL AND x BETWEEN ? AND ? AND y BETWEEN ? AND ?",
+            (coordinates[0] - .04, coordinates[0] + .04,
+             coordinates[1] - .04, coordinates[1] + .04),
+        ).fetchall()
+        ranked_topology = sorted(
+            ((_distance_m(coordinates, [x, y]), node, label, [x, y], kind)
+             for node, label, x, y, kind in topology),
+            key=lambda value: (value[0], str(value[1])),
+        )
+        if ranked_topology and ranked_topology[0][0] <= 1800 and (
+            owner is None or ranked_topology[0][0] < _distance_m(coordinates, owner[2])
+        ):
+            _gap, node, label, point, kind = ranked_topology[0]
+            owner = (f"node/{node}", label, point, kind)
+        topology_node = db.execute(
+            "SELECT node_id FROM node_aliases WHERE source_id=?", (switch_id,)
+        ).fetchone()
+        line_rows = [] if not topology_node else db.execute(
+            "SELECT l.id,l.source_name FROM line_nodes n JOIN lines l ON l.id=n.line_id "
+            "WHERE n.node_id=? ORDER BY l.source_name,l.id", (topology_node[0],)
+        ).fetchall()
+    index = ProvinceIndex()
+    if owner is not None:
+        owner_id, name, point, kind = owner
+        province = index.locate(point)
+        return {
+            "id": owner_id,
+            "name": str(name) or "未命名线路所",
+            "kind": kind,
+            "station_type": station_type({}, kind),
+            "province": province,
+            "city": nearest_city(point, province, regions),
+            "coordinates": point,
+            "osm_node_id": int(owner_id.split('/', 1)[1]) if owner_id.startswith("node/") and owner_id.split('/', 1)[1].isdigit() else None,
+            "line_ids": [row[0] for row in line_rows],
+            "line_names": [row[1] for row in line_rows],
+            "member_switch_ids": [switch_id],
+            "properties": {"kind": kind, "owner_switch_id": switch_id},
+        }
+    line_key = "|".join(row[0] for row in line_rows) or "unassigned"
+    grid_key = f"{round(coordinates[0], 2)}|{round(coordinates[1], 2)}"
+    ident = "signalbox/auto-" + hashlib.sha256(
+        f"{line_key}|{grid_key}".encode("utf-8")
+    ).hexdigest()[:16]
+    line_names = [row[1] for row in line_rows]
+    province = index.locate(coordinates)
+    return {
+        "id": ident,
+        "name": ((" / ".join(line_names[:2]) + " · ") if line_names else "") + "待命名线路所",
+        "kind": "signal_box",
+        "station_type": "线路所",
+        "province": province,
+        "city": nearest_city(coordinates, province, regions),
+        "coordinates": coordinates[:2],
+        "osm_node_id": None,
+        "line_ids": [row[0] for row in line_rows],
+        "line_names": line_names,
+        "member_switch_ids": [switch_id],
+        "properties": {"kind": "signal_box", "owner_switch_id": switch_id, "automatic": True},
+    }
+
+
+def rail_station_records(directory, regions, query="", limit=4000, overrides=None):
+    """Read station/signal-box owners; raw switches are always owned children."""
     directory = Path(directory)
     source = directory / "rail.sqlite"
     if not source.exists():
         return [], 0
-    where = "kind='railPoints'"
+    where = (
+        "kind='railPoints' AND json_extract(data,'$.properties.kind') "
+        "IN ('station','halt','signal_box','junction','crossing')"
+    )
     args = []
     normalized_query = query.strip().removesuffix("市").removesuffix("站").casefold()
     region_match = next(
@@ -250,8 +462,6 @@ def rail_station_records(directory, regions, query="", limit=4000):
     elif query:
         where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
         args.extend([f"%{normalized_query}%", f"%{query.strip()}%"])
-    else:
-        where += " AND (json_extract(data,'$.properties.kind') IN ('station','halt','signal_box','junction','crossing') OR json_extract(data,'$.properties.name') != CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT))"
     with sqlite3.connect(source) as db:
         total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
         rows = db.execute(
@@ -306,9 +516,21 @@ def rail_station_records(directory, regions, query="", limit=4000):
                 "properties": props,
             }
         )
+    custom_records = custom_signal_box_records(overrides, regions)
+    if query:
+        query_key = query.strip().casefold()
+        custom_records = [
+            record for record in custom_records
+            if query_key in (record["name"] + " " + record["id"]).casefold()
+        ]
+    result.extend(custom_records)
+    result = list({record["id"]: record for record in result}.values())
     if region_match:
         city = region_match[0].removesuffix("市")
         result = [record for record in result if record["city"].removesuffix("市") == city]
         total = len(result)
         result = result[:limit]
+    else:
+        result = result[:limit]
+        total += len(custom_records)
     return result, total

@@ -130,6 +130,7 @@ def test_failed_directory_save_leaves_state_and_map_unchanged(
     from pathlib import Path
 
     widget, _ = make_catalog(qtbot, tmp_path)
+    initial_overrides = deepcopy(widget.overrides)
     widget.toggle("track20", True)
     previous_calls = list(widget.map.calls)
     monkeypatch.setattr(
@@ -139,7 +140,7 @@ def test_failed_directory_save_leaves_state_and_map_unchanged(
     )
     with pytest.raises(OSError):
         widget.archive_items({"track20"})
-    assert widget.overrides == {}
+    assert widget.overrides == initial_overrides
     assert widget.visible == {"track20"}
     assert widget.map.calls == previous_calls
 
@@ -253,6 +254,103 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     assert requested == ["node/100"]
 
 
+def test_single_station_toggle_does_not_enable_or_resync_national_station_tree(
+    qtbot, tmp_path, monkeypatch
+):
+    records = [
+        {
+            "id": f"node/{index}",
+            "name": f"测试站{index}",
+            "kind": "station",
+            "station_type": "客运站",
+            "province": "山东省",
+            "city": "泰安市",
+            "coordinates": [117.1, 36.2],
+            "osm_node_id": index,
+            "line_ids": [],
+            "line_names": [],
+            "properties": {},
+        }
+        for index in range(1, 201)
+    ]
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_station_records",
+        lambda *args, **kwargs: ([dict(record) for record in records], len(records)),
+    )
+    map_view = MapStub()
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", map_view)
+    qtbot.addWidget(widget)
+    partial = []
+    legacy_master = []
+    widget.station_partial_changed.connect(lambda group, on: partial.append((group, on)))
+    widget.station_enabled_requested.connect(legacy_master.append)
+    monkeypatch.setattr(
+        widget,
+        "sync_station_switches",
+        lambda: (_ for _ in ()).throw(AssertionError("单站点不应同步全国开关")),
+    )
+
+    widget.toggle_station(widget.station_records[99], True)
+
+    assert widget.station_masters["station"] is False
+    assert widget.station_direct_visible == {"node/100"}
+    assert partial == [("station", True)] and legacy_master == []
+    assert map_view.calls[-3:] == [
+        ("setRailPointExclusions", None),
+        ("setRailPointSelection", [100]),
+        ("setRailControlPointSelection", []),
+    ]
+    widget.station_query = "其他城市"
+    widget.populate_station_tree()
+    widget.send_station_visibility()
+    assert ("setRailPointSelection", [100]) in map_view.calls[-3:]
+
+
+def test_selecting_switch_inserts_its_owner_without_rebuilding_station_tree(
+    qtbot, tmp_path, monkeypatch
+):
+    owner = {
+        "id": "signalbox/RSB-TEST",
+        "name": "测试线路所",
+        "kind": "signal_box",
+        "station_type": "线路所",
+        "province": "安徽省",
+        "city": "合肥市",
+        "coordinates": [117.28, 31.80],
+        "osm_node_id": None,
+        "line_ids": ["RL-A"],
+        "line_names": ["甲线"],
+        "member_switch_ids": [101, 102],
+        "properties": {},
+    }
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_station_records",
+        lambda *args, **kwargs: ([], 0),
+    )
+    monkeypatch.setattr(
+        "desktop.rail_catalog_ui.rail_switch_owner",
+        lambda *args, **kwargs: dict(owner),
+    )
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    monkeypatch.setattr(
+        widget,
+        "populate_station_tree",
+        lambda: (_ for _ in ()).throw(AssertionError("选择道岔不应重建全国目录")),
+    )
+
+    assert widget.select_station(101)
+    item = widget.station_items["signalbox/RSB-TEST"]
+    assert item.text(0) == "测试线路所"
+    assert item.childCount() == 2
+    assert item.child(0).text(0).startswith("道岔 SW-")
+    assert widget.selected_switch_owners[101] == "signalbox/RSB-TEST"
+    widget.station_masters["station"] = True
+    widget.station_excluded.add("signalbox/RSB-TEST")
+    widget.send_station_visibility()
+    assert ("setRailPointExclusions", [101, 102]) in widget.map.calls[-3:]
+
+
 def test_station_connection_override_persists_and_updates_station_directory(
     qtbot, tmp_path, monkeypatch
 ):
@@ -290,6 +388,29 @@ def test_station_connection_override_persists_and_updates_station_directory(
     ]
     assert widget.station_records[0]["line_ids"] == ["RL-B"]
     assert "RL-B" in widget.station_items["node/100"].toolTip(0)
+
+
+def test_shared_classification_is_read_only_and_local_undo_restores_it(qtbot, tmp_path):
+    source = {
+        "RL-TEST": {
+            "name": "测试线", "line_name": "测试线", "track_type": "普速铁路线",
+            "way_ids": [1], "edge_count": 1,
+        }
+    }
+    (tmp_path / "rail_catalog.json").write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    shared = tmp_path / "shared.json"
+    shared.write_text(json.dumps({"RL-TEST": {"folder_path": ["普速铁路", "华东", "客货运"]}}, ensure_ascii=False), encoding="utf-8")
+    local = tmp_path / "local.json"
+    widget = RailCatalog(tmp_path, local, MapStub(), shared_path=shared)
+    qtbot.addWidget(widget)
+    assert widget.parents("RL-TEST") == ("普速铁路", "华东", "客货运")
+    widget.move_items({"RL-TEST"}, ["自定义", "目录"])
+    assert widget.parents("RL-TEST") == ("自定义", "目录")
+    assert json.loads(shared.read_text(encoding="utf-8"))["RL-TEST"]["folder_path"] == ["普速铁路", "华东", "客货运"]
+    widget.undo_catalog()
+    assert widget.parents("RL-TEST") == ("普速铁路", "华东", "客货运")
+    widget.redo_catalog()
+    assert widget.parents("RL-TEST") == ("自定义", "目录")
 
 
 def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
@@ -335,3 +456,6 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     stored = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
     assert stored["station:node/100"]["overview_attributes"]["foreign_name"].startswith("Yanzhoubei")
     assert stored["station:node/100"]["custom_attributes"]["年货运量"] == "611.9百万吨"
+    from desktop.catalog_metadata import station_overview
+    overview = station_overview({}, widget.station_record_by_id["node/100"], widget.overrides["station:node/100"])
+    assert overview["region"] == "自定义站点"

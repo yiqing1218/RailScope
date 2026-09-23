@@ -164,10 +164,10 @@ def corridor_for(name, category):
 
 
 def catalog_parents(meta, mode):
-    """Return the user-facing national line taxonomy.
+    """Classify a physical line without mistaking geometry fragments for routes.
 
-    It classifies only from explicit line names/track roles.  Endpoint-delimited
-    RS sections remain available in object details and Corridor editors.
+    Unknown speed and geography stay explicit so directory labels never claim
+    facts absent from source tags or reviewed workspace metadata.
     """
     category = meta.get("track_type", "未确认类型")
     name = (
@@ -176,50 +176,51 @@ def catalog_parents(meta, mode):
         or meta.get("name")
         or "未命名物理线路"
     ).split(" · ", 1)[0]
-    compact = name.replace("高速线", "高速铁路").replace("高铁", "高速铁路")
     prefix = ("在建铁路",) if meta.get("construction") else ()
+    yard = ("站场股道", "道岔连接轨", "车辆段", "折返线")
+    if "站场股道" in category or category in {"渡线 / 道岔连接轨", "车辆段 / 检修线", "折返线"}:
+        role = next((item for item in yard if item[:2] in category), "其他站场线")
+        return prefix + ("站台线&股道线", role)
+    if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
+        high = any(word in name for word in ("高速", "高铁", "客专")) or meta.get("highspeed") is True
+        return prefix + ("联络线", "高速联络线" if high else "普速联络线")
     if any(word in name for word in ("地方铁路", "地方线")):
         return prefix + ("其他铁路", "地方铁路")
-    if any(word in name for word in ("市域", "市郊")):
-        city = next((word for word in ("上海", "北京", "成都") if word in name), "其他城市")
-        return prefix + ("市域/市郊铁路", city)
-    if (
-        "城际" in name
-        and category != "高速铁路线"
-        and "高速铁路" not in compact
-    ):
-        region = (
-            "长三角城际"
-            if any(word in name for word in ("沪", "宁", "杭", "苏"))
-            else "珠三角城际"
-            if any(word in name for word in ("广", "珠", "莞", "佛"))
-            else "京津冀城际"
-            if any(word in name for word in ("京", "津", "石"))
-            else "其他城际"
-        )
-        return prefix + ("城际铁路", region)
-    if category == "高速铁路线" or "高速铁路" in compact:
-        if any(word in compact for word in ("京沪高速铁路", "京广高速铁路", "沪昆高速铁路", "徐兰高速铁路")):
-            return prefix + ("高速铁路", "国家高速铁路主干线")
-        if any(word in name for word in ("沪宁城际", "宁杭", "杭甬", "广珠城际")):
-            return prefix + ("高速铁路", "区域高速铁路")
-        if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
-            return prefix + ("高速铁路", "高速铁路联络线")
-        return prefix + ("高速铁路", "区域高速铁路")
-    if category == "联络线 / 匝道" and any(
-        word in name for word in ("高速", "高铁", "客专")
-    ):
-        return prefix + ("高速铁路", "高速铁路联络线")
-    if category in {"普速铁路线", "支线 / 岔道"}:
-        if any(word in name for word in ("京沪铁路", "京沪线", "京广铁路", "京广线", "陇海", "沪昆铁路", "沪昆线", "京九")):
-            return prefix + ("普速铁路", "国家铁路干线")
-        if category == "支线 / 岔道" or "支线" in name:
-            return prefix + ("普速铁路", "支线铁路")
-        return prefix + ("普速铁路", "区域干线")
-    if category == "货运铁路线":
-        return prefix + ("其他铁路", "货运铁路")
     if any(word in name for word in ("矿区", "矿山")):
         return prefix + ("其他铁路", "矿区铁路")
     if any(word in name for word in ("港口", "港区", "码头")):
         return prefix + ("其他铁路", "港口铁路")
+    region = _rail_region(meta)
+    if category == "高速铁路线":
+        trunk = any(word in name for word in ("京沪", "京广", "沪昆", "徐兰", "京哈", "京港", "沿海", "陆桥"))
+        technical = meta.get("technical_attributes") or {}
+        speed = meta.get("design_speed_kmh") or technical.get("design_speed_kmh") or meta.get("maxspeed")
+        try:
+            speed = int(str(speed).replace("km/h", "").strip())
+        except (ValueError, TypeError):
+            speed = None
+        band = str(speed) if speed in (350, 250, 200) else "其他/速度待核对"
+        return prefix + ("高速铁路", "干线" if trunk else region, band)
+    if category in {"普速铁路线", "货运铁路线", "支线 / 岔道"}:
+        trunk = any(word in name for word in ("京沪", "京广", "陇海", "沪昆", "京九", "兰新"))
+        service = "货运" if category == "货运铁路线" else meta.get("service_type", "客货运")
+        if service not in {"客运", "货运", "客货运"}:
+            service = "客货运"
+        return prefix + ("普速铁路", "干线" if trunk else region, service)
     return prefix + ("其他铁路", "不确定铁路")
+
+
+def _rail_region(meta):
+    provinces = set(meta.get("provinces") or ())
+    if not provinces and meta.get("province"):
+        provinces.add(meta["province"])
+    regions = {
+        "华北": ("北京", "天津", "河北", "山西", "内蒙古"),
+        "东北": ("辽宁", "吉林", "黑龙江"),
+        "华东": ("上海", "江苏", "浙江", "安徽", "福建", "江西", "山东"),
+        "中南": ("河南", "湖北", "湖南", "广东", "广西", "海南"),
+        "西南": ("重庆", "四川", "贵州", "云南", "西藏"),
+        "西北": ("陕西", "甘肃", "青海", "宁夏", "新疆"),
+    }
+    found = {region for province in provinces for region, names in regions.items() if province.startswith(names)}
+    return next(iter(found)) if len(found) == 1 else "区域待核对"

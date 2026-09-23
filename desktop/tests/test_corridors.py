@@ -1,4 +1,5 @@
 from copy import deepcopy
+import json
 import pytest
 
 from desktop.tests.test_workspace_revision import reference
@@ -66,6 +67,9 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
     route["name"] = "京沪下行参考通道"
     route["track_changes"] = []
     editor.merge_corridors(document)
+    assert (tmp_path / "plan.json").exists()
+    saved_routes = json.loads((tmp_path / "plan.json").read_text(encoding="utf-8"))["routes"]
+    assert saved_routes[0]["name"] == "京沪下行参考通道"
     assert len(editor.plan.trains) == 2
     assert all(t["route_id"] == route["id"] for t in editor.document()["trains"])
     editor.show_corridor(route["id"], "")

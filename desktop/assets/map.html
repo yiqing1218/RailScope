@@ -9,13 +9,13 @@
 </head>
 <body>
   <div id="map" aria-label="轨道交通地图"></div>
+  <div id="selection-box" hidden></div>
   <section id="map-title" class="glass map-title" data-layout="overlay" hidden>
     <span class="eyebrow" data-role="eyebrow">MAP WORKSPACE</span>
     <div class="title-row"><strong id="scene-title">全国 · 轨道交通</strong><span class="live-dot"></span></div>
     <span id="scene-subtitle">全国 OSM 路网 · 可编辑计划驱动仿真</span>
   </section>
   <div id="map-tools" class="glass tools" role="toolbar" aria-label="地图视图工具" data-role="nav" data-height-px="46" data-single-line="true" data-layout="toolbar">
-    <button id="location-menu" title="城市、线路与坐标定位" aria-expanded="false">定位 ▾</button>
     <button id="focus-china" title="查看全国">全国</button>
     <span class="divider"></span>
     <button id="zoom-in" title="放大" aria-label="放大">＋</button>
@@ -31,12 +31,15 @@
     <span id="location-message" role="status"></span>
   </div>
   <div id="map-legend" class="glass legend" data-layout="legend">
-    <span><i id="legend-line-swatch" class="swatch red"></i><span id="legend-line-label">运营线路</span></span>
-    <span><i class="swatch dashed"></i>在建线路</span>
+    <strong>图例</strong>
+    <span><i id="legend-line-swatch" class="swatch red"></i><span id="legend-line-label">地铁运营线</span></span>
+    <span><i class="swatch dashed"></i>在建线</span>
     <span><i class="station-dot"></i><span id="legend-station-label">地铁站</span></span>
-    <span><i class="vehicle-dot"></i><span id="legend-vehicle-label">演示列车</span></span>
+    <span><i class="swatch rail"></i>国铁线</span>
+    <span><i class="station-dot rail"></i>铁路站</span>
+    <span><i class="vehicle-dot"></i><span id="legend-vehicle-label">地铁列车</span></span>
   </div>
-  <div id="map-status" class="glass map-status"><span id="base-status">标准地图</span><span class="divider"></span><span id="camera-status">全国视图</span></div>
+  <div id="map-status" hidden><span id="base-status">标准地图</span><span id="camera-status">全国视图</span></div>
   <div id="loading" class="glass loading"><div class="loader"></div><strong>正在载入轨道地图</strong><span>加载本地路网与站区面数据</span></div>
   <script type="module">
     import * as maplibregl from '/desktop/vendor/maplibre-gl.mjs';

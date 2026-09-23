@@ -243,9 +243,9 @@ def test_topology_catalog_groups_by_line_or_station_and_links_both_endpoints(tmp
     assert straight[0]["edge_count"] == 2 and straight[0]["section_count"] == 1
     yard = next(item for item in catalog.values() if item["station_name"] == "测试站")
     assert yard["station_name"] == "测试站"
-    assert catalog_parents(yard, 0) == ("其他铁路", "不确定铁路")
+    assert catalog_parents(yard, 0) == ("站台线&股道线", "站场股道")
     main = next(item for item in catalog.values() if item["line_id"] == "IL-MAIN")
-    assert catalog_parents(main, 0) == ("高速铁路", "国家高速铁路主干线")
+    assert catalog_parents(main, 0) == ("高速铁路", "干线", "其他/速度待核对")
     view = MapStub()
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
     widget.toggle(main["id"], True)

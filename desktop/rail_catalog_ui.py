@@ -1,6 +1,8 @@
 """Topology catalog: track type -> physical line/station -> endpoint section."""
 
 import json
+import hashlib
+from copy import deepcopy
 from pathlib import Path
 import threading
 import sqlite3
@@ -30,6 +32,7 @@ try:
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
         rail_station_records,
+        rail_switch_owner,
         STATION_TYPES,
         normalize_station_attributes,
     )
@@ -37,10 +40,54 @@ except ImportError:
     from components import Switch, text_label, GrowingTree
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
-    from catalog_metadata import rail_station_records, STATION_TYPES, normalize_station_attributes
+    from catalog_metadata import (
+        rail_station_records,
+        rail_switch_owner,
+        STATION_TYPES,
+        normalize_station_attributes,
+    )
 
 MAX_CATALOG_TREE_ITEMS = 4000
 MAX_STATION_TREE_ITEMS = 25000
+SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
+
+
+def _read_catalog_overrides(path):
+    path = Path(path)
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"铁路目录文件格式无效：{path}")
+    records = {
+        key: value for key, value in payload.items()
+        if isinstance(key, str) and isinstance(value, dict)
+        and isinstance(value.get("archived", False), bool)
+        and (
+            "folder_path" not in value
+            or isinstance(value["folder_path"], list)
+            and bool(value["folder_path"])
+            and all(isinstance(part, str) and part.strip() for part in value["folder_path"])
+        )
+    }
+    # The former automatic folders are no longer meaningful in the new
+    # taxonomy. Keep every other manual path and every other override field.
+    for key, value in records.items():
+        folder = value.get("folder_path")
+        if not key.startswith("station:") and isinstance(folder, list) and len(folder) == 3 and folder[:2] == ["高速铁路", "区域高速铁路"]:
+            region = folder[2].lstrip("123456 ")
+            if region in {"华北", "东北", "华东", "中南", "西南", "西北"}:
+                records[key] = {**value, "folder_path": ["高速铁路", region, "其他/速度待核对"]}
+        elif not key.startswith("station:") and isinstance(folder, list) and len(folder) == 3 and folder[:2] == ["高速铁路", "八纵八横"]:
+            records[key] = {**value, "folder_path": ["高速铁路", "干线", "其他/速度待核对"]}
+        elif not key.startswith("station:") and folder in (
+            ["高速铁路", "区域高速铁路"],
+            ["高速铁路", "八纵八横"],
+            ["普速铁路", "区域干线"],
+            ["普速铁路", "国家铁路干线"],
+        ):
+            records[key] = {field: content for field, content in value.items() if field != "folder_path"}
+    return records
 
 
 class CatalogTree(GrowingTree):
@@ -133,16 +180,18 @@ class RailCatalog(QWidget):
     classification_failed = Signal(str)
     enabled_requested = Signal()
     station_enabled_requested = Signal(str)
+    station_partial_changed = Signal(str, bool)
     station_edit_requested = Signal(str)
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
     feature_activated = Signal(dict)
 
-    def __init__(self, directory, settings, map_view, parent=None, regions=None):
+    def __init__(self, directory, settings, map_view, parent=None, regions=None, shared_path=None):
         super().__init__(parent)
         self.map = map_view
         self.directory = Path(directory).resolve()
         self.path = Path(settings)
+        self.shared_path = Path(shared_path) if shared_path is not None else SHARED_CATALOG_PATH
         source = Path(directory) / "rail_catalog.json"
         self.catalog = (
             json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
@@ -152,7 +201,11 @@ class RailCatalog(QWidget):
             value = json.loads(cache.read_text(encoding="utf-8"))
             if value.get("version") == VERSION:
                 self.catalog = value["catalog"]
+        self.shared_overrides = {}
+        self.local_overrides = {}
         self.overrides = {}
+        self.catalog_undo = []
+        self.catalog_redo = []
         self.way_names = {}
         self.visible = set()
         self.all_visible = False
@@ -164,32 +217,18 @@ class RailCatalog(QWidget):
         self.station_query = ""
         self.station_masters = {"station": False, "control": False}
         self.station_excluded = set()
+        self.station_direct_visible = set()
+        self.station_direct_groups = {}
         self.station_folder_paths = set()
+        self.transient_station_records = {}
+        self.selected_switch_owners = {}
         self.line_folder_paths = set()
-        if self.path.exists():
-            try:
-                value = json.loads(self.path.read_text(encoding="utf-8"))
-                if not isinstance(value, dict):
-                    raise ValueError("分类设置必须是对象")
-                self.overrides = {
-                    k: v
-                    for k, v in value.items()
-                    if isinstance(v, dict)
-                    and isinstance(v.get("archived", False), bool)
-                    and (
-                        "folder_path" not in v
-                        or (
-                            isinstance(v["folder_path"], list)
-                            and bool(v["folder_path"])
-                            and all(
-                                isinstance(f, str) and f.strip()
-                                for f in v["folder_path"]
-                            )
-                        )
-                    )
-                }
-            except (ValueError, OSError) as error:
-                QMessageBox.warning(self, "国铁分类设置未载入", str(error))
+        try:
+            self.shared_overrides = _read_catalog_overrides(self.shared_path)
+            self.local_overrides = _read_catalog_overrides(self.path)
+            self._merge_catalog_overrides()
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "国铁分类设置未载入", str(error))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.setMinimumWidth(0)
@@ -294,6 +333,7 @@ class RailCatalog(QWidget):
             threading.Thread(target=classify, daemon=True).start()
 
     def apply_classification(self, catalog):
+        self._merge_catalog_overrides()
         was_all = self.all_visible or (
             bool(self.catalog)
             and len(self.visible)
@@ -322,6 +362,67 @@ class RailCatalog(QWidget):
         self.note.setText(
             self.catalog_note("目录已按轨道类型和物理线路/车站重建。")
         )
+
+    def _merge_catalog_overrides(self):
+        keys = self.shared_overrides.keys() | self.local_overrides.keys()
+        self.overrides = {
+            key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
+            for key in keys
+        }
+
+    def _save_local_overrides(self, changes):
+        before = deepcopy(self.local_overrides)
+        proposed = {**self.local_overrides}
+        for key, change in changes.items():
+            proposed[key] = {**proposed.get(key, {}), **change}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.path)
+        self.local_overrides = proposed
+        self._merge_catalog_overrides()
+        self.catalog_undo.append(before)
+        self.catalog_undo = self.catalog_undo[-30:]
+        self.catalog_redo.clear()
+
+    def _restore_local_overrides(self, value):
+        previous = self.local_overrides
+        changed = {
+            key for key in previous.keys() | value.keys()
+            if previous.get(key) != value.get(key)
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.path)
+        self.local_overrides = value
+        self._merge_catalog_overrides()
+        self.metadata_changed.emit()
+        line_keys = {key for key in changed if key in self.catalog}
+        station_ids = {key.removeprefix("station:") for key in changed if key.startswith("station:")}
+        folder_only = all(
+            {field for field in set(previous.get(key, {})) | set(value.get(key, {}))
+             if previous.get(key, {}).get(field) != value.get(key, {}).get(field)} <= {"folder_path"}
+            for key in line_keys
+        )
+        if line_keys and not (folder_only and self._move_line_items_in_tree(line_keys)):
+            self.populate()
+        if station_ids:
+            self._refresh_station_items(station_ids)
+        self.send_visibility(False)
+        self.send_station_visibility()
+
+    def undo_catalog(self):
+        if self.catalog_undo:
+            value = self.catalog_undo.pop()
+            self.catalog_redo.append(deepcopy(self.local_overrides))
+            self._restore_local_overrides(value)
+
+    def redo_catalog(self):
+        if self.catalog_redo:
+            value = self.catalog_redo.pop()
+            self.catalog_undo.append(deepcopy(self.local_overrides))
+            self._restore_local_overrides(value)
 
     def refresh_catalog(self):
         self.note.setText("正在重新扫描铁路拓扑、线路与全部站点；工作区修改会自动重放…")
@@ -544,14 +645,14 @@ class RailCatalog(QWidget):
         value = text.strip()
         self.tree.set_filter_active(bool(value) and search_type in ("全部", "铁路线"))
         self.station_tree.set_filter_active(
-            bool(value) and search_type in ("全部", "铁路车站", "线路所及道岔")
+            bool(value) and search_type in ("全部", "车站及线路所")
         )
         if search_type in ("全部", "铁路线"):
             self.search.blockSignals(True)
             self.search.setText(value)
             self.search.blockSignals(False)
             self.populate()
-        if search_type in ("全部", "铁路车站", "线路所及道岔"):
+        if search_type in ("全部", "车站及线路所"):
             self.station_query = value
             self.populate_station_tree()
             self.tabs.setCurrentWidget(self.station_page)
@@ -560,7 +661,17 @@ class RailCatalog(QWidget):
 
     def populate_station_tree(self):
         self.station_records, self.station_total = rail_station_records(
-            self.directory, self.regions, self.station_query, MAX_STATION_TREE_ITEMS
+            self.directory,
+            self.regions,
+            self.station_query,
+            MAX_STATION_TREE_ITEMS,
+            self.overrides,
+        )
+        known = {record["id"] for record in self.station_records}
+        self.station_records.extend(
+            deepcopy(record)
+            for key, record in self.transient_station_records.items()
+            if key not in known
         )
         self.station_record_by_id = {
             record["id"]: record for record in self.station_records
@@ -603,14 +714,28 @@ class RailCatalog(QWidget):
             while ancestor is not self.station_tree.invisibleRootItem():
                 self.station_members.setdefault(id(ancestor), set()).add(record["id"])
                 ancestor = ancestor.parent() or self.station_tree.invisibleRootItem()
+            for switch_id in record.get("member_switch_ids", []):
+                switch_item = QTreeWidgetItem(item, [f"道岔 SW-{switch_id}", ""])
+                switch_item.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
+                switch_item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
         for path, item in groups.items():
-            item.setText(0, item.text(0) + f" · {item.childCount()} 项")
+            members = self.station_members.get(id(item), set())
+            item.setText(0, item.text(0) + f" · {len(members)} 项")
+            active = {value for value in members if self.station_is_visible(self.station_record_by_id[value])}
+            control = Switch(bool(active))
+            control.setMixed(bool(active) and active != members)
+            control.toggled.connect(
+                lambda on, node=item: self.toggle_station_records(
+                    self.station_members.get(id(node), set()), on
+                )
+            )
+            self.station_tree.setItemWidget(item, 1, control)
         self.station_groups = groups
         self.station_group_paths = {id(item): path for path, item in groups.items()}
         shown = len(self.station_records)
         suffix = "；结果已限制，请在主地图搜索框继续缩小范围" if shown < self.station_total else ""
         self.station_note.setText(
-            f"共匹配 {self.station_total:,} 个车站、线路所或道岔，当前列出 {shown:,} 项{suffix}。"
+            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；道岔归入所属对象{suffix}。"
         )
         self.station_tree.schedule_height()
         self.station_tree.setUpdatesEnabled(True)
@@ -664,31 +789,51 @@ class RailCatalog(QWidget):
 
     @staticmethod
     def station_group(record):
-        return "station" if record.get("kind") in {"station", "halt"} else "control"
+        return "station"
 
     def station_is_visible(self, record):
         return (
             not record.get("archived", False)
-            and
-            self.station_masters[self.station_group(record)]
-            and record["id"] not in self.station_excluded
+            and (
+                record["id"] in self.station_direct_visible
+                or (
+                    self.station_masters[self.station_group(record)]
+                    and record["id"] not in self.station_excluded
+                )
+            )
         )
 
     def set_station_master(self, group, on):
-        self.station_masters[group] = bool(on)
-        if on:
-            self.station_excluded = {
-                key
-                for key in self.station_excluded
-                if next(
-                    (
-                        self.station_group(record) != group
-                        for record in self.station_records
-                        if record["id"] == key
-                    ),
-                    True,
-                )
-            }
+        # One business master controls both owners and their child switches.
+        self.station_masters["station"] = bool(on)
+        self.station_masters["control"] = bool(on)
+        group_ids = {
+            record["id"]
+            for record in self.station_records
+            if self.station_group(record) == "station"
+        }
+        direct_ids = set(self.station_direct_visible)
+        self.station_direct_visible.difference_update(direct_ids)
+        for station_id in direct_ids:
+            self.station_direct_groups.pop(station_id, None)
+        self.station_excluded.difference_update(group_ids)
+        self.sync_station_switches()
+        self.send_station_visibility()
+
+    def toggle_station_records(self, station_ids, on):
+        for station_id in set(station_ids):
+            record = self.station_record_by_id.get(station_id)
+            if record is None or record.get("archived"):
+                continue
+            if self.station_masters["station"]:
+                self.station_excluded.discard(station_id) if on else self.station_excluded.add(station_id)
+            else:
+                self.station_direct_visible.add(station_id) if on else self.station_direct_visible.discard(station_id)
+                if on:
+                    self.station_direct_groups[station_id] = "station"
+                else:
+                    self.station_direct_groups.pop(station_id, None)
+        self.station_partial_changed.emit("station", bool(self.station_direct_visible))
         self.sync_station_switches()
         self.send_station_visibility()
 
@@ -701,43 +846,88 @@ class RailCatalog(QWidget):
             control.blockSignals(True)
             control.setChecked(self.station_is_visible(record))
             control.blockSignals(False)
+        for item in getattr(self, "station_groups", {}).values():
+            members = self.station_members.get(id(item), set())
+            visible = {
+                value for value in members
+                if value in self.station_record_by_id
+                and self.station_is_visible(self.station_record_by_id[value])
+            }
+            control = self.station_tree.itemWidget(item, 1)
+            if control is None:
+                continue
+            control.blockSignals(True)
+            control.setChecked(bool(visible))
+            control.setMixed(bool(visible) and visible != members)
+            control.blockSignals(False)
 
     def toggle_station(self, record, on):
-        group = self.station_group(record)
-        was_off = on and not self.station_masters[group]
-        if was_off:
-            self.station_enabled_requested.emit(group)
-            self.station_excluded.update(
-                item["id"]
-                for item in self.station_records
-                if self.station_group(item) == group and item["id"] != record["id"]
+        group = "station"
+        if self.station_masters["station"]:
+            self.station_excluded.discard(record["id"]) if on else self.station_excluded.add(
+                record["id"]
             )
-        self.station_excluded.discard(record["id"]) if on else self.station_excluded.add(
-            record["id"]
-        )
-        self.sync_station_switches()
+        else:
+            self.station_direct_visible.add(record["id"]) if on else self.station_direct_visible.discard(
+                record["id"]
+            )
+            if on:
+                self.station_direct_groups[record["id"]] = group
+            else:
+                self.station_direct_groups.pop(record["id"], None)
+            partial = bool(self.station_direct_visible)
+            self.station_partial_changed.emit(group, partial)
+        item = self.station_items.get(record["id"])
+        control = self.station_tree.itemWidget(item, 1) if item is not None else None
+        if control is not None and control.isChecked() != self.station_is_visible(record):
+            control.blockSignals(True)
+            control.setChecked(self.station_is_visible(record))
+            control.blockSignals(False)
         self.send_station_visibility()
 
     def send_station_visibility(self):
+        hidden_ids = self.station_excluded | {
+            key.removeprefix("station:")
+            for key, value in self.overrides.items()
+            if key.startswith("station:") and value.get("archived", False)
+        }
         hidden = [
             int(value.split("/", 1)[1])
-            for value in self.station_excluded
+            for value in hidden_ids
             if value.startswith("node/") and value.split("/", 1)[1].isdigit()
         ]
-        self.map.call("setRailPointExclusions", hidden or None)
-        visible = [
-            record["osm_node_id"]
-            for record in self.station_records
-            if self.station_is_visible(record)
-        ]
-        group_total = sum(
-            self.station_masters[self.station_group(record)]
-            and not record.get("archived", False)
-            for record in self.station_records
+        hidden.extend(
+            int(switch_id)
+            for station_id in hidden_ids
+            for switch_id in self.station_record_by_id.get(station_id, {}).get(
+                "member_switch_ids", []
+            )
+            if str(switch_id).isdigit()
         )
+        hidden = sorted(set(hidden))
+        self.map.call("setRailPointExclusions", hidden or None)
+        def directly_visible():
+            return [
+                int(station_id.split("/", 1)[1])
+                for station_id in self.station_direct_visible
+                if station_id.startswith("node/")
+                and station_id.split("/", 1)[1].isdigit()
+                and not self.overrides.get("station:" + station_id, {}).get("archived", False)
+            ]
+        visible_stations = directly_visible()
+        visible_controls = sorted({
+            int(switch_id)
+            for station_id in self.station_direct_visible
+            for switch_id in self.station_record_by_id.get(station_id, {}).get("member_switch_ids", [])
+            if str(switch_id).isdigit()
+        })
         self.map.call(
             "setRailPointSelection",
-            None if group_total and len(visible) == group_total else visible,
+            None if self.station_masters["station"] else visible_stations,
+        )
+        self.map.call(
+            "setRailControlPointSelection",
+            None if self.station_masters["station"] else visible_controls,
         )
 
     def focus_station_item(self, item, column):
@@ -861,8 +1051,87 @@ class RailCatalog(QWidget):
                 self.station_groups[current] = QTreeWidgetItem(parent, [label, ""])
                 self.station_members[id(self.station_groups[current])] = set()
                 self.station_group_paths[id(self.station_groups[current])] = current
+                control = Switch(False)
+                control.toggled.connect(
+                    lambda on, node=self.station_groups[current]: self.toggle_station_records(
+                        self.station_members.get(id(node), set()), on
+                    )
+                )
+                self.station_tree.setItemWidget(self.station_groups[current], 1, control)
             parent = self.station_groups[current]
         return parent
+
+    def _insert_station_record(self, record):
+        """Insert one resolved owner without rebuilding the national station tree."""
+        station_id = record["id"]
+        existing = self.station_items.get(station_id)
+        if existing is not None:
+            current = self.station_record_by_id[station_id]
+            known = {
+                int(value)
+                for value in current.get("member_switch_ids", [])
+                if str(value).isdigit()
+            }
+            additions = sorted({
+                int(value)
+                for value in record.get("member_switch_ids", [])
+                if str(value).isdigit()
+            } - known)
+            for switch_id in additions:
+                switch_item = QTreeWidgetItem(
+                    existing, [f"道岔 SW-{switch_id}", ""]
+                )
+                switch_item.setToolTip(
+                    0, f"归属：{current['name']}\nOSM 道岔节点：{switch_id}"
+                )
+                switch_item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+            if additions:
+                current["member_switch_ids"] = sorted(known | set(additions))
+            return existing
+        record = deepcopy(record)
+        record["_source_name"] = record["name"]
+        record["_source_station_type"] = record["station_type"]
+        record["_source_line_ids"] = list(record["line_ids"])
+        record["_source_line_names"] = list(record["line_names"])
+        self._apply_station_override(record)
+        self.station_records.append(record)
+        self.station_record_by_id[station_id] = record
+        path = self._station_path(record)
+        clean = path[1:] if path and path[0] == "已归档" else path
+        if clean:
+            self.station_folder_paths.add(tuple(clean))
+        parent = self._ensure_station_group(path)
+        item = QTreeWidgetItem(parent, [record["name"], ""])
+        item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+        item.setToolTip(0, self._station_tooltip(record))
+        control = Switch(self.station_is_visible(record))
+        control.setEnabled(not record.get("archived", False))
+        control.toggled.connect(lambda on, station=record: self.toggle_station(station, on))
+        self.station_tree.setItemWidget(item, 1, control)
+        self.station_items[station_id] = item
+        self.station_members[id(item)] = {station_id}
+        for switch_id in record.get("member_switch_ids", []):
+            switch_item = QTreeWidgetItem(item, [f"道岔 SW-{switch_id}", ""])
+            switch_item.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
+            switch_item.setData(0, Qt.ItemDataRole.UserRole, station_id)
+        for length in range(1, len(path) + 1):
+            prefix = path[:length]
+            group = self.station_groups[prefix]
+            members = self.station_members.setdefault(id(group), set())
+            members.add(station_id)
+            group.setText(0, f"{prefix[-1]} · {len(members)} 项")
+            active = {
+                value
+                for value in members
+                if self.station_is_visible(self.station_record_by_id[value])
+            }
+            group_control = self.station_tree.itemWidget(group, 1)
+            group_control.blockSignals(True)
+            group_control.setChecked(bool(active))
+            group_control.setMixed(bool(active) and active != members)
+            group_control.blockSignals(False)
+        self.station_tree.schedule_height()
+        return item
 
     def _refresh_station_items(self, station_ids):
         affected_paths = set()
@@ -942,14 +1211,203 @@ class RailCatalog(QWidget):
         finally:
             self.station_tree.setUpdatesEnabled(True)
 
-    def select_station(self, osm_node_id):
+    def station_owner_for_node(self, osm_node_id):
+        """Return and lazily materialise a station/box owner for a map rail point."""
         key = f"node/{osm_node_id}"
-        item = self.station_items.get(key)
+        if key not in self.station_items:
+            owner = rail_switch_owner(
+                self.directory, osm_node_id, self.regions, self.overrides
+            )
+            if owner is not None:
+                key = owner["id"]
+                member_ids = set(owner.get("member_switch_ids", []))
+                previous = self.transient_station_records.get(key)
+                if previous:
+                    member_ids.update(previous.get("member_switch_ids", []))
+                owner["member_switch_ids"] = sorted(member_ids)
+                self.transient_station_records[key] = owner
+                self.selected_switch_owners[int(osm_node_id)] = key
+            else:
+                records, _total = rail_station_records(
+                    self.directory,
+                    self.regions,
+                    str(osm_node_id),
+                    5,
+                    self.overrides,
+                )
+                direct = next(
+                    (record for record in records if record["id"] == key), None
+                )
+                if direct:
+                    self.transient_station_records[key] = direct
+            record = self.transient_station_records.get(key)
+            if record is not None:
+                self.station_tree.setUpdatesEnabled(False)
+                try:
+                    self._insert_station_record(record)
+                finally:
+                    self.station_tree.setUpdatesEnabled(True)
+        return key if key in self.station_items else None
+
+    def select_station(self, osm_node_id):
+        key = self.station_owner_for_node(osm_node_id)
+        item = self.station_items.get(key) if key else None
         if not item:
-            self.station_query = str(osm_node_id)
-            self.populate_station_tree()
-            item = self.station_items.get(key)
-        if not item:
+            return False
+        ancestor = item.parent()
+        while ancestor:
+            ancestor.setExpanded(True)
+            ancestor = ancestor.parent()
+        self.tabs.setCurrentWidget(self.station_page)
+        self.station_tree.setCurrentItem(item)
+        self.station_tree.scrollToItem(item)
+        return True
+
+    def signal_box_line_candidates(self, switch_ids):
+        switch_ids = sorted({int(value) for value in switch_ids})
+        if len(switch_ids) < 2:
+            raise ValueError("请至少选择两个道岔")
+        database = self.directory / "rail_lines.sqlite"
+        if not database.exists():
+            raise ValueError("铁路拓扑索引尚未建立")
+        marks = ",".join("?" for _ in switch_ids)
+        with sqlite3.connect(database) as db:
+            rows = db.execute(
+                "SELECT DISTINCT l.id,l.source_name,a.source_id,a.node_id "
+                "FROM node_aliases a JOIN line_nodes n ON n.node_id=a.node_id "
+                "JOIN lines l ON l.id=n.line_id "
+                f"WHERE a.source_id IN ({marks}) ORDER BY l.source_name,l.id",
+                switch_ids,
+            ).fetchall()
+        result = {}
+        for line_id, source_name, source_id, anchor in rows:
+            result.setdefault(line_id, {
+                "line_id": line_id,
+                "name": self.display_name(line_id) if line_id in self.catalog else source_name,
+                "anchors": {},
+            })["anchors"][int(source_id)] = anchor
+        return list(result.values())
+
+    def create_signal_box(self, name, switch_ids, line_ids):
+        name = str(name).strip()
+        if not name:
+            raise ValueError("线路所名称不能为空")
+        switch_ids = sorted({int(value) for value in switch_ids})
+        candidates = {value["line_id"]: value for value in self.signal_box_line_candidates(switch_ids)}
+        selected = list(dict.fromkeys(str(value) for value in line_ids))
+        if not selected:
+            raise ValueError("至少选择一条经过线路所的业务线路")
+        if any(value not in candidates for value in selected):
+            raise ValueError("所选线路没有通过这些真实道岔节点")
+        source = self.directory / "rail.sqlite"
+        marks = ",".join("?" for _ in switch_ids)
+        with sqlite3.connect(source) as db:
+            rows = db.execute(
+                "SELECT json_extract(data,'$.properties.osm_node_id'),"
+                "json_extract(data,'$.geometry.coordinates[0]'),"
+                "json_extract(data,'$.geometry.coordinates[1]') "
+                "FROM features WHERE kind='railPoints' "
+                f"AND json_extract(data,'$.properties.osm_node_id') IN ({marks}) "
+                "AND json_extract(data,'$.properties.kind')='switch'",
+                switch_ids,
+            ).fetchall()
+        if len(rows) != len(switch_ids):
+            raise ValueError("选择中包含非道岔对象或道岔已从数据源删除")
+        xs, ys = [float(row[1]) for row in rows], [float(row[2]) for row in rows]
+        if max(xs) - min(xs) > .06 or max(ys) - min(ys) > .06:
+            raise ValueError("所选道岔相距过远，不能组成同一个线路所")
+        coordinates = [sum(xs) / len(xs), sum(ys) / len(ys)]
+        owner = rail_switch_owner(self.directory, switch_ids[0], self.regions, {})
+        province = owner.get("province", "省界外 / 待核对") if owner else "省界外 / 待核对"
+        city = owner.get("city", "城市待核对") if owner else "城市待核对"
+        ident = "signalbox/RSB-" + hashlib.sha256(
+            ",".join(map(str, switch_ids)).encode("ascii")
+        ).hexdigest()[:16]
+        connected = []
+        line_names = []
+        for line_id in selected:
+            candidate = candidates[line_id]
+            anchors = candidate["anchors"]
+            anchor_source = next(value for value in switch_ids if value in anchors)
+            connected.append({
+                "line_id": line_id,
+                "anchor_node": anchors[anchor_source],
+                "distance_m": 0.0,
+                "source": "manual-signal-box",
+                "verification_status": "user_verified",
+            })
+            line_names.append(candidate["name"])
+        self._save_local_overrides({
+            "station:" + ident: {
+                "display_name": name,
+                "station_type": "线路所",
+                "folder_path": [province, city],
+                "coordinates": coordinates,
+                "member_switch_ids": switch_ids,
+                "connected_lines": connected,
+                "line_names": line_names,
+                "source": "manual",
+                "verification_status": "user_verified",
+            }
+        })
+        self.metadata_changed.emit()
+        self.populate_station_tree()
+        self.select_station_record(ident)
+        return ident
+
+    def signal_box_geojson(self):
+        features = []
+        custom = [
+            (key.removeprefix("station:"), value)
+            for key, value in self.overrides.items()
+            if key.startswith("station:signalbox/")
+            and isinstance(value.get("member_switch_ids"), list)
+        ]
+        source = self.directory / "rail.sqlite"
+        if not custom or not source.exists():
+            return {"type": "FeatureCollection", "features": []}
+        with sqlite3.connect(source) as db:
+            for ident, value in custom:
+                switch_ids = [int(item) for item in value["member_switch_ids"] if str(item).isdigit()]
+                if len(switch_ids) < 2:
+                    continue
+                marks = ",".join("?" for _ in switch_ids)
+                rows = db.execute(
+                    "SELECT json_extract(data,'$.geometry.coordinates[0]'),"
+                    "json_extract(data,'$.geometry.coordinates[1]') FROM features "
+                    "WHERE kind='railPoints' "
+                    f"AND json_extract(data,'$.properties.osm_node_id') IN ({marks})",
+                    switch_ids,
+                ).fetchall()
+                if len(rows) < 2:
+                    continue
+                xs, ys = [float(row[0]) for row in rows], [float(row[1]) for row in rows]
+                pad = max(.00012, min(.001, max(max(xs) - min(xs), max(ys) - min(ys)) * .15))
+                west, east, south, north = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
+                props = {
+                    "infrastructure_id": ident,
+                    "name": value.get("display_name") or "未命名线路所",
+                    "kind": "signal_box",
+                    "member_switch_ids": switch_ids,
+                    "line_ids": [
+                        item.get("line_id") for item in value.get("connected_lines", [])
+                        if isinstance(item, dict) and item.get("line_id")
+                    ],
+                }
+                features.extend([
+                    {"type": "Feature", "properties": props, "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
+                    }},
+                    {"type": "Feature", "properties": props, "geometry": {
+                        "type": "Point", "coordinates": [sum(xs) / len(xs), sum(ys) / len(ys)],
+                    }},
+                ])
+        return {"type": "FeatureCollection", "features": features}
+
+    def select_station_record(self, station_id):
+        item = self.station_items.get(station_id)
+        if item is None:
             return False
         ancestor = item.parent()
         while ancestor:
@@ -1022,14 +1480,7 @@ class RailCatalog(QWidget):
             )
         if archived is not None:
             change["archived"] = bool(archived)
-        proposed = {**self.overrides, key: change}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(self.path)
-        self.overrides = proposed
+        self._save_local_overrides({key: change})
         self.metadata_changed.emit()
         self._refresh_station_items({station_id})
         self.send_station_visibility()
@@ -1047,17 +1498,28 @@ class RailCatalog(QWidget):
             ):
                 raise ValueError("请选择有效的目标文件夹")
             changes["folder_path"] = [value.strip() for value in folder]
-        proposed = {**self.overrides}
-        for station_id in station_ids:
-            key = "station:" + station_id
-            proposed[key] = {**proposed.get(key, {}), **changes}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(self.path)
-        self.overrides = proposed
+        self._save_local_overrides({"station:" + station_id: changes for station_id in station_ids})
+        self.metadata_changed.emit()
+        self._refresh_station_items(station_ids)
+        self.send_station_visibility()
+
+    def prefix_station_names(self, station_ids, prefix):
+        """Rename a station batch with one atomic write and one tree refresh."""
+        station_ids = {
+            station_id
+            for station_id in station_ids
+            if station_id in self.station_record_by_id
+        }
+        prefix = str(prefix).strip()
+        if not station_ids or not prefix:
+            return
+        changes = {
+            "station:" + station_id: {
+                "display_name": prefix + self.station_record_by_id[station_id]["name"]
+            }
+            for station_id in station_ids
+        }
+        self._save_local_overrides(changes)
         self.metadata_changed.emit()
         self._refresh_station_items(station_ids)
         self.send_station_visibility()
@@ -1088,30 +1550,7 @@ class RailCatalog(QWidget):
         if not effective:
             return
 
-        proposed = {**self.overrides}
-        for key, change in effective.items():
-            meta = self.meta(key)
-            proposed[key] = {
-                **self.overrides.get(key, {}),
-                **{
-                    field: meta[field]
-                    for field in (
-                        "display_name",
-                        "folder_path",
-                        "archived",
-                        "track_type",
-                    )
-                    if field in meta
-                },
-                **change,
-            }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(self.path)
-        self.overrides = proposed
+        self._save_local_overrides(effective)
         self.visible = {
             key for key in self.visible if not self.meta(key).get("archived", False)
         }
@@ -1149,21 +1588,10 @@ class RailCatalog(QWidget):
         folders = [f.strip() for f in folders]
         if folders[0] == "已归档":
             raise ValueError("「已归档」是保留目录；请使用归档功能")
-        proposed = {**self.overrides}
         for key in keys:
             if key not in self.catalog:
                 raise ValueError("目录项已变化，请重新选择")
-            proposed[key] = {
-                **self.overrides.get(key, {}),
-                "folder_path": folders,
-            }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(proposed, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(self.path)
-        self.overrides = proposed
+        self._save_local_overrides({key: {"folder_path": folders} for key in keys})
         self.metadata_changed.emit()
         if not self._move_line_items_in_tree(keys):
             self.populate()
@@ -1918,30 +2346,20 @@ class RailCatalog(QWidget):
         buttons.rejected.connect(dialog.reject)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        overrides = dict(self.overrides)
-        overrides.update(
-            {
-                name: {
-                **self.overrides.get(name, {}),
+        changes = {
+            name: {
                 "track_type": table.cellWidget(row, 3).currentText(),
                 "display_name": table.item(row, 4).text().strip()
                 or self.catalog[name].get("name", name),
             }
             for row, name in enumerate(names)
-            }
-        )
+        }
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(
-                json.dumps(overrides, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            tmp.replace(self.path)
-            self.overrides = overrides
+            self._save_local_overrides(changes)
             self.metadata_changed.emit()
             self.populate()
             changed_names = {
-                self.catalog[name].get("line_id"): overrides[name]["display_name"]
+                self.catalog[name].get("line_id"): changes[name]["display_name"]
                 for name in names
                 if self.catalog[name].get("line_id")
             }

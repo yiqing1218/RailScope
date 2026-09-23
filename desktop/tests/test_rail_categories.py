@@ -83,14 +83,14 @@ def test_catalog_hierarchy_uses_business_lines_without_province_splitting():
         "section": "分段",
     }
     meta["line_display_name"] = "沪宁线 · IL-TEST"
-    assert catalog_parents(meta, 0) == ("其他铁路", "货运铁路")
+    assert catalog_parents(meta, 0) == ("普速铁路", "华东", "货运")
     meta["track_type"] = "高速铁路线"
-    assert catalog_parents(meta, 0) == ("高速铁路", "区域高速铁路")
+    assert catalog_parents(meta, 0) == ("高速铁路", "华东", "其他/速度待核对")
     meta["line_display_name"] = "广珠城际铁路 · IL-TEST"
-    assert catalog_parents(meta, 0) == ("高速铁路", "区域高速铁路")
+    assert catalog_parents(meta, 0) == ("高速铁路", "华东", "其他/速度待核对")
     meta.update(track_type="普速铁路线", line_display_name="京沪铁路 · IL-TEST")
-    assert catalog_parents(meta, 0) == ("普速铁路", "国家铁路干线")
+    assert catalog_parents(meta, 0) == ("普速铁路", "干线", "客货运")
     meta.update(track_type="高速铁路站场股道", station_name="上海虹桥站")
-    assert catalog_parents(meta, 0) == ("其他铁路", "不确定铁路")
+    assert catalog_parents(meta, 0) == ("站台线&股道线", "站场股道")
     meta.update(track_type="未确认类型", line_display_name="金温地方铁路 · IL-TEST")
     assert catalog_parents(meta, 0) == ("其他铁路", "地方铁路")

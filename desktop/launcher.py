@@ -8,6 +8,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import sqlite3
 import sys
 import threading
 from urllib.parse import unquote, urlsplit, parse_qs
@@ -16,11 +17,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
 from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal, Slot
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QCursor, QIcon, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QComboBox,
     QCompleter,
@@ -31,7 +33,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QInputDialog,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -65,6 +69,7 @@ from bootstrap import ensure_assets
 from data_install import active_directory, active_rail_directory
 from rail_ui import RailEditor
 from rail_style_ui import load_styles as load_rail_styles, RailStyleDialog
+from rail_point_style_ui import load as load_rail_point_styles, RailPointStyleDialog
 from metro_style_ui import load_styles as load_metro_styles, MetroStyleDialog
 from line_metadata import FIELD_LABELS, source_line_attributes
 from line_metadata_ui import LineMetadataDialog
@@ -275,6 +280,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
 class Bridge(QObject):
     selected = Signal(str)
+    selections = Signal(str)
     initialized = Signal()
     dataLoaded = Signal()
     progress = Signal(float, float, bool)
@@ -292,6 +298,10 @@ class Bridge(QObject):
     @Slot(str)
     def featureSelected(self, data):
         self.selected.emit(data)
+
+    @Slot(str)
+    def featuresSelected(self, data):
+        self.selections.emit(data)
 
     @Slot()
     def ready(self):
@@ -519,6 +529,7 @@ class Desk(QMainWindow):
         self.tree_switches = {}
         self.imported = dict(EMPTY)
         self.selected_data = {}
+        self.selected_features = []
         self.running = False
         self.distance = 0.0
         self.route_lookup = {r["osm_relation_id"]: r for r in self.catalog}
@@ -554,6 +565,7 @@ class Desk(QMainWindow):
                 self.hierarchy_load_error + "\n" if self.hierarchy_load_error else ""
             ) + str(error)
         self.station_exclusions = set()
+        self.station_direct_visible = set()
         self.station_directory = {}
         self.station_lookup = {}
         self.config = self.make_config()
@@ -624,6 +636,21 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "地铁线路样式未保存", str(error))
 
+    def edit_rail_point_styles(self):
+        path = ROOT / "data/user_settings/rail_point_styles.json"
+        dialog = RailPointStyleDialog(load_rail_point_styles(path), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            value = dialog.value()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".json.tmp")
+                temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(path)
+                self.config["railPointStyles"] = value
+                self.map.call("setRailPointStyles", value)
+            except OSError as error:
+                QMessageBox.warning(self, "站点样式未保存", str(error))
+
     def make_config(self):
         sources = {
             key: "/" + (DATA / name).relative_to(ROOT).as_posix()
@@ -660,6 +687,7 @@ class Desk(QMainWindow):
             elif key != "rail":
                 sources[key] = EMPTY
         sources["railVehicles"] = EMPTY
+        sources["railSignalBoxes"] = EMPTY
         roads = [
             {
                 "type": "Feature",
@@ -674,6 +702,7 @@ class Desk(QMainWindow):
         return {
             "sources": sources,
             "railStyles": load_rail_styles(ROOT / "data/user_settings/rail_styles.json"),
+            "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
@@ -758,19 +787,119 @@ class Desk(QMainWindow):
         menu.addAction(action)
         return action
 
+    def save_workspace(self):
+        """Flush independent plans; catalog overrides are written on each edit."""
+        self.operations.save()
+        self.rail_operations.save()
+        self.hierarchy.save()
+        self.statusBar().showMessage("工作区已保存", 5000)
+
+    def save_workspace_as(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "工作区另存为",
+            str(ROOT / "data/logs/railscope-workspace.json"),
+            "RailScope JSON (*.json)",
+        )
+        if not path:
+            return
+        payload = {
+            "schema": "railscope.workspace.v1",
+            "metro_line_catalog": self.metro_line_overrides.values,
+            "metro_station_catalog": self.metro_station_overrides.values,
+            "rail_catalog": self.rail_catalog_widget.local_overrides,
+            "metro_plan": self.plan.snapshot(),
+            "rail_plan": self.rail_operations.document(),
+        }
+        temporary = Path(path).with_suffix(Path(path).suffix + ".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+
+    def export_catalog_overrides(self, kind):
+        labels = {
+            "rail-lines": "铁路线目录",
+            "rail-stations": "铁路站目录",
+            "metro-lines": "地铁线路目录",
+            "metro-stations": "地铁站目录",
+        }
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出" + labels[kind],
+            str(ROOT / "data/logs" / (kind + ".json")),
+            "JSON (*.json)",
+        )
+        if not path:
+            return
+        if kind.startswith("rail-"):
+            station = kind == "rail-stations"
+            values = {
+                key: value for key, value in self.rail_catalog_widget.local_overrides.items()
+                if key.startswith("station:") == station
+            }
+        else:
+            values = dict(
+                self.metro_line_overrides.values
+                if kind == "metro-lines"
+                else self.metro_station_overrides.values
+            )
+        payload = {
+            "schema": "railscope.catalog-exchange.v1",
+            "kind": kind,
+            "overrides": values,
+        }
+        temporary = Path(path).with_suffix(Path(path).suffix + ".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+
+    def import_catalog_overrides(self, kind):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入目录分类", "", "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+            if payload.get("schema") != "railscope.catalog-exchange.v1" or payload.get("kind") != kind or not isinstance(payload.get("overrides"), dict):
+                raise ValueError("目录文件类型或格式不匹配")
+            values = payload["overrides"]
+            if kind.startswith("rail-"):
+                self.rail_catalog_widget._save_local_overrides(values)
+                self.rail_catalog_widget.populate()
+                self.rail_catalog_widget.populate_station_tree()
+                self.refresh_signal_boxes()
+            else:
+                store = self.metro_line_overrides if kind == "metro-lines" else self.metro_station_overrides
+                store.update_many(values)
+                self.refresh_hierarchy()
+            self.load_status.setText("  目录文件已导入并应用；原始 OSM 数据未修改")
+        except (OSError, ValueError, TypeError) as error:
+            QMessageBox.warning(self, "目录未导入", str(error))
+
     def build_menus(self):
         bar = self.menuBar()
         file = bar.addMenu("文件")
+        self.add_action(file, "保存工作区", self.save_workspace, "Ctrl+S")
+        self.add_action(file, "工作区另存为…", self.save_workspace_as, "Ctrl+Shift+S")
+        file.addSeparator()
         self.add_action(file, "导入 GeoJSON…", self.import_file, "Ctrl+I")
         self.add_action(file, "导入国铁运行通道…", self.rail_operations.import_corridors)
         self.add_action(file, "导出国铁运行通道…", self.rail_operations.export_corridors)
         self.add_action(file, "导出当前可见图层…", self.export_visible, "Ctrl+E")
         shots = file.addMenu("导出截图")
-        self.add_action(shots, "导出当前地图 PNG…", self.capture_map, "Ctrl+Shift+S")
+        self.add_action(shots, "导出当前地图 PNG…", self.capture_map)
         self.add_action(shots, "导出完整运行图 PNG…", self.capture_diagram)
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
         edit = bar.addMenu("编辑")
+        self.add_action(edit, "撤销目录调整", lambda: self.rail_catalog_widget.undo_catalog(), "Ctrl+Z")
+        self.add_action(edit, "重做目录调整", lambda: self.rail_catalog_widget.redo_catalog(), "Ctrl+Y")
+        edit.addSeparator()
+        self.add_action(edit, "单击选择工具", lambda: self.set_map_selection_mode("click"), "V")
+        self.add_action(edit, "框选工具", lambda: self.set_map_selection_mode("box"), "B")
+        self.add_action(edit, "移动所选对象到目录…", self.move_map_selection)
+        self.add_action(edit, "重命名所选对象…", self.rename_map_selection)
+        self.add_action(edit, "归档所选对象", self.archive_map_selection)
+        edit.addSeparator()
         self.add_action(edit, "地铁线路目录整理…", self.edit_hierarchy)
         self.add_action(
             edit,
@@ -780,11 +909,12 @@ class Desk(QMainWindow):
         self.add_action(
             edit, "国铁物理线路规范命名…", self.rail_operations.organize_lines
         )
-        map_menu = bar.addMenu("地图")
+        map_menu = bar.addMenu("显示")
         self.add_action(map_menu, "打开图层控制", lambda: self.open_sidebar(0))
         styles = map_menu.addMenu("线路显示样式")
         self.add_action(styles, "地铁线路样式…", self.edit_metro_styles)
         self.add_action(styles, "国铁线路样式…", self.edit_rail_styles)
+        self.add_action(styles, "车站与线路所/道岔样式…", self.edit_rail_point_styles)
         map_menu.addSeparator()
         self.add_action(map_menu, "显示全部地铁线路", lambda: self.set_all_lines(True))
         self.add_action(map_menu, "隐藏全部地铁线路", lambda: self.set_all_lines(False))
@@ -846,18 +976,29 @@ class Desk(QMainWindow):
             rail_run, "导出国铁物理区间参考目录（供 AI）…", self.export_rail_references
         )
         run_menu.addSeparator()
-        self.add_action(
-            run_menu,
-            "保存当前运行计划",
-            lambda: (
-                self.rail_operations
-                if self.run_mode.currentIndex() == 1
-                or self.side_pages.currentIndex() == 2
-                else self.operations
-            ).save(),
-            "Ctrl+S",
-        )
-        data = bar.addMenu("数据源")
+        self.add_action(run_menu, "保存当前运行计划", lambda: (
+            self.rail_operations if self.run_mode.currentIndex() == 1 else self.operations
+        ).save())
+        data = bar.addMenu("数据")
+        for kind, title in (
+            ("rail-lines", "铁路线数据"),
+            ("rail-stations", "铁路站数据"),
+            ("metro-lines", "地铁线路数据"),
+            ("metro-stations", "地铁站数据"),
+        ):
+            submenu = data.addMenu(title)
+            self.add_action(submenu, "导入目录分类…", lambda k=kind: self.import_catalog_overrides(k))
+            self.add_action(submenu, "导出目录分类…", lambda k=kind: self.export_catalog_overrides(k))
+        corridor_data = data.addMenu("通道数据")
+        self.add_action(corridor_data, "导入…", self.rail_operations.import_corridors)
+        self.add_action(corridor_data, "导出…", self.rail_operations.export_corridors)
+        train_data = data.addMenu("车次数据")
+        self.add_action(train_data, "批量导入 CSV…", self.rail_operations.import_table)
+        self.add_action(train_data, "导出 CSV / 模板…", self.rail_operations.export_table)
+        metro_run_data = data.addMenu("地铁运行数据")
+        self.add_action(metro_run_data, "导入…", self.operations.import_plan)
+        self.add_action(metro_run_data, "导出…", self.operations.export_plan)
+        data.addSeparator()
         self.add_action(data, "下载或更新全国地铁数据…", self.open_data_download)
         self.add_action(data, "下载或更新全国铁路数据…", self.open_rail_download)
         self.add_action(
@@ -868,7 +1009,12 @@ class Desk(QMainWindow):
             data, "检查全国铁路站区与站台覆盖…", self.audit_rail_boundaries
         )
         self.add_action(data, "查看数据概览", self.show_data_summary)
-        topology = bar.addMenu("拓扑")
+        topology = bar.addMenu("工具")
+        self.add_action(topology, "单击选择", lambda: self.set_map_selection_mode("click"))
+        self.add_action(topology, "框选对象", lambda: self.set_map_selection_mode("box"))
+        self.add_action(topology, "清除地图选择", lambda: self.map.call("clearSelection"))
+        self.add_action(topology, "由所选道岔新建线路所…", self.create_signal_box_from_selection)
+        topology.addSeparator()
         self.add_action(topology, "打开国铁运行通道编排", lambda: self.open_sidebar(2))
         self.add_action(
             topology,
@@ -876,16 +1022,15 @@ class Desk(QMainWindow):
             self.rail_operations.export_line_library,
         )
         self.add_action(topology, "校验基础设施连通性", self.show_topology)
-        view = bar.addMenu("视图")
+        view = bar.addMenu("窗口")
         self.add_action(view, "展开 / 收起左侧栏", self.toggle_left)
         self.add_action(view, "展开 / 收起对象详情", self.toggle_right)
         view.addSeparator()
         self.overlay_actions = {}
         for key, title, default in (
             ("title", "地图标题卡片", False),
-            ("tools", "地图定位与导航工具", True),
+            ("tools", "地图导航工具", True),
             ("legend", "地图图例", True),
-            ("status", "底图与坐标浮层", True),
             ("scale", "比例尺", True),
         ):
             action = QAction(title, self)
@@ -1096,7 +1241,7 @@ class Desk(QMainWindow):
         layout.addStretch()
         self.search_type = QComboBox()
         self.search_type.addItems(
-            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "铁路车站", "线路所及道岔"]
+            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所"]
         )
         self.search_type.setMinimumWidth(105)
         layout.addWidget(self.search_type)
@@ -1111,6 +1256,11 @@ class Desk(QMainWindow):
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.search.setCompleter(completer)
         layout.addWidget(self.search)
+        locate = QToolButton()
+        locate.setText("定位 ▾")
+        locate.setToolTip("按城市、线路或经纬度定位")
+        locate.clicked.connect(lambda: self.map.call("showLocationPanel"))
+        layout.addWidget(locate)
         layout.addWidget(text_label("本地 OSM 数据", "badge"))
         return header
 
@@ -1195,13 +1345,13 @@ class Desk(QMainWindow):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
         layout.setSpacing(10)
-        layout.addWidget(Fold("底图", self.base_controls()))
         layout.addWidget(
             Fold("地铁", self.metro_controls(), count=f"{len(self.catalog)} 个关系")
         )
         layout.addWidget(Fold("公路", self.reference_controls("road"), expanded=False))
         layout.addWidget(Fold("国铁", self.rail_controls(), expanded=False))
         layout.addStretch()
+        layout.addWidget(Fold("底图", self.base_controls(), expanded=False))
         scroll.setWidget(body)
         return scroll
 
@@ -1248,11 +1398,15 @@ class Desk(QMainWindow):
         layout.addWidget(self.new_switch("metro", "运营线路", "保留 OSM 原始线路颜色"))
         layout.addWidget(self.new_switch("stations", "地铁站", "POI 与真实 OSM 站区面"))
         layout.addWidget(self.new_switch("construction", "在建线路", "深灰色虚线"))
-        layout.addWidget(text_label("线路目录", "sectionLabel"))
+        self.metro_catalog_tabs = QTabWidget()
+        self.metro_line_page = QWidget()
+        line_layout = QVBoxLayout(self.metro_line_page)
+        line_layout.setContentsMargins(0, 0, 0, 0)
+        line_layout.addWidget(text_label("地铁线路目录", "sectionLabel"))
         self.line_search = QLineEdit()
         self.line_search.setPlaceholderText("筛选城市 / 线路")
         self.line_search.textChanged.connect(self.filter_tree)
-        layout.addWidget(self.line_search)
+        line_layout.addWidget(self.line_search)
         self.tree = GrowingTree()
         self.tree.setColumnCount(2)
         self.tree.setHeaderHidden(True)
@@ -1267,10 +1421,15 @@ class Desk(QMainWindow):
         self.tree.itemDoubleClicked.connect(self.focus_tree_item)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.metro_context_menu)
-        layout.addWidget(self.tree)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        line_layout.addWidget(self.tree)
         self.line_count = text_label("")
-        layout.addWidget(self.line_count)
-        layout.addWidget(text_label("站点目录", "sectionLabel"))
+        line_layout.addWidget(self.line_count)
+        self.metro_catalog_tabs.addTab(self.metro_line_page, "地铁线路目录")
+        self.metro_station_page = QWidget()
+        station_layout = QVBoxLayout(self.metro_station_page)
+        station_layout.setContentsMargins(0, 0, 0, 0)
+        station_layout.addWidget(text_label("地铁站目录", "sectionLabel"))
         self.station_tree = GrowingTree()
         self.station_tree.setColumnCount(2)
         self.station_tree.setHeaderHidden(True)
@@ -1287,10 +1446,15 @@ class Desk(QMainWindow):
             1, QHeaderView.ResizeMode.Fixed
         )
         self.station_tree.setColumnWidth(1, 62)
+        self.station_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.station_tree.itemDoubleClicked.connect(self.focus_station_tree_item)
-        layout.addWidget(self.station_tree)
+        self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.station_tree.customContextMenuRequested.connect(self.metro_station_context_menu)
+        station_layout.addWidget(self.station_tree)
         self.station_count = text_label("")
-        layout.addWidget(self.station_count)
+        station_layout.addWidget(self.station_count)
+        self.metro_catalog_tabs.addTab(self.metro_station_page, "地铁站目录")
+        layout.addWidget(self.metro_catalog_tabs)
         self.populate_station_tree()
         self.update_count()
         return body
@@ -1299,26 +1463,120 @@ class Desk(QMainWindow):
         return self.hierarchy.parent(route)[:2]
 
     def metro_context_menu(self, position):
-        from PySide6.QtWidgets import QMenu
+        from rail_catalog_ui import add_folder_move_menu
 
         item = self.tree.itemAt(position)
         if not item:
             return
-        self.tree.setCurrentItem(item)
+        selected = self.tree.selectedItems()
+        if item not in selected:
+            self.tree.clearSelection()
+            item.setSelected(True)
+            self.tree.setCurrentItem(item)
+            selected = [item]
+        ids = set().union(*(self.item_ids(value) for value in selected))
+        if not ids:
+            return
         menu = QMenu(self)
-        menu.addAction("编辑显示名称 / 省市归属…", self.edit_hierarchy)
+        menu.addAction(
+            "编辑名称与目录…", lambda: self.edit_hierarchy(ids)
+        ).setEnabled(len(ids) == 1)
+        if len(ids) > 1:
+            menu.addAction(
+                "批量添加名称前缀…", lambda: self.prefix_metro_line_names(ids)
+            )
+        move = menu.addMenu("移动到")
+        destinations = {
+            self.hierarchy.parent(route)[:2]
+            for route in self.hierarchy.routes
+        }
+        add_folder_move_menu(
+            move, destinations, lambda path: self.move_metro_lines(ids, path)
+        )
+        visible = bool(ids & self.visible_lines)
+        menu.addAction(
+            "隐藏" if visible else "显示",
+            lambda: self.toggle_metro_line_ids(ids, not visible),
+        )
         menu.addAction("定位到此线路 / 分组", lambda: self.focus_tree_item(item, 0))
+        archived = all(
+            self.metro_line_overrides.values.get(str(value), {}).get(
+                "archived", False
+            )
+            for value in ids
+        )
+        menu.addAction(
+            "取消归档 / 恢复" if archived else "归档",
+            lambda: self.archive_metro_lines(ids, not archived),
+        )
         menu.exec(self.tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
 
-    def edit_hierarchy(self):
-        selected = self.tree.currentItem()
-        ids = self.item_ids(selected) if selected else set()
+    def edit_hierarchy(self, ids=None):
+        if ids is None:
+            selected = self.tree.selectedItems()
+            ids = set().union(*(self.item_ids(item) for item in selected)) if selected else set()
         dialog = HierarchyDialog(self.hierarchy, self, ids)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.hierarchy.overrides = dialog.model.overrides
         self.refresh_hierarchy(ids)
         self.load_status.setText("  目录层级已保存 · 原始 OSM 数据与显示开关保持不变")
+
+    def move_metro_lines(self, relation_ids, path):
+        if len(path) < 2:
+            raise ValueError("请选择省级和市级目录")
+        self.hierarchy.set_parent(
+            set(relation_ids), province=str(path[0]), city=str(path[1])
+        )
+        self.hierarchy.save()
+        self.refresh_hierarchy(relation_ids)
+
+    def toggle_metro_line_ids(self, relation_ids, on):
+        relation_ids = set(relation_ids)
+        self.visible_lines.update(relation_ids) if on else self.visible_lines.difference_update(
+            relation_ids
+        )
+        if on:
+            if any(value > 0 for value in relation_ids):
+                self.set_flag("metro", True)
+            if any(value < 0 for value in relation_ids):
+                self.set_flag("construction", True)
+        self.sync_tree_switches()
+        self.send_directory_filter()
+        self.update_count()
+
+    def archive_metro_lines(self, relation_ids, archived=True):
+        relation_ids = set(relation_ids)
+        self.metro_line_overrides.update_many({
+            str(value): {"archived": bool(archived)} for value in relation_ids
+        })
+        if archived:
+            self.visible_lines.difference_update(relation_ids)
+        self.refresh_hierarchy(relation_ids)
+        self.send_directory_filter()
+
+    def prefix_metro_line_names(self, relation_ids):
+        prefix, accepted = QInputDialog.getText(
+            self, "批量重命名地铁线路", "为所选线路添加名称前缀"
+        )
+        prefix = prefix.strip()
+        if not accepted or not prefix:
+            return
+        self.metro_line_overrides.update_many({
+            str(value): {
+                "display_name": prefix
+                + (
+                    self.metro_line_overrides.values.get(str(value), {}).get(
+                        "display_name"
+                    )
+                    or self.hierarchy.parent(self.route_lookup[value])[2]
+                )
+            }
+            for value in relation_ids
+            if value in self.route_lookup
+        })
+        self.refresh_hierarchy(relation_ids)
 
     def refresh_hierarchy(self, selected_ids=None):
         expanded = {item.text(0) for item in self.tree_items if item.isExpanded()}
@@ -1364,7 +1622,8 @@ class Desk(QMainWindow):
                         leaf.setData(0, Qt.ItemDataRole.UserRole, [station["id"]])
                         leaf.setToolTip(
                             0,
-                            f"唯一车站实体：{station['id']}\n"
+                            f"线路站点对象：{station['id']}\n"
+                            f"物理车站实体：{station['physical_station_id']}\n"
                             f"线路关系：{', '.join(map(str, station['route_relation_ids']))}",
                         )
                         line_item.addChild(leaf)
@@ -1388,8 +1647,10 @@ class Desk(QMainWindow):
         return {
             station_id
             for station_id, record in self.station_lookup.items()
-            if visible_routes.intersection(record["route_relation_ids"])
+            if (station_id in self.station_direct_visible
+                or visible_routes.intersection(record["route_relation_ids"]))
             and station_id not in self.station_exclusions
+            and not record.get("archived", False)
         }
 
     def install_station_switch(self, item, station_ids):
@@ -1409,19 +1670,11 @@ class Desk(QMainWindow):
         station_ids = set(item.data(0, Qt.ItemDataRole.UserRole) or [])
         if on:
             self.station_exclusions.difference_update(station_ids)
-            relation_ids = {
-                relation
-                for station_id in station_ids
-                for relation in self.station_lookup.get(station_id, {}).get(
-                    "route_relation_ids", []
-                )
-            }
-            self.visible_lines.update(relation_ids)
+            self.station_direct_visible.update(station_ids)
             self.set_flag("stations", True)
-            self.set_flag("metro", True)
-            self.sync_tree_switches()
         else:
             self.station_exclusions.update(station_ids)
+            self.station_direct_visible.difference_update(station_ids)
         self.sync_station_tree_switches()
         self.send_directory_filter()
 
@@ -1459,11 +1712,16 @@ class Desk(QMainWindow):
             item
             for item in getattr(self, "station_tree_items", [])
             if not item.childCount()
-            and station_id in set(item.data(0, Qt.ItemDataRole.UserRole) or [])
+            and any(
+                value == station_id
+                or self.station_lookup.get(value, {}).get("physical_station_id") == station_id
+                for value in set(item.data(0, Qt.ItemDataRole.UserRole) or [])
+            )
         ]
         if not candidates:
             return False
         item = candidates[0]
+        self.metro_catalog_tabs.setCurrentWidget(self.metro_station_page)
         ancestor = item.parent()
         while ancestor:
             ancestor.setExpanded(True)
@@ -1472,8 +1730,111 @@ class Desk(QMainWindow):
         self.station_tree.scrollToItem(item)
         return True
 
+    def metro_station_context_menu(self, position):
+        from rail_catalog_ui import add_folder_move_menu
+
+        item = self.station_tree.itemAt(position)
+        if item is None:
+            return
+        if item not in self.station_tree.selectedItems():
+            self.station_tree.clearSelection()
+            self.station_tree.setCurrentItem(item)
+        station_ids = set().union(*(
+            set(value.data(0, Qt.ItemDataRole.UserRole) or [])
+            for value in self.station_tree.selectedItems()
+        ))
+        if not station_ids:
+            return
+        menu = QMenu(self)
+        edit = menu.addAction(
+            "编辑名称与目录…",
+            lambda: self.edit_metro_station_by_id(next(iter(station_ids))),
+        )
+        edit.setEnabled(len(station_ids) == 1)
+        move = menu.addMenu("移动到")
+        paths = {
+            (province, city, line)
+            for province, cities in self.station_directory.items()
+            if province != "已归档"
+            for city, lines in cities.items()
+            for line in lines
+        }
+        add_folder_move_menu(
+            move,
+            paths,
+            lambda path: self.move_metro_stations(station_ids, path),
+        )
+        visible = bool(station_ids & self.effective_station_ids())
+        menu.addAction(
+            "隐藏" if visible else "显示",
+            lambda: self.toggle_metro_station_ids(station_ids, not visible),
+        )
+        archived = all(
+            self.metro_station_overrides.values.get(value, {}).get("archived", False)
+            for value in station_ids
+        )
+        menu.addAction(
+            "取消归档 / 恢复" if archived else "归档",
+            lambda: self.archive_metro_stations(station_ids, not archived),
+        )
+        menu.exec(self.station_tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def toggle_metro_station_ids(self, station_ids, on):
+        if on:
+            self.station_exclusions.difference_update(station_ids)
+            self.station_direct_visible.update(station_ids)
+            self.set_flag("stations", True)
+        else:
+            self.station_exclusions.update(station_ids)
+            self.station_direct_visible.difference_update(station_ids)
+        self.sync_station_tree_switches()
+        self.send_directory_filter()
+
+    def move_metro_stations(self, station_ids, path):
+        if len(path) < 3:
+            raise ValueError("地铁站目录需要省、市、线路三级位置")
+        self.metro_station_overrides.update_many({
+            value: {"folder_path": list(path)} for value in station_ids
+        })
+        self.populate_station_tree()
+        self.send_directory_filter()
+
+    def archive_metro_stations(self, station_ids, archived=True):
+        self.metro_station_overrides.update_many({
+            value: {"archived": bool(archived)} for value in station_ids
+        })
+        self.populate_station_tree()
+        self.send_directory_filter()
+
+    def edit_metro_station_by_id(self, station_id):
+        record = self.station_lookup.get(station_id)
+        if not record:
+            return
+        self.edit_selected_metadata({
+            "layer": "stations",
+            "properties": {
+                **record.get("properties", {}),
+                "catalog_id": station_id,
+                "infrastructure_id": record["physical_station_id"],
+                "display_name": record["name"],
+            },
+            "geometry": {"type": "Point", "coordinates": record["coordinates"]},
+        })
+
     def populate_tree(self):
-        groups = self.hierarchy.grouped()
+        groups = {}
+        for route in self.hierarchy.routes:
+            relation = route["osm_relation_id"]
+            province, city, label = self.hierarchy.parent(route)
+            custom = self.metro_line_overrides.values.get(str(relation), {})
+            label = custom.get("display_name") or label
+            if custom.get("archived", False):
+                province, city = "已归档", province + " / " + city
+                self.visible_lines.discard(relation)
+            groups.setdefault(province, {}).setdefault(city, {}).setdefault(
+                label, []
+            ).append(route)
         self.tree.clear()
         self.tree_switches.clear()
         self.tree_items = []
@@ -1615,6 +1976,7 @@ class Desk(QMainWindow):
         if not candidates:
             return False
         item = candidates[0]
+        self.metro_catalog_tabs.setCurrentWidget(self.metro_line_page)
         if self.line_search.text():
             self.line_search.clear()
         ancestor = item.parent()
@@ -1670,12 +2032,15 @@ class Desk(QMainWindow):
         layout.addWidget(self.run_mode)
         self.run_pages = QStackedWidget()
         self.run_pages.addWidget(self.operations.sidebar())
-        self.rail_run_tabs = QTabWidget()
-        self.rail_run_tabs.addTab(self.rail_operations.sidebar(), "车次运行")
+        self.rail_run_split = QSplitter(Qt.Orientation.Vertical)
+        rail_sidebar = self.rail_operations.sidebar()
+        self.rail_operations.vehicle_tree.parentWidget().hide()
+        self.rail_run_split.addWidget(rail_sidebar)
         self.corridor_panel = CorridorPanel(self.rail_operations)
         self.corridor_panel.selected.connect(self.show_corridor)
-        self.rail_run_tabs.addTab(self.corridor_panel, "共享通道")
-        self.run_pages.addWidget(self.rail_run_tabs)
+        self.rail_run_split.addWidget(self.corridor_panel)
+        self.rail_run_split.setSizes([430, 500])
+        self.run_pages.addWidget(self.rail_run_split)
         layout.addWidget(self.run_pages)
         self.run_mode.currentIndexChanged.connect(self.change_run_mode)
         return body
@@ -1745,8 +2110,7 @@ class Desk(QMainWindow):
         layout.addWidget(self.new_switch("rail", "铁路线"))
         for key, title in [
             ("railConstruction", "在建铁路"),
-            ("railStations", "车站（含站台、站区和建筑轮廓）"),
-            ("railControlPoints", "线路所及道岔"),
+            ("railStations", "车站及线路所"),
         ]:
             layout.addWidget(self.new_switch(key, title))
         layout.addWidget(
@@ -1772,6 +2136,7 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.metadata_changed.connect(
             self.rail_operations.invalidate_line_library
         )
+        self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
         )
@@ -1780,11 +2145,18 @@ class Desk(QMainWindow):
             self.enable_rail_from_catalog
         )
         self.rail_catalog_widget.station_enabled_requested.connect(
-            lambda group: self.set_flag(
-                "railStations" if group == "station" else "railControlPoints", True
-            )
+            lambda _group: self.set_flag("railStations", True)
+        )
+        self.rail_catalog_widget.station_partial_changed.connect(
+            self.set_rail_station_partial
         )
         return body
+
+    def refresh_signal_boxes(self):
+        if hasattr(self, "rail_catalog_widget"):
+            self.map.call(
+                "setRailSignalBoxes", self.rail_catalog_widget.signal_box_geojson()
+            )
 
     def enable_rail_from_catalog(self):
         self.flags["rail"] = True
@@ -1794,6 +2166,17 @@ class Desk(QMainWindow):
             control.setChecked(True)
             control.blockSignals(False)
         self.map.call("setVisibility", "rail", True)
+
+    def set_rail_station_partial(self, group, on):
+        key = "railStations"
+        control = self.switches.get(key)
+        self.flags[key] = bool(on)
+        if control:
+            control.blockSignals(True)
+            control.setChecked(bool(on))
+            control.setMixed(bool(on))
+            control.blockSignals(False)
+        self.map.call("setVisibility", key, bool(on))
 
     def open_rail_download(self):
         self.open_data_download()
@@ -1869,6 +2252,7 @@ class Desk(QMainWindow):
     def connect_map(self):
         bridge = self.map.bridge
         bridge.selected.connect(self.select_map_feature)
+        bridge.selections.connect(self.map_selection_changed)
         bridge.dataLoaded.connect(
             lambda: self.load_status.setText(
                 "  本地路网已载入 · 地图就绪"
@@ -1899,9 +2283,205 @@ class Desk(QMainWindow):
             self.map.call("setOverlay", key, action.isChecked())
         self.send_directory_filter()
         self.rail_catalog_widget.send_visibility(False)
+        self.refresh_signal_boxes()
         for key, enabled in self.flags.items():
             self.map.call("setVisibility", key, enabled)
         self.map.call("imported", self.imported)
+
+    def map_selection_changed(self, data):
+        try:
+            values = json.loads(data) if isinstance(data, str) else data
+        except (TypeError, ValueError):
+            values = []
+        self.selected_features = values if isinstance(values, list) else []
+        if len(self.selected_features) > 1:
+            self.load_status.setText(f"  地图已选择 {len(self.selected_features)} 个对象，可使用编辑或工具菜单批量处理")
+
+    def set_map_selection_mode(self, mode):
+        self.map.call("setSelectionMode", mode)
+        self.load_status.setText(
+            "  框选工具已启用：在地图上拖出矩形，Ctrl 可追加选择"
+            if mode == "box"
+            else "  单击选择工具已启用：Ctrl + 单击可多选"
+        )
+
+    def selected_switch_ids(self):
+        return sorted({
+            int(feature.get("properties", {}).get("osm_node_id"))
+            for feature in self.selected_features
+            if feature.get("properties", {}).get("kind") == "switch"
+            and str(feature.get("properties", {}).get("osm_node_id", "")).isdigit()
+        })
+
+    def create_signal_box_from_selection(self):
+        switch_ids = self.selected_switch_ids()
+        try:
+            candidates = self.rail_catalog_widget.signal_box_line_candidates(switch_ids)
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.information(self, "不能新建线路所", str(error))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("由所选道岔新建线路所")
+        dialog.resize(620, 440)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(text_label(f"已选择 {len(switch_ids)} 个真实道岔节点", "sectionLabel"))
+        name = QLineEdit()
+        name.setPlaceholderText("输入唯一、可读的线路所名称")
+        layout.addWidget(name)
+        table = QTableWidget(len(candidates), 2)
+        table.setHorizontalHeaderLabels(["经过线路", "稳定编号"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        for row, candidate in enumerate(candidates):
+            item = QTableWidgetItem(candidate["name"])
+            item.setData(Qt.ItemDataRole.UserRole, candidate["line_id"])
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            table.setItem(row, 0, item)
+            table.setItem(row, 1, QTableWidgetItem(candidate["line_id"]))
+        layout.addWidget(table)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("创建线路所")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        line_ids = [
+            table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            for row in range(table.rowCount())
+            if table.item(row, 0).checkState() == Qt.CheckState.Checked
+        ]
+        try:
+            ident = self.rail_catalog_widget.create_signal_box(
+                name.text(), switch_ids, line_ids
+            )
+            self.set_flag("railStations", True)
+            self.refresh_signal_boxes()
+            self.open_sidebar(0)
+            self.load_status.setText(f"  已创建线路所 {name.text().strip()} · {ident}")
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "线路所未创建", str(error))
+
+    def _selected_catalog_objects(self):
+        rail_lines, rail_stations, metro_lines, metro_stations = set(), set(), set(), set()
+        for feature in self.selected_features:
+            props, layer = feature.get("properties", {}), feature.get("layer", "")
+            group = props.get("catalog_group_id")
+            if group in self.rail_catalog_widget.catalog:
+                rail_lines.add(group)
+            if layer in ("rail-points", "rail-detail-points"):
+                node = props.get("osm_node_id")
+                if node is not None:
+                    key = self.rail_catalog_widget.station_owner_for_node(node)
+                    if key:
+                        rail_stations.add(key)
+            if layer.startswith("rail-signal-box") and props.get("infrastructure_id"):
+                rail_stations.add(str(props["infrastructure_id"]))
+            relation = props.get("route_relation_id")
+            if relation in self.route_lookup:
+                metro_lines.add(int(relation))
+            physical = props.get("infrastructure_id") or props.get("station_id")
+            if physical:
+                metro_stations.update(
+                    key for key, record in self.station_lookup.items()
+                    if record.get("physical_station_id") == str(physical)
+                )
+        return rail_lines, rail_stations, metro_lines, metro_stations
+
+    def move_map_selection(self):
+        from rail_catalog_ui import add_folder_move_menu
+
+        rail_lines, rail_stations, metro_lines, metro_stations = self._selected_catalog_objects()
+        kinds = sum(bool(value) for value in (rail_lines, rail_stations, metro_lines, metro_stations))
+        if kinds != 1:
+            QMessageBox.information(self, "请选择同类对象", "批量移动需要只选择铁路线、铁路站、地铁线或地铁站中的一类。")
+            return
+        menu = QMenu(self)
+        if metro_lines:
+            destinations = {
+                self.hierarchy.parent(route)[:2]
+                for route in self.hierarchy.routes
+            }
+            add_folder_move_menu(
+                menu,
+                destinations,
+                lambda path: self.move_metro_lines(metro_lines, path),
+            )
+        elif rail_lines:
+            add_folder_move_menu(
+                menu,
+                self.rail_catalog_widget.line_destination_paths(),
+                lambda path: self.rail_catalog_widget.save_overrides({
+                    key: {"folder_path": path} for key in rail_lines
+                }),
+            )
+        elif rail_stations:
+            add_folder_move_menu(
+                menu,
+                self.rail_catalog_widget.station_destination_paths(),
+                lambda path: self.rail_catalog_widget.save_station_changes(
+                    rail_stations, folder_path=path
+                ),
+            )
+        else:
+            paths = {
+                (province, city, line)
+                for province, cities in self.station_directory.items()
+                if province != "已归档"
+                for city, lines in cities.items()
+                for line in lines
+            }
+            add_folder_move_menu(
+                menu, paths, lambda path: self.move_metro_stations(metro_stations, path)
+            )
+        menu.exec(QCursor.pos())
+        menu.deleteLater()
+
+    def archive_map_selection(self):
+        rail_lines, rail_stations, _metro_lines, metro_stations = self._selected_catalog_objects()
+        if rail_lines:
+            self.rail_catalog_widget.save_overrides({key: {"archived": True} for key in rail_lines})
+        if rail_stations:
+            self.rail_catalog_widget.save_station_changes(rail_stations, archived=True)
+        if metro_stations:
+            self.archive_metro_stations(metro_stations, True)
+        if _metro_lines:
+            self.archive_metro_lines(_metro_lines, True)
+
+    def rename_map_selection(self):
+        rail_lines, rail_stations, metro_lines, metro_stations = self._selected_catalog_objects()
+        total = sum(map(len, (rail_lines, rail_stations, metro_lines, metro_stations)))
+        if total == 1:
+            self.edit_selected_metadata()
+            return
+        if total < 2:
+            QMessageBox.information(self, "尚未选择对象", "请先在地图上单击、Ctrl 多选或框选对象。")
+            return
+        prefix, ok = QInputDialog.getText(self, "批量重命名", "为所选对象添加名称前缀")
+        if not ok or not prefix.strip():
+            return
+        prefix = prefix.strip()
+        if rail_lines:
+            self.rail_catalog_widget.save_overrides({
+                key: {"display_name": prefix + self.rail_catalog_widget.display_name(key)}
+                for key in rail_lines
+            })
+        if rail_stations:
+            self.rail_catalog_widget.prefix_station_names(rail_stations, prefix)
+        if metro_stations:
+            self.metro_station_overrides.update_many({
+                key: {"display_name": prefix + self.station_lookup[key]["name"]}
+                for key in metro_stations
+            })
+            self.populate_station_tree()
+        if metro_lines:
+            self.metro_line_overrides.update_many({
+                str(key): {"display_name": prefix + self.hierarchy.parent(self.route_lookup[key])[2]}
+                for key in metro_lines
+            })
         self.map.call("setRailStyles", self.config["railStyles"])
         self.change_run_mode(self.run_mode.currentIndex())
 
@@ -1930,7 +2510,6 @@ class Desk(QMainWindow):
     def open_sidebar(self, index):
         if index == 2:
             self.open_rail_operations()
-            self.rail_run_tabs.setCurrentIndex(1)
             return
         self.left.show()
         self.side_pages.setCurrentIndex(index)
@@ -1995,16 +2574,7 @@ class Desk(QMainWindow):
             self.sync_tree_switches()
             self.send_directory_filter()
         elif key == "stations":
-            if on and not any(value > 0 for value in self.visible_lines):
-                self.visible_lines.update(route["osm_relation_id"] for route in self.catalog)
-                self.flags["metro"] = True
-                metro = self.switches.get("metro")
-                if metro:
-                    metro.blockSignals(True)
-                    metro.setChecked(True)
-                    metro.blockSignals(False)
-                self.map.call("setVisibility", "metro", True)
-            self.sync_tree_switches()
+            self.sync_station_tree_switches()
             self.send_directory_filter()
         elif key in ("rail", "railConstruction"):
             self.rail_catalog_widget.set_line_master(
@@ -2012,8 +2582,6 @@ class Desk(QMainWindow):
             )
         elif key == "railStations":
             self.rail_catalog_widget.set_station_master("station", on)
-        elif key == "railControlPoints":
-            self.rail_catalog_widget.set_station_master("control", on)
 
     def set_all_lines(self, on):
         self.visible_lines = (
@@ -2069,6 +2637,21 @@ class Desk(QMainWindow):
         ) is not None:
             self.open_sidebar(0)
             self.rail_catalog_widget.select_station(props["osm_node_id"])
+        elif layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
+            self.open_sidebar(0)
+            self.rail_catalog_widget.select_station_record(
+                str(props.get("infrastructure_id", ""))
+            )
+        elif layer in ("rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"):
+            associated = props.get("associated_station_ids") or []
+            if isinstance(associated, str):
+                try:
+                    associated = json.loads(associated)
+                except ValueError:
+                    associated = []
+            if len(associated) == 1:
+                self.open_sidebar(0)
+                self.rail_catalog_widget.select_station(associated[0])
         else:
             relation_ids = props.get("route_relation_ids", [])
             if isinstance(relation_ids, str):
@@ -2173,30 +2756,40 @@ class Desk(QMainWindow):
                     first.get("technical_attributes", {}),
                 )
             )
-        if feature.get("layer") in ("rail-points", "rail-detail-points"):
+        rail_station_layers = ("rail-points", "rail-detail-points", "rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline")
+        if feature.get("layer") in rail_station_layers:
+            if "osm_node_id" not in props:
+                associated = props.get("associated_station_ids") or []
+                if isinstance(associated, str):
+                    try:
+                        associated = json.loads(associated)
+                    except ValueError:
+                        associated = []
+                if len(associated) == 1:
+                    props["osm_node_id"] = associated[0]
             props.setdefault(
                 "station_type",
                 station_type(props.get("node_tags", {}), props.get("kind", "")),
             )
-            record = next(
-                (
-                    item
-                    for item in self.rail_catalog_widget.station_records
-                    if item["osm_node_id"] == props.get("osm_node_id")
-                ),
-                None,
+            osm_node_id = props.get("osm_node_id")
+            record = self.rail_catalog_widget.station_record_by_id.get(
+                f"node/{osm_node_id}"
             )
             if record:
-                props["province"] = record["province"]
-                props["city"] = record["city"]
+                if feature.get("layer") in ("rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"):
+                    props["name"] = record["name"]
+                    props["display_name"] = record["name"]
+                station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
+                folder = station_custom.get("folder_path")
+                props["province"] = folder[0] if isinstance(folder, list) and folder else record["province"]
+                props["city"] = (folder[1] if len(folder) > 1 else "") if isinstance(folder, list) and folder else record["city"]
+                props["folder_path"] = list(folder) if isinstance(folder, list) and folder else [record["province"], record["city"]]
                 props["line_ids"] = record["line_ids"]
                 props["line_names"] = record["line_names"]
                 props["station_overview"] = station_overview(
                     props,
                     record,
-                    self.rail_catalog_widget.overrides.get(
-                        "station:" + record["id"], {}
-                    ),
+                    station_custom,
                 )
         feature["properties"] = props
         self.selected_data = feature
@@ -2345,25 +2938,11 @@ class Desk(QMainWindow):
         self.detail_rail.setChecked(True)
 
     def edit_rail_station_metadata(self, station_id):
-        record = next(
-            (
-                value
-                for value in self.rail_catalog_widget.station_records
-                if value["id"] == station_id
-            ),
-            None,
-        )
+        record = self.rail_catalog_widget.station_record_by_id.get(station_id)
         if record is None:
             self.rail_catalog_widget.station_query = station_id.split("/", 1)[-1]
             self.rail_catalog_widget.populate_station_tree()
-            record = next(
-                (
-                    value
-                    for value in self.rail_catalog_widget.station_records
-                    if value["id"] == station_id
-                ),
-                None,
-            )
+            record = self.rail_catalog_widget.station_record_by_id.get(station_id)
         if record is None:
             QMessageBox.information(self, "不可编辑", "车站目录中不存在该对象。")
             return
@@ -2510,8 +3089,19 @@ class Desk(QMainWindow):
         form.addRow("省级目录", province)
         form.addRow("市级目录", city)
         form.addRow("线路 / 分类目录", folder)
-        station_id = str(props.get("infrastructure_id") or props.get("station_id") or "")
-        rail_node = props.get("osm_node_id") if layer in ("rail-points", "rail-detail-points") else None
+        station_id = str(
+            props.get("catalog_id")
+            or props.get("infrastructure_id")
+            or props.get("station_id")
+            or ""
+        )
+        rail_node = props.get("osm_node_id") if layer in ("rail-points", "rail-detail-points", "rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline") else None
+        rail_station_id = (
+            str(props.get("infrastructure_id"))
+            if layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol")
+            and props.get("infrastructure_id")
+            else None
+        )
         if relation in self.route_lookup:
             current = self.hierarchy.parent(self.route_lookup[relation])
             province.setText(current[0])
@@ -2545,12 +3135,15 @@ class Desk(QMainWindow):
                 )
             )
             form.addRow("轨道类型", rail_track_type)
-        elif rail_node is not None:
-            self.rail_catalog_widget.select_station(rail_node)
-            record = next(
-                (r for r in self.rail_catalog_widget.station_records if r["osm_node_id"] == rail_node),
-                None,
-            )
+        elif rail_node is not None or rail_station_id is not None:
+            if rail_node is not None:
+                self.rail_catalog_widget.select_station(rail_node)
+                record = next(
+                    (r for r in self.rail_catalog_widget.station_records if r["osm_node_id"] == rail_node),
+                    None,
+                )
+            else:
+                record = self.rail_catalog_widget.station_record_by_id.get(rail_station_id)
             if record:
                 province.setText(record["province"])
                 city.setText(record["city"])
@@ -2567,6 +3160,9 @@ class Desk(QMainWindow):
                 overview = station_overview(props, record, custom)
                 for key, label in STATION_OVERVIEW_FIELDS:
                     control = QLineEdit(overview.get(key, ""))
+                    if key == "region":
+                        control.setReadOnly(True)
+                        control.setToolTip("所属地区随目录的前两级自动更新")
                     form.addRow(label, control)
                     station_overview_controls[key] = control
                 station_custom = QPlainTextEdit()
@@ -2620,7 +3216,7 @@ class Desk(QMainWindow):
                     line_id = self.rail_catalog_widget.catalog[rail_group].get("line_id")
                     if line_id:
                         self.rail_operations.save_line_names({line_id: display_name})
-                elif rail_node is not None and record:
+                elif (rail_node is not None or rail_station_id is not None) and record:
                     connections = connection_selector.connections()
                     custom_attributes = {}
                     for line in station_custom.toPlainText().splitlines():
@@ -2863,7 +3459,7 @@ class Desk(QMainWindow):
                 self.line_search.setText(city)
                 self.open_sidebar(0)
                 return
-        if kind in ("全部", "铁路线", "铁路车站", "线路所及道岔"):
+        if kind in ("全部", "铁路线", "车站及线路所"):
             self.open_sidebar(0)
             self.rail_catalog_widget.set_query(query, kind)
             if kind != "全部":
@@ -3210,7 +3806,7 @@ def main():
                         checks["corridor_navigation_replaces_location"] = (
                             window.side_pages.currentIndex() == 1
                             and window.run_mode.currentIndex() == 1
-                            and window.rail_run_tabs.currentIndex() == 1
+                            and window.corridor_panel.isVisible()
                         )
                         root = window.corridor_panel.tree.topLevelItem(0)
                         root.setExpanded(True)

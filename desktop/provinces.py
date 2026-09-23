@@ -213,9 +213,11 @@ def _compact_catalog(sections):
                 "catalog_group_id": group_id,
                 "classification": VERSION,
                 "construction": bool(section.get("construction")),
+                "provinces": [],
             },
         )
         record["section_count"] += 1
+        record["provinces"] = sorted(set(record["provinces"]) | set(section.get("provinces", ())))
         record["edge_count"] += len(section["edge_ids"])
         record["construction"] = record["construction"] and bool(
             section.get("construction")
@@ -309,6 +311,7 @@ def geographic_catalog(directory, force=False):
         return station[0], status, confidence
 
     catalog = {}
+    province_index = ProvinceIndex()
     endpoint_sections = {}
     for section in library.sections():
         line = library.lines[section["line_id"]]
@@ -343,6 +346,11 @@ def geographic_catalog(directory, force=False):
             "station_assignment_confidence": station_confidence,
             "classification": VERSION,
             "construction": bool(section.get("construction")),
+            "provinces": sorted({
+                province_index.locate(point)
+                for point in (section.get("from_coordinate"), section.get("to_coordinate"))
+                if point
+            } - {"省界外 / 待核对"}),
         }
         catalog[section["id"]] = record
         endpoint_sections.setdefault(section["from_node"], []).append(section["id"])
