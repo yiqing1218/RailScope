@@ -485,6 +485,10 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     qtbot.addWidget(widget)
     original_item = widget.station_items["node/100"]
+    selected = []
+    widget.feature_activated.connect(selected.append)
+    widget.show_station_details(original_item, 0)
+    assert selected[-1]["properties"]["infrastructure_id"] == "node/100"
     monkeypatch.setattr(
         widget,
         "populate_station_tree",
@@ -508,3 +512,64 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     from desktop.catalog_metadata import station_overview
     overview = station_overview({}, widget.station_record_by_id["node/100"], widget.overrides["station:node/100"])
     assert overview["region"] == "自定义站点"
+
+
+def test_station_directory_is_the_only_display_region():
+    from desktop.catalog_metadata import (
+        normalize_station_attributes,
+        station_directory_path,
+        station_overview,
+    )
+
+    record = {"name": "麻套", "province": "山东省", "city": "济南"}
+    custom = {
+        "folder_path": ["山东省", "泰安", "麻套支线"],
+        "overview_attributes": {"region": "山东省济南"},
+    }
+    assert station_directory_path(record, custom) == ("山东省", "泰安", "麻套支线")
+    assert station_overview({}, record, custom)["region"] == "山东省泰安"
+    assert "region" not in normalize_station_attributes({"region": "山东省济南"})
+
+
+def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    from launcher import Desk
+
+    class Field:
+        def setText(self, value):
+            self.value = value
+
+        def setPlainText(self, value):
+            self.value = value
+
+        def setChecked(self, _value):
+            pass
+
+        def show(self):
+            pass
+
+    record = {
+        "id": "node/101", "name": "麻套编辑名", "province": "山东省",
+        "city": "济南", "station_type": "中间站", "line_ids": [], "line_names": [],
+    }
+    catalog = SimpleNamespace(
+        catalog={}, station_record_by_id={"node/101": record},
+        overrides={"station:node/101": {"folder_path": ["山东省", "泰安"]}},
+    )
+    rows = []
+    inspector = SimpleNamespace(
+        rail_catalog_widget=catalog, route_lookup={}, selected_title=Field(),
+        selected_type=Field(), raw=Field(), right=Field(), detail_rail=Field(),
+        set_property_rows=rows.extend, _restore_inspector_width=lambda: None,
+    )
+    Desk.display_feature(inspector, {
+        "layer": "rail-points",
+        "properties": {"osm_node_id": 101, "kind": "station", "name": "麻套"},
+    })
+    assert inspector.selected_title.value == "麻套编辑名"
+    assert ("所属目录", "山东省 / 泰安") in rows
+    assert not {"所属地区", "省级行政区", "城市"} & {label for label, _value in rows}
+    assert inspector.selected_data["properties"]["station_overview"]["region"] == "山东省泰安"

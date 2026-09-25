@@ -37,6 +37,7 @@ try:
         rail_switch_owner,
         STATION_TYPES,
         normalize_station_attributes,
+        station_directory_path,
     )
 except ImportError:
     from components import Switch, text_label, GrowingTree
@@ -47,6 +48,7 @@ except ImportError:
         rail_switch_owner,
         STATION_TYPES,
         normalize_station_attributes,
+        station_directory_path,
     )
 
 MAX_CATALOG_TREE_ITEMS = 4000
@@ -298,6 +300,7 @@ class RailCatalog(QWidget):
         self.station_tree.setDropIndicatorShown(True)
         self.station_tree.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.station_tree.drop_callback = self.drop_station_items
+        self.station_tree.itemClicked.connect(self.show_station_details)
         self.station_tree.itemDoubleClicked.connect(self.focus_station_item)
         self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.station_tree.customContextMenuRequested.connect(
@@ -990,12 +993,7 @@ class RailCatalog(QWidget):
 
     def _station_path(self, record):
         custom = self.overrides.get("station:" + record["id"], {})
-        folder = custom.get("folder_path")
-        path = (
-            tuple(folder)
-            if isinstance(folder, list) and folder
-            else (record["province"], record["city"])
-        )
+        path = station_directory_path(record, custom)
         return ("已归档", *path) if record.get("archived") else path
 
     @staticmethod
@@ -1149,6 +1147,28 @@ class RailCatalog(QWidget):
             None if self.station_masters["station"] else visible_controls,
         )
 
+    def show_station_details(self, item, column):
+        if column != 0:
+            return
+        station_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(station_id, str):
+            return
+        record = self.station_record_by_id.get(station_id)
+        if record:
+            self.feature_activated.emit(
+                {
+                    "layer": "rail-points",
+                    "properties": {
+                        **record.get("properties", {}),
+                        "osm_node_id": record.get("osm_node_id"),
+                        "infrastructure_id": record["id"],
+                        "display_name": record["name"],
+                        "station_type": record["station_type"],
+                    },
+                    "geometry": {"type": "Point", "coordinates": record["coordinates"]},
+                }
+            )
+
     def focus_station_item(self, item, column):
         if column != 0:
             return
@@ -1162,24 +1182,10 @@ class RailCatalog(QWidget):
             elif kind == "yard":
                 self.focus_catalog_key(ident, column)
             return
-        record = next((r for r in self.station_records if r["id"] == station_id), None)
+        record = self.station_record_by_id.get(station_id)
         if record:
             self.map.call("focus", *record["coordinates"], 15, record["name"])
-            self.feature_activated.emit(
-                {
-                    "layer": "rail-points",
-                    "properties": {
-                        **record.get("properties", {}),
-                        "display_name": record["name"],
-                        "station_type": record["station_type"],
-                        "province": record["province"],
-                        "city": record["city"],
-                        "line_ids": record["line_ids"],
-                        "line_names": record["line_names"],
-                    },
-                    "geometry": {"type": "Point", "coordinates": record["coordinates"]},
-                }
-            )
+            self.show_station_details(item, column)
 
     def station_context_menu(self, position):
         item = self.station_tree.itemAt(position)

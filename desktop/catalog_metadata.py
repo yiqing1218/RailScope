@@ -45,18 +45,29 @@ STATION_OVERVIEW_FIELDS = (
 )
 
 
+def station_directory_path(record, custom=None):
+    """The workspace folder is the single location shown for a station."""
+    record, custom = record or {}, custom or {}
+    folder = custom.get("folder_path")
+    if isinstance(folder, list) and folder:
+        path = tuple(str(value).strip() for value in folder if str(value).strip())
+        if path:
+            return path
+    return tuple(
+        str(value).strip() for value in (record.get("province"), record.get("city"))
+        if value and str(value).strip()
+    )
+
+
 def station_overview(properties, record=None, custom=None):
     properties, record, custom = properties or {}, record or {}, custom or {}
     tags = properties.get("node_tags", {})
-    folder = custom.get("folder_path")
-    region_parts = folder[:2] if isinstance(folder, list) and folder else (
-        record.get("province", ""), record.get("city", "")
-    )
+    folder = station_directory_path(record, custom)
     result = {
         "chinese_name": record.get("name") or properties.get("name") or tags.get("name:zh", ""),
         "foreign_name": tags.get("name:en", ""),
         "commissioning_date": tags.get("opening_date") or tags.get("start_date", ""),
-        "region": "".join(value for value in region_parts if value),
+        "region": "".join(folder[:2]),
         "station_grade": tags.get("railway:station_category") or tags.get("station:class", ""),
         "main_lines": "、".join(record.get("line_names", [])),
         "regional_management": tags.get("operator") or properties.get("operator", ""),
@@ -69,8 +80,8 @@ def station_overview(properties, record=None, custom=None):
     }
     result.update(custom.get("overview_attributes", {}))
     result.update(custom.get("custom_attributes", {}))
-    if isinstance(folder, list) and folder:
-        result["region"] = "".join(value for value in region_parts if value)
+    # Older workspaces may contain a separate region value. The directory wins.
+    result["region"] = "".join(folder[:2])
     return {key: str(value).strip() for key, value in result.items() if value not in (None, "")}
 
 
@@ -87,6 +98,8 @@ def normalize_station_attributes(values, custom=False):
             raise ValueError("自定义属性名称或内容过长")
         if text:
             result[name] = text
+    if not custom:
+        result.pop("region", None)
     return result
 
 

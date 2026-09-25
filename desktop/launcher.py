@@ -97,6 +97,7 @@ from catalog_metadata import (
     STATION_TYPES,
     STATION_OVERVIEW_FIELDS,
     station_overview,
+    station_directory_path,
 )
 
 EMPTY = {"type": "FeatureCollection", "features": []}
@@ -2979,7 +2980,11 @@ class Desk(QMainWindow):
                     first.get("technical_attributes", {}),
                 )
             )
-        rail_station_layers = ("rail-points", "rail-detail-points", "rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline")
+        rail_station_layers = (
+            "rail-points", "rail-detail-points", "rail-platform-fill",
+            "rail-platform-outline", "rail-station-fill", "rail-station-outline",
+            "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol",
+        )
         if feature.get("layer") in rail_station_layers:
             if "osm_node_id" not in props:
                 associated = props.get("associated_station_ids") or []
@@ -2995,18 +3000,18 @@ class Desk(QMainWindow):
                 station_type(props.get("node_tags", {}), props.get("kind", "")),
             )
             osm_node_id = props.get("osm_node_id")
-            record = self.rail_catalog_widget.station_record_by_id.get(
-                f"node/{osm_node_id}"
-            )
+            station_id = str(props.get("infrastructure_id") or "")
+            if station_id not in self.rail_catalog_widget.station_record_by_id:
+                station_id = f"node/{osm_node_id}"
+            record = self.rail_catalog_widget.station_record_by_id.get(station_id)
             if record:
-                if feature.get("layer") in ("rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"):
-                    props["name"] = record["name"]
-                    props["display_name"] = record["name"]
                 station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
-                folder = station_custom.get("folder_path")
-                props["province"] = folder[0] if isinstance(folder, list) and folder else record["province"]
-                props["city"] = (folder[1] if len(folder) > 1 else "") if isinstance(folder, list) and folder else record["city"]
-                props["folder_path"] = list(folder) if isinstance(folder, list) and folder else [record["province"], record["city"]]
+                folder = station_directory_path(record, station_custom)
+                props["display_name"] = record["name"]
+                props["province"] = folder[0] if folder else ""
+                props["city"] = folder[1] if len(folder) > 1 else ""
+                props["folder_path"] = list(folder)
+                props["station_type"] = record["station_type"]
                 props["line_ids"] = record["line_ids"]
                 props["line_names"] = record["line_names"]
                 props["station_overview"] = station_overview(
@@ -3116,10 +3121,21 @@ class Desk(QMainWindow):
             "line_name": "线路名称",
             **FIELD_LABELS,
         }
+        station_detail = bool(props.get("station_overview") and props.get("folder_path"))
         for key in translated:
             if key in props and props[key] is not None:
-                rows.append((translated[key], str(props[key])))
+                if station_detail and key in ("province", "city"):
+                    continue
+                label = "所属目录" if station_detail and key == "folder_path" else translated[key]
+                value = (
+                    " / ".join(props[key])
+                    if key == "folder_path" and isinstance(props[key], list)
+                    else str(props[key])
+                )
+                rows.append((label, value))
         for key, value in props.get("station_overview", {}).items():
+            if station_detail and key == "region":
+                continue
             label = dict(STATION_OVERVIEW_FIELDS).get(key, key)
             if not any(existing == label for existing, _value in rows):
                 rows.append((label, str(value)))
@@ -3373,8 +3389,13 @@ class Desk(QMainWindow):
             else:
                 record = self.rail_catalog_widget.station_record_by_id.get(rail_station_id)
             if record:
-                province.setText(record["province"])
-                city.setText(record["city"])
+                custom = self.rail_catalog_widget.overrides.get(
+                    "station:" + record["id"], {}
+                )
+                directory = station_directory_path(record, custom)
+                province.setText(directory[0] if directory else "")
+                city.setText(directory[1] if len(directory) > 1 else "")
+                folder.setText(directory[2] if len(directory) > 2 else "")
                 station_kind.setCurrentText(record["station_type"])
                 form.addRow("车站类型", station_kind)
                 connection_selector = StationConnectionSelector(
@@ -3382,15 +3403,11 @@ class Desk(QMainWindow):
                     "station:" + record["id"],
                 )
                 form.addRow("接轨线路", connection_selector)
-                custom = self.rail_catalog_widget.overrides.get(
-                    "station:" + record["id"], {}
-                )
                 overview = station_overview(props, record, custom)
                 for key, label in STATION_OVERVIEW_FIELDS:
-                    control = QLineEdit(overview.get(key, ""))
                     if key == "region":
-                        control.setReadOnly(True)
-                        control.setToolTip("所属地区随目录的前两级自动更新")
+                        continue  # The directory fields above are the only region editor.
+                    control = QLineEdit(overview.get(key, ""))
                     form.addRow(label, control)
                     station_overview_controls[key] = control
                 station_custom = QPlainTextEdit()
