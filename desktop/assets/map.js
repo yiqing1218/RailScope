@@ -75,9 +75,15 @@ function rasterStyle(type) {
   const attribution=satellite?'<a href="https://cloudless.eox.at/documentation/license">EOxCloudless © EOX</a> (Contains modified Copernicus Sentinel data 2024) · CC BY-NC-SA 4.0':'© OpenStreetMap contributors';
   return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{base:{type:'raster',tiles:[tile],maxzoom:satellite?14:19,tileSize:256,attribution}},layers:[{id:'base-background',type:'background',paint:{'background-color':'#e8eef1'}},{id:'base-raster',type:'raster',source:'base',paint:{'raster-fade-duration':150}}]};
 }
-function addSource(id, data) { if (!map.getSource(id)) map.addSource(id,{type:'geojson',data,generateId:true}); }
+function addSource(id, data) {
+  if(map.getSource(id))return;
+  const options={type:'geojson',data,generateId:true};
+  if(id==='road'&&config?.roadViewport)options.attribution='© OpenStreetMap contributors';
+  map.addSource(id,options);
+}
 let railRequest=0;
 let railController=null,railTimer=null;
+let roadRequest=0,roadController=null,roadTimer=null,roadRouteSelection=null;
 let graphicsPaused=false;
 const populatedRailSources=new Set();
 const staticSourceState=new Map();
@@ -85,6 +91,7 @@ function updateStaticSources(){
   if(!config||graphicsPaused)return;
   const zoom=map.getZoom(),bounds=map.getBounds();
   for(const id of ['metro','stations','areas','construction','road','imported']){
+    if(id==='road'&&config.roadViewport)continue;
     const group=id==='areas'?'stations':id;
     const on=!!visibility[group]&&!document.hidden&&zoom>=({stations:9,areas:12}[id]||0);
     const spatial=id==='stations'||id==='areas';
@@ -135,6 +142,26 @@ function scheduleRailViewport(){
     }
   }
   railTimer=setTimeout(updateRailViewport,180);
+}
+function scheduleRoadViewport(){
+  if(!config?.roadViewport)return;
+  clearTimeout(roadTimer);roadController?.abort();++roadRequest;
+  if(!visibility.road||document.hidden||graphicsPaused){map.getSource('road')?.setData(empty);return;}
+  roadTimer=setTimeout(updateRoadViewport,180);
+}
+async function updateRoadViewport(){
+  if(!config.roadViewport||!visibility.road||!map.getSource('road')||document.hidden||graphicsPaused)return;
+  roadController?.abort();const controller=new AbortController();roadController=controller;
+  const request=++roadRequest,b=map.getBounds();
+  const bbox=[Math.max(-180,b.getWest()),Math.max(-85,b.getSouth()),Math.min(180,b.getEast()),Math.min(85,b.getNorth())].join(',');
+  const params=new URLSearchParams({bbox});
+  if(roadRouteSelection)params.set('route',roadRouteSelection);
+  try{
+    const data=await fetch(`/api/roads?${params}`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('高速公路视窗查询失败');return r.json();});
+    if(request!==roadRequest||!visibility.road)return;
+    map.getSource('road')?.setData(data);
+    if(data.truncated)document.getElementById('map-status').title='高速公路视窗数据已达上限，请放大查看';
+  }catch(error){if(error.name!=='AbortError')report('mapError',String(error));}
 }
 function applyRailWays(){
   let selected=null;
@@ -256,7 +283,7 @@ function installLayers() {
   addLayer({id:'rail-plan-path',type:'line',source:'railPlan',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#466979','line-width':3}});
   addLayer({id:'rail-plan-stations',type:'circle',source:'railPlan',filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':4,'circle-color':'#ffffff','circle-stroke-color':'#466979','circle-stroke-width':2}});
   addLayer({id:'rail-plan-labels',type:'symbol',source:'railPlan',filter:['==',['geometry-type'],'Point'],layout:{'text-field':['get','name'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2]},paint:{'text-color':'#20313d','text-halo-color':'#ffffff','text-halo-width':2}});
-  addLayer({id:'road',type:'line',source:'road',paint:{'line-color':'#8898a4','line-width':2}});
+  addLayer({id:'road',type:'line',source:'road',paint:{'line-color':['match',['get','road_class'],'national','#176c9a','provincial','#bb7538','#8898a4'],'line-width':['interpolate',['linear'],['zoom'],4,1.2,9,2.5,14,4],'line-opacity':.9}});
   addLayer({id:'metro',type:'line',source:'metro',paint:{'line-color':['coalesce',['get','display_color'],'#718096'],'line-width':['interpolate',['linear'],['zoom'],4,1.5,8,3,12,5],'line-opacity':.95}});
   addLayer({id:'construction',type:'line',source:'construction',paint:{'line-color':'#475569','line-width':['interpolate',['linear'],['zoom'],4,1.5,10,3.5,14,5],'line-dasharray':[1.6,1.2]}});
   addLayer({id:'areas-fill',type:'fill',source:'areas',minzoom:12,paint:{'fill-color':'#078c92','fill-opacity':.16}});
@@ -290,6 +317,7 @@ function installLayers() {
   applyMetroStyles();
   applyRailPointStyles();
   scheduleRailViewport();
+  scheduleRoadViewport();
   updateStaticSources();
 }
 const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes','rail-line-labels'],railConstruction:['rail-construction'],railStations:['rail-points','rail-detail-points','rail-station-labels','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol'],railControlPoints:[],railVehicles:['rail-vehicles','rail-vehicle-symbols','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
@@ -412,13 +440,13 @@ async function init() {
   map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false,
     pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0});
   map.on('webglcontextlost',()=>{
-    graphicsPaused=true;railController?.abort();clearTimeout(railTimer);++railRequest;
+    graphicsPaused=true;railController?.abort();clearTimeout(railTimer);++railRequest;roadController?.abort();clearTimeout(roadTimer);++roadRequest;
     document.getElementById('loading').style.display='none';
     document.getElementById('camera-status').textContent='图形资源中断，地图已暂停；可保存计划后重启';
     report('mapError','图形上下文丢失，已暂停地图数据更新，运行计划仍可保存。');
   });
-  map.on('webglcontextrestored',()=>{graphicsPaused=false;staticSourceState.clear();updateStaticSources();scheduleRailViewport();});
-  document.addEventListener('visibilitychange',()=>{scheduleRailViewport();updateStaticSources();});
+  map.on('webglcontextrestored',()=>{graphicsPaused=false;staticSourceState.clear();updateStaticSources();scheduleRailViewport();scheduleRoadViewport();});
+  document.addEventListener('visibilitychange',()=>{scheduleRailViewport();scheduleRoadViewport();updateStaticSources();});
   map.on('moveend',updateStaticSources);
   // Keep a selected corridor fully visible when the editor changes map size.
   // User navigation releases this framing instead of snapping back later.
@@ -514,7 +542,7 @@ async function init() {
   document.getElementById('fit-visible').onclick=()=>{const bounds=new maplibregl.LngLatBounds();for(const id of visibleIds){const b=config.routeBounds[id];if(b){bounds.extend([b[0],b[1]]);bounds.extend([b[2],b[3]]);}}if(!bounds.isEmpty())map.fitBounds(bounds,{padding:80,maxZoom:13});};
   document.getElementById('follow-train').onclick=()=>{followTrain=!followTrain;document.getElementById('follow-train').textContent=followTrain?'停止跟随':'跟随首列车';};
   map.on('dragstart',()=>{followTrain=false;document.getElementById('follow-train').textContent='跟随首列车';});
-  map.on('moveend',()=>{if(!trainFollowMoving)scheduleRailViewport();});
+  map.on('moveend',()=>{if(!trainFollowMoving)scheduleRailViewport();scheduleRoadViewport();});
   document.getElementById('tilt').onclick=()=>map.easeTo({pitch:map.getPitch()>20?0:45});
   document.getElementById('focus-china').onclick=()=>{map.fitBounds([[73,18],[135,54]],{padding:80,duration:700});document.getElementById('scene-title').textContent='中国 · 城市轨道交通';};
   document.getElementById('zoom-in').onclick=()=>map.zoomIn();document.getElementById('zoom-out').onclick=()=>map.zoomOut();document.getElementById('north').onclick=()=>map.easeTo({bearing:0,pitch:0});
@@ -529,6 +557,8 @@ async function init() {
     },
     setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();scheduleRailViewport();},
     reloadRailViewport(){scheduleRailViewport();},
+    enableRoadViewport(){config.roadViewport=true;config.sources.road=empty;staticSourceState.delete('road');map.getSource('road')?.setData(empty);scheduleRoadViewport();},
+    setRoadRouteSelection(key){roadRouteSelection=key||null;scheduleRoadViewport();},
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
@@ -551,7 +581,7 @@ async function init() {
         }catch(error){report('imageCaptured','error');}
       });map.triggerRepaint();
     },
-    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();},
+    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(key==='road')scheduleRoadViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVehicleAppearance();},
     setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();},

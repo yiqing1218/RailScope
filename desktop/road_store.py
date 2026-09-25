@@ -1,0 +1,215 @@
+"""Disk-backed national motorway catalog and viewport, derived from OSM."""
+
+from contextlib import closing
+import gc
+import json
+from pathlib import Path
+import re
+import sqlite3
+import time
+from uuid import uuid4
+
+try:
+    from .provinces import ProvinceIndex
+except ImportError:
+    from provinces import ProvinceIndex
+
+
+REFERENCE = re.compile(r"(?<![A-Z0-9])([GS])\s*(\d{1,5}[A-Z]?)(?![A-Z0-9])", re.I)
+VIEWPORT_LIMIT = 12000
+
+
+def database_path(root):
+    return Path(root) / "data/processed/roads/roads.sqlite"
+
+
+def classify_motorway(tags, provinces, way_id):
+    """Classify explicit G/S refs only; preserve incomplete OSM records."""
+    references = list(dict.fromkeys(
+        (letter.upper() + number.upper())
+        for letter, number in REFERENCE.findall(tags.get("ref", ""))
+    ))
+    name = tags.get("name:zh") or tags.get("name") or ""
+    result = []
+    for ref in references:
+        if ref.startswith("G"):
+            result.append((f"G/{ref}", "national", "", ref, name))
+        else:
+            for province in provinces:
+                result.append((f"S/{province}/{ref}", "provincial", province, ref, name))
+    if not result:
+        for province in provinces:
+            label = name or "未标号高速路段"
+            result.append((f"U/{province}/{label}", "unresolved", province, "", label))
+    return result
+
+
+def build_index(pbf, output, progress=None):
+    """Stream one PBF into SQLite; publish it only after a complete scan."""
+    import osmium
+
+    pbf, output = Path(pbf), Path(output)
+    if not pbf.is_file():
+        raise FileNotFoundError(f"全国 OSM 快照不存在：{pbf}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.name + "." + uuid4().hex + ".tmp")
+    index = ProvinceIndex()
+    count = 0
+    db = sqlite3.connect(temporary)
+    db.executescript(
+        "CREATE TABLE features(id INTEGER PRIMARY KEY,way_id INTEGER UNIQUE,data TEXT NOT NULL);"
+        "CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);"
+        "CREATE TABLE routes(key TEXT PRIMARY KEY,kind TEXT NOT NULL,province TEXT NOT NULL,"
+        "ref TEXT NOT NULL,name TEXT NOT NULL,segment_count INTEGER NOT NULL,"
+        "minx REAL,miny REAL,maxx REAL,maxy REAL);"
+        "CREATE TABLE route_segments(route_key TEXT NOT NULL,feature_id INTEGER NOT NULL,"
+        "PRIMARY KEY(route_key,feature_id));"
+        "CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
+    )
+
+    class Motorways(osmium.SimpleHandler):
+        def way(self, way):
+            nonlocal count
+            if way.tags.get("highway") != "motorway":
+                return
+            coordinates = []
+            for node in way.nodes:
+                if not node.location.valid():
+                    return
+                coordinates.append([node.location.lon, node.location.lat])
+            if len(coordinates) < 2:
+                return
+            tags = dict(way.tags)
+            provinces = index.along(coordinates)
+            routes = classify_motorway(tags, provinces, int(way.id))
+            count += 1
+            xs, ys = zip(*coordinates)
+            minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "osm_way_id": int(way.id),
+                    "name": tags.get("name:zh") or tags.get("name") or tags.get("ref") or "未命名高速路段",
+                    "ref": tags.get("ref", ""),
+                    "highway": "motorway",
+                    "road_class": "national" if any(entry[1] == "national" for entry in routes) else routes[0][1],
+                    "route_keys": [entry[0] for entry in routes],
+                    "provinces": provinces,
+                    "source": "OpenStreetMap",
+                    "license": "ODbL 1.0",
+                    "attribution": "© OpenStreetMap contributors",
+                },
+                "geometry": {"type": "LineString", "coordinates": coordinates},
+            }
+            db.execute("INSERT INTO features VALUES(?,?,?)", (
+                count, int(way.id), json.dumps(feature, ensure_ascii=False, separators=(",", ":"))
+            ))
+            db.execute("INSERT INTO bounds VALUES(?,?,?,?,?)", (count, minx, maxx, miny, maxy))
+            for key, kind, province, ref, name in routes:
+                db.execute(
+                    "INSERT INTO routes VALUES(?,?,?,?,?,1,?,?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET "
+                    "segment_count=segment_count+1,"
+                    "name=CASE WHEN routes.name='' THEN excluded.name ELSE routes.name END,"
+                    "minx=min(routes.minx,excluded.minx),miny=min(routes.miny,excluded.miny),"
+                    "maxx=max(routes.maxx,excluded.maxx),maxy=max(routes.maxy,excluded.maxy)",
+                    (key, kind, province, ref, name, minx, miny, maxx, maxy),
+                )
+                db.execute("INSERT INTO route_segments VALUES(?,?)", (key, count))
+            if count % 1000 == 0:
+                db.commit()
+                if progress:
+                    progress(count)
+
+    try:
+        # libosmium needs node locations for way geometry. Keep its index on
+        # disk rather than materialising all national nodes in Python memory.
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+        from railscope.services.importers.native_paths import native_path
+
+        native_source = native_path(pbf)
+        location_index = native_path(temporary.with_suffix(".idx"), output=True)
+        handler = Motorways()
+        try:
+            handler.apply_file(
+                str(native_source), locations=True,
+                idx=f"sparse_file_array,{location_index}",
+            )
+        finally:
+            del handler
+            gc.collect()
+            try:
+                Path(location_index).unlink(missing_ok=True)
+            except PermissionError:
+                pass  # The worker process releases a lingering native mapping on exit.
+        if count == 0:
+            raise ValueError("OSM 快照中未找到 highway=motorway 路段")
+        stat = pbf.stat()
+        db.executemany("INSERT INTO metadata VALUES(?,?)", [
+            ("source", str(pbf)), ("source_size", str(stat.st_size)),
+            ("source_mtime_ns", str(stat.st_mtime_ns)), ("feature_count", str(count)),
+        ])
+        db.execute("CREATE INDEX route_segments_feature ON route_segments(feature_id)")
+        db.commit()
+        db.close()
+        for attempt in range(10):
+            try:
+                temporary.replace(output)
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.25)
+    except Exception:
+        db.close()
+        try:
+            temporary.unlink(missing_ok=True)
+        except PermissionError:
+            pass  # Preserve the original error; Windows can retain a native mapping.
+        raise
+    if progress:
+        progress(count)
+    return count
+
+
+def routes(path, query=""):
+    if not Path(path).is_file():
+        return []
+    with closing(sqlite3.connect(path)) as db:
+        rows = db.execute(
+            "SELECT key,kind,province,ref,name,segment_count,minx,miny,maxx,maxy "
+            "FROM routes WHERE ref LIKE ? OR name LIKE ? OR province LIKE ? "
+            "ORDER BY kind,province,ref,name",
+            (f"%{query}%", f"%{query}%", f"%{query}%"),
+        )
+        return [dict(zip(("key", "kind", "province", "ref", "name", "segment_count",
+                          "minx", "miny", "maxx", "maxy"), row)) for row in rows]
+
+
+def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT):
+    if not Path(path).is_file():
+        return {"type": "FeatureCollection", "features": [], "truncated": False}
+    west, south, east, north = bbox
+    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
+        raise ValueError("视窗无效")
+    if type(limit) is not int or not 1 <= limit <= 100000:
+        raise ValueError("视窗上限无效")
+    with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        db.execute("PRAGMA cache_size=-2048")
+        if route_key:
+            rows = db.execute(
+                "SELECT f.data FROM route_segments r JOIN features f ON f.id=r.feature_id "
+                "JOIN bounds b ON b.id=f.id WHERE r.route_key=? "
+                "AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? LIMIT ?",
+                (route_key, west, east, south, north, limit + 1),
+            )
+        else:
+            rows = db.execute(
+                "SELECT f.data FROM features f JOIN bounds b ON b.id=f.id "
+                "WHERE b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? LIMIT ?",
+                (west, east, south, north, limit + 1),
+            )
+        values = [json.loads(raw) for (raw,) in rows]
+    return {"type": "FeatureCollection", "features": values[:limit],
+            "truncated": len(values) > limit}

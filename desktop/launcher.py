@@ -6,9 +6,11 @@ import argparse
 import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 import sys
 import threading
 from urllib.parse import unquote, urlsplit, parse_qs
@@ -81,6 +83,8 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
+from road_store import database_path as road_database_path, viewport as road_viewport
+from road_catalog_ui import RoadCatalog
 from viewport_settings import DEFAULT as DEFAULT_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
@@ -236,6 +240,28 @@ class LocalHandler(SimpleHTTPRequestHandler):
             self.send_error(421)
             return
         path = urlsplit(self.path).path
+        if path == "/api/roads":
+            try:
+                query = parse_qs(urlsplit(self.path).query)
+                route_key = query.get("route", [None])[0]
+                if route_key and len(route_key) > 200:
+                    raise ValueError("高速线路编号无效")
+                result = road_viewport(
+                    road_database_path(ROOT),
+                    [float(value) for value in query["bbox"][0].split(",")],
+                    route_key,
+                )
+                payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except (ValueError, KeyError, OSError, sqlite3.Error):
+                self.send_error(400)
+            return
         if path == "/api/rail":
             try:
                 from rail_store import viewport
@@ -417,6 +443,11 @@ class MapView(QWebEngineView):
             QTimer.singleShot(750, self.reload)
         else:
             self.bridge.error.emit(message + "；已停止自动重试，请保存计划后重启软件。")
+
+
+class RoadImportEvents(QObject):
+    progress = Signal(str)
+    finished = Signal(bool, str)
 
 
 class Desk(QMainWindow):
@@ -713,7 +744,8 @@ class Desk(QMainWindow):
             for e in self.repo.edges.values()
             if e.mode == "road"
         ]
-        sources["road"] = {"type": "FeatureCollection", "features": roads}
+        road_index_ready = road_database_path(ROOT).is_file()
+        sources["road"] = EMPTY if road_index_ready else {"type": "FeatureCollection", "features": roads}
         sources["imported"] = EMPTY
         return {
             "sources": sources,
@@ -721,6 +753,7 @@ class Desk(QMainWindow):
             "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
             "railViewport": (rail_data / "rail.sqlite").exists(),
+            "roadViewport": road_index_ready,
             "railViewportBudget": load_viewport_budget(ROOT / "data/user_settings/rail_viewport_budget.json"),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
@@ -999,6 +1032,7 @@ class Desk(QMainWindow):
             self.rail_operations if self.run_mode.currentIndex() == 1 else self.operations
         ).save())
         data = bar.addMenu("数据")
+        self.add_action(data, "从全国 OSM 建立高速公路目录…", self.start_road_import)
         for kind, title in (
             ("rail-lines", "铁路线数据"),
             ("rail-stations", "铁路站数据"),
@@ -2109,14 +2143,69 @@ class Desk(QMainWindow):
                 text_label(f"北京周边 OSM 数据 · {count} 个轨道要素", wrap=True)
             )
         else:
-            count = len(self.config["sources"]["road"]["features"])
-            layout.addWidget(
-                text_label(f"本地参考图层 · {count} 个道路要素", wrap=True)
+            self.road_catalog_widget = RoadCatalog(road_database_path(ROOT), self.map)
+            self.road_catalog_widget.build_requested.connect(self.start_road_import)
+            self.road_catalog_widget.route_selected.connect(
+                lambda _key: self.switches["road"].setChecked(True)
             )
+            layout.addWidget(self.road_catalog_widget)
         layout.addWidget(
             text_label("可通过「文件 → 导入」添加其他区域数据。", wrap=True)
+            if kind == "rail" else
+            text_label("分类取自 OSM 的 highway=motorway 和 G / S 编号。", wrap=True)
         )
         return body
+
+    def start_road_import(self):
+        pbf = ROOT / "data/raw/osm/china-latest.osm.pbf"
+        if not pbf.is_file():
+            QMessageBox.information(self, "缺少全国 OSM 快照", "请先通过数据菜单下载全国 OSM 数据。")
+            return
+        if getattr(self, "road_import_running", False):
+            return
+        self.road_import_running = True
+        self.road_catalog_widget.build.setEnabled(False)
+        self.road_catalog_widget.note.setText("正在提取全国高速公路；完成前现有目录仍可使用。")
+        events = RoadImportEvents(self)
+        self.road_import_events = events
+        events.progress.connect(self.road_catalog_widget.note.setText)
+
+        def finished(ok, message):
+            self.road_import_running = False
+            self.road_catalog_widget.build.setEnabled(True)
+            if ok:
+                self.config["roadViewport"] = True
+                self.config["sources"]["road"] = EMPTY
+                self.road_catalog_widget.refresh()
+                self.map.call("enableRoadViewport")
+                self.load_status.setText("  全国高速公路目录已更新")
+            else:
+                QMessageBox.warning(self, "高速公路目录未更新", message)
+                self.road_catalog_widget.note.setText("提取失败；已有目录未被替换。")
+
+        events.finished.connect(finished)
+
+        def run():
+            command = [sys.executable, str(ROOT / "desktop/import_roads.py"),
+                       "--pbf", str(pbf), "--output", str(road_database_path(ROOT))]
+            try:
+                process = subprocess.Popen(
+                    command, cwd=ROOT, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                    errors="replace", env={**os.environ, "PYTHONUTF8": "1"},
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                )
+                last = ""
+                for line in process.stdout:
+                    last = line.strip()
+                    if last:
+                        events.progress.emit(last)
+                code = process.wait()
+                events.finished.emit(code == 0, last or "导入进程未返回结果")
+            except OSError as error:
+                events.finished.emit(False, str(error))
+
+        threading.Thread(target=run, daemon=True).start()
 
     def run_controls(self):
         body = QWidget()
