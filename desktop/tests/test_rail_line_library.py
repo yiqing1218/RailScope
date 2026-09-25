@@ -469,6 +469,28 @@ def test_search_choice_keeps_only_bounded_results(qtbot):
     assert choice.currentData() == 123
 
 
+def test_corridor_stop_candidates_use_index_without_scanning_source(qtbot, tmp_path, monkeypatch):
+    from desktop.rail_ui import RailEditor
+    from desktop.tests.test_operating_ui import MapStub
+
+    install_reference_database(tmp_path)
+    editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
+    qtbot.addWidget(editor)
+    editor.line_library()
+    expected = editor.corridor_stop_candidates()
+    assert expected
+    original_connect = sqlite3.connect
+
+    def indexed_only(path, *args, **kwargs):
+        if str(path) == str(tmp_path / "rail.sqlite"):
+            raise AssertionError("车站候选查询不应扫描原始铁路库")
+        return original_connect(path, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", indexed_only)
+    assert editor.corridor_stop_candidates() == expected
+    editor.timer.stop()
+
+
 def test_corridor_editor_infers_single_shared_endpoint_when_next_line_is_chosen(qtbot, tmp_path):
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtWidgets import QApplication, QTableWidget, QPushButton

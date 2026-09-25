@@ -240,10 +240,15 @@ class RailEditor(OperationsEditor):
             stop_ids = {s["node_id"] for t in payload["trains"] for s in t["stops"]}
             stop_ids.update(mapping["source_station_node"] for mapping in mappings)
             with sqlite3.connect(str(self.directory / "rail.sqlite")) as db:
-                for ident in stop_ids:
+                stop_ids = list(stop_ids)
+                for start in range(0, len(stop_ids), 800):
+                    batch = stop_ids[start : start + 800]
+                    marks = ",".join("?" for _ in batch)
                     for row in db.execute(
-                        "SELECT data FROM features WHERE kind='railPoints' AND json_extract(data,'$.properties.osm_node_id')=?",
-                        (ident,),
+                        "SELECT data FROM features WHERE kind='railPoints' "
+                        "AND json_extract(data,'$.properties.osm_node_id') IN ("
+                        + marks + ")",
+                        batch,
                     ):
                         points.append(json.loads(row[0]))
         if mappings:
@@ -533,9 +538,17 @@ class RailEditor(OperationsEditor):
                         )
                         if display_name and not str(display_name).isdigit():
                             names.setdefault(int(anchor), str(display_name))
-        source = self.directory / "rail.sqlite"
-        if source.exists():
-            with sqlite3.connect(source) as db:
+                    for node, label in db.execute(
+                        "SELECT id,label FROM nodes WHERE id IN (" + marks + ") "
+                        "AND kind IN ('station','halt','signal_box','junction') "
+                        "AND label IS NOT NULL",
+                        batch,
+                    ):
+                        if label and label != str(node):
+                            names[int(node)] = label
+        elif (self.directory / "rail.sqlite").exists():
+            # Portable datasets without the line index retain the source lookup.
+            with sqlite3.connect(self.directory / "rail.sqlite") as db:
                 for start in range(0, len(ordered), 800):
                     batch = ordered[start : start + 800]
                     marks = ",".join("?" for _ in batch)
