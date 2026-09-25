@@ -143,6 +143,24 @@ def test_national_viewport_has_hard_feature_budget(tmp_path):
     visible = viewport(tmp_path, "railPoints", [120, 30, 122, 32], 14)
     assert len(visible["features"]) == VIEWPORT_FEATURES
     assert visible["truncated"] is True
+    expanded = viewport(
+        tmp_path, "railPoints", [120, 30, 122, 32], 14,
+        limits={"features": VIEWPORT_FEATURES + 1, "bytes": None,
+                "vertices": None, "feature_bytes": None},
+    )
+    assert len(expanded["features"]) == VIEWPORT_FEATURES + 1
+    assert expanded["truncated"] is False
+
+
+def test_viewport_budget_presets_persist_and_unlimited_is_explicit(tmp_path):
+    from desktop.viewport_settings import DEFAULT, PRESETS, load, save
+
+    path = tmp_path / "viewport.json"
+    assert load(path) == DEFAULT
+    assert save(path, PRESETS["unlimited"]) == PRESETS["unlimited"]
+    assert load(path) == PRESETS["unlimited"]
+    path.write_text('{"features": -1}', encoding="utf-8")
+    assert load(path) == DEFAULT
 
 
 def test_selected_rail_line_is_loaded_even_at_national_zoom(tmp_path):

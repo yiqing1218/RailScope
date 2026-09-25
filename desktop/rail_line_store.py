@@ -9,11 +9,11 @@ import sqlite3
 from uuid import uuid4
 
 try:
-    from .rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints
+    from .rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from .rail_categories import track_type
     from .geometry import distance_m
 except ImportError:
-    from rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints
+    from rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from rail_categories import track_type
     from geometry import distance_m
 
@@ -885,6 +885,44 @@ class DiskRailLineLibrary:
         ]
         return result[:limit]
 
+    def common_transfer_endpoint(self, start, first_line, next_line):
+        """Infer a transfer only when one reachable physical node joins both lines."""
+        if first_line not in self.lines or next_line not in self.lines:
+            return None
+        selected = self.selected_library([first_line])
+        graph = selected.lines[first_line]["graph"]
+        stack = [node for node in self.endpoint_nodes(start) if node in graph]
+        start_nodes = set(stack)
+        reachable = set(stack)
+        while stack:
+            for other, edge_id, direction in graph.get(stack.pop(), []):
+                edge = selected.edges[edge_id]
+                if edge.get("construction") or not traversal_allowed(edge, direction):
+                    continue
+                if other not in reachable:
+                    reachable.add(other)
+                    stack.append(other)
+        with self.connect() as db:
+            shared = [node for (node,) in db.execute(
+                "SELECT DISTINCT a.node_id FROM line_nodes a "
+                "JOIN line_nodes b ON b.node_id=a.node_id "
+                "WHERE a.line_id=? AND b.line_id=?",
+                (first_line, next_line),
+            ) if node in reachable and node not in start_nodes]
+        if len(shared) != 1:
+            return None
+        physical = shared[0]
+        logical = []
+        for endpoint, _label in self.search_endpoints(
+            self.endpoint_label(physical), line_id=first_line, limit=100
+        ):
+            try:
+                if self.resolve_endpoint(endpoint, [first_line, next_line]) == physical:
+                    logical.append(endpoint)
+            except ValueError:
+                continue
+        return logical[0] if len(logical) == 1 else physical if not logical else None
+
     def resolve_endpoint(self, endpoint, adjacent_lines):
         if (
             isinstance(endpoint, str)
@@ -984,7 +1022,9 @@ class DiskRailLineLibrary:
         library.control_nodes = set()
         with self.connect() as db:
             for line_id in dict.fromkeys(ids):
-                record = self.lines[line_id]
+                # Keep the national line index small: a selected graph belongs
+                # only to this temporary resolver, not to the shared cache.
+                record = dict(self.lines[line_id])
                 from collections import defaultdict
 
                 record.update(edge_ids=[], graph=defaultdict(list))

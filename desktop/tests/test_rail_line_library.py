@@ -469,6 +469,80 @@ def test_search_choice_keeps_only_bounded_results(qtbot):
     assert choice.currentData() == 123
 
 
+def test_corridor_editor_infers_single_shared_endpoint_when_next_line_is_chosen(qtbot, tmp_path):
+    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtWidgets import QApplication, QTableWidget, QPushButton
+    from desktop.corridor_ui import CorridorPanel
+    from desktop.rail_ui import RailEditor
+    from desktop.tests.test_operating_ui import MapStub
+
+    class ChoiceLibrary:
+        lines = {"RL-A": {"name": "甲线"}, "RL-B": {"name": "乙线"}}
+
+        def endpoint_nodes(self, value):
+            return [value] if value in {"A", "X", "Z"} else []
+
+        def endpoint_label(self, value):
+            return {"A": "甲站", "X": "换线站", "Z": "终点站"}[value]
+
+        def endpoint_choice_label(self, value):
+            return self.endpoint_label(value) + " · 接轨：甲线 / 乙线"
+
+        def search_endpoints(self, query=""):
+            return [("A", self.endpoint_choice_label("A"))]
+
+        def connected_lines(self, endpoint, query=""):
+            values = {"A": [("RL-A", "甲线")], "X": [("RL-B", "乙线")]}[endpoint]
+            return [{"id": key, "name": name} for key, name in values if query in name]
+
+        def search_lines(self, query=""):
+            return [{"id": key, "name": value["name"]} for key, value in self.lines.items() if query in value["name"]]
+
+        def reachable_nodes(self, *_args):
+            return [("X", self.endpoint_choice_label("X")), ("Z", self.endpoint_choice_label("Z"))]
+
+        def common_transfer_endpoint(self, start, first, second):
+            return "X" if (start, first, second) == ("A", "RL-A", "RL-B") else None
+
+    editor = RailEditor(MapStub(), tmp_path, tmp_path / "plan.json")
+    editor.line_library = lambda interactive=True: ChoiceLibrary()
+    panel = CorridorPanel(editor)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(panel)
+    problems = []
+
+    def fill():
+        dialog = QApplication.activeModalWidget()
+        try:
+            table = dialog.findChild(QTableWidget)
+            start = table.cellWidget(0, 0)
+            start.setEditText("甲站")
+            start.find_results()
+            start.setCurrentIndex(0)
+            first_line = table.cellWidget(0, 1)
+            first_line.setEditText("甲线")
+            first_line.find_results()
+            first_line.setCurrentIndex(0)
+            assert table.cellWidget(0, 2).lineEdit().alignment() == Qt.AlignmentFlag.AlignLeft
+            next(button for button in dialog.findChildren(QPushButton) if button.text() == "添加线路组合段").click()
+            second_line = table.cellWidget(1, 1)
+            second_line.setEditText("乙线")
+            second_line.find_results()
+            second_line.setCurrentIndex(0)
+            assert table.cellWidget(0, 2).currentData() == "X"
+            assert table.cellWidget(1, 0).currentData() == "X"
+            assert table.cellWidget(1, 1).currentData() == "RL-B"
+        except Exception as error:
+            problems.append(error)
+        finally:
+            dialog.reject()
+
+    QTimer.singleShot(20, fill)
+    panel.edit_table(None)
+    assert not problems
+    editor.timer.stop()
+
+
 def test_dialog_creates_corridor_from_search_results_and_renames(qtbot, tmp_path):
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import (

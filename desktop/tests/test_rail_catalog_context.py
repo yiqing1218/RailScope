@@ -31,10 +31,10 @@ def test_real_platform_lines_and_switches_are_browsable_without_map_selection(qt
     assert widget.yard_tree.topLevelItemCount() == 1
     item = widget.station_items["node/1"]
     assert any(item.child(i).text(0).startswith("真实站台线") for i in range(item.childCount()))
-    widget.tabs.setCurrentWidget(widget.switch_page)
-    assert widget.switch_tree.topLevelItemCount() == 2
-    assert "2 个道岔" in widget.switch_count.text()
-    widget.focus_switch_item(widget.switch_tree.topLevelItem(0), 0)
+    assert all(widget.tabs.tabText(i) != "道岔目录" for i in range(widget.tabs.count()))
+    current_tab = widget.tabs.currentWidget()
+    widget.focus_switch_node(2)
+    assert widget.tabs.currentWidget() is current_tab
     assert any(call[0] == "focus" and "道岔" in call[-1] for call in map_view.calls)
     widget.tabs.setCurrentWidget(widget.platform_page)
     assert widget.platform_tree.topLevelItemCount() == 1
@@ -387,6 +387,17 @@ def test_selecting_switch_inserts_its_owner_without_rebuilding_station_tree(
     widget.station_excluded.add("signalbox/RSB-TEST")
     widget.send_station_visibility()
     assert ("setRailPointExclusions", [101, 102]) in widget.map.calls[-3:]
+
+
+def test_switch_rename_uses_workspace_override_and_keeps_directory(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr("desktop.rail_catalog_ui.rail_station_records", lambda *args, **kwargs: ([], 0))
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    before = widget.tabs.currentWidget()
+    widget.save_switch_name(101, "东咽喉 1 号岔")
+    assert widget.tabs.currentWidget() is before
+    assert widget.switch_name(101) == "东咽喉 1 号岔"
+    assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["switch:node/101"]["display_name"] == "东咽喉 1 号岔"
 
 
 def test_station_connection_override_persists_and_updates_station_directory(

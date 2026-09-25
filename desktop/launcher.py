@@ -27,8 +27,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
+    QFormLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -40,6 +42,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -78,6 +81,7 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
+from viewport_settings import DEFAULT as DEFAULT_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
@@ -244,16 +248,23 @@ class LocalHandler(SimpleHTTPRequestHandler):
                         if not isinstance(value, list):
                             raise ValueError("线路选择无效")
                         selection[query_name] = value
-                payload = json.dumps(
-                    viewport(
-                        active_rail_directory(ROOT),
-                        query["kind"][0],
-                        [float(v) for v in query["bbox"][0].split(",")],
-                        float(query["zoom"][0]),
-                        selection or None,
-                    ),
-                    ensure_ascii=False,
-                ).encode("utf-8")
+                result = viewport(
+                    active_rail_directory(ROOT),
+                    query["kind"][0],
+                    [float(v) for v in query["bbox"][0].split(",")],
+                    float(query["zoom"][0]),
+                    selection or None,
+                    self.server.config.get("railViewportBudget"),
+                )
+                if query["kind"][0] == "railPoints":
+                    switch_names = self.server.config.get("railSwitchNames", {})
+                    for feature in result["features"]:
+                        props = feature["properties"]
+                        if props.get("kind") == "switch":
+                            renamed = switch_names.get(str(props.get("osm_node_id")))
+                            if renamed:
+                                props["display_name"] = renamed
+                payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
@@ -710,6 +721,7 @@ class Desk(QMainWindow):
             "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
             "railViewport": (rail_data / "rail.sqlite").exists(),
+            "railViewportBudget": load_viewport_budget(ROOT / "data/user_settings/rail_viewport_budget.json"),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
             "demo": self.demo,
@@ -927,6 +939,8 @@ class Desk(QMainWindow):
         map_menu.addSeparator()
         self.add_action(map_menu, "定位全国路网", lambda: self.map.call("focusChina"))
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
+        map_menu.addSeparator()
+        self.add_action(map_menu, "地图元素加载上限…", self.edit_viewport_budget)
         run_menu = bar.addMenu("运行")
         run = run_menu.addMenu("地铁运行")
         self.add_action(
@@ -1062,6 +1076,65 @@ class Desk(QMainWindow):
         self.add_action(help, "下载车次导入模板…", self.rail_operations.export_template)
         self.add_action(help, "运行计划交换标准 / AI 编写说明", self.show_plan_standard)
         self.map.bridge.screenshot.connect(self.save_map_capture)
+
+    def edit_viewport_budget(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("地图元素加载上限")
+        form = QFormLayout(dialog)
+        form.addRow(text_label("按当前地图范围加载。无上限模式会使用更多内存。", wrap=True))
+        preset = QComboBox()
+        preset.addItem("默认", "default")
+        preset.addItem("高内存电脑", "high")
+        preset.addItem("自定义", "custom")
+        preset.addItem("无上限", "unlimited")
+        fields = {}
+        for key, label, divisor in (
+            ("features", "元素数 / 图层", 1),
+            ("bytes", "视窗数据 / MB", 1024 * 1024),
+            ("vertices", "几何顶点数", 1),
+            ("feature_bytes", "单个元素 / MB", 1024 * 1024),
+        ):
+            control = QSpinBox()
+            control.setRange(1, 100000000 if divisor == 1 else 16384)
+            control.setValue(max(1, (self.config["railViewportBudget"].get(key) or DEFAULT_VIEWPORT_BUDGET[key]) // divisor))
+            control.setProperty("budgetDivisor", divisor)
+            fields[key] = control
+            form.addRow(label, control)
+
+        current = self.config["railViewportBudget"]
+        preset.setCurrentIndex(next(
+            (i for i in range(preset.count()) if VIEWPORT_PRESETS.get(preset.itemData(i)) == current),
+            2,
+        ))
+
+        def change_preset():
+            value = VIEWPORT_PRESETS.get(preset.currentData())
+            for key, control in fields.items():
+                if value is not None and value[key] is not None:
+                    control.setValue(max(1, value[key] // control.property("budgetDivisor")))
+                control.setEnabled(preset.currentData() == "custom")
+
+        preset.currentIndexChanged.connect(change_preset)
+        change_preset()
+        form.insertRow(1, "配置", preset)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("应用")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        value = VIEWPORT_PRESETS.get(preset.currentData()) or {
+            key: control.value() * control.property("budgetDivisor")
+            for key, control in fields.items()
+        }
+        try:
+            self.config["railViewportBudget"] = save_viewport_budget(
+                ROOT / "data/user_settings/rail_viewport_budget.json", value
+            )
+            self.map.call("reloadRailViewport")
+        except OSError as error:
+            QMessageBox.warning(self, "加载上限未保存", str(error))
 
     def show_plan_standard(self):
         from PySide6.QtWidgets import QTextBrowser
@@ -2157,6 +2230,8 @@ class Desk(QMainWindow):
             self.rail_operations.invalidate_line_library
         )
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
+        self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
+        self.refresh_switch_names()
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
         )
@@ -2485,6 +2560,9 @@ class Desk(QMainWindow):
             self.archive_metro_lines(_metro_lines, True)
 
     def rename_map_selection(self):
+        if len(self.selected_switch_ids()) == 1 and len(self.selected_features) == 1:
+            self.rail_catalog_widget.rename_switch(self.selected_switch_ids()[0])
+            return
         rail_lines, rail_stations, metro_lines, metro_stations = self._selected_catalog_objects()
         total = sum(map(len, (rail_lines, rail_stations, metro_lines, metro_stations)))
         if total == 1:
@@ -2645,6 +2723,17 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.update_count()
 
+    def refresh_switch_names(self):
+        self.config["railSwitchNames"] = {
+            key.removeprefix("switch:node/"): value["display_name"]
+            for key, value in self.rail_catalog_widget.overrides.items()
+            if key.startswith("switch:node/") and value.get("display_name")
+        }
+        self.map.call("reloadRailViewport")
+        selected = getattr(self, "selected_data", {})
+        if (hasattr(self, "properties") and selected.get("properties", {}).get("kind") == "switch"):
+            self.display_feature(selected)
+
     def select_map_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         props = feature.get("properties", {})
@@ -2677,8 +2766,9 @@ class Desk(QMainWindow):
         elif layer in ("rail-points", "rail-detail-points") and props.get(
             "osm_node_id"
         ) is not None:
-            self.open_sidebar(0)
-            self.rail_catalog_widget.select_station(props["osm_node_id"])
+            if props.get("kind") != "switch":
+                self.open_sidebar(0)
+                self.rail_catalog_widget.select_station(props["osm_node_id"])
         elif layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
             self.open_sidebar(0)
             self.rail_catalog_widget.select_station_record(
@@ -2717,6 +2807,8 @@ class Desk(QMainWindow):
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         props = dict(feature.get("properties", {}))
+        if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
+            props["display_name"] = self.rail_catalog_widget.switch_name(props["osm_node_id"])
         if props.get("corridor_id"):
             route = next(
                 (
@@ -3103,6 +3195,10 @@ class Desk(QMainWindow):
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout
 
         props = feature.get("properties", {})
+        if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
+            self.rail_catalog_widget.rename_switch(props["osm_node_id"])
+            self.display_feature(feature)
+            return
         layer = feature.get("layer", "")
         relation = props.get("route_relation_id", props.get("osm_relation_id"))
         if relation in self.route_lookup and layer == "metro":

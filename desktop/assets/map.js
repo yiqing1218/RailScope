@@ -491,7 +491,18 @@ async function init() {
     };
     document.addEventListener('mousemove',move);document.addEventListener('mouseup',up);
   });
-  map.on('mousemove',event=>{if(selectionMode.startsWith('box')){map.getCanvas().style.cursor='crosshair';return;}const ids=['rail-vehicle-symbols','rail-vehicles','vehicles-symbol','vehicles','stations','areas-fill','metro','construction'].filter(id=>map.getLayer(id));map.getCanvas().style.cursor=map.queryRenderedFeatures(event.point,{layers:ids}).length?'pointer':'grab';});
+  let hoverPoint=null,hoverTimer=null;
+  map.on('mousemove',event=>{
+    if(selectionMode.startsWith('box')){map.getCanvas().style.cursor='crosshair';return;}
+    hoverPoint=event.point;
+    if(hoverTimer)return;
+    hoverTimer=setTimeout(()=>{
+      hoverTimer=null;
+      if(selectionMode.startsWith('box')||!hoverPoint)return;
+      const ids=['rail-vehicle-symbols','rail-vehicles','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail'].filter(id=>map.getLayer(id));
+      map.getCanvas().style.cursor=map.queryRenderedFeatures(hoverPoint,{layers:ids}).length?'pointer':'grab';
+    },50);
+  });
   const locationPanel=document.getElementById('location-panel');
   const citySelect=document.getElementById('city-view'), lineSelect=document.getElementById('line-view');
   for(const [index,city] of config.cities.entries()){const option=new Option(city.name,String(index));citySelect.add(option);}
@@ -517,6 +528,7 @@ async function init() {
       document.getElementById('legend-vehicle-label').textContent=rail?'国铁列车':'地铁列车';
     },
     setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();scheduleRailViewport();},
+    reloadRailViewport(){scheduleRailViewport();},
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},

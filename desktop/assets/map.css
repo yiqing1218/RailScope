@@ -5,7 +5,7 @@ html,body,#map { margin:0; width:100%; height:100%; overflow:hidden; background:
 #selection-box[data-mode="box_switch"] { border-color:#b86b32; background:rgba(184,107,50,.15); }
 #selection-box[data-mode="box_line"] { border-color:#266b9a; background:rgba(38,107,154,.15); }
 #selection-box[data-mode="box_station"] { border-color:#16866d; background:rgba(22,134,109,.15); }
-.glass { position:absolute; z-index:3; background:rgba(255,255,255,.82); border:1px solid rgba(255,255,255,.92); border-radius:12px; box-shadow:0 4px 22px rgba(35,57,71,.12),0 1px 3px rgba(35,57,71,.08); backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%); }
+.glass { position:absolute; z-index:3; background:rgba(255,255,255,.96); border:1px solid #d5e3e7; border-radius:12px; box-shadow:0 6px 20px rgba(35,57,71,.12),0 1px 3px rgba(35,57,71,.06); }
 .glass[hidden] { display:none; }
 .map-title { top:20px; left:20px; padding:14px 18px; pointer-events:none; }
 .eyebrow { font-size:10px; font-weight:600; letter-spacing:1.6px; color:var(--muted); }
@@ -22,6 +22,7 @@ select:focus,input:focus { outline:2px solid var(--accent);outline-offset:1px; }
 #location-message { color:#526775;font-size:11px; }
 button { border:0; background:transparent; color:var(--text); min-height:34px; padding:7px 10px; border-radius:7px; cursor:pointer; font:600 12px 'Aptos','Microsoft YaHei UI',sans-serif; transition:background .16s,color .16s; }
 button:hover { background:#dfefec; color:#076d65; }
+button:active { background:#cbe5df; }
 button:focus-visible { outline:2px solid #0c776f; outline-offset:1px; }
 .divider { display:inline-block; height:16px; width:1px; background:#cbd8df; margin:0 5px; }
 .legend { left:20px; top:20px; display:flex; align-items:center; flex-wrap:wrap; gap:11px; padding:10px 14px; font-size:11px; max-width:500px; }

@@ -45,6 +45,7 @@ class SearchChoice(QComboBox):
         self.setMinimumContentsLength(10)
         self.setMaxVisibleItems(12)
         self.lineEdit().setPlaceholderText(placeholder)
+        self.lineEdit().setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.completer().setCompletionMode(
             QCompleter.CompletionMode.UnfilteredPopupCompletion
         )
@@ -85,6 +86,20 @@ class SearchChoice(QComboBox):
                 self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
             self.setCurrentIndex(-1)
         super().showPopup()
+
+    def wheelEvent(self, event):
+        # The endpoint picker can be stepped through without opening its menu.
+        if not self.count():
+            for key, label in self.search(""):
+                self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
+            self.setCurrentIndex(-1)
+        if self.count():
+            step = -1 if event.angleDelta().y() > 0 else 1
+            current = self.currentIndex()
+            self.setCurrentIndex(max(0, min(self.count() - 1, current + step)))
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
 
 class CorridorPanel(QWidget):
@@ -292,7 +307,7 @@ class CorridorPanel(QWidget):
         dialog.setWindowTitle("单向通道 · 端点—铁路线—端点")
         dialog.resize(1100, 620)
         dialog.setStyleSheet(
-            "QDialog { background: #f5f9fa; } QTableWidget { background: white; border: 1px solid #d4e2e7; border-radius: 8px; gridline-color: #e5eef1; } QHeaderView::section { background: #e7f3f1; padding: 10px; border: 0; color: #245c60; }"
+            "QDialog { background: #f5f9fa; } QTableWidget { background: white; border: 1px solid #d4e2e7; border-radius: 8px; gridline-color: #e5eef1; } QHeaderView::section { background: #e7f3f1; padding: 10px; border: 0; color: #245c60; } QComboBox { text-align: left; }"
         )
         form = QFormLayout(dialog)
         form.setContentsMargins(20, 18, 20, 18)
@@ -369,7 +384,10 @@ class CorridorPanel(QWidget):
                     def search(query, choices=choices):
                         endpoint = choices.get(0).currentData() if choices.get(0) else None
                         if endpoint is None:
-                            return []
+                            return [
+                                (r["id"], r["name"])
+                                for r in library.search_lines(query)
+                            ] if row else []
                         return [
                             (r["id"], r["name"])
                             for r in library.connected_lines(endpoint, query)
@@ -441,6 +459,18 @@ class CorridorPanel(QWidget):
 
             def line_changed():
                 clear_choice(end_choice)
+                if row and hasattr(library, "common_transfer_endpoint"):
+                    previous_start = table.cellWidget(row - 1, 0).currentData()
+                    previous_line = table.cellWidget(row - 1, 1).currentData()
+                    previous_end = table.cellWidget(row - 1, 2)
+                    next_line = line_choice.currentData()
+                    if (previous_end.currentData() is None and previous_start is not None
+                            and previous_line is not None and next_line is not None):
+                        inferred = library.common_transfer_endpoint(previous_start, previous_line, next_line)
+                        if inferred is not None:
+                            label = library.endpoint_choice_label(inferred)
+                            previous_end.addItem(label, inferred)
+                            previous_end.setCurrentIndex(previous_end.count() - 1)
 
             start_choice.currentIndexChanged.connect(start_changed)
             line_choice.currentIndexChanged.connect(line_changed)
@@ -449,6 +479,7 @@ class CorridorPanel(QWidget):
 
                 def sync_start():
                     value = previous_end.currentData()
+                    selected_line = line_choice.currentData()
                     start_choice.blockSignals(True)
                     start_choice.clear()
                     if value is not None and library.endpoint_nodes(value):
@@ -457,7 +488,10 @@ class CorridorPanel(QWidget):
                     else:
                         start_choice.setCurrentIndex(-1)
                     start_choice.blockSignals(False)
-                    start_changed()
+                    if selected_line is None or value is None or selected_line not in {
+                        candidate["id"] for candidate in library.connected_lines(value)
+                    }:
+                        start_changed()
 
                 previous_end.currentIndexChanged.connect(sync_start)
                 start_choice.setEnabled(False)
@@ -547,6 +581,19 @@ class CorridorPanel(QWidget):
                     suggest_name()
                 if not table.rowCount():
                     raise ValueError("至少添加一行起点—铁路线—终点")
+                for row in range(1, table.rowCount()):
+                    previous_end = table.cellWidget(row - 1, 2)
+                    if previous_end.currentData() is not None:
+                        continue
+                    first_start = table.cellWidget(row - 1, 0).currentData()
+                    first_line = table.cellWidget(row - 1, 1).currentData()
+                    next_line = table.cellWidget(row, 1).currentData()
+                    if first_start is not None and first_line is not None and next_line is not None and hasattr(library, "common_transfer_endpoint"):
+                        shared = library.common_transfer_endpoint(first_start, first_line, next_line)
+                        if shared is None:
+                            raise ValueError(f"第 {row}、{row + 1} 行换线点不唯一或未连通，请手动选择终点")
+                        previous_end.addItem(library.endpoint_choice_label(shared), shared)
+                        previous_end.setCurrentIndex(previous_end.count() - 1)
                 result = []
                 for row in range(table.rowCount()):
                     values = []

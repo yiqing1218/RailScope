@@ -115,7 +115,7 @@ def test_map_selected_way_is_revealed_in_rail_directory(tmp_path):
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     widget.search.setText("不会匹配")
     assert widget.select_way(99)
-    assert widget.search.text() == ""
+    assert widget.search.text() == "不会匹配"
     assert widget.tree.currentItem() is widget.items["line"]
     assert widget.items["line"].parent().isExpanded()
     widget.close()
@@ -144,4 +144,25 @@ def test_map_selected_endpoint_section_wins_over_shared_osm_way(tmp_path):
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     assert widget.select_way(99, section_id="RS-SECOND")
     assert widget.tree.currentItem() is widget.items["RS-SECOND"]
+    widget.close()
+
+
+def test_map_selection_keeps_existing_directory_rows_when_result_is_capped(tmp_path, monkeypatch):
+    from desktop import rail_catalog_ui
+
+    app = QApplication.instance() or QApplication([])
+    assert app
+    monkeypatch.setattr(rail_catalog_ui, "MAX_CATALOG_TREE_ITEMS", 2)
+    catalog = {
+        key: {"id": key, "name": label, "province": "河南省", "track_type": "普通铁路线", "way_ids": [way]}
+        for key, label, way in [("RL-A", "甲线", 1), ("RL-B", "乙线", 2), ("RL-C", "丙线", 3)]
+    }
+    (tmp_path / "rail_catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    before = set(widget.items)
+    assert len(before) == 2
+    missing = (set(catalog) - before).pop()
+    assert widget.select_way(catalog[missing]["way_ids"][0])
+    assert set(widget.items) == before | {missing}
+    assert widget.search.text() == ""
     widget.close()

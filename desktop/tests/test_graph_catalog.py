@@ -154,6 +154,18 @@ def test_corridor_choices_follow_station_line_station_graph(tmp_path):
         {"kind": "endpoint", "node_id": "station:node/2"},
     ]
     assert library.resolve(sequence) == [{"edge_id": "NE-1", "direction": "forward"}]
+    with sqlite3.connect(path) as db:
+        db.execute("DELETE FROM line_nodes WHERE line_id='RL-B'")
+        db.executemany("INSERT INTO line_nodes VALUES(?,?)", [("RL-B", 2), ("RL-B", 3)])
+        db.execute("INSERT INTO nodes VALUES(?,?,?,?,?)", (3, "丙站", "station", 122, 30))
+        db.execute("INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?)", ("NE-2", "RL-B", 2, 3, 0, 10, "普速铁路线", "test", "2", "both"))
+    assert library.common_transfer_endpoint(start, "RL-A", "RL-B") == "station:node/2"
+    assert "graph" not in library.lines["RL-A"]
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO nodes VALUES(?,?,?,?,?)", (4, "丁站", "station", 123, 30))
+        db.execute("INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?)", ("NE-3", "RL-A", 2, 4, 0, 10, "普速铁路线", "test", "3", "both"))
+        db.executemany("INSERT INTO line_nodes VALUES(?,?)", [("RL-A", 4), ("RL-B", 4)])
+    assert library.common_transfer_endpoint(start, "RL-A", "RL-B") is None
 
 
 def test_corridor_station_picker_merges_duplicate_station_objects_and_hides_switches(tmp_path):

@@ -7,20 +7,18 @@ import sqlite3
 from contextlib import closing
 from uuid import uuid4
 from threading import BoundedSemaphore
+try:
+    from .viewport_settings import DEFAULT, normalize
+except ImportError:
+    from viewport_settings import DEFAULT, normalize
 
 try:
     from .rail_categories import track_type as classify_track_type
 except ImportError:
     from rail_categories import track_type as classify_track_type
 
-# Rendering budgets only: persisted infrastructure and route resolution stay complete.
-VIEWPORT_FEATURES = 6000
-VIEWPORT_BYTES = 8 * 1024 * 1024
-VIEWPORT_VERTICES = 100000
-VIEWPORT_FEATURE_BYTES = 1024 * 1024
-SELECTED_VIEWPORT_FEATURES = 12000
-SELECTED_VIEWPORT_BYTES = 32 * 1024 * 1024
-SELECTED_VIEWPORT_VERTICES = 1000000
+# Compatibility name used by import and viewport regression tests.
+VIEWPORT_FEATURES = DEFAULT["features"]
 _viewport_gate = BoundedSemaphore(1)
 
 
@@ -306,7 +304,7 @@ def upgrade_render_features(directory, catalog):
     return True
 
 
-def viewport(directory, kind, bbox, zoom, selection=None):
+def viewport(directory, kind, bbox, zoom, selection=None, limits=None):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
@@ -330,9 +328,15 @@ def viewport(directory, kind, bbox, zoom, selection=None):
             raise ValueError("线路选择无效")
         selected_values[name] = list(dict.fromkeys(values))
     selected = any(selected_values.values())
-    feature_limit = SELECTED_VIEWPORT_FEATURES if selected else VIEWPORT_FEATURES
-    byte_limit = SELECTED_VIEWPORT_BYTES if selected else VIEWPORT_BYTES
-    vertex_limit = SELECTED_VIEWPORT_VERTICES if selected else VIEWPORT_VERTICES
+    budget = normalize(limits) if limits is not None else DEFAULT
+    feature_limit = budget["features"]
+    byte_limit = budget["bytes"]
+    vertex_limit = budget["vertices"]
+    feature_byte_limit = budget["feature_bytes"]
+    if selected:
+        feature_limit = feature_limit * 2 if feature_limit is not None else None
+        byte_limit = byte_limit * 4 if byte_limit is not None else None
+        vertex_limit = vertex_limit * 10 if vertex_limit is not None else None
     # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
     if not _viewport_gate.acquire(blocking=False):
         return {"type": "FeatureCollection", "features": [], "busy": True}
@@ -363,25 +367,26 @@ def viewport(directory, kind, bbox, zoom, selection=None):
             else:
                 clauses.append('(? >= 10 OR f.service="main")')
                 parameters.append(zoom)
-            parameters.append(feature_limit + 1)
+            parameters.append(feature_limit + 1 if feature_limit is not None else -1)
             rows = db.execute(
-                'SELECT CASE WHEN length(f.data)<=? THEN f.data ELSE NULL END '
+                'SELECT CASE WHEN ? IS NULL OR length(f.data)<=? THEN f.data ELSE NULL END '
                 "FROM features f JOIN bounds b ON f.id=b.id WHERE "
                 + " AND ".join(clauses)
                 + " LIMIT ?",
-                (VIEWPORT_FEATURE_BYTES, *parameters),
+                (feature_byte_limit, feature_byte_limit, *parameters),
             )
             for (raw,) in rows:
                 if raw is None:
                     truncated = True
                     continue
-                size = len(raw.encode("utf-8"))
-                if len(features) >= feature_limit or byte_count + size > byte_limit:
+                size = len(raw.encode("utf-8")) if byte_limit is not None else 0
+                if ((feature_limit is not None and len(features) >= feature_limit)
+                        or (byte_limit is not None and byte_count + size > byte_limit)):
                     truncated = True
                     break
                 feature = json.loads(raw)
                 count = coordinate_count(feature["geometry"]["coordinates"])
-                if vertices + count > vertex_limit:
+                if vertex_limit is not None and vertices + count > vertex_limit:
                     truncated = True
                     continue
                 features.append(feature)
@@ -412,7 +417,6 @@ def viewport(directory, kind, bbox, zoom, selection=None):
             line_map = {node_id: set() for node_id in node_ids}
             line_names = {}
             with closing(sqlite3.connect(str(line_path))) as lines:
-                line_names = dict(lines.execute("SELECT id,source_name FROM lines"))
                 for start in range(0, len(node_ids), 800):
                     batch = node_ids[start : start + 800]
                     marks = ",".join("?" for _ in batch)
@@ -430,6 +434,13 @@ def viewport(directory, kind, bbox, zoom, selection=None):
                         batch,
                     ):
                         line_map.setdefault(node_id, set()).add(line_id)
+                used_line_ids = sorted(set().union(*line_map.values())) if line_map else []
+                for start in range(0, len(used_line_ids), 800):
+                    batch = used_line_ids[start : start + 800]
+                    marks = ",".join("?" for _ in batch)
+                    line_names.update(lines.execute(
+                        f"SELECT id,source_name FROM lines WHERE id IN ({marks})", batch
+                    ))
             for feature in features:
                 props = feature["properties"]
                 associated = (
