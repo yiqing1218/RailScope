@@ -693,7 +693,9 @@ class RailCatalog(QWidget):
         # almost every properly named business line.  Named yard groups are
         # included and can also be reached from their station owner.
         if isinstance(self.catalog, RailCatalogIndex):
-            candidates = self.catalog.candidate_keys(query, MAX_CATALOG_TREE_ITEMS + 1)
+            candidates = self.catalog.candidate_keys(
+                query, MAX_CATALOG_TREE_ITEMS + 1 if query else -1
+            )
             for key, custom in self.overrides.items():
                 if key in self.catalog and query and query in str(custom.get("display_name") or custom.get("assembly_name") or "").casefold() and key not in candidates:
                     candidates.append(key)
@@ -711,7 +713,7 @@ class RailCatalog(QWidget):
                 str(key),
             )
         )
-        names = candidates[:MAX_CATALOG_TREE_ITEMS]
+        names = candidates[:MAX_CATALOG_TREE_ITEMS] if query else candidates
         pinned = getattr(self, "pinned_line_key", None)
         if pinned in self.catalog and pinned not in names:
             names.append(pinned)

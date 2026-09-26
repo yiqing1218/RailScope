@@ -155,14 +155,21 @@ def test_map_selection_keeps_existing_directory_rows_when_result_is_capped(tmp_p
     monkeypatch.setattr(rail_catalog_ui, "MAX_CATALOG_TREE_ITEMS", 2)
     catalog = {
         key: {"id": key, "name": label, "province": "河南省", "track_type": "普通铁路线", "way_ids": [way]}
-        for key, label, way in [("RL-A", "甲线", 1), ("RL-B", "乙线", 2), ("RL-C", "丙线", 3)]
+        for key, label, way in [("RL-A", "京沪高速线", 1), ("RL-B", "日兰高速线", 2), ("RL-C", "青荣城际线", 3)]
     }
     (tmp_path / "rail_catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    assert set(widget.items) == set(catalog), "默认目录不能截掉有名称的线路"
+    assert not widget.catalog_limited
+    widget.search.setText("线")
+    widget.populate()
     before = set(widget.items)
     assert len(before) == 2
     missing = (set(catalog) - before).pop()
     assert widget.select_way(catalog[missing]["way_ids"][0])
     assert set(widget.items) == before | {missing}
-    assert widget.search.text() == ""
+    assert widget.search.text() == "线"
+    widget.search.clear()
+    widget.populate()
+    assert set(widget.items) == set(catalog)
     widget.close()
