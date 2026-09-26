@@ -229,21 +229,26 @@ def test_new_corridor_fills_blank_identity_without_cached_train_path(
         raise AssertionError(str(args))
 
     monkeypatch.setattr(QMessageBox, "warning", fail_warning)
+    errors = []
 
     def fill():
         dialog = app.activeModalWidget()
         table = dialog.findChild(QTableWidget)
         dialog.findChild(QLineEdit, "corridorId").clear()
         dialog.findChild(QLineEdit, "corridorName").clear()
-        table.cellWidget(0, 0).setEditText(str(existing[0]["node_id"]))
-        table.cellWidget(0, 1).setEditText(existing[1]["line_id"])
-        table.cellWidget(0, 2).setEditText(str(existing[2]["node_id"]))
-        dialog.findChild(QDialogButtonBox).button(
-            QDialogButtonBox.StandardButton.Ok
-        ).click()
+        try:
+            table.assign(0, 0, existing[0]["node_id"])
+            table.assign(0, 1, existing[1]["line_id"])
+            table.assign(1, 0, existing[2]["node_id"])
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+        except Exception as error:
+            errors.append(error)
+        finally:
+            dialog.reject()
 
     QTimer.singleShot(20, fill)
     panel.edit_table(None)
+    assert not errors
     new = editor.document()["routes"][-1]
     assert new["id"].startswith("COR-") and new["name"]
     assert new["sequence"] == existing

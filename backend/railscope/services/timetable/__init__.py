@@ -32,10 +32,10 @@ def effective_run(repo: RailRepository, scenario_id: str, train_id: str) -> Effe
 
 
 def route_distances(repo: RailRepository, effective: EffectiveRun) -> tuple[StopTime, ...]:
-    from .canonical import station_distances
+    from .canonical import stop_distances
     if not effective.corridor_id:
         return effective.stops
     path = repo.corridors[effective.corridor_id]
-    distances = station_distances(repo, path.edge_refs, (s.station_id for s in effective.stops))
+    distances = stop_distances(repo, path.edge_refs, effective.stops)
     return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": distance})
                  for s, distance in zip(effective.stops, distances))

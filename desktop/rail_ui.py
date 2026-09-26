@@ -35,6 +35,7 @@ try:
     from .rail_tables import merge_csv, export_csv, export_template
     from .operating import parse_time, format_time
     from .rail_lines import resolution_policy, RESOLUTION_KEY
+    from .station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
 except ImportError:
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -50,6 +51,7 @@ except ImportError:
     from rail_tables import merge_csv, export_csv, export_template
     from operating import parse_time, format_time
     from rail_lines import resolution_policy, RESOLUTION_KEY
+    from station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
 
 
 class RailMap:
@@ -277,6 +279,19 @@ class RailEditor(OperationsEditor):
                             },
                         }
                     )
+        coordinates = {node: coord for edge in edges for node, coord in zip(
+            edge.get("node_ids", [edge["from_node"], edge["to_node"]]), edge["coordinates"])}
+        for route in original_payload["routes"]:
+            for position in route.get("extensions", {}).get(POSITION_KEY, []):
+                node = position["node_id"]
+                if node not in coordinates:
+                    raise ValueError("站内参考位置的轨道节点已变化，请重新编排通道")
+                points = [point for point in points if point["properties"].get("osm_node_id") != node]
+                source_node = str(position["station_id"]).removeprefix("station:node/")
+                points.append({"type":"Feature", "properties":{"osm_node_id":node,
+                    "name":position["station_name"], "kind":"station",
+                    "source_station_node":int(source_node) if source_node.isdigit() else node},
+                    "geometry":{"type":"Point", "coordinates":coordinates[node]}})
         validate_corridors(original_payload["routes"], edges)
         plan, lines = compile_rail_plan(payload, edges, points, self.platforms)
         self.pause()
@@ -400,6 +415,28 @@ class RailEditor(OperationsEditor):
                 if leg["direction"] == "reverse":
                     part = part[::-1]
                 coords.extend(part if not coords else part[1:])
+            positions = route.get("extensions", {}).get(POSITION_KEY, [])
+            requested = route.get("extensions", {}).get(RESOLUTION_KEY, {}).get("selection", {}).get("requested_sequence", [])
+            boundaries = [next((p for p in positions if p["station_id"] == entry.get("node_id")), None)
+                          for entry in ([requested[0], requested[-1]] if requested else [])]
+            if len(boundaries) == 2 and any(boundaries):
+                try:
+                    from .geometry import distance_m, interpolate
+                except ImportError:
+                    from geometry import distance_m, interpolate
+                measured = [0.]
+                for a, b in zip(coords, coords[1:]):
+                    measured.append(measured[-1] + distance_m(a, b))
+                start = position_distance(route["path"], lookup, boundaries[0]) if boundaries[0] else 0.
+                end = position_distance(route["path"], lookup, boundaries[1]) if boundaries[1] else measured[-1]
+                profile = {"coordinates": coords, "cumulative": measured, "length_m": measured[-1]}
+                coords = [interpolate(profile, start), *[point for point, distance in zip(coords, measured) if start < distance < end], interpolate(profile, end)]
+                for boundary in filter(None, boundaries):
+                    features.append({"type":"Feature", "properties":{**props,
+                        "name":boundary["station_name"], "station_id":boundary["station_id"],
+                        "verification_status":boundary["verification_status"],
+                        "position_source":boundary["source"]},
+                        "geometry":{"type":"Point", "coordinates":boundary["coordinate"]}})
             key = tuple((leg["edge_id"], leg["direction"]) for leg in route["path"])
             if key not in drawn_paths:
                 drawn_paths.add(key)
@@ -458,13 +495,10 @@ class RailEditor(OperationsEditor):
                             "train_id": selected_train["id"],
                             "infrastructure_id": station_key,
                         },
-                        "geometry": shared.get(
-                            "geometry",
-                            {
-                                "type": "Point",
-                                "coordinates": node_coordinates[data["osm_node_id"]],
-                            },
-                        ),
+                        "geometry": {"type":"Point", "coordinates": next(
+                            (s.get("extensions", {}).get(STOP_POSITION_KEY, {}).get("coordinate", node_coordinates[data["osm_node_id"]])
+                             for s in selected_train["stops"] if s["node_id"] == data["osm_node_id"]),
+                            node_coordinates[data["osm_node_id"]])},
                     }
                 )
         self.map.call(
@@ -576,6 +610,13 @@ class RailEditor(OperationsEditor):
             choice = next((value for value in values if value[1] in preferred), None)
             choice = choice or min(values, key=lambda value: position[value[1]])
             candidates.append(choice)
+        route = next((r for r in (self.rail_payload or {}).get("routes", []) if r["id"] == line.get("corridor_id")), {})
+        for reference in route.get("extensions", {}).get(POSITION_KEY, []):
+            node, name = reference["node_id"], reference["station_name"]
+            if node in position:
+                key = name.removesuffix("站").casefold()
+                candidates = [v for v in candidates if v[0].removesuffix("站").casefold() != key]
+                candidates.append((name, node))
         return sorted(candidates, key=lambda value: position[value[1]])
 
     def corridor_ordered_nodes(self):
@@ -915,8 +956,17 @@ class RailEditor(OperationsEditor):
                         path = route_library.resolve(sequence, policy, selection=selection)
                     membership = (route_library.membership_provenance(sequence)
                                   if hasattr(route_library, "membership_provenance") else None)
+                    positions = route["extensions"].get(POSITION_KEY, [])
+                    replay = isinstance(selection, dict) and route["sequence"] in (
+                        selection.get("requested_sequence"), selection.get("resolved_sequence"))
+                    if hasattr(route_library, "line_stations") and not replay:
+                        endpoints = [entry["node_id"] for entry in route["sequence"][::2]]
+                        for line_id in dict.fromkeys(entry["line_id"] for entry in route["sequence"][1::2]):
+                            endpoints.extend(endpoint for endpoint, _ in route_library.line_stations(line_id))
+                        report("定位所走轨道上的站内参考位置…")
+                        positions = route_positions(route_library, path, endpoints)
                     report("物理线路组合已完成")
-                    return sequence, path, membership
+                    return sequence, path, membership, positions
 
                 if interactive and hasattr(library, "connect"):
                     try:
@@ -928,7 +978,11 @@ class RailEditor(OperationsEditor):
                 else:
                     resolved = resolve(lambda text: None)
                 requested_sequence = deepcopy(route["sequence"])
-                route["sequence"], route["path"], membership = resolved
+                route["sequence"], route["path"], membership, positions = resolved
+                if positions:
+                    route["extensions"][POSITION_KEY] = positions
+                else:
+                    route["extensions"].pop(POSITION_KEY, None)
                 if membership:
                     route["extensions"][membership_key] = membership
                 route["extensions"][RESOLUTION_KEY] = {
@@ -1392,6 +1446,16 @@ class RailEditor(OperationsEditor):
         payload = deepcopy(before)
         train = next(t for t in payload["trains"] if t["id"] == train_id)
         train["stops"] = deepcopy(stops)
+        route = next(r for r in payload["routes"] if r["id"] == train["route_id"])
+        positions = {p["node_id"]:p for p in route.get("extensions", {}).get(POSITION_KEY, [])}
+        for stop in train["stops"]:
+            extensions = stop.setdefault("extensions", {})
+            old = extensions.get(STOP_POSITION_KEY)
+            if old and (old.get("node_id") != stop["node_id"] or stop.get("station_route_id") or stop.get("station_track_id")):
+                extensions.pop(STOP_POSITION_KEY, None)
+            position = positions.get(stop["node_id"])
+            if position and not stop.get("station_route_id") and not stop.get("station_track_id"):
+                extensions[STOP_POSITION_KEY] = deepcopy(position)
         self.accept_batch(payload, before, train_id)
         self.message.setText("已更新本车次停站计划；完整通道及其他车次保持不变")
 
@@ -1615,6 +1679,12 @@ class RailEditor(OperationsEditor):
         end = lookup[last["edge_id"]][
             "to_node" if last["direction"] == "forward" else "from_node"
         ]
+        positions = route.get("extensions", {}).get(POSITION_KEY, [])
+        requested = route.get("extensions", {}).get(RESOLUTION_KEY, {}).get("selection", {}).get("requested_sequence", [])
+        start_position = next((p for p in positions if requested and p["station_id"] == requested[0]["node_id"]), None)
+        end_position = next((p for p in positions if requested and p["station_id"] == requested[-1]["node_id"]), None)
+        start = start_position["node_id"] if start_position else start
+        end = end_position["node_id"] if end_position else end
         payload = deepcopy(before)
         payload["trains"].append(
             {
@@ -1625,11 +1695,13 @@ class RailEditor(OperationsEditor):
                         "node_id": start,
                         "arrival_s": first_departure,
                         "departure_s": first_departure,
+                        "extensions": {STOP_POSITION_KEY: deepcopy(start_position)} if start_position else {},
                     },
                     {
                         "node_id": end,
                         "arrival_s": last_arrival,
                         "departure_s": last_arrival,
+                        "extensions": {STOP_POSITION_KEY: deepcopy(end_position)} if end_position else {},
                     },
                 ],
                 "extensions": {

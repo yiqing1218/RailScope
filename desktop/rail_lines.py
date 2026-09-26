@@ -269,6 +269,38 @@ class RailLineLibrary:
 
         return list(islice(values, offset, offset + limit))
 
+    def endpoint_nodes(self, endpoint):
+        node = self.endpoint_aliases.get(endpoint, endpoint)
+        return [node] if node in self.nodes else []
+
+    def endpoint_label(self, endpoint):
+        nodes = self.endpoint_nodes(endpoint)
+        return self.nodes[nodes[0]] if nodes else str(endpoint)
+
+    def connected_lines(self, endpoint, query="", limit=100):
+        nodes = self.endpoint_nodes(endpoint)
+        return [record for record in self.search_lines(query, limit=len(self.lines))
+                if any(node in record["graph"] for node in nodes)][:limit]
+
+    def search_endpoints(self, query="", line_id=None, limit=100):
+        return self.search_nodes(query, line_id, limit)
+
+    def reachable_nodes(self, endpoint, line_id, query="", limit=100):
+        if line_id not in self.lines:
+            return []
+        starts = self.endpoint_nodes(endpoint)
+        stack, reachable = list(starts), set(starts)
+        graph = self.lines[line_id]["graph"]
+        while stack:
+            for other, edge_id, direction in graph.get(stack.pop(), []):
+                edge = self.edges[edge_id]
+                if edge.get("construction") or edge.get("construction_status", "operating") != "operating" or not traversal_allowed(edge, direction):
+                    continue
+                if other not in reachable:
+                    reachable.add(other); stack.append(other)
+        return [(node, label) for node, label in self.search_nodes(query, line_id, len(reachable))
+                if node in reachable and node not in starts][:limit]
+
     def search_nodes(self, query="", line_id=None, limit=100):
         nodes = self.lines[line_id]["graph"] if line_id in self.lines else self.nodes
         from itertools import islice

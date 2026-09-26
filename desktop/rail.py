@@ -266,8 +266,12 @@ def resolve_edge_aliases(payload, edges):
 
     for route in result.get("routes", []):
         update(route.get("path", []))
+        update(route.get("extensions", {}).get("railscope.org/station-track-positions", []))
+        update(route.get("extensions", {}).get("railscope.org/line-resolution", {}).get("selection", {}).get("path", []))
     for train in result.get("trains", []):
         update(train.get("path", []))
+        for stop in train.get("stops", []):
+            update([stop.get("extensions", {}).get("railscope.org/track-position", {})])
         for section in train.get("station_paths", []):
             update(section.get("path", []))
     for route in result.get("station_routes", []):
@@ -486,17 +490,25 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 or stop["platform_ref"] not in platform_refs
             ):
                 raise ValueError("站台引用不在共享基础设施库中")
+            try:
+                from .station_positions import STOP_POSITION_KEY, position_distance
+            except ImportError:
+                from station_positions import STOP_POSITION_KEY, position_distance
+            position = stop.get("extensions", {}).get(STOP_POSITION_KEY)
+            stop_distance = position_distance(train["path"], edge_lookup, position) if position else cumulative[index]
+            if stops and stop_distance <= stops[-1]["distance_m"]:
+                raise ValueError("站内停靠位置不按通道方向排列")
             stations.append(
                 {
                     "id": str(stop["node_id"]),
                     "name": names.get(stop["node_id"], str(stop["node_id"])),
-                    "distance_m": cumulative[index],
+                    "distance_m": stop_distance,
                 }
             )
             stops.append(
                 {
                     "station_id": str(stop["node_id"]),
-                    "distance_m": cumulative[index],
+                    "distance_m": stop_distance,
                     "arrival_s": stop["arrival_s"],
                     "departure_s": stop["departure_s"],
                     "extensions": {"railscope.org/rail-stop": stop},
@@ -624,6 +636,17 @@ def validate_corridors(routes, edges):
             nodes.extend(ids if not nodes else ids[1:])
         if nodes[0] == nodes[-1]:
             raise ValueError("当前仅支持非循环的单向运行通道")
+        try:
+            from .station_positions import POSITION_KEY, position_distance
+        except ImportError:
+            from station_positions import POSITION_KEY, position_distance
+        positions = route["extensions"].get(POSITION_KEY, [])
+        if not isinstance(positions, list):
+            raise ValueError("通道站内位置必须为数组")
+        for position in positions:
+            if not isinstance(position, dict) or position.get("node_id") not in nodes:
+                raise ValueError("站内参考节点不在通道上")
+            position_distance(route["path"], lookup, position)
         changes = route.get("track_changes", [])
         if not isinstance(changes, list):
             raise ValueError("通道变道信息必须为数组")

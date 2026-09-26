@@ -28,7 +28,9 @@ def test_metro_viewport_and_directory_use_paged_disk_rows(tmp_path):
             ]]}}
     _collection(tmp_path / "china_metro_routes.geojson", [route])
     _collection(tmp_path / "china_metro_stations.geojson", [station])
-    _collection(tmp_path / "china_metro_station_areas.geojson", [area])
+    platform = {**area, "properties": {"osm_way_id": 31, "boundary_kind": "platform",
+                "way_tags": {"name": "甲站", "railway": "platform"}}}
+    _collection(tmp_path / "china_metro_station_areas.geojson", [area, platform])
     _collection(tmp_path / "china_metro_construction.geojson", [])
     path = ensure_index(tmp_path)
     assert ensure_index(tmp_path) == path
@@ -37,7 +39,9 @@ def test_metro_viewport_and_directory_use_paged_disk_rows(tmp_path):
     lookup = StationLookup(path, {})
     alias = next(iter(lookup))
     assert len(viewport(path, "stations", [120, 30, 122, 32], [alias])["features"]) == 1
-    assert len(viewport(path, "areas", [120, 30, 122, 32], [alias])["features"]) == 1
+    assert len(viewport(path, "areas", [120, 30, 122, 32], [alias])["features"]) == 2
+    for kind in ("stations", "areas"):
+        assert viewport(path, kind, [120, 30, 122, 32], ["unselected-station"])["features"] == []
 
     route_paths = {"10": ["上海市", "上海市", "一号线"]}
     sync_station_directory(path, route_paths, {})

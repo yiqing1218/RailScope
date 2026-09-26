@@ -10,30 +10,33 @@ except ImportError:
     from rail_lines import edge_length, traversal_allowed
 
 
-def _paths_from(library, graph, origin, line_id, targets, forbidden):
+def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges=None, last_edges=None):
     """One arrival's search cannot backtrack through its already travelled path."""
-    root = (origin, False)
+    root = (origin, False, False)
     scores, previous = {root: 0.0}, {}
     serial = count()
     queue = [(0.0, next(serial), root)]
-    remaining = {(node, True) for node in targets if node not in forbidden}
+    remaining = {(node, True, True) for node in targets if node not in forbidden}
     while queue and remaining:
         score, _, key = heappop(queue)
         if score != scores[key]:
             continue
         remaining.discard(key)
-        node, used_line = key
+        node, used_line, _ = key
         for other, ident, direction in graph.get(node, ()):
             if other in forbidden:
                 continue
-            target = (other, used_line or library.edge_lines[ident] == line_id)
+            if key == root and first_edges and ident not in first_edges:
+                continue
+            target = (other, used_line or library.edge_lines[ident] == line_id,
+                      not last_edges or ident in last_edges)
             rank = score + edge_length(library.edges[ident])
             if target not in scores or rank < scores[target]:
                 scores[target] = rank
                 previous[target] = (key, ident, direction)
                 heappush(queue, (rank, next(serial), target))
     for node in targets:
-        key = (node, True)
+        key = (node, True, True)
         if node in forbidden or key not in scores or key in remaining:
             continue
         legs, visited, cursor = [], set(), key
@@ -45,7 +48,7 @@ def _paths_from(library, graph, origin, line_id, targets, forbidden):
             yield node, scores[key], list(reversed(legs))
 
 
-def station_transfer_path(library, sequence, candidates, local_edges, gaps):
+def station_transfer_path(library, sequence, candidates, local_edges, gaps, terminal_targets=None):
     """Route rows jointly, allowing off-line track only at named transfer stations.
 
     Each row must traverse its requested line. Boundary candidates can lie on
@@ -53,6 +56,7 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps):
     Only edge references are carried between rows, never geometry copies.
     """
     states = {node: ((0.0, gaps[0].get(node, 0.0)), []) for node in candidates[0]}
+    terminal_targets = terminal_targets or {}
     for row, line in enumerate(sequence[1::2]):
         line_id = line["line_id"]
         allowed = set(library.lines[line_id]["edge_ids"])
@@ -79,7 +83,9 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps):
                 for leg in part:
                     edge = library.edges[leg["edge_id"]]
                     visited.add(edge["to_node"] if leg["direction"] == "forward" else edge["from_node"])
-            for node, length, row_path in _paths_from(library, graph, origin, line_id, candidates[row + 1], visited):
+            first_edges = terminal_targets.get(0) if row == 0 else None
+            last_edges = terminal_targets.get(row + 1) if row == len(sequence[1::2])-1 else None
+            for node, length, row_path in _paths_from(library, graph, origin, line_id, candidates[row + 1], visited, first_edges, last_edges):
                 rank = (score[0] + length, score[1] + gaps[row + 1].get(node, 0.0))
                 if node in next_states and next_states[node][0] <= rank:
                     continue

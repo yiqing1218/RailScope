@@ -325,6 +325,15 @@ function applyMetroStyles(){
   if(map.getLayer('metro'))map.setPaintProperty('metro','line-width',widthCurve(Number(styles.operating_width)||5));
   if(map.getLayer('construction'))map.setPaintProperty('construction','line-width',widthCurve(Number(styles.construction_width)||5));
 }
+function applyRoadStyles(){
+  if(!map.getLayer('road'))return;
+  const s=config.roadStyles||{},width=Number(s.width)||2.5;
+  map.setPaintProperty('road','line-color',['match',['get','road_class'],'national',s.national_color||'#176c9a','provincial',s.provincial_color||'#bb7538',s.other_color||'#8898a4']);
+  map.setPaintProperty('road','line-width',['interpolate',['linear'],['zoom'],4,width*.48,9,width,14,width*1.6]);
+  map.setPaintProperty('road','line-dasharray',s.pattern==='dashed'?[Number(s.dash_length)||3,Number(s.dash_gap)||2]:null);
+  map.setLayoutProperty('road','line-cap',s.pattern==='dashed'?'butt':'round');
+  map.setLayoutProperty('road','line-join','round');
+}
 function applyRailPointStyles(){
   const styles=config.railPointStyles||{station:{size:4,shape:'ring'},control:{size:3,shape:'solid'},labels:{show_station_names:true,show_line_names:true,station_font_size:12,line_font_size:11}};
   for(const [id,kind,color] of [['rail-points','station','#466979'],['rail-detail-points','control','#a36d3c']]){
@@ -420,6 +429,7 @@ function installLayers() {
   applyRailWays();
   applyRailStyles();
   applyMetroStyles();
+  applyRoadStyles();
   applyRailPointStyles();
   applyMinZooms();
   scheduleRailViewport();
@@ -682,6 +692,7 @@ async function init() {
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
+    setRoadStyles(value){config.roadStyles=value;applyRoadStyles();},
     setRailPointStyles(value){config.railPointStyles=value;applyRailPointStyles();},
     setRailSignalBoxes(value){config.sources.railSignalBoxes=value||empty;map.getSource('railSignalBoxes')?.setData(value||empty);},
     setMetroStyles(value){config.metroStyles=value;applyMetroStyles();},

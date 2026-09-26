@@ -76,6 +76,7 @@ from rail_ui import RailEditor
 from rail_style_ui import load_styles as load_rail_styles, RailStyleDialog
 from rail_point_style_ui import load as load_rail_point_styles, RailPointStyleDialog
 from metro_style_ui import load_styles as load_metro_styles, MetroStyleDialog
+from road_style_ui import load_styles as load_road_styles, RoadStyleDialog
 from line_metadata import FIELD_LABELS, source_line_attributes
 from line_metadata_ui import LineMetadataDialog
 from rail_categories import TRACK_TYPES
@@ -368,6 +369,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     selection or None,
                     self.server.config.get("railViewportBudget"),
                     self.server.config.get("minZooms"),
+                    metro_database=getattr(self.server, "metro_db", None),
                 )
                 if query["kind"][0] == "railPoints":
                     switch_names = self.server.config.get("railSwitchNames", {})
@@ -741,6 +743,21 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "地铁线路样式未保存", str(error))
 
+    def edit_road_styles(self):
+        path = ROOT / "data/user_settings/road_styles.json"
+        dialog = RoadStyleDialog(load_road_styles(path), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            value = dialog.value()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".json.tmp")
+                temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(path)
+                self.config["roadStyles"] = value
+                self.map.call("setRoadStyles", value)
+            except OSError as error:
+                QMessageBox.warning(self, "高速公路样式未保存", str(error))
+
     def edit_rail_point_styles(self):
         path = ROOT / "data/user_settings/rail_point_styles.json"
         dialog = RailPointStyleDialog(load_rail_point_styles(path), self)
@@ -792,6 +809,7 @@ class Desk(QMainWindow):
             "railStyles": load_rail_styles(ROOT / "data/user_settings/rail_styles.json"),
             "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
+            "roadStyles": load_road_styles(ROOT / "data/user_settings/road_styles.json"),
             "metroViewport": True,
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "roadViewport": road_index_ready,
@@ -1008,6 +1026,7 @@ class Desk(QMainWindow):
         styles = map_menu.addMenu("线路显示样式")
         self.add_action(styles, "地铁线路样式…", self.edit_metro_styles)
         self.add_action(styles, "国铁线路样式…", self.edit_rail_styles)
+        self.add_action(styles, "高速公路样式…", self.edit_road_styles)
         self.add_action(styles, "车站与线路所/道岔样式…", self.edit_rail_point_styles)
         map_menu.addSeparator()
         self.add_action(map_menu, "显示全部地铁线路", lambda: self.set_all_lines(True))
@@ -2734,6 +2753,7 @@ class Desk(QMainWindow):
                 for key in metro_lines
             })
         self.map.call("setRailStyles", self.config["railStyles"])
+        self.map.call("setRoadStyles", self.config["roadStyles"])
         self.change_run_mode(self.run_mode.currentIndex())
 
     def change_base(self, index):
@@ -3072,6 +3092,14 @@ class Desk(QMainWindow):
                 )
             )
         merged_groups = props.get("merged_catalog_ids", [])
+        if feature.get("layer") in ("rail", "rail-stripes", "rail-construction"):
+            keys = [key for key in [rail_group, *merged_groups] if key in self.rail_catalog_widget.catalog]
+            if keys:
+                props.update(self.rail_catalog_widget.line_relationships(keys))
+            elif props.get("line_id"):
+                library = self.rail_operations.line_library()
+                if hasattr(library, "line_stations") and props["line_id"] in library.lines:
+                    props["station_names"] = [name for _, name in library.line_stations(props["line_id"])]
         if merged_groups:
             first = next(
                 (
@@ -3238,6 +3266,8 @@ class Desk(QMainWindow):
                 value = (
                     " / ".join(props[key])
                     if key == "folder_path" and isinstance(props[key], list)
+                    else "\n".join(f"{i + 1}. {name}" for i, name in enumerate(props[key]))
+                    if key in ("station_names", "line_names", "connected_line_names") and isinstance(props[key], list)
                     else str(props[key])
                 )
                 rows.append((label, value))
@@ -3613,13 +3643,21 @@ class Desk(QMainWindow):
     def set_property_rows(self, rows):
         self.properties.setRowCount(len(rows))
         for row, (key, value) in enumerate(rows):
+            self.properties.removeCellWidget(row, 1)
             left = QTableWidgetItem(key)
             left.setForeground(QColor("#536875"))
             self.properties.setItem(row, 0, left)
             right = QTableWidgetItem(value)
             right.setToolTip(value)
             self.properties.setItem(row, 1, right)
-            self.properties.setRowHeight(row, 37)
+            if "\n" in value:
+                text = QPlainTextEdit(value)
+                text.setReadOnly(True)
+                text.setStyleSheet("QPlainTextEdit { border: 0; background: transparent; }")
+                self.properties.setCellWidget(row, 1, text)
+                self.properties.setRowHeight(row, min(240, max(90, 24 * (value.count("\n") + 1) + 16)))
+            else:
+                self.properties.setRowHeight(row, 37)
 
     def _show_demo_details(self):
         if self.demo_error:

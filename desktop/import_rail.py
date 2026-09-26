@@ -12,6 +12,10 @@ sys.path.insert(0, str(ROOT / "backend"))
 from railscope.services.importers.native_paths import native_path
 from railscope.domain import DatasetSnapshot
 from railscope.identity import IdentityRegistry, new_id
+try:
+    from .transport_modes import other_transport
+except ImportError:
+    from transport_modes import other_transport
 
 
 def extract(pbf, output, identity_path=None):
@@ -39,10 +43,7 @@ def extract(pbf, output, identity_path=None):
                 "signal",
             ):
                 return
-            if (
-                tags.get("station") in ("subway", "light_rail")
-                or tags.get("subway") == "yes"
-            ):
+            if other_transport(tags):
                 return
             if node.location.valid():
                 points.append(
@@ -74,9 +75,7 @@ def extract(pbf, output, identity_path=None):
                 and not is_platform
             ):
                 return
-            if is_platform and (
-                tags.get("subway") == "yes" or tags.get("train") == "no"
-            ):
+            if is_platform and other_transport(tags):
                 return
             try:
                 coords = [[n.lon, n.lat] for n in way.nodes]

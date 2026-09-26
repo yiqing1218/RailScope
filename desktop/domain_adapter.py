@@ -131,14 +131,15 @@ def _build_repository(graph, payload, registry, identity_db):
             raise ValueError(f"经停节点未在完整物理路径中：{source_node}")
         point = point_by_node.get(source_node, {})
         props = point.get("properties", {})
-        station_id = registry.resolve_alias("station", "osm/node/" + source_node, "ST", identity_db)
+        station_source = str(props.get("source_station_node", source_node))
+        station_id = registry.resolve_alias("station", "osm/node/" + station_source, "ST", identity_db)
         bindings["stations"][source_node] = station_id
         node = repo.nodes[node_id]
-        repo.stations[station_id] = Station(
+        repo.stations.setdefault(station_id, Station(
             station_id, props.get("name", source_node), node.lon, node.lat, node_id,
-            source_member_ids=("osm:node:" + source_node,), source_id="osm",
+            source_member_ids=("osm:node:" + station_source,), source_id="osm",
             verification_status="OSM-derived",
-        )
+        ))
         repo.nodes[node_id] = NetworkNode(**{**node.__dict__, "station_id": station_id})
     route_by_source = {}
     for route in document["routes"]:
@@ -201,10 +202,15 @@ def _build_repository(graph, payload, registry, identity_db):
                     point_by_node.get(str(stop["node_id"]), {}).get("properties", {}).get("name", source_track),
                     track_number=str(source_track), length_m=edge.length_m, is_virtual=False,
                 ))
+            position = stop.get("extensions", {}).get("railscope.org/track-position", {})
+            stop_edge = bindings["edges"].get(position.get("edge_id"))
+            if position and stop_edge is None:
+                raise ValueError("停靠轨道不在共享基础设施中")
             repo.stops.append(StopTime(
                 run_id, bindings["stations"][str(stop["node_id"])], sequence,
                 stop["arrival_s"], stop["departure_s"], station_track_id=track_id,
                 station_route_id=station_route_id,
+                stop_edge_id=stop_edge, stop_offset_m=position.get("offset_m"),
             ))
     validate_repository(repo)
     return repo, {key: dict(value) for key, value in bindings.items()}

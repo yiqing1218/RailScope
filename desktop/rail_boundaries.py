@@ -12,9 +12,11 @@ import sys
 try:
     from .geometry import distance_m
     from .data_install import active_directory
+    from .transport_modes import other_transport
 except ImportError:
     from geometry import distance_m
     from data_install import active_directory
+    from transport_modes import other_transport
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -169,11 +171,7 @@ def extract(pbf, directory, progress=print):
     try:
         for area in processor:
             raw = dict(area.tags)
-            if (
-                raw.get("station") in ("subway", "light_rail")
-                or raw.get("subway") in ("yes", "true")
-                or raw.get("train") == "no"
-            ):
+            if other_transport(raw):
                 continue
             try:
                 geometry = json.loads(factory.create_multipolygon(area))
@@ -231,6 +229,8 @@ def extract(pbf, directory, progress=print):
     identities = {f["properties"]["infrastructure_id"] for f in features}
     for feature in old:
         props = feature["properties"]
+        if other_transport(props.get("way_tags", {})):
+            continue
         kind = "way" if "osm_way_id" in props else "relation"
         ident = (
             props.get("infrastructure_id")

@@ -174,11 +174,11 @@ def test_editor_preserves_connections_and_can_expand_for_manual_edit(qtbot, tmp_
         dialog = QApplication.activeModalWidget()
         try:
             table = dialog.findChild(QTableWidget)
-            assert table.rowCount() == 2
-            assert table.cellWidget(0, 2).currentData() == "station:node/mid"
+            assert table.rowCount() == 3
+            assert table.cellWidget(1, 0).currentData() == "station:node/mid"
             dialog.findChild(QPushButton, "corridorExpandResolvedPath").click()
             assert dialog.findChild(QCheckBox, "corridorPhysicalEndpoints").isChecked()
-            assert table.rowCount() == (len(route["sequence"]) - 1) // 2
+            assert table.rowCount() == (len(route["sequence"]) + 1) // 2
             dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
         except Exception as error:
             errors.append(error)

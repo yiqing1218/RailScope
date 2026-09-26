@@ -510,17 +510,17 @@ def test_corridor_editor_infers_single_shared_endpoint_when_next_line_is_chosen(
         def endpoint_choice_label(self, value):
             return self.endpoint_label(value) + " · 接轨：甲线 / 乙线"
 
-        def search_endpoints(self, query=""):
+        def search_endpoints(self, query="", line_id=None):
             return [("A", self.endpoint_choice_label("A"))]
 
         def connected_lines(self, endpoint, query=""):
-            values = {"A": [("RL-A", "甲线")], "X": [("RL-B", "乙线")]}[endpoint]
+            values = {"A": [("RL-A", "甲线")], "X": [("RL-A", "甲线"), ("RL-B", "乙线")], "Z": []}[endpoint]
             return [{"id": key, "name": name} for key, name in values if query in name]
 
         def search_lines(self, query=""):
             return [{"id": key, "name": value["name"]} for key, value in self.lines.items() if query in value["name"]]
 
-        def reachable_nodes(self, *_args):
+        def reachable_nodes(self, *_args, **_kwargs):
             return [("X", self.endpoint_choice_label("X")), ("Z", self.endpoint_choice_label("Z"))]
 
         def common_transfer_endpoint(self, start, first, second):
@@ -545,13 +545,12 @@ def test_corridor_editor_infers_single_shared_endpoint_when_next_line_is_chosen(
             first_line.setEditText("甲线")
             first_line.find_results()
             first_line.setCurrentIndex(0)
-            assert table.cellWidget(0, 2).lineEdit().alignment() == Qt.AlignmentFlag.AlignLeft
-            next(button for button in dialog.findChildren(QPushButton) if button.text() == "添加线路组合段").click()
+            assert table.cellWidget(1, 0).lineEdit().alignment() == Qt.AlignmentFlag.AlignLeft
             second_line = table.cellWidget(1, 1)
             second_line.setEditText("乙线")
             second_line.find_results()
             second_line.setCurrentIndex(0)
-            assert table.cellWidget(0, 2).currentData() == "X"
+            assert table.columnCount() == 2 and table.rowCount() == 3
             assert table.cellWidget(1, 0).currentData() == "X"
             assert table.cellWidget(1, 1).currentData() == "RL-B"
         except Exception as error:
@@ -592,7 +591,7 @@ def test_dialog_creates_corridor_from_search_results_and_renames(qtbot, tmp_path
             dialog.findChild(QLineEdit, "corridorName").setText("表格编制京沪下行")
             table = dialog.findChild(QTableWidget)
             for col, query in [(0, "北京南"), (1, "京沪"), (2, "上海虹桥")]:
-                choice = table.cellWidget(0, col)
+                choice = table.cellWidget(1, 0) if col == 2 else table.cellWidget(0, col)
                 choice.setEditText(query)
                 choice.find_results()
                 assert choice.count() >= 1

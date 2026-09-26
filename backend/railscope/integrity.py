@@ -154,13 +154,19 @@ def validate_repository(repo):
             continue
         cursor=-1
         previous=-1
+        try:
+            from .services.timetable.canonical import stop_distances
+            stop_distances(repo, path.edge_refs, repo.stops_for(run.id))
+        except (KeyError, ValueError) as exc:
+            errors.append(f'run {run.id}: {exc}')
         for stop in repo.stops_for(run.id):
             station=repo.stations.get(stop.station_id)
             if not station:
                 errors.append(f'run {run.id}: station {stop.station_id} missing')
                 continue
             try:
-                cursor=order.index(station.anchor_node_id,cursor+1)
+                if stop.stop_edge_id is None:
+                    cursor=order.index(station.anchor_node_id,cursor+1)
             except ValueError:
                 errors.append(f'run {run.id}: stops not in path order ({stop.station_id})')
             times=[t for t in (stop.arrival_time_s,stop.departure_time_s) if t is not None]

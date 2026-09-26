@@ -47,6 +47,8 @@ class SearchChoice(QComboBox):
         self.setMaxVisibleItems(12)
         self.lineEdit().setPlaceholderText(placeholder)
         self.lineEdit().setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.currentIndexChanged.connect(self.reveal_name)
+        self.lineEdit().editingFinished.connect(self.reveal_name)
         self.completer().setCompletionMode(
             QCompleter.CompletionMode.UnfilteredPopupCompletion
         )
@@ -59,6 +61,11 @@ class SearchChoice(QComboBox):
             self.addItem(label, value)
         else:
             self.setCurrentIndex(-1)
+        self.reveal_name()
+
+    def reveal_name(self, *args):
+        self.setToolTip(self.currentText())
+        self.lineEdit().setCursorPosition(0)
 
     def select_result(self, text):
         index = self.findText(text)
@@ -102,6 +109,7 @@ class SearchChoice(QComboBox):
             self._choices_dirty = False
         finally:
             self.blockSignals(False)
+        self.reveal_name()
 
     def wheelEvent(self, event):
         # The endpoint picker can be stepped through without opening its menu.
@@ -113,6 +121,179 @@ class SearchChoice(QComboBox):
             event.accept()
         else:
             super().wheelEvent(event)
+
+
+class CorridorSequenceTable(QTableWidget):
+    """Point + outgoing line rows, with one final point and the v2 wire format."""
+
+    changed = Signal()
+
+    def __init__(self, library, parent=None):
+        super().__init__(0, 2, parent)
+        self.library = library
+        self.physical = False
+        self._updating = False
+        self.setHorizontalHeaderLabels(["点（起点 / 换线点 / 终点）", "线（从本行点到下一行点，终点留空）"])
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+    def options(self):
+        return {"physical": self.physical} if hasattr(self.library, "workspace") else {}
+
+    def label(self, column, value):
+        if value is None:
+            return ""
+        if column == 1:
+            return self.library.lines[value]["name"] if value in self.library.lines else str(value)
+        return self.library.endpoint_label(value)
+
+    def point_choices(self, row, query):
+        line = self.cellWidget(row, 1).currentData()
+        if row:
+            start, previous_line = [self.cellWidget(row - 1, c).currentData() for c in (0, 1)]
+            if start is None or previous_line is None:
+                return []
+            choices = self.library.reachable_nodes(start, previous_line, query, limit=1000, **self.options())
+        else:
+            choices = self.library.search_endpoints(query, line_id=line, **self.options())
+        if line:
+            choices = [(key, label) for key, label in choices if line in {
+                value["id"] for value in self.library.connected_lines(key, **self.options())}]
+        return choices[:100]
+
+    def line_choices(self, row, query):
+        point = self.cellWidget(row, 0).currentData()
+        records = (self.library.connected_lines(point, query, **self.options()) if point is not None
+                   else self.library.search_lines(query))
+        return [(record["id"], record["name"]) for record in records]
+
+    def add_point(self, point=None, line=None, section=None):
+        row = self.rowCount()
+        self.insertRow(row)
+        for column, value in ((0, point), (1, line)):
+            # Find the current row from the widget; row deletion/reordering must
+            # not leave callbacks referring to old numerical positions.
+            combo = SearchChoice(lambda q: [], "搜索车站 / 线路所" if column == 0 else "搜索线路（可先选线）", value, self.label(column, value))
+            self.setCellWidget(row, column, combo)
+            combo.search = lambda q, c=column, w=combo: (self.point_choices if c == 0 else self.line_choices)(self.widget_row(w), q)
+            combo.currentIndexChanged.connect(lambda _, c=column, w=combo: self.selection_changed(self.widget_row(w), c))
+            combo._choices_dirty = True
+        self.cellWidget(row, 1).setProperty("sectionId", section)
+        self.setRowHeight(row, 52)
+
+    def widget_row(self, widget):
+        return next((r for r in range(self.rowCount()) if widget in [self.cellWidget(r, c) for c in (0, 1)]), -1)
+
+    def assign(self, row, column, value, notify=True):
+        combo = self.cellWidget(row, column)
+        combo.blockSignals(True)
+        combo.clear()
+        if value is not None:
+            combo.addItem(self.label(column, value), value)
+        else:
+            combo.setCurrentIndex(-1)
+        combo._choices_dirty = True
+        combo.blockSignals(False)
+        combo.reveal_name()
+        if notify:
+            self.selection_changed(row, column)
+
+    def selection_changed(self, row, column):
+        if self._updating or row < 0:
+            return
+        self._updating = True
+        try:
+            self.cellWidget(row, 1).setProperty("sectionId", None)
+            if column == 0 and self.cellWidget(row, 0).currentData() is not None:
+                selected_line = self.cellWidget(row, 1).currentData()
+                if selected_line and selected_line not in dict(self.line_choices(row, "")):
+                    self.assign(row, 1, None, notify=False)
+            if column == 0 and row:
+                self.cellWidget(row - 1, 1).setProperty("sectionId", None)
+            if self.cellWidget(self.rowCount() - 1, 1).currentData() is not None:
+                self.add_point()
+            for r in range(row, self.rowCount()):
+                for c in (0, 1):
+                    self.cellWidget(r, c)._choices_dirty = True
+                if r == row and column == 0:
+                    continue
+                point = self.cellWidget(r, 0).currentData()
+                if point is not None and r:
+                    # Query by the selected name so the first 100 other stations
+                    # cannot invalidate a distant selected station.
+                    allowed = dict(self.point_choices(r, self.library.endpoint_label(point)))
+                    if point not in allowed:
+                        self.assign(r, 0, None, notify=False)
+                        self.cellWidget(max(0, r - 1), 1).setProperty("sectionId", None)
+                if r and self.cellWidget(r, 0).currentData() is None and self.cellWidget(r, 1).currentData() is not None:
+                    choices = self.point_choices(r, "")
+                    stations = [choice for choice in choices if str(choice[0]).startswith("station:")]
+                    choices = stations or choices
+                    if len(choices) == 1:
+                        self.assign(r, 0, choices[0][0], notify=False)
+                    elif not choices and hasattr(self.library, "common_transfer_endpoint"):
+                        start, previous = [self.cellWidget(r - 1, c).currentData() for c in (0, 1)]
+                        if start is not None and previous is not None:
+                            inferred = self.library.common_transfer_endpoint(start, previous, self.cellWidget(r, 1).currentData())
+                            if inferred is not None:
+                                self.assign(r, 0, inferred, notify=False)
+        finally:
+            self._updating = False
+        self.changed.emit()
+
+    def set_sequence(self, sequence):
+        self._updating = True
+        try:
+            self.setRowCount(0)
+            for index in range(0, len(sequence), 2):
+                line = sequence[index + 1] if index + 1 < len(sequence) else {}
+                self.add_point(sequence[index]["node_id"], line.get("line_id"), line.get("section_id"))
+            if not sequence:
+                self.add_point(); self.add_point()
+        finally:
+            self._updating = False
+
+    def sequence(self):
+        if self.rowCount() < 2:
+            raise ValueError("请至少填写起点、线路和下一行终点")
+        result = []
+        for row in range(self.rowCount()):
+            point, line = [self.cellWidget(row, c) for c in (0, 1)]
+            value = point.currentData()
+            if value is None or point.currentText() != point.itemText(point.currentIndex()):
+                raise ValueError(f"第 {row + 1} 行：请从候选中选择有效点")
+            result.append({"kind": "endpoint", "node_id": value})
+            if row == self.rowCount() - 1:
+                if line.currentData() is not None or line.currentText().strip():
+                    raise ValueError("终点行的线路应留空；继续运行请添加下一行")
+                continue
+            if line.currentData() is None or line.currentText() != line.itemText(line.currentIndex()):
+                raise ValueError(f"第 {row + 1} 行：请从候选中选择线路")
+            entry = {"kind": "line", "line_id": line.currentData()}
+            if line.property("sectionId"):
+                entry["section_id"] = line.property("sectionId")
+            result.append(entry)
+        return result
+
+    def remove_point(self, row):
+        if row < 0:
+            return
+        self.removeRow(row)
+        if not self.rowCount():
+            self.add_point(); self.add_point()
+        self.selection_changed(max(0, row - 1), 1)
+
+    def move_point(self, delta):
+        row = self.currentRow(); target = row + delta
+        if row < 0 or not 0 <= target < self.rowCount():
+            return
+        values = [(self.cellWidget(r, 0).currentData(), self.cellWidget(r, 1).currentData(),
+                   self.cellWidget(r, 1).property("sectionId")) for r in range(self.rowCount())]
+        values[row], values[target] = values[target], values[row]
+        self.setRowCount(0)
+        for point, line, section in values:
+            self.add_point(point, line, section)
+        self.selection_changed(min(row, target), 1)
+        self.selectRow(target)
 
 
 class CorridorPanel(QWidget):
@@ -361,7 +542,7 @@ class CorridorPanel(QWidget):
         )
         form.addRow(
             text_label(
-                "先选起点，再从与该点相连的线路中选一条，随后只列出该线路上可到达的车站或线路所。到达换线点后继续选择与它相连的下一条线路。内部端点分段自动展开，停站和站台仍由车次时刻表定义。",
+                "每行填写“点＋线”，末行只填终点。下一行的点必须在上一行线路上；也可以先选下一行线路，再从两条线路的共同站点中选择换线点。自动补齐站内连接轨，停站和站台仍由车次定义。",
                 wrap=True,
             )
         )
@@ -371,225 +552,52 @@ class CorridorPanel(QWidget):
         saved_selection = saved_resolution.get("selection", {})
         if saved_resolution.get("policy") == "auto" and sequence == saved_selection.get("resolved_sequence"):
             sequence = saved_selection.get("requested_sequence", sequence)
-        table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(
-            ["起点 / 换线端点", "从该点可选的铁路线", "该线路上可到达的下一端点"]
-        )
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table = CorridorSequenceTable(library)
+        table.setObjectName("corridorSequence")
         physical = QCheckBox("手工调整：显示道岔和轨道节点，指定所走股道或中间端点")
         physical.setObjectName("corridorPhysicalEndpoints")
         physical.setEnabled(hasattr(library, "workspace"))
         form.addRow(physical)
-        physical.toggled.connect(lambda: [setattr(table.cellWidget(row, col), "_choices_dirty", True)
-                                          for row in range(table.rowCount()) for col in (0, 1, 2)])
-        conflicts = getattr(getattr(library, "workspace", None), "conflicts", [])
-        if conflicts:
-            form.addRow(text_label(f"有 {len(conflicts)} 个工作区组合缺少源线路成员，请拆分这些组合并重新核对归属。", wrap=True))
+
+        def physical_changed(on):
+            table.physical = on
+            for row in range(table.rowCount()):
+                for col in (0, 1):
+                    table.cellWidget(row, col)._choices_dirty = True
+
+        physical.toggled.connect(physical_changed)
 
         def suggest_name():
-            if manual_name[0] or not table.rowCount():
+            if manual_name[0] or table.rowCount() < 2:
                 return
-            start = table.cellWidget(0, 0)
-            end = table.cellWidget(table.rowCount() - 1, 2)
-            if (
-                start
-                and end
-                and library.endpoint_nodes(start.currentData())
-                and library.endpoint_nodes(end.currentData())
-            ):
-                name.setText(
-                    library.endpoint_label(start.currentData())
-                    + " → "
-                    + library.endpoint_label(end.currentData())
-                    + " · 单向通道"
-                )
+            start = table.cellWidget(0, 0).currentData()
+            end = table.cellWidget(table.rowCount() - 1, 0).currentData()
+            if start is not None and end is not None:
+                name.setText(library.endpoint_label(start) + " → " + library.endpoint_label(end) + " · 单向通道")
 
-        def add_row(a=None, line=None, section=None, b=None):
-            row = table.rowCount()
-            table.insertRow(row)
-            choices = {}
-            for col, value in [(0, a), (1, line), (2, b)]:
-                if col == 1:
-
-                    def search(query, choices=choices):
-                        endpoint = choices.get(0).currentData() if choices.get(0) else None
-                        if endpoint is None:
-                            return [
-                                (r["id"], r["name"])
-                                for r in library.search_lines(query)
-                            ] if row else []
-                        return [
-                            (r["id"], r["name"])
-                            for r in library.connected_lines(endpoint, query, **(
-                                {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}))
-                        ]
-
-                    label = (
-                        library.lines[value]["name"] if value in library.lines else ""
-                    )
-                elif col == 2:
-
-                    def search(query, choices=choices):
-                        start = choices.get(0).currentData() if choices.get(0) else None
-                        selected_line = choices.get(1).currentData() if choices.get(1) else None
-                        if start is None or selected_line is None:
-                            return []
-                        return library.reachable_nodes(
-                            start,
-                            selected_line,
-                            query,
-                            **({"physical": physical.isChecked()} if hasattr(library, "workspace") else {}),
-                        )
-
-                    label = (
-                        (
-                            library.endpoint_choice_label(value)
-                            if hasattr(library, "endpoint_choice_label")
-                            else library.endpoint_label(value)
-                        )
-                        if value is not None and library.endpoint_nodes(value)
-                        else ""
-                    )
-                else:
-
-                    def search(query):
-                        return library.search_endpoints(query, **(
-                            {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}
-                        ))
-
-                    label = (
-                        (
-                            library.endpoint_choice_label(value)
-                            if hasattr(library, "endpoint_choice_label")
-                            else library.endpoint_label(value)
-                        )
-                        if value is not None and library.endpoint_nodes(value)
-                        else ""
-                    )
-                combo = SearchChoice(
-                    search,
-                    "搜索线路名称 / 编号"
-                    if col == 1
-                    else "搜索车站 / 线路所 / 端点编号",
-                    value,
-                    label,
-                )
-                choices[col] = combo
-                table.setCellWidget(row, col, combo)
-                combo.currentIndexChanged.connect(suggest_name)
-            start_choice, line_choice, end_choice = (
-                choices[0], choices[1], choices[2]
-            )
-
-            def clear_choice(combo):
-                combo.blockSignals(True)
-                combo.clear()
-                combo.setCurrentIndex(-1)
-                combo.blockSignals(False)
-
-            def start_changed():
-                line_choice.setProperty("sectionId", None)
-                clear_choice(line_choice)
-                clear_choice(end_choice)
-
-            def line_changed():
-                line_choice.setProperty("sectionId", None)
-                clear_choice(end_choice)
-                if row and hasattr(library, "common_transfer_endpoint"):
-                    previous_start = table.cellWidget(row - 1, 0).currentData()
-                    previous_line = table.cellWidget(row - 1, 1).currentData()
-                    previous_end = table.cellWidget(row - 1, 2)
-                    next_line = line_choice.currentData()
-                    if (previous_end.currentData() is None and previous_start is not None
-                            and previous_line is not None and next_line is not None):
-                        inferred = library.common_transfer_endpoint(previous_start, previous_line, next_line)
-                        if inferred is not None:
-                            label = library.endpoint_choice_label(inferred)
-                            previous_end.addItem(label, inferred)
-                            previous_end.setCurrentIndex(previous_end.count() - 1)
-
-            start_choice.currentIndexChanged.connect(start_changed)
-            line_choice.currentIndexChanged.connect(line_changed)
-            end_choice.currentIndexChanged.connect(lambda: line_choice.setProperty("sectionId", None))
-            line_choice.setProperty("sectionId", section)
-            if section:
-                line_choice.setToolTip("已指定物理区间：" + section)
-            if row:
-                previous_end = table.cellWidget(row - 1, 2)
-
-                def sync_start():
-                    value = previous_end.currentData()
-                    selected_line = line_choice.currentData()
-                    start_choice.blockSignals(True)
-                    start_choice.clear()
-                    if value is not None and library.endpoint_nodes(value):
-                        start_choice.addItem(library.endpoint_label(value), value)
-                        start_choice.setCurrentIndex(0)
-                    else:
-                        start_choice.setCurrentIndex(-1)
-                    start_choice.blockSignals(False)
-                    if selected_line is None or value is None or selected_line not in {
-                        candidate["id"] for candidate in library.connected_lines(value, **(
-                            {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}))
-                    }:
-                        start_changed()
-
-                previous_end.currentIndexChanged.connect(sync_start)
-                start_choice.setEnabled(False)
-            table.setRowHeight(row, 52)
-            suggest_name()
-
-        for index in range(1, len(sequence), 2):
-            add_row(
-                sequence[index - 1]["node_id"],
-                sequence[index]["line_id"],
-                sequence[index].get("section_id"),
-                sequence[index + 1]["node_id"],
-            )
-        if not sequence:
-            add_row()
+        table.changed.connect(suggest_name)
+        table.set_sequence(sequence)
         form.addRow(table)
         if route and saved_selection.get("resolved_sequence") != saved_selection.get("requested_sequence"):
             expand = QPushButton("展开已保存的实际轨道路径，手工调整连接轨…")
             expand.setObjectName("corridorExpandResolvedPath")
-
             def expand_saved():
-                table.setRowCount(0)
                 physical.setChecked(True)
-                actual = route.get("sequence", [])
-                for index in range(1, len(actual), 2):
-                    add_row(actual[index - 1]["node_id"], actual[index]["line_id"],
-                            actual[index].get("section_id"), actual[index + 1]["node_id"])
-
+                table.set_sequence(route.get("sequence", []))
             expand.clicked.connect(expand_saved)
             form.addRow(expand)
         actions = QHBoxLayout()
-        add = QPushButton("添加线路组合段")
-        add.clicked.connect(
-            lambda: add_row(
-                table.cellWidget(table.rowCount() - 1, 2).currentData()
-                if table.rowCount()
-                else None,
-                None,
-                None,
-            )
-        )
-        remove = QPushButton("删除所选组合段")
-        remove.clicked.connect(
-            lambda: (
-                table.removeRow(table.currentRow()) if table.currentRow() >= 0 else None
-            )
-        )
+        add = QPushButton("添加下一行")
+        add.clicked.connect(lambda: table.add_point())
+        remove = QPushButton("删除所选行")
+        remove.clicked.connect(lambda: table.remove_point(table.currentRow()))
         actions.addWidget(add)
         actions.addWidget(remove)
         choose_section = QPushButton("选择本行物理区间…")
 
         def select_section():
-            row = table.currentRow() if table.currentRow() >= 0 else table.rowCount() - 1
-            if row < 0:
-                return
-            line_choice = table.cellWidget(row, 1)
-            line = line_choice.currentData()
+            row = table.currentRow() if table.currentRow() >= 0 else 0
+            line = table.cellWidget(row, 1).currentData()
             if line not in library.lines:
                 QMessageBox.information(dialog, "选择物理区间", "请先为这一行选择铁路线。")
                 return
@@ -600,13 +608,11 @@ class CorridorPanel(QWidget):
             choice = SearchChoice(
                 lambda query: [(entry["id"], entry["name"] + " · " + entry["id"])
                                for entry in library.search_sections(query, line)],
-                "搜索区间、道岔或端点编号",
-            )
+                "搜索区间、道岔或端点编号")
             direction = QComboBox()
             direction.addItems(["区间起点 → 终点", "区间终点 → 起点"])
             layout.addRow("物理区间", choice)
             layout.addRow("方向", direction)
-            layout.addRow(text_label("按实际拓扑决策点分段；选择后本行使用区间的真实起终点。", wrap=True))
             controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
             controls.accepted.connect(picker.accept)
             controls.rejected.connect(picker.reject)
@@ -618,66 +624,26 @@ class CorridorPanel(QWidget):
                 a, b = section["from_node"], section["to_node"]
                 if direction.currentIndex():
                     a, b = b, a
+                physical.setChecked(True)
                 if row:
-                    previous = table.cellWidget(row - 1, 2).currentData()
-                    if a not in library.endpoint_nodes(previous):
-                        raise ValueError("所选区间起点与上一行终点不一致，请先调整上一行或选择其他方向。")
-
-                def assign(combo, value, label):
-                    combo.blockSignals(True)
-                    combo.clear()
-                    combo.addItem(label, value)
-                    combo.setCurrentIndex(0)
-                    combo.blockSignals(False)
-
-                if row:
-                    assign(table.cellWidget(row - 1, 2), a, library.endpoint_label(a))
-                assign(table.cellWidget(row, 0), a, library.endpoint_label(a))
-                end = table.cellWidget(row, 2)
-                assign(end, b, library.endpoint_label(b))
-                end.currentIndexChanged.emit(0)
-                line_choice.setProperty("sectionId", section["id"])
-                line_choice.setToolTip("已指定物理区间：" + section["id"])
+                    previous_point, previous_line = [table.cellWidget(row - 1, c).currentData() for c in (0, 1)]
+                    library.resolve([{"kind": "endpoint", "node_id": previous_point},
+                                     {"kind": "line", "line_id": previous_line},
+                                     {"kind": "endpoint", "node_id": a}], policy.currentData())
+                table.assign(row, 0, a, notify=False)
+                if row + 1 == table.rowCount():
+                    table.add_point()
+                table.assign(row + 1, 0, b)
+                table.cellWidget(row, 1).setProperty("sectionId", section["id"])
+                table.cellWidget(row, 1).setToolTip("已指定物理区间：" + section["id"])
             except (ValueError, KeyError) as error:
                 QMessageBox.warning(dialog, "区间未选择", str(error))
 
         choose_section.clicked.connect(select_section)
         actions.addWidget(choose_section)
-        up = QPushButton("上移组合段")
-        down = QPushButton("下移组合段")
-
-        def move(delta):
-            row = table.currentRow()
-            target = row + delta
-            if row < 0 or not 0 <= target < table.rowCount():
-                return
-            # Rebuild the two rows, preserving values without moving Qt-owned widgets.
-            values = []
-            for index in range(table.rowCount()):
-                entries = []
-                for col in range(3):
-                    combo = table.cellWidget(index, col)
-                    value = combo.currentData()
-                    if combo.currentText() != combo.itemText(combo.currentIndex()):
-                        value = combo.currentText().strip()
-                        if col in (0, 2) and value.isdigit():
-                            value = int(value)
-                    if value is not None and (
-                        (col == 1 and value not in library.lines)
-                        or (col in (0, 2) and not library.endpoint_nodes(value))
-                    ):
-                        self.note.setText("请先选择有效端点和铁路线，再移动组合段。")
-                        return
-                    entries.append(value)
-                values.append((*entries, table.cellWidget(index, 1).property("sectionId")))
-            values[row], values[target] = values[target], values[row]
-            table.setRowCount(0)
-            for a, line, b, section in values:
-                add_row(a, line, section, b)
-            table.selectRow(target)
-
-        up.clicked.connect(lambda: move(-1))
-        down.clicked.connect(lambda: move(1))
+        up, down = QPushButton("上移行"), QPushButton("下移行")
+        up.clicked.connect(lambda: table.move_point(-1))
+        down.clicked.connect(lambda: table.move_point(1))
         actions.addWidget(up)
         actions.addWidget(down)
         form.addRow(actions)
@@ -697,45 +663,7 @@ class CorridorPanel(QWidget):
                     suggest_name()
                 if not table.rowCount():
                     raise ValueError("至少添加一行起点—铁路线—终点")
-                for row in range(1, table.rowCount()):
-                    previous_end = table.cellWidget(row - 1, 2)
-                    if previous_end.currentData() is not None:
-                        continue
-                    first_start = table.cellWidget(row - 1, 0).currentData()
-                    first_line = table.cellWidget(row - 1, 1).currentData()
-                    next_line = table.cellWidget(row, 1).currentData()
-                    if first_start is not None and first_line is not None and next_line is not None and hasattr(library, "common_transfer_endpoint"):
-                        shared = library.common_transfer_endpoint(first_start, first_line, next_line)
-                        if shared is None:
-                            raise ValueError(f"第 {row}、{row + 1} 行换线点不唯一或未连通，请手动选择终点")
-                        previous_end.addItem(library.endpoint_choice_label(shared), shared)
-                        previous_end.setCurrentIndex(previous_end.count() - 1)
-                result = []
-                for row in range(table.rowCount()):
-                    values = []
-                    for col in range(3):
-                        combo = table.cellWidget(row, col)
-                        value = combo.currentData()
-                        if combo.currentText() != combo.itemText(combo.currentIndex()):
-                            value = combo.currentText().strip()
-                            if col in (0, 2) and value.isdigit():
-                                value = int(value)
-                        values.append(value)
-                    a, line, b = values
-                    if a is None or line is None or b is None:
-                        raise ValueError(f"第 {row + 1} 行：请选择起点、铁路线和终点")
-                    if row and result[-1]["node_id"] != a:
-                        raise ValueError("相邻组合段必须共用同一个端点")
-                    if row == 0:
-                        result.append({"kind": "endpoint", "node_id": a})
-                    line_entry = {"kind": "line", "line_id": line}
-                    section_id = table.cellWidget(row, 1).property("sectionId")
-                    if section_id:
-                        line_entry["section_id"] = section_id
-                    result.extend([
-                        line_entry,
-                        {"kind": "endpoint", "node_id": b},
-                    ])
+                result = table.sequence()
                 if not name.text().strip():
                     name.setText(library.endpoint_label(result[0]["node_id"]) + " → " + library.endpoint_label(result[-1]["node_id"]) + " · 单向通道")
                 payload = {

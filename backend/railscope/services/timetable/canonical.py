@@ -194,14 +194,52 @@ def station_distances(repo: RailRepository, edge_refs, station_ids: Iterable[str
     return tuple(result)
 
 
+def stop_distances(repo, edge_refs, stops):
+    """Track offsets share the canonical edge contract across all adapters."""
+    stops = tuple(stops)
+    if all(stop.stop_edge_id is None and stop.stop_offset_m is None for stop in stops):
+        return station_distances(repo, edge_refs, (stop.station_id for stop in stops))
+    station_distances(repo, edge_refs, ())  # Validate connectivity and cumulative distances too.
+    result = []
+    nodes = ordered_path_nodes(repo, edge_refs)
+    for stop in stops:
+        if stop.stop_edge_id is None and stop.stop_offset_m is None:
+            anchor = repo.stations[stop.station_id].anchor_node_id
+            distance = next((distance for node, distance in nodes if node == anchor and (not result or distance > result[-1])), None)
+            if distance is None:
+                raise ValueError('停站点不在通道上或站序倒退')
+        else:
+            ref = next((ref for ref in edge_refs if ref.edge_id == stop.stop_edge_id), None)
+            offset = stop.stop_offset_m
+            if ref is None or type(offset) not in (int, float) or not isfinite(offset):
+                raise ValueError('站内停靠轨道不在完整通道中或偏移无效')
+            edge = repo.edges[ref.edge_id]
+            if not 0 <= offset <= edge.length_m:
+                raise ValueError('站内轨道偏移超出物理区间')
+            distance = ref.start_distance_m + (offset if ref.forward else edge.length_m - offset)
+        if result and distance <= result[-1]:
+            raise ValueError('站内停靠位置不按通道方向排列')
+        result.append(distance)
+    return tuple(result)
+
+
+def _complete_endpoints(corridor, stops, distances):
+    if not distances or not corridor.edge_refs:
+        return False
+    first, last = corridor.edge_refs[0], corridor.edge_refs[-1]
+    return ((stops[0].stop_edge_id == first.edge_id if stops[0].stop_edge_id else distances[0] == 0)
+            and (stops[-1].stop_edge_id == last.edge_id if stops[-1].stop_edge_id
+                 else distances[-1] == last.end_distance_m))
+
+
 def match_corridors(repo: RailRepository, train_id: str) -> dict:
     run = repo.train_runs[train_id]
     stops = repo.stops_for(train_id)
     candidates = []
     for corridor in repo.corridors.values():
         try:
-            distances = station_distances(repo, corridor.edge_refs, (s.station_id for s in stops))
-            if not distances or distances[0] != 0 or distances[-1] != corridor.edge_refs[-1].end_distance_m:
+            distances = stop_distances(repo, corridor.edge_refs, stops)
+            if not _complete_endpoints(corridor, stops, distances):
                 continue
             if any(getattr(repo.edges[r.edge_id], 'construction_status', 'operating') != 'operating' for r in corridor.edge_refs):
                 continue
@@ -217,8 +255,9 @@ def match_corridors(repo: RailRepository, train_id: str) -> dict:
 
 def verify_corridor(repo: RailRepository, train_id: str, corridor_id: str) -> TrainRun:
     corridor = repo.corridors[corridor_id]
-    distances = station_distances(repo, corridor.edge_refs, (s.station_id for s in repo.stops_for(train_id)))
-    if not distances or distances[0] != 0 or distances[-1] != corridor.edge_refs[-1].end_distance_m:
+    stops = repo.stops_for(train_id)
+    distances = stop_distances(repo, corridor.edge_refs, stops)
+    if not _complete_endpoints(corridor, stops, distances):
         raise ValueError('train endpoints do not match complete corridor')
     if any(getattr(repo.edges[r.edge_id], 'construction_status', 'operating') != 'operating' for r in corridor.edge_refs):
         raise ValueError('non-operating infrastructure cannot be verified for formal simulation')

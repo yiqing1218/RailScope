@@ -135,11 +135,11 @@ def test_default_dialog_apply_reopen_roundtrip_and_domain_status(qtbot, tmp_path
             assert policy.findData("strict") >= 0
             table = dialog.findChild(QTableWidget)
             if reopen:
-                assert [table.cellWidget(0, col).currentData() for col in range(3)] == [
+                assert [table.cellWidget(0, 0).currentData(), table.cellWidget(0, 1).currentData(), table.cellWidget(1, 0).currentData()] == [
                     sequence[0]["node_id"], sequence[1]["line_id"], sequence[2]["node_id"]]
             else:
                 for col, value in enumerate((sequence[0]["node_id"], sequence[1]["line_id"], sequence[2]["node_id"])):
-                    combo = table.cellWidget(0, col)
+                    combo = table.cellWidget(1, 0) if col == 2 else table.cellWidget(0, col)
                     combo.addItem(str(value), value)
                     combo.setCurrentIndex(combo.count() - 1)
             dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()

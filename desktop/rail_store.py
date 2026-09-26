@@ -304,7 +304,7 @@ def upgrade_render_features(directory, catalog):
     return True
 
 
-def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms=None):
+def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms=None, metro_database=None):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
@@ -355,6 +355,12 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            if kind != "rail":
+                try:
+                    from .transport_modes import rail_display_predicate
+                except ImportError:
+                    from transport_modes import rail_display_predicate
+                clauses.append(rail_display_predicate(db, metro_database))
             if kind == "railPoints":
                 station_zoom = (min_zooms or {}).get("railStations", 10)
                 switch_zoom = (min_zooms or {}).get("railSwitches", 15)

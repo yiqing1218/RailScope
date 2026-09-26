@@ -413,6 +413,7 @@ class DiskRailLineLibrary:
         }
         self._station_groups = {}
         self._station_group_labels = {}
+        self._parallel_anchors = {}
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
         self.lines = _DirectoryMapping(self, "lines")
@@ -806,23 +807,15 @@ class DiskRailLineLibrary:
                 # cannot crowd the reachable endpoints out of the picker.
                 db.execute("CREATE TEMP TABLE reachable_nodes(id PRIMARY KEY)")
                 db.executemany("INSERT INTO reachable_nodes VALUES(?)", ((node,) for node in reachable))
-                manual_sources = [source for source in override_sources if any(
-                    isinstance(value, dict) and self.workspace.canonical(value.get("line_id")) == line_id
-                    and value.get("anchor_node") in reachable
-                    for value in self.metadata.get("station:" + source, {}).get("connected_lines", [])
-                )]
-                line_clause += " AND (a.anchor_node IN (SELECT id FROM reachable_nodes)"
-                if manual_sources:
-                    line_clause += " OR a.source_id IN (" + ",".join("?" for _ in manual_sources) + ")"
-                    args.extend(manual_sources)
-                line_clause += ")"
+                # Old aliases contain only the nearest side of a double track.
+                # Check all recovered anchors below, before the result limit.
             rows = db.execute(
                 "SELECT a.source_id,a.alias,min(a.distance_m)" + coordinates + " FROM station_aliases a "
                 "WHERE (a.alias LIKE ? ESCAPE '!' OR a.source_id LIKE ? ESCAPE '!')"
                 + line_clause
                 + " AND a.confidence>=0.5 AND a.distance_m<=2500 "
                 "GROUP BY a.source_id,a.alias ORDER BY a.alias,a.source_id NOT LIKE 'node/%',min(a.distance_m) LIMIT ?",
-                (*args, limit * 12),
+                (*args, -1 if reachable is not None else limit * 12),
             ).fetchall()
             # Merge duplicate OSM points/buildings for one named station by a
             # small coordinate cell.  The selected entity keeps every physical
@@ -878,6 +871,10 @@ class DiskRailLineLibrary:
                     continue
                 self._station_groups[source_id] = [source_id]
                 self._station_group_labels[source_id] = label
+                if reachable is not None and not reachable.intersection(
+                    self.endpoint_candidates("station:" + source_id, [line_id])
+                ):
+                    continue
                 connected = [line["name"] for line in self.connected_lines("station:" + source_id)]
                 result.append((
                     "station:" + source_id,
@@ -914,6 +911,10 @@ class DiskRailLineLibrary:
                         for line in self.connected_lines("station:" + primary)
                     ]
                 self._station_group_labels[primary] = alias
+                if reachable is not None and not reachable.intersection(
+                    self.endpoint_candidates("station:" + primary, [line_id])
+                ):
+                    continue
                 result.append((
                     "station:" + primary,
                     alias + " · 接轨：" + (" / ".join(connected) if connected else "待关联"),
@@ -990,6 +991,12 @@ class DiskRailLineLibrary:
         ]
         return result[:limit]
 
+    def line_stations(self, line_id, query=""):
+        """The same station/override contract used by the corridor picker."""
+        return [(endpoint, self.endpoint_label(endpoint))
+                for endpoint, _ in self.search_endpoints(query, line_id=line_id, limit=10000)
+                if str(endpoint).startswith("station:")]
+
     def common_transfer_endpoint(self, start, first_line, next_line):
         """Infer a transfer only when one reachable physical node joins both lines."""
         if first_line not in self.lines or next_line not in self.lines:
@@ -997,7 +1004,7 @@ class DiskRailLineLibrary:
         first_line, next_line = map(self.workspace.canonical, (first_line, next_line))
         selected = self.selected_library([first_line])
         graph = selected.lines[first_line]["graph"]
-        stack = [node for node in self.endpoint_nodes(start) if node in graph]
+        stack = [node for node in self.endpoint_candidates(start, [first_line]) if node in graph]
         start_nodes = set(stack)
         reachable = set(stack)
         while stack:
@@ -1041,6 +1048,8 @@ class DiskRailLineLibrary:
                     "SELECT anchor_node FROM station_aliases "
                     f"WHERE source_id IN ({marks}) AND confidence>=0.5 AND distance_m<=2500 "
                     "AND anchor_node IS NOT NULL GROUP BY anchor_node ORDER BY min(distance_m)", sources)]
+                for line in adjacent_lines:
+                    candidates.extend(self.parallel_station_anchors(endpoint, line))
                 fixed_anchors = []
                 if override is not None:
                     if not set(adjacent_lines) <= {v.get("line_id") for v in override}:
@@ -1068,6 +1077,51 @@ class DiskRailLineLibrary:
                 memberships.setdefault(node, set()).add(line)
             return [node for node in candidates if all(
                 memberships.get(node, set()).intersection(self.workspace.members(line)) for line in adjacent_lines)]
+
+    def parallel_station_anchors(self, endpoint, line_id):
+        """Repair nearest-only legacy aliases without changing imported data.
+
+        One nearest node per locally connected track component is sufficient;
+        ordinary curve vertices never become new physical edges. Explicit
+        anchors are still applied by endpoint_candidates after this lookup.
+        """
+        sources = tuple(self._station_sources(endpoint))
+        key = (sources, line_id)
+        if key in self._parallel_anchors:
+            return self._parallel_anchors[key]
+        result = {}
+        if not str(endpoint).startswith("station:node/"):
+            return result
+        with self.connect() as db:
+            if not {"source_x", "source_y"} <= {row[1] for row in db.execute("PRAGMA table_info(station_aliases)")}:
+                self._parallel_anchors[key] = result
+                return result
+            centres = db.execute(
+                f"SELECT DISTINCT source_x,source_y FROM station_aliases WHERE source_id IN ({','.join('?' for _ in sources)}) "
+                "AND verification_status='automatic_nearby_topology_node' AND source_x IS NOT NULL AND source_y IS NOT NULL",
+                sources).fetchall()
+            if centres:
+                members = self.workspace.members(line_id)
+                rows = db.execute(
+                    "SELECT DISTINCT n.id,n.x,n.y FROM nodes n JOIN main.line_nodes ln ON ln.node_id=n.id "
+                    f"WHERE ln.line_id IN ({','.join('?' for _ in members)}) AND n.x IS NOT NULL AND n.y IS NOT NULL", members).fetchall()
+                gaps = {node: min(distance_m([x,y], centre) for centre in centres) for node,x,y in rows}
+                nearby = {node for node,gap in gaps.items() if gap <= 2500}
+                graph = {node: set() for node in nearby}
+                for a,b in db.execute(
+                    f"SELECT a,b FROM main.edges WHERE line_id IN ({','.join('?' for _ in members)}) AND construction=0 AND direction!='closed'", members):
+                    if a in graph and b in graph:
+                        graph[a].add(b); graph[b].add(a)
+                while nearby:
+                    todo = [next(iter(nearby))]; component = set(todo)
+                    while todo:
+                        for other in graph[todo.pop()] - component:
+                            component.add(other); todo.append(other)
+                    nearby -= component
+                    node = min(component, key=lambda n: (gaps[n], str(n)))
+                    result[node] = gaps[node]
+        self._parallel_anchors[key] = result
+        return result
 
     def resolve_endpoint(self, endpoint, adjacent_lines):
         matches = self.endpoint_candidates(endpoint, adjacent_lines)
@@ -1232,6 +1286,10 @@ class DiskRailLineLibrary:
         )
         if replay:
             sequence = selection["resolved_sequence"]
+        if (not isinstance(sequence, list) or len(sequence) < 3 or len(sequence) % 2 != 1
+                or any(not isinstance(entry, dict) or entry.get("kind") != ("endpoint" if i % 2 == 0 else "line")
+                       for i, entry in enumerate(sequence))):
+            raise ValueError("通道必须按端点—线路—端点交替排列")
         ids = [
             e.get("line_id")
             for e in sequence
@@ -1249,6 +1307,23 @@ class DiskRailLineLibrary:
             selected.control_nodes.update(entry["node_id"] for entry in sequence[::2])
         else:
             selected = self.selected_library(ids)
+        terminal_targets = {}
+        if policy == "auto" and not replay:
+            try:
+                from .station_positions import terminal_tracks
+            except ImportError:
+                from station_positions import terminal_tracks
+            for row, entry in ((0, sequence[0]), (len(sequence) // 2, sequence[-1])):
+                adjacent = sequence[1] if row == 0 else sequence[-2]
+                endpoint = entry.get("node_id")
+                override = self._station_connection_override(self._station_sources(endpoint)) or []
+                if adjacent.get("section_id") or any(v.get("anchor_policy") == "fixed" for v in override):
+                    continue
+                targets = terminal_tracks(self, endpoint)
+                if targets:
+                    terminal_targets[row] = targets
+            if terminal_targets:
+                return self.resolve_station_transfers(sequence, selected, terminal_targets)
         try:
             normalized = self.normalize_sequence(sequence, selected, policy)
             return normalized, selected.resolve(normalized, policy, selection=selection)
@@ -1295,12 +1370,13 @@ class DiskRailLineLibrary:
                      "length_m": length, "track_type": kind, "direction": direction}
                     for ident, line, a, b, construction, length, kind, direction, name in rows]
 
-    def resolve_station_transfers(self, sequence, selected):
+    def resolve_station_transfers(self, sequence, selected, terminal_targets=None):
         try:
             from .rail_transfer import station_transfer_path
         except ImportError:
             from rail_transfer import station_transfer_path
-        if len(sequence) < 5 or len(sequence) % 2 != 1:
+        terminal_targets = terminal_targets or {}
+        if len(sequence) < 3 or len(sequence) % 2 != 1:
             raise ValueError("站内换线通道必须交替填写端点和线路")
         sequence = json.loads(json.dumps(sequence))
         for i, entry in enumerate(sequence):
@@ -1315,7 +1391,12 @@ class DiskRailLineLibrary:
         for row, entry in enumerate(sequence[::2]):
             index, endpoint = row * 2, entry["node_id"]
             lines = [sequence[i]["line_id"] for i in (index - 1, index + 1) if 0 <= i < len(sequence)]
-            if 0 < index < len(sequence) - 1 and isinstance(endpoint, str) and endpoint.startswith("station:"):
+            if row in terminal_targets:
+                # Keep full shared edges; the stop itself is an exact offset
+                # on the selected station track, persisted separately.
+                choices = list(dict.fromkeys(node for target in terminal_targets[row].values() for node in target["nodes"]))
+                transfer_stations[row] = endpoint
+            elif 0 < index < len(sequence) - 1 and isinstance(endpoint, str) and endpoint.startswith("station:"):
                 override = self._station_connection_override(self._station_sources(endpoint)) or []
                 if any(v.get("anchor_policy") == "fixed" and v.get("line_id") in lines for v in override):
                     # Explicit anchor constraints must not be relaxed by a fallback.
@@ -1345,7 +1426,7 @@ class DiskRailLineLibrary:
             graph.control_nodes.update(selected.control_nodes)
             graph.split_nodes = selected.split_nodes
             try:
-                return station_transfer_path(graph, sequence, candidates, local, gaps)
+                return station_transfer_path(graph, sequence, candidates, local, gaps, terminal_targets)
             except ValueError as error:
                 last_error = str(error)
         raise ValueError(last_error + "；已检查换线站周边 20 km 的真实轨道，请核对缺失连接或手工指定中间端点")
@@ -1364,6 +1445,9 @@ class DiskRailLineLibrary:
             gap = value.get("distance_m")
             if node is not None and isinstance(gap, (int, float)):
                 gaps[node] = min(gaps.get(node, float("inf")), max(0.0, gap))
+        for (group, _line), values in self._parallel_anchors.items():
+            if group == tuple(sources):
+                gaps.update({node: gap for node, gap in values.items() if node not in gaps})
         return {node: max(0.0, gaps.get(node, 2500.0)) for node in candidates}
 
     def _reference_endpoint_chain(self, sequence, candidates, selected):

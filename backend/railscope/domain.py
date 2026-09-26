@@ -110,6 +110,8 @@ class StopTime:
     station_track_id: str | None = None
     platform_id: str | None = None
     station_route_id: str | None = None
+    stop_edge_id: str | None = None
+    stop_offset_m: float | None = None
 
 
 @dataclass(frozen=True)

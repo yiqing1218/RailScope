@@ -2845,20 +2845,13 @@ class RailCatalog(QWidget):
             return {"station_names": [], "connected_line_names": []}
         marks = ",".join("?" for _ in line_ids)
         with sqlite3.connect(database) as db:
-            stations, seen = [], set()
-            for source_id, alias in db.execute(
-                "SELECT a.source_id,a.alias FROM station_aliases a "
-                "JOIN line_nodes n ON n.node_id=a.anchor_node "
-                f"WHERE n.line_id IN ({marks}) AND a.confidence>=0.5 "
-                "ORDER BY a.alias,a.distance_m",
-                line_ids,
-            ):
-                custom = self.overrides.get("station:" + str(source_id), {})
-                name = custom.get("display_name") or alias
-                normalized = "".join(str(name).split()).removesuffix("站").casefold()
-                if normalized and normalized not in seen:
-                    seen.add(normalized)
-                    stations.append(str(name))
+            try:
+                from .rail_line_store import DiskRailLineLibrary
+            except ImportError:
+                from rail_line_store import DiskRailLineLibrary
+            library = DiskRailLineLibrary(database, metadata=self.overrides)
+            stations = list(dict.fromkeys(name for line_id in line_ids
+                if line_id in library.lines for _, name in library.line_stations(line_id)))
             connected = [
                 row[0]
                 for row in db.execute(
