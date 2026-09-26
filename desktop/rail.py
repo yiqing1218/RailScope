@@ -580,9 +580,9 @@ def validate_corridors(routes, edges):
             raise ValueError("通道须有明确的单向物理区间组合")
         if "sequence" in route:
             try:
-                from .rail_lines import RailLineLibrary, resolution_policy
+                from .rail_lines import RESOLUTION_KEY, RailLineLibrary, resolution_policy
             except ImportError:
-                from rail_lines import RailLineLibrary, resolution_policy
+                from rail_lines import RESOLUTION_KEY, RailLineLibrary, resolution_policy
             library = RailLineLibrary(
                 [
                     lookup[leg["edge_id"]]
@@ -598,7 +598,8 @@ def validate_corridors(routes, edges):
                                          if isinstance(entry, dict) and "node_id" in entry)
             if (
                 library.resolve(
-                    route["sequence"], resolution_policy(route["extensions"])
+                    route["sequence"], resolution_policy(route["extensions"]),
+                    selection=route["extensions"].get(RESOLUTION_KEY, {}).get("selection")
                 )
                 != route["path"]
             ):

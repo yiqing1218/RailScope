@@ -698,7 +698,8 @@ class RailEditor(OperationsEditor):
             library.control_nodes.update(entry["node_id"] for entry in sequence[::2]
                                          if isinstance(entry, dict) and "node_id" in entry)
             if (
-                library.resolve(sequence, resolution_policy(route["extensions"]))
+                library.resolve(sequence, resolution_policy(route["extensions"]),
+                                selection=route["extensions"].get(RESOLUTION_KEY, {}).get("selection"))
                 != route["path"]
             ):
                 raise ValueError("通道存在歧义，请在通道表格中补充端点")
@@ -903,11 +904,12 @@ class RailEditor(OperationsEditor):
 
                 def resolve(report):
                     report("校验端点并组合既有物理线路…")
+                    selection = route["extensions"].get(RESOLUTION_KEY, {}).get("selection")
                     if hasattr(route_library, "resolve_with_sequence"):
-                        sequence, path = route_library.resolve_with_sequence(route["sequence"], policy)
+                        sequence, path = route_library.resolve_with_sequence(route["sequence"], policy, selection=selection)
                     else:
                         sequence = route_library.normalize_sequence(route["sequence"])
-                        path = route_library.resolve(sequence, policy)
+                        path = route_library.resolve(sequence, policy, selection=selection)
                     membership = (route_library.membership_provenance(sequence)
                                   if hasattr(route_library, "membership_provenance") else None)
                     report("物理线路组合已完成")
@@ -922,6 +924,7 @@ class RailEditor(OperationsEditor):
                     resolved = prepare_with_progress(self, "校验单向通道", resolve)
                 else:
                     resolved = resolve(lambda text: None)
+                requested_sequence = deepcopy(route["sequence"])
                 route["sequence"], route["path"], membership = resolved
                 if membership:
                     route["extensions"][membership_key] = membership
@@ -934,6 +937,25 @@ class RailEditor(OperationsEditor):
                     "edge_count": len(route["path"]),
                     "geometry_status": "assembled_geometry_not_dispatch_route",
                 }
+                resolution = route["extensions"][RESOLUTION_KEY]
+                if policy == "auto":
+                    old_selection = resolution.get("selection", {})
+                    if requested_sequence == old_selection.get("resolved_sequence"):
+                        requested_sequence = old_selection.get("requested_sequence", requested_sequence)
+                    resolution.update({
+                        "source": "automatic_reference",
+                        "method": "reachable_station_anchors_then_shortest_operating_path",
+                        "version": 1,
+                        "verification_status": "automatic_reference_not_dispatch_verified",
+                        "confidence": None,
+                        "snapshot": membership.get("snapshot") if membership else "portable_reference",
+                        "selection": {"requested_sequence": requested_sequence,
+                                      "resolved_sequence": deepcopy(route["sequence"]),
+                                      "path": deepcopy(route["path"])},
+                    })
+                else:
+                    for key in ("selection", "method", "verification_status", "confidence", "snapshot", "version", "source"):
+                        resolution.pop(key, None)
                 legacy = route["extensions"].get("railscope.org/legacy-track-changes")
                 if legacy is not None:
                     route["track_changes"] = deepcopy(legacy)

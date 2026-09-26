@@ -339,7 +339,12 @@ class CorridorPanel(QWidget):
         manual_name = [bool(route)]
         name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
         policy = QComboBox()
-        policy.addItem("唯一径路 · 有歧义时继续添加中间端点", "strict")
+        policy.setObjectName("corridorResolutionPolicy")
+        policy.addItem("自动选择可走通的参考路径（默认，可手工调整）", "auto")
+        policy.addItem("严格唯一径路 · 有歧义时手工选择", "strict")
+        saved_resolution = route.get("extensions", {}).get(RESOLUTION_KEY, {}) if route else {}
+        if saved_resolution.get("policy") in ("strict", "mainline"):
+            policy.setCurrentIndex(1)
         form.addRow("拼接方式", policy)
         source = (
             "已导入的全国铁路库"
@@ -350,7 +355,7 @@ class CorridorPanel(QWidget):
             text_label(
                 "基础设施来源："
                 + source
-                + "。正式通道只接受由所选端点和线路唯一确定的连续径路。",
+                + "。默认按所选车站和线路自动选择连续参考路径，应用后保存；需要时可改端点或指定物理区间。",
                 wrap=True,
             )
         )
@@ -363,12 +368,15 @@ class CorridorPanel(QWidget):
         sequence = (
             (route.get("sequence") or library.describe(route["path"])) if route else []
         )
+        saved_selection = saved_resolution.get("selection", {})
+        if saved_resolution.get("policy") == "auto" and sequence == saved_selection.get("resolved_sequence"):
+            sequence = saved_selection.get("requested_sequence", sequence)
         table = QTableWidget(0, 3)
         table.setHorizontalHeaderLabels(
             ["起点 / 换线端点", "从该点可选的铁路线", "该线路上可到达的下一端点"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        physical = QCheckBox("手工轨道端点：显示道岔和真实轨道节点，用于消除多径路歧义")
+        physical = QCheckBox("手工调整：显示道岔和轨道节点，指定所走股道或中间端点")
         physical.setObjectName("corridorPhysicalEndpoints")
         physical.setEnabled(hasattr(library, "workspace"))
         form.addRow(physical)
@@ -731,6 +739,7 @@ class CorridorPanel(QWidget):
                     ],
                 }
                 payload["corridors"][0]["extensions"][RESOLUTION_KEY] = {
+                    **saved_resolution,
                     "policy": policy.currentData()
                 }
                 self.editor.merge_corridors(payload, interactive=True)

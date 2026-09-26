@@ -22,7 +22,7 @@
 
 Desktop SQLite 与 Backend/PostGIS 只能是同一 `railscope.domain` 契约的 Repository/DTO adapter，不得继续新增第二套独立业务模型。地铁和国铁共享领域 ID、路径不变量与模拟插值。
 
-自动推断必须保存 source、snapshot/version、verification_status/confidence；存在多条合法路径时保持 unresolved，不得静默采用几何最短路。正式 Corridor/TrainRun 默认禁止引用 construction、planned、disused 或 unknown edge。
+自动推断必须保存 source、snapshot/version、verification_status/confidence。按用户要求，通道编辑默认采用自动参考模式：在所选车站、线路和运行方向内选取连续可运行路径，明确标记为自动参考、保存具体选择，并保留手工端点/区间调整；不得声称是已核验调度进路。严格唯一模式存在多条合法路径时保持 unresolved。正式 Corridor/TrainRun 默认禁止引用 construction、planned、disused 或 unknown edge。
 
 人工改名、分类、线路归属、车站聚合和通道编辑必须写入独立 override/workspace 层，不得覆盖原始 OSM 派生文件。重新导入后重放 override；无法安全迁移时生成 conflict。删除、重建或拆分基础设施前必须检查 Corridor、StationRoute 和 TrainRun 引用，禁止留下悬空引用。
 

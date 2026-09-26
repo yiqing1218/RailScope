@@ -247,7 +247,7 @@ def test_new_corridor_fills_blank_identity_without_cached_train_path(
     new = editor.document()["routes"][-1]
     assert new["id"].startswith("COR-") and new["name"]
     assert new["sequence"] == existing
-    assert new["extensions"]["railscope.org/line-resolution"]["policy"] == "strict"
+    assert new["extensions"]["railscope.org/line-resolution"]["policy"] == "auto"
     editor.timer.stop()
     panel.close()
     editor.close()

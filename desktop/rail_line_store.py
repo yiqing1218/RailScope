@@ -1194,7 +1194,7 @@ class DiskRailLineLibrary:
             if node in matches
         ]
 
-    def resolve_with_sequence(self, sequence, policy="strict"):
+    def resolve_with_sequence(self, sequence, policy="strict", selection=None):
         if not isinstance(sequence, list):
             raise ValueError("通道序列必须是数组")
         ids = [
@@ -1205,13 +1205,64 @@ class DiskRailLineLibrary:
         if any(not isinstance(key, str) or key not in self.lines for key in ids):
             raise ValueError("铁路线编号不存在，请先载入相应的铁路数据")
         selected = self.selected_library(ids)
-        sequence = self.normalize_sequence(sequence, selected)
-        return sequence, selected.resolve(sequence, policy)
+        if policy == "auto" and isinstance(selection, dict) and sequence in (
+            selection.get("requested_sequence"), selection.get("resolved_sequence")
+        ):
+            sequence = selection["resolved_sequence"]
+        sequence = self.normalize_sequence(sequence, selected, policy)
+        return sequence, selected.resolve(sequence, policy, selection=selection)
 
-    def resolve(self, sequence, policy="strict"):
-        return self.resolve_with_sequence(sequence, policy)[1]
+    def resolve(self, sequence, policy="strict", selection=None):
+        return self.resolve_with_sequence(sequence, policy, selection=selection)[1]
 
-    def normalize_sequence(self, sequence, selected=None):
+    def _anchor_distances(self, endpoint, candidates):
+        if not isinstance(endpoint, str) or not endpoint.startswith("station:"):
+            return dict.fromkeys(candidates, 0.0)
+        sources = self._station_sources(endpoint)
+        marks = ",".join("?" for _ in sources)
+        with self.connect() as db:
+            gaps = dict(db.execute(
+                f"SELECT anchor_node,min(distance_m) FROM station_aliases WHERE source_id IN ({marks}) "
+                "AND confidence>=0.5 GROUP BY anchor_node", sources))
+        for value in self._station_connection_override(sources) or []:
+            node = value.get("anchor_node")
+            gap = value.get("distance_m")
+            if node is not None and isinstance(gap, (int, float)):
+                gaps[node] = min(gaps.get(node, float("inf")), max(0.0, gap))
+        return {node: max(0.0, gaps.get(node, 2500.0)) for node in candidates}
+
+    def _reference_endpoint_chain(self, sequence, candidates, selected):
+        # Rank only COMPLETE reachable chains, not independently nearest anchors.
+        # State is bounded by station candidates; graph trees are discarded per start.
+        gaps = [self._anchor_distances(entry["node_id"], choices)
+                for entry, choices in zip(sequence[::2], candidates)]
+        states = {node: ((gaps[0][node], 0.0, (str(node),)), [node]) for node in candidates[0]}
+        for row, line in enumerate(sequence[1::2]):
+            next_states = {}
+            for start, (score, chain) in sorted(states.items(), key=lambda item: str(item[0])):
+                distances = {}
+                if line.get("section_id"):
+                    for end in candidates[row + 1]:
+                        try:
+                            path = selected.resolve([{"kind": "endpoint", "node_id": start}, line,
+                                                     {"kind": "endpoint", "node_id": end}], "auto")
+                        except ValueError:
+                            continue
+                        distances[end] = sum(edge_length(selected.edges[leg["edge_id"]]) for leg in path)
+                else:
+                    distances, _ = selected.reference_tree(line["line_id"], start, candidates[row + 1])
+                for end in candidates[row + 1]:
+                    if end == start or end not in distances:
+                        continue
+                    rank = (score[0] + gaps[row + 1][end], score[1] + distances[end], score[2] + (str(end),))
+                    if end not in next_states or rank < next_states[end][0]:
+                        next_states[end] = (rank, chain + [end])
+            states = next_states
+            if not states:
+                raise ValueError(f"第 {row + 1} 行所选线路在起终点之间不连通，或手工区间不匹配；请检查接轨、运行方向和线路归属")
+        return min(states.values(), key=lambda value: value[0])[1]
+
+    def normalize_sequence(self, sequence, selected=None, policy="strict"):
         if not isinstance(sequence, list) or len(sequence) < 3 or len(sequence) % 2 != 1:
             raise ValueError("通道必须为端点—线路—端点，交替排列")
         sequence = json.loads(json.dumps(sequence))
@@ -1241,6 +1292,11 @@ class DiskRailLineLibrary:
                 entry["node_id"] = values[0]
             return sequence
         selected = selected or self.selected_library(ids)
+        if policy == "auto":
+            chain = self._reference_endpoint_chain(sequence, candidates, selected)
+            for entry, node in zip(sequence[::2], chain):
+                entry["node_id"] = node
+            return sequence
         # Dynamic programming counts compatible endpoint chains (capped at two).
         # No geometric distance ranking and no cartesian-product enumeration.
         states = {node: (1, [node]) for node in candidates[0]}
@@ -1270,7 +1326,7 @@ class DiskRailLineLibrary:
                 self.endpoint_label(sequence[index * 2]["node_id"]) + "：" + "、".join(map(str, values[:6]))
                 for index, values in enumerate(candidates) if len(values) > 1
             )
-            raise ValueError("存在多个可达接轨端点，径路 unresolved；请勾选「手工轨道端点」选择真实道岔或轨道端点，不自动取最近点。" + detail)
+            raise ValueError("存在多个可达接轨端点，严格径路 unresolved；可改用「自动选择可走通的参考路径」，或勾选「手工调整」指定道岔/轨道端点。" + detail)
         chain = next(iter(states.values()))[1]
         for entry, node in zip(sequence[::2], chain):
             entry["node_id"] = node

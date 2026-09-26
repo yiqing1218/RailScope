@@ -2,6 +2,8 @@
 
 from collections import defaultdict, deque
 from copy import deepcopy
+from heapq import heappop, heappush
+from itertools import count
 import hashlib
 import json
 import csv
@@ -40,7 +42,7 @@ def resolution_policy(extensions):
     if not isinstance(value, dict):
         raise ValueError("线路拼接策略须为对象")
     policy = value.get("policy", "strict")
-    if policy not in ("strict", "mainline"):
+    if policy not in ("strict", "mainline", "auto"):
         raise ValueError("不支持的线路拼接策略")
     return policy
 
@@ -67,6 +69,7 @@ CORRIDOR_COLUMNS = (
 LEGACY_CORRIDOR_COLUMNS = tuple(
     column for column in CORRIDOR_COLUMNS if column != "section_id"
 )
+EXTENDED_CORRIDOR_COLUMNS = (*CORRIDOR_COLUMNS, "extensions")
 
 
 def edge_endpoints(edge):
@@ -97,12 +100,16 @@ def _endpoint(value):
 
 def import_corridor_csv(text):
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS)):
+    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS)):
         raise ValueError(
             "通道 CSV 表头必须为：" + ",".join(CORRIDOR_COLUMNS)
             + "（旧版不含 section_id 仍可导入）"
         )
     has_sections = "section_id" in reader.fieldnames
+    if "extensions" in reader.fieldnames:
+        # A long corridor's compact edge references can exceed csv's 128 KiB
+        # default. This is a field bound, not a preallocated buffer.
+        csv.field_size_limit(max(csv.field_size_limit(), 8 * 1024 * 1024))
     routes = {}
     for row in reader:
         if None in row or any(value is None for value in row.values()):
@@ -118,6 +125,14 @@ def import_corridor_csv(text):
             },
         )
         sequence = route["sequence"]
+        if row.get("extensions"):
+            if sequence:
+                raise ValueError("通道 CSV 的 extensions 只填写在每个通道的首行")
+            extensions = json.loads(row["extensions"])
+            if not isinstance(extensions, dict):
+                raise ValueError("通道 CSV 的 extensions 须为 JSON 对象")
+            resolution_policy(extensions)
+            route["extensions"] = extensions
         if row["corridor_name"] != route["name"] or row["segment"] != str(
             (len(sequence) + 1) // 2 if sequence else 1
         ):
@@ -144,7 +159,7 @@ def import_corridor_csv(text):
 
 def export_corridor_csv(document):
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=CORRIDOR_COLUMNS)
+    writer = csv.DictWriter(output, fieldnames=EXTENDED_CORRIDOR_COLUMNS)
     writer.writeheader()
     for route in document["corridors"]:
         sequence = route["sequence"]
@@ -158,6 +173,7 @@ def export_corridor_csv(document):
                     "line_id": sequence[index]["line_id"],
                     "section_id": sequence[index].get("section_id", ""),
                     "to_node": sequence[index + 1]["node_id"],
+                    "extensions": json.dumps(route.get("extensions", {}), ensure_ascii=False, separators=(",", ":")) if index == 1 else "",
                 }
             )
     return output.getvalue()
@@ -335,8 +351,70 @@ class RailLineLibrary:
         self._bridges[ident] = result
         return result
 
-    def resolve(self, sequence, policy="strict"):
-        if policy not in ("strict", "mainline"):
+    def reference_tree(self, ident, start, targets):
+        """Shortest operating paths on one selected line; never infer missing track."""
+        graph = self.lines[ident]["graph"]
+        remaining = set(targets)
+        distances, previous = {start: 0.0}, {start: None}
+        serial = count()
+        queue = [(0.0, next(serial), start)]
+        while queue and remaining:
+            length, _, node = heappop(queue)
+            if length != distances[node]:
+                continue
+            remaining.discard(node)
+            for other, edge_id, direction in sorted(graph.get(node, []), key=lambda v: (str(v[0]), v[1], v[2])):
+                edge = self.edges[edge_id]
+                if (edge.get("construction") or edge.get("construction_status", "operating") != "operating"
+                        or not traversal_allowed(edge, direction)):
+                    continue
+                candidate = length + edge_length(edge)
+                if candidate < distances.get(other, float("inf")):
+                    distances[other] = candidate
+                    previous[other] = (node, edge_id, direction)
+                    heappush(queue, (candidate, next(serial), other))
+        return distances, previous
+
+    def validate_selected_path(self, sequence, path):
+        """Replay a saved reference choice without choosing another branch."""
+        if not isinstance(path, list) or not path:
+            raise ValueError("已保存的参考路径为空，请重新选择端点或线路")
+        cursor, visited = 0, {sequence[0]["node_id"]}
+        for index in range(1, len(sequence), 2):
+            line = sequence[index]
+            start, end = sequence[index - 1]["node_id"], sequence[index + 1]["node_id"]
+            node, first = start, cursor
+            while cursor < len(path) and node != end:
+                leg = path[cursor]
+                if not isinstance(leg, dict) or set(leg) != {"edge_id", "direction"}:
+                    raise ValueError("已保存的参考路径字段无效")
+                edge = self.edges.get(leg["edge_id"])
+                if edge is None or self.edge_lines.get(leg["edge_id"]) != line["line_id"]:
+                    raise ValueError("已保存的参考路径缺少区间或线路归属已改变，请重新编排")
+                a, b = edge_endpoints(edge)
+                if leg["direction"] == "reverse":
+                    a, b = b, a
+                elif leg["direction"] != "forward":
+                    raise ValueError("已保存的参考路径方向无效")
+                if (a != node or edge.get("construction")
+                        or edge.get("construction_status", "operating") != "operating"
+                        or not traversal_allowed(edge, leg["direction"])):
+                    raise ValueError("已保存的参考路径不连续、非运营状态或方向不允许")
+                if b in visited:
+                    raise ValueError("通道组合重复经过端点，当前不支持循环通道")
+                visited.add(b)
+                node, cursor = b, cursor + 1
+            if node != end or cursor == first:
+                raise ValueError("已保存的参考路径与本行起终点不一致")
+            if line.get("section_id"):
+                if self.resolve(sequence[index - 1:index + 2], "auto") != path[first:cursor]:
+                    raise ValueError("已保存的参考路径与手工选择的 RS 区间不一致")
+        if cursor != len(path):
+            raise ValueError("已保存的参考路径超出所选终点")
+        return deepcopy(path)
+
+    def resolve(self, sequence, policy="strict", selection=None):
+        if policy not in ("strict", "mainline", "auto"):
             raise ValueError("不支持的线路拼接策略")
         if (
             not isinstance(sequence, list)
@@ -362,6 +440,10 @@ class RailLineLibrary:
                 or entry["node_id"] not in self.nodes
             ):
                 raise ValueError("端点不是已索引的轨道节点；不能使用离线 POI 坐标代替")
+        if policy == "auto" and isinstance(selection, dict):
+            saved_sequence = self.normalize_sequence(selection.get("resolved_sequence", []))
+            if saved_sequence == sequence:
+                return self.validate_selected_path(sequence, selection.get("path"))
         for i in range(1, len(sequence), 2):
             ident = sequence[i]["line_id"]
             if ident not in self.lines:
@@ -398,6 +480,9 @@ class RailLineLibrary:
                 continue
             previous = {a: None}
             queue = deque([a])
+            if policy == "auto":
+                _, previous = self.reference_tree(ident, a, [b])
+                queue.clear()
             while queue and b not in previous:
                 node = queue.popleft()
                 for other, edge_id, direction in sorted(record["graph"][node], key=lambda value: (str(value[0]), value[1], value[2])):
@@ -415,7 +500,7 @@ class RailLineLibrary:
             while node != a:
                 node, edge_id, direction = previous[node]
                 legs.append({"edge_id": edge_id, "direction": direction})
-            if any(leg["edge_id"] not in self.bridges(ident) for leg in legs):
+            if policy != "auto" and any(leg["edge_id"] not in self.bridges(ident) for leg in legs):
                 raise ValueError(
                     "两个端点之间存在分支 / 多条合法径路；请增加车站、线路所或道岔端点消歧，不自动采用几何最短路"
                 )

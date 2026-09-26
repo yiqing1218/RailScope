@@ -152,7 +152,9 @@ def _build_repository(graph, payload, registry, identity_db):
             first.from_node_id if refs[0].forward else first.to_node_id,
             last.to_node_id if refs[-1].forward else last.from_node_id,
             snapshot_id=first.snapshot_id, source_id=source_id,
-            verification_status=route.get("extensions", {}).get("verification_status", "user_verified"),
+            verification_status=(route.get("extensions", {}).get("railscope.org/line-resolution", {})
+                                 .get("verification_status")
+                                 or route.get("extensions", {}).get("verification_status", "user_verified")),
         )
         repo.corridors[corridor_id] = corridor
         route_by_source[source_id] = corridor
