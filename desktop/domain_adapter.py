@@ -15,7 +15,7 @@ from railscope.domain import (
     Station, StationRoute, StationTrack, StopTime, TrainRun, TrainService,
 )
 from railscope.identity import IdentityRegistry
-from railscope.integrity import path_refs, validate_repository
+from railscope.integrity import ordered_path_nodes, path_refs, validate_repository
 from railscope.repository import RailRepository
 from railscope.services.simulation.geometry import distance_m
 
@@ -173,6 +173,7 @@ def _build_repository(graph, payload, registry, identity_db):
             value.get("verification_status", "unverified"),
         )
     service_date = document["service_date"]
+    corridor_nodes = {}
     for train in document["trains"]:
         service_id = registry.resolve_alias("train_service", train["id"], "SVC", identity_db)
         run_source = service_date + "/" + train["id"]
@@ -206,11 +207,27 @@ def _build_repository(graph, payload, registry, identity_db):
             stop_edge = bindings["edges"].get(position.get("edge_id"))
             if position and stop_edge is None:
                 raise ValueError("停靠轨道不在共享基础设施中")
+            offset = position.get("offset_m")
+            station_id = bindings["stations"][str(stop["node_id"])]
+            stop_node = bindings["nodes"][str(stop["node_id"])]
+            if not position and repo.stations[station_id].anchor_node_id != stop_node:
+                # A logical station can serve several tracks. Preserve this
+                # stop's selected physical node instead of borrowing its anchor.
+                refs = repo.corridors[corridor_id].edge_refs
+                if corridor_id not in corridor_nodes:
+                    corridor_nodes[corridor_id] = dict(ordered_path_nodes(repo, refs))
+                distance = corridor_nodes[corridor_id].get(stop_node)
+                if distance is None:
+                    raise ValueError("停站点不在完整通道上")
+                ref = next(r for r in refs if r.start_distance_m <= distance <= r.end_distance_m)
+                stop_edge = ref.edge_id
+                offset = (distance - ref.start_distance_m if ref.forward
+                          else ref.end_distance_m - distance)
             repo.stops.append(StopTime(
                 run_id, bindings["stations"][str(stop["node_id"])], sequence,
                 stop["arrival_s"], stop["departure_s"], station_track_id=track_id,
                 station_route_id=station_route_id,
-                stop_edge_id=stop_edge, stop_offset_m=position.get("offset_m"),
+                stop_edge_id=stop_edge, stop_offset_m=offset,
             ))
     validate_repository(repo)
     return repo, {key: dict(value) for key, value in bindings.items()}

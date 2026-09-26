@@ -1,6 +1,40 @@
 from desktop.tests.test_full_corridor import fixture
 
 
+def test_shared_station_keeps_each_trains_track_position(tmp_path):
+    from desktop.domain_adapter import build_repository
+    from railscope.services.timetable.canonical import stop_distances
+
+    payload, edges = fixture()
+    # Two routes stop at different physical nodes of the same logical station.
+    payload['trains'] = [payload['trains'][1]]
+    payload['trains'][0]['stops'] = [
+        {'node_id': n, 'arrival_s': i * 100, 'departure_s': i * 100}
+        for i, n in enumerate((1, 3, 5))
+    ]
+    edges.extend([
+        dict(edges[0], id='other-a', from_node=6, to_node=7, node_ids=[6, 7]),
+        dict(edges[1], id='other-b', from_node=7, to_node=8, node_ids=[7, 8]),
+    ])
+    payload['routes'].append({'id': 'other', 'path': [
+        {'edge_id': key, 'direction': 'forward'} for key in ('other-a', 'other-b')
+    ], 'extensions': {}})
+    payload['trains'].append({'id': 'other', 'route_id': 'other', 'stops': [
+        {'node_id': n, 'arrival_s': i * 100, 'departure_s': i * 100}
+        for i, n in enumerate((6, 7, 8))
+    ], 'extensions': {}})
+    points = [{'properties': {'osm_node_id': node, 'source_station_node': 99,
+                              'name': '共同车站'}} for node in (3, 7)]
+    repo, bindings = build_repository({'edges': edges, 'points': points}, payload,
+                                      tmp_path / 'workspace.sqlite')
+    assert bindings['stations']['3'] == bindings['stations']['7']
+    for train in payload['trains']:
+        run = repo.train_runs[bindings['train_runs'][train['id']]]
+        refs = repo.corridors[run.corridor_id].edge_refs
+        distances = stop_distances(repo, refs, repo.stops_for(run.id))
+        assert 0 == distances[0] < distances[1] < distances[2]
+
+
 def test_desktop_plan_adapts_to_one_shared_domain_contract(tmp_path):
     from desktop.domain_adapter import build_repository
 
