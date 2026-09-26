@@ -897,6 +897,9 @@ class RailEditor(OperationsEditor):
                         if not isinstance(saved_membership, dict) or not isinstance(saved_membership.get("groups", {}), dict):
                             raise ValueError("通道线路归属快照无效")
                         used_ids = {entry.get("line_id") for entry in route["sequence"][1::2] if isinstance(entry, dict)}
+                        choice = route["extensions"].get(RESOLUTION_KEY, {}).get("selection", {})
+                        if policy == "auto" and route["sequence"] == choice.get("requested_sequence"):
+                            used_ids.update(entry["line_id"] for entry in choice.get("resolved_sequence", [])[1::2])
                         saved_membership = {**saved_membership, "groups": {
                             key: members for key, members in saved_membership.get("groups", {}).items() if key in used_ids
                         }}
@@ -944,8 +947,8 @@ class RailEditor(OperationsEditor):
                         requested_sequence = old_selection.get("requested_sequence", requested_sequence)
                     resolution.update({
                         "source": "automatic_reference",
-                        "method": "reachable_station_anchors_then_shortest_operating_path",
-                        "version": 1,
+                        "method": "reachable_lines_with_local_station_connections",
+                        "version": 2,
                         "verification_status": "automatic_reference_not_dispatch_verified",
                         "confidence": None,
                         "snapshot": membership.get("snapshot") if membership else "portable_reference",

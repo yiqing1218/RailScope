@@ -155,7 +155,7 @@ def test_default_dialog_apply_reopen_roundtrip_and_domain_status(qtbot, tmp_path
     resolution = route["extensions"][RESOLUTION_KEY]
     assert resolution["selection"]["requested_sequence"] == sequence
     assert resolution["selection"]["path"] == route["path"]
-    assert resolution["snapshot"] and resolution["version"] == 1
+    assert resolution["snapshot"] and resolution["version"] == 2
     corridor = editor.domain_repo.corridors[route["id"]]
     assert corridor.verification_status == "automatic_reference_not_dispatch_verified"
     assert all(ref.edge_id.startswith("NE-") for ref in corridor.edge_refs)

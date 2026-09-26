@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from itertools import groupby
+from math import cos, radians
 from pathlib import Path
 from contextlib import contextmanager, closing
 import json
@@ -19,7 +20,7 @@ except ImportError:
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
 
-INDEX_VERSION = 13
+INDEX_VERSION = 14
 
 
 def fingerprint(source, extras):
@@ -49,6 +50,23 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
     """Stream source rows; cancellation/failure leaves the previous complete index intact."""
     signature = fingerprint(source, extras)
     destination = Path(destination)
+    # Version 14 only adds endpoint lookup indexes. Upgrade existing compact
+    # indexes in place instead of decoding the national source again.
+    if destination.exists():
+        with closing(sqlite3.connect(destination)) as existing:
+            try:
+                row = existing.execute("SELECT value FROM metadata WHERE key='source'").fetchone()
+                old_signature = json.loads(row[0]) if row else []
+            except (sqlite3.Error, ValueError):
+                old_signature = []
+            if isinstance(old_signature, list) and old_signature and old_signature[0] == 13 and old_signature[1:] == json.loads(signature)[1:]:
+                progress("准备站内接轨查询索引…")
+                with existing:
+                    existing.execute("BEGIN IMMEDIATE")
+                    existing.execute("CREATE INDEX IF NOT EXISTS edge_from ON edges(a)")
+                    existing.execute("CREATE INDEX IF NOT EXISTS edge_to ON edges(b)")
+                    existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
+                return
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     db = sqlite3.connect(temporary)
     try:
@@ -56,6 +74,8 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);
             CREATE TABLE lines(id TEXT PRIMARY KEY,source_name TEXT NOT NULL,edge_count INTEGER DEFAULT 0,track_type TEXT,evidence TEXT);
             CREATE TABLE edges(id TEXT PRIMARY KEY,line_id TEXT,a,b,construction INTEGER,length_m REAL,track_type TEXT,evidence TEXT,source_way TEXT,direction TEXT);
+            CREATE INDEX edge_from ON edges(a);
+            CREATE INDEX edge_to ON edges(b);
             CREATE TABLE nodes(id PRIMARY KEY,label TEXT,kind TEXT,x REAL,y REAL);
             CREATE TABLE node_aliases(source_id PRIMARY KEY,node_id NOT NULL);
             CREATE TABLE line_nodes(line_id TEXT,node_id,PRIMARY KEY(line_id,node_id));
@@ -633,10 +653,14 @@ class DiskRailLineLibrary:
             for key, name, count in rows
         ]
 
-    def connected_lines(self, node_id, query="", limit=100):
+    def connected_lines(self, node_id, query="", limit=100, physical=False):
         """Named business lines physically connected to the selected endpoint."""
         source_ids = self._station_sources(node_id)
         override = self._station_connection_override(source_ids)
+        if physical and not (isinstance(node_id, str) and node_id.startswith("station:")):
+            # A station's business-line override does not erase the actual
+            # sidings connected to a manually chosen physical node.
+            override = None
         nodes = self.endpoint_nodes(node_id)
         if not nodes and override is None:
             return []
@@ -671,7 +695,7 @@ class DiskRailLineLibrary:
         for key, name, count, kind in rows:
             effective = self.line_name(key, name)
             effective_kind = self.metadata.get(key, {}).get("track_type", kind)
-            if not self._business_line(effective, effective_kind):
+            if not physical and not self._business_line(effective, effective_kind):
                 continue
             if query.casefold() not in (effective + " " + key + " " + name).casefold():
                 continue
@@ -919,7 +943,7 @@ class DiskRailLineLibrary:
                     (term, term, *control_args, limit - len(result)),
                 ).fetchall()
                 for node, label, kind in controls:
-                    connected_lines = self.connected_lines(node)
+                    connected_lines = self.connected_lines(node, physical=physical)
                     if line_id and not any(
                         value["id"] == line_id for value in connected_lines
                     ):
@@ -1096,12 +1120,18 @@ class DiskRailLineLibrary:
                 break
         return result
 
-    def selected_library(self, ids):
+    def selected_library(self, ids, edge_ids=None):
         # Reuse the graph resolver with only the requested lines, never the country.
         library = RailLineLibrary([], [])
         library.split_nodes = set()
         library.control_nodes = set()
         with self.connect() as db:
+            edge_clause = ""
+            if edge_ids is not None:
+                db.execute("CREATE TEMP TABLE selected_edges(id TEXT PRIMARY KEY)")
+                db.executemany("INSERT OR IGNORE INTO selected_edges VALUES(?)", ((ident,) for ident in edge_ids))
+                edge_clause = " AND id IN (SELECT id FROM selected_edges)"
+            selected_nodes = set()
             for line_id in dict.fromkeys(self.workspace.canonical(value) for value in ids):
                 # Keep the national line index small: a selected graph belongs
                 # only to this temporary resolver, not to the shared cache.
@@ -1113,7 +1143,7 @@ class DiskRailLineLibrary:
                 members = self.workspace.members(line_id)
                 marks = ",".join("?" for _ in members)
                 for ident, a, b, construction, length, kind, evidence, direction in db.execute(
-                    f"SELECT id,a,b,construction,length_m,track_type,evidence,direction FROM main.edges WHERE line_id IN ({marks}) ORDER BY id",
+                    f"SELECT id,a,b,construction,length_m,track_type,evidence,direction FROM main.edges WHERE line_id IN ({marks})" + edge_clause + " ORDER BY id",
                     members,
                 ):
                     library.edges[ident] = {
@@ -1130,18 +1160,18 @@ class DiskRailLineLibrary:
                     record["edge_ids"].append(ident)
                     record["graph"][a].append((b, ident, "forward"))
                     record["graph"][b].append((a, ident, "reverse"))
-                for row in db.execute(
-                    f"SELECT id,label,kind FROM nodes WHERE id IN (SELECT node_id FROM main.line_nodes WHERE line_id IN ({marks}))",
-                    members,
-                ):
-                    library.nodes[row[0]] = self.node_label(row)
-                    if row[1] or row[2]:
-                        library.control_nodes.add(row[0])
-                for (node,) in db.execute(
-                    f"SELECT node_id FROM main.line_nodes WHERE node_id IN (SELECT node_id FROM main.line_nodes WHERE line_id IN ({marks})) GROUP BY node_id HAVING count(DISTINCT line_id)>1",
-                    members,
-                ):
-                    library.split_nodes.add(node)
+                    selected_nodes.update((a, b))
+            db.execute("CREATE TEMP TABLE selected_nodes(id PRIMARY KEY)")
+            db.executemany("INSERT INTO selected_nodes VALUES(?)", ((node,) for node in selected_nodes))
+            for row in db.execute("SELECT id,label,kind FROM nodes WHERE id IN (SELECT id FROM selected_nodes)"):
+                library.nodes[row[0]] = self.node_label(row)
+                if row[1] or row[2]:
+                    library.control_nodes.add(row[0])
+            for (node,) in db.execute(
+                "SELECT node_id FROM main.line_nodes WHERE node_id IN (SELECT id FROM selected_nodes) "
+                "GROUP BY node_id HAVING count(DISTINCT line_id)>1"
+            ):
+                library.split_nodes.add(node)
         return library
 
     def search_sections(self, query="", line_id=None, limit=100):
@@ -1197,6 +1227,11 @@ class DiskRailLineLibrary:
     def resolve_with_sequence(self, sequence, policy="strict", selection=None):
         if not isinstance(sequence, list):
             raise ValueError("通道序列必须是数组")
+        replay = policy == "auto" and isinstance(selection, dict) and sequence in (
+            selection.get("requested_sequence"), selection.get("resolved_sequence")
+        )
+        if replay:
+            sequence = selection["resolved_sequence"]
         ids = [
             e.get("line_id")
             for e in sequence
@@ -1204,16 +1239,116 @@ class DiskRailLineLibrary:
         ]
         if any(not isinstance(key, str) or key not in self.lines for key in ids):
             raise ValueError("铁路线编号不存在，请先载入相应的铁路数据")
-        selected = self.selected_library(ids)
-        if policy == "auto" and isinstance(selection, dict) and sequence in (
-            selection.get("requested_sequence"), selection.get("resolved_sequence")
-        ):
-            sequence = selection["resolved_sequence"]
-        sequence = self.normalize_sequence(sequence, selected, policy)
-        return sequence, selected.resolve(sequence, policy, selection=selection)
+        if replay:
+            saved_path = selection.get("path")
+            if not isinstance(saved_path, list) or any(not isinstance(leg, dict) or not isinstance(leg.get("edge_id"), str) for leg in saved_path):
+                raise ValueError("已保存的参考路径字段无效")
+            selected = self.selected_library(ids, edge_ids=[leg["edge_id"] for leg in saved_path])
+            if any(leg["edge_id"] not in selected.edges for leg in saved_path):
+                raise ValueError("已保存的参考路径缺少区间或线路归属已改变，请重新编排")
+            selected.control_nodes.update(entry["node_id"] for entry in sequence[::2])
+        else:
+            selected = self.selected_library(ids)
+        try:
+            normalized = self.normalize_sequence(sequence, selected, policy)
+            return normalized, selected.resolve(normalized, policy, selection=selection)
+        except ValueError:
+            if replay or policy != "auto" or not any(
+                isinstance(entry, dict) and str(entry.get("node_id", "")).startswith("station:")
+                for entry in sequence[2:-1:2]
+            ):
+                raise
+        return self.resolve_station_transfers(sequence, selected)
 
     def resolve(self, sequence, policy="strict", selection=None):
         return self.resolve_with_sequence(sequence, policy, selection=selection)[1]
+
+    def _station_transfer_edges(self, endpoint, radius_m):
+        """RTree and endpoint indexes restrict loading to one station vicinity."""
+        sources = self._station_sources(endpoint)
+        marks = ",".join("?" for _ in sources)
+        with self.connect() as db:
+            centres = db.execute(
+                f"SELECT DISTINCT source_x,source_y FROM station_aliases WHERE source_id IN ({marks}) "
+                "AND source_x IS NOT NULL AND source_y IS NOT NULL", sources).fetchall()
+            if not centres:
+                nodes = self.endpoint_nodes(endpoint)
+                centres = db.execute(
+                    f"SELECT x,y FROM nodes WHERE id IN ({','.join('?' for _ in nodes)}) AND x IS NOT NULL AND y IS NOT NULL", nodes).fetchall()
+            db.execute("CREATE TEMP TABLE transfer_nodes(id PRIMARY KEY)")
+            for x, y in centres:
+                dy = radius_m / 110000
+                dx = dy / max(0.1, cos(radians(y)))
+                rows = db.execute(
+                    "SELECT n.id,n.x,n.y FROM node_bounds b JOIN node_spatial s ON s.rowid=b.id "
+                    "JOIN nodes n ON n.id=s.node_id WHERE b.minx<=? AND b.maxx>=? AND b.miny<=? AND b.maxy>=?",
+                    (x + dx, x - dx, y + dy, y - dy)).fetchall()
+                db.executemany("INSERT OR IGNORE INTO transfer_nodes VALUES(?)",
+                               ((node,) for node, nx, ny in rows if distance_m([x, y], [nx, ny]) <= radius_m))
+            rows = db.execute(
+                "SELECT e.id,e.line_id,e.a,e.b,e.construction,e.length_m,e.track_type,e.direction,l.source_name "
+                "FROM main.edges e JOIN main.lines l ON l.id=e.line_id "
+                "WHERE e.a IN (SELECT id FROM transfer_nodes) AND e.b IN (SELECT id FROM transfer_nodes) "
+                "AND e.construction=0 ORDER BY e.id")
+            return [{"id": ident, "line_id": self.workspace.canonical(line), "line_name": name,
+                     "from_node": a, "to_node": b, "construction": bool(construction),
+                     "length_m": length, "track_type": kind, "direction": direction}
+                    for ident, line, a, b, construction, length, kind, direction, name in rows]
+
+    def resolve_station_transfers(self, sequence, selected):
+        try:
+            from .rail_transfer import station_transfer_path
+        except ImportError:
+            from rail_transfer import station_transfer_path
+        if len(sequence) < 5 or len(sequence) % 2 != 1:
+            raise ValueError("站内换线通道必须交替填写端点和线路")
+        sequence = json.loads(json.dumps(sequence))
+        for i, entry in enumerate(sequence):
+            required = {"kind", "node_id"} if i % 2 == 0 else {"kind", "line_id"}
+            allowed = required if i % 2 == 0 else required | {"section_id"}
+            if (not isinstance(entry, dict) or not required <= entry.keys() or not entry.keys() <= allowed
+                    or entry["kind"] != ("endpoint" if i % 2 == 0 else "line")):
+                raise ValueError("通道表格字段或交替顺序无效")
+            if i % 2:
+                entry["line_id"] = self.workspace.canonical(entry["line_id"])
+        candidates, transfer_stations = [], {}
+        for row, entry in enumerate(sequence[::2]):
+            index, endpoint = row * 2, entry["node_id"]
+            lines = [sequence[i]["line_id"] for i in (index - 1, index + 1) if 0 <= i < len(sequence)]
+            if 0 < index < len(sequence) - 1 and isinstance(endpoint, str) and endpoint.startswith("station:"):
+                override = self._station_connection_override(self._station_sources(endpoint)) or []
+                if any(v.get("anchor_policy") == "fixed" and v.get("line_id") in lines for v in override):
+                    # Explicit anchor constraints must not be relaxed by a fallback.
+                    choices = self.endpoint_candidates(endpoint, lines)
+                else:
+                    per_line = [self.endpoint_candidates(endpoint, [line]) for line in lines]
+                    choices = list(dict.fromkeys(node for values in per_line for node in values)) if all(per_line) else []
+                transfer_stations[row] = endpoint
+            else:
+                choices = self.endpoint_candidates(endpoint, lines)
+            if not choices:
+                raise ValueError(f"{self.endpoint_label(endpoint)} 缺少所选线路的有效接轨点，请检查人工接轨设置")
+            candidates.append(choices)
+        gaps = [self._anchor_distances(entry["node_id"], choices)
+                for entry, choices in zip(sequence[::2], candidates)]
+        base_edges = {ident: {**edge, "line_id": selected.edge_lines[ident]}
+                      for ident, edge in selected.edges.items()}
+        # Most crossovers are within 3 km; expand only on failure. No national
+        # geometry or unrelated complete mainlines are loaded for connections.
+        for radius in (3000, 8000, 20000):
+            edges, local = dict(base_edges), {}
+            for row, endpoint in transfer_stations.items():
+                nearby = self._station_transfer_edges(endpoint, radius)
+                local[row] = {edge["id"] for edge in nearby}
+                edges.update((edge["id"], edge) for edge in nearby)
+            graph = RailLineLibrary(edges.values(), [])
+            graph.control_nodes.update(selected.control_nodes)
+            graph.split_nodes = selected.split_nodes
+            try:
+                return station_transfer_path(graph, sequence, candidates, local, gaps)
+            except ValueError as error:
+                last_error = str(error)
+        raise ValueError(last_error + "；已检查换线站周边 20 km 的真实轨道，请核对缺失连接或手工指定中间端点")
 
     def _anchor_distances(self, endpoint, candidates):
         if not isinstance(endpoint, str) or not endpoint.startswith("station:"):

@@ -355,7 +355,7 @@ class CorridorPanel(QWidget):
             text_label(
                 "基础设施来源："
                 + source
-                + "。默认按所选车站和线路自动选择连续参考路径，应用后保存；需要时可改端点或指定物理区间。",
+                + "。默认自动选择连续参考路径，并补齐换线站前后的真实连接轨；需要时可改端点或指定物理区间。",
                 wrap=True,
             )
         )
@@ -381,7 +381,7 @@ class CorridorPanel(QWidget):
         physical.setEnabled(hasattr(library, "workspace"))
         form.addRow(physical)
         physical.toggled.connect(lambda: [setattr(table.cellWidget(row, col), "_choices_dirty", True)
-                                          for row in range(table.rowCount()) for col in (0, 2)])
+                                          for row in range(table.rowCount()) for col in (0, 1, 2)])
         conflicts = getattr(getattr(library, "workspace", None), "conflicts", [])
         if conflicts:
             form.addRow(text_label(f"有 {len(conflicts)} 个工作区组合缺少源线路成员，请拆分这些组合并重新核对归属。", wrap=True))
@@ -420,7 +420,8 @@ class CorridorPanel(QWidget):
                             ] if row else []
                         return [
                             (r["id"], r["name"])
-                            for r in library.connected_lines(endpoint, query)
+                            for r in library.connected_lines(endpoint, query, **(
+                                {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}))
                         ]
 
                     label = (
@@ -528,7 +529,8 @@ class CorridorPanel(QWidget):
                         start_choice.setCurrentIndex(-1)
                     start_choice.blockSignals(False)
                     if selected_line is None or value is None or selected_line not in {
-                        candidate["id"] for candidate in library.connected_lines(value)
+                        candidate["id"] for candidate in library.connected_lines(value, **(
+                            {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}))
                     }:
                         start_changed()
 
@@ -547,6 +549,20 @@ class CorridorPanel(QWidget):
         if not sequence:
             add_row()
         form.addRow(table)
+        if route and saved_selection.get("resolved_sequence") != saved_selection.get("requested_sequence"):
+            expand = QPushButton("展开已保存的实际轨道路径，手工调整连接轨…")
+            expand.setObjectName("corridorExpandResolvedPath")
+
+            def expand_saved():
+                table.setRowCount(0)
+                physical.setChecked(True)
+                actual = route.get("sequence", [])
+                for index in range(1, len(actual), 2):
+                    add_row(actual[index - 1]["node_id"], actual[index]["line_id"],
+                            actual[index].get("section_id"), actual[index + 1]["node_id"])
+
+            expand.clicked.connect(expand_saved)
+            form.addRow(expand)
         actions = QHBoxLayout()
         add = QPushButton("添加线路组合段")
         add.clicked.connect(
