@@ -1,6 +1,7 @@
 """Compact disk-backed line directory. Load graph data only for selected lines."""
 
 from collections.abc import Mapping
+from collections import OrderedDict
 from itertools import groupby
 from math import cos, radians
 from pathlib import Path
@@ -414,6 +415,8 @@ class DiskRailLineLibrary:
         self._station_groups = {}
         self._station_group_labels = {}
         self._parallel_anchors = {}
+        self._reachable_cache = OrderedDict()
+        self._connection_cache = OrderedDict()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
         self.lines = _DirectoryMapping(self, "lines")
@@ -685,13 +688,7 @@ class DiskRailLineLibrary:
                 order = {line_id: index for index, line_id in enumerate(selected)}
                 rows.sort(key=lambda row: order.get(row[0], len(order)))
             else:
-                marks = ",".join("?" for _ in nodes)
-                rows = db.execute(
-                    "SELECT DISTINCT l.id,l.source_name,l.edge_count,l.track_type FROM lines l "
-                    f"WHERE l.id IN (SELECT line_id FROM line_nodes WHERE node_id IN ({marks})) "
-                    "ORDER BY CASE WHEN l.source_name LIKE '未命名轨道%' THEN 1 ELSE 0 END,l.source_name,l.id LIMIT 500",
-                    nodes,
-                ).fetchall()
+                rows = self._connected_rows(db, nodes)
         result = []
         for key, name, count, kind in rows:
             effective = self.line_name(key, name)
@@ -709,6 +706,29 @@ class DiskRailLineLibrary:
             if len(result) >= limit:
                 break
         return result
+
+    def _connected_rows(self, db, nodes):
+        """Resolve indexed node memberships before reading the workspace view.
+
+        An IN subquery on the UNION view made SQLite scan every national line
+        once per station. Bound primary-key lookups avoid that query plan.
+        """
+        key = tuple(sorted(set(nodes), key=str))
+        if key in self._connection_cache:
+            self._connection_cache.move_to_end(key)
+            return self._connection_cache[key]
+        ids = set()
+        for start in range(0, len(key), 800):
+            part = key[start:start + 800]
+            ids.update(self.workspace.canonical(row[0]) for row in db.execute(
+                f"SELECT DISTINCT line_id FROM main.line_nodes WHERE node_id IN ({','.join('?' for _ in part)})", part))
+        rows = [db.execute("SELECT id,source_name,edge_count,track_type FROM lines WHERE id=?", (ident,)).fetchone()
+                for ident in sorted(ids)]
+        rows = sorted((row for row in rows if row), key=lambda row: (row[1].startswith('未命名轨道'), row[1], row[0]))
+        self._connection_cache[key] = rows
+        if len(self._connection_cache) > 512:
+            self._connection_cache.popitem(last=False)
+        return rows
 
     def endpoint_nodes(self, endpoint):
         if isinstance(endpoint, str) and endpoint.startswith("station:"):
@@ -833,14 +853,8 @@ class DiskRailLineLibrary:
             def connected_names(nodes):
                 if not nodes:
                     return []
-                marks = ",".join("?" for _ in nodes)
                 values = []
-                for ident, source_name, kind in db.execute(
-                        "SELECT DISTINCT l.id,l.source_name,l.track_type FROM lines l "
-                        f"WHERE l.id IN (SELECT line_id FROM line_nodes WHERE node_id IN ({marks})) "
-                        "ORDER BY CASE WHEN l.source_name LIKE '未命名轨道%' THEN 1 ELSE 0 END,l.source_name,l.id",
-                        nodes,
-                    ):
+                for ident, source_name, _, kind in self._connected_rows(db, nodes):
                     effective = self.line_name(ident, source_name)
                     effective_kind = self.metadata.get(ident, {}).get("track_type", kind)
                     if (
@@ -960,6 +974,10 @@ class DiskRailLineLibrary:
 
     def reachable_nodes(self, from_node, line_id, query="", limit=100, physical=False):
         """Named/control endpoints reachable on one selected physical line."""
+        key = (from_node, line_id, query, limit, physical)
+        if key in self._reachable_cache:
+            self._reachable_cache.move_to_end(key)
+            return list(self._reachable_cache[key])
         if line_id not in self.lines:
             return []
         selected = self.selected_library([line_id])
@@ -989,7 +1007,11 @@ class DiskRailLineLibrary:
                  != start_key)
             and any(node in reachable for node in self.endpoint_candidates(item[0], [line_id]))
         ]
-        return result[:limit]
+        result = result[:limit]
+        self._reachable_cache[key] = result
+        if len(self._reachable_cache) > 32:
+            self._reachable_cache.popitem(last=False)
+        return list(result)
 
     def line_stations(self, line_id, query=""):
         """The same station/override contract used by the corridor picker."""
@@ -1102,9 +1124,12 @@ class DiskRailLineLibrary:
                 sources).fetchall()
             if centres:
                 members = self.workspace.members(line_id)
+                longitude_pad = .025 / max(.1, min(cos(radians(y)) for _, y in centres))
+                bounds = (min(x for x, _ in centres) - longitude_pad, max(x for x, _ in centres) + longitude_pad,
+                          min(y for _, y in centres) - .025, max(y for _, y in centres) + .025)
                 rows = db.execute(
                     "SELECT DISTINCT n.id,n.x,n.y FROM nodes n JOIN main.line_nodes ln ON ln.node_id=n.id "
-                    f"WHERE ln.line_id IN ({','.join('?' for _ in members)}) AND n.x IS NOT NULL AND n.y IS NOT NULL", members).fetchall()
+                    f"WHERE ln.line_id IN ({','.join('?' for _ in members)}) AND n.x BETWEEN ? AND ? AND n.y BETWEEN ? AND ?", (*members, *bounds)).fetchall()
                 gaps = {node: min(distance_m([x,y], centre) for centre in centres) for node,x,y in rows}
                 nearby = {node for node,gap in gaps.items() if gap <= 2500}
                 graph = {node: set() for node in nearby}

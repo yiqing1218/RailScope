@@ -3,6 +3,7 @@
 from contextlib import closing
 import gc
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
@@ -275,7 +276,7 @@ def sync_directory(path):
         db.commit()
 
 
-def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT, route_keys=None):
+def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT, route_keys=None, zoom=None):
     if not Path(path).is_file():
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     west, south, east, north = bbox
@@ -283,6 +284,21 @@ def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT, route_keys=None):
         raise ValueError("视窗无效")
     if type(limit) is not int or not 1 <= limit <= 100000:
         raise ValueError("视窗上限无效")
+    if zoom is not None and (not math.isfinite(zoom) or not 0 <= zoom <= 24):
+        raise ValueError('缩放级别无效')
+    if route_keys is not None and (not isinstance(route_keys, list) or len(route_keys) > 100000
+                                   or any(not isinstance(key, str) for key in route_keys)):
+        raise ValueError('高速线路选择过大')
+    if route_keys == [] and not route_key:
+        return {"type": "FeatureCollection", "features": [], "truncated": False}
+    def overview():
+        try:
+            from .road_overview import viewport as overview_viewport
+        except ImportError:
+            from road_overview import viewport as overview_viewport
+        return overview_viewport(path, bbox, zoom, route_key, route_keys)
+    if zoom is not None and zoom <= 9:
+        return overview()
     with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)) as db:
         db.execute("PRAGMA cache_size=-2048")
         if route_keys is not None and route_key is None:
@@ -314,5 +330,7 @@ def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT, route_keys=None):
                 (west, east, south, north, limit + 1),
             )
         values = [json.loads(raw) for (raw,) in rows]
+    if len(values) > limit and zoom is not None:
+        return overview()
     return {"type": "FeatureCollection", "features": values[:limit],
             "truncated": len(values) > limit}

@@ -334,6 +334,9 @@ class CorridorPanel(QWidget):
         create = QPushButton("新建单向通道…")
         create.clicked.connect(lambda: self.edit_table(None))
         layout.addWidget(create)
+        remove = QPushButton('删除所选通道')
+        remove.clicked.connect(self.delete_selected)
+        layout.addWidget(remove)
         save = QPushButton("保存通道与国铁车次")
         save.clicked.connect(self.save)
         layout.addWidget(save)
@@ -451,6 +454,8 @@ class CorridorPanel(QWidget):
         route_id = item.data(0, Qt.ItemDataRole.UserRole)
         train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
         menu = QMenu(self)
+        menu.addAction('编辑通道…', lambda: self.edit_table(route_id))
+        menu.addAction('删除通道', lambda: self.delete_selected(route_id))
         menu.addAction("查看引用关系…", lambda: self.show_references(route_id, train_id))
         menu.exec(self.tree.viewport().mapToGlobal(position))
         menu.deleteLater()
@@ -480,6 +485,20 @@ class CorridorPanel(QWidget):
     def save(self):
         self.editor.save()
         self.note.setText(self.editor.message.text())
+
+    def delete_selected(self, ident=None):
+        item = self.tree.currentItem()
+        if not isinstance(ident, str):
+            ident = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        if not ident:
+            self.note.setText('请先选择要删除的通道')
+            return
+        try:
+            self.editor.delete_corridor(ident)
+            self.refresh()
+            self.note.setText('通道已删除，可在编辑菜单撤销')
+        except ValueError as error:
+            QMessageBox.warning(self, '通道未删除', str(error))
 
     def edit_selected(self):
         item = self.tree.currentItem()

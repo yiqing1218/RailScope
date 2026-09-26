@@ -237,9 +237,10 @@ async function updateRoadViewport(){
   roadController?.abort();const controller=new AbortController();roadController=controller;
   const request=++roadRequest,b=map.getBounds(),dx=Math.max(.02,(b.getEast()-b.getWest())/8),dy=Math.max(.02,(b.getNorth()-b.getSouth())/8);
   const bbox=[Math.max(-180,Math.floor((b.getWest()-dx)/dx)*dx),Math.max(-85,Math.floor((b.getSouth()-dy)/dy)*dy),Math.min(180,Math.ceil((b.getEast()+dx)/dx)*dx),Math.min(85,Math.ceil((b.getNorth()+dy)/dy)*dy)].map(value=>Number(value.toFixed(5))).join(',');
-  const key=JSON.stringify([bbox,roadRouteSelection,roadVisibleRoutes]);
+  const zoom=Math.floor(map.getZoom());
+  const key=JSON.stringify([bbox,zoom,roadRouteSelection,roadVisibleRoutes]);
   if(key===roadSourceKey)return;
-  const params=new URLSearchParams({bbox});
+  const params=new URLSearchParams({bbox,zoom:String(zoom)});
   if(roadRouteSelection)params.set('route',roadRouteSelection);
   else if(roadVisibleRoutes!==null)params.set('routes',JSON.stringify(roadVisibleRoutes));
   try{

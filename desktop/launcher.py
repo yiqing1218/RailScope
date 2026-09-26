@@ -337,6 +337,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     [float(value) for value in query["bbox"][0].split(",")],
                     route_key,
                     route_keys=selected,
+                    zoom=float(query.get('zoom', ['12'])[0]),
                 )
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
@@ -1003,6 +1004,11 @@ class Desk(QMainWindow):
         edit = bar.addMenu("编辑")
         self.add_action(edit, "撤销目录调整", lambda: self.rail_catalog_widget.undo_catalog(), "Ctrl+Z")
         self.add_action(edit, "重做目录调整", lambda: self.rail_catalog_widget.redo_catalog(), "Ctrl+Y")
+        edit.addSeparator()
+        self.add_action(edit, '编辑选中通道…', lambda: self.corridor_panel.edit_selected())
+        self.add_action(edit, '删除选中通道', lambda: self.corridor_panel.delete_selected())
+        self.add_action(edit, '撤销通道 / 车次编辑', self.rail_operations.undo)
+        self.add_action(edit, '重做通道 / 车次编辑', self.rail_operations.redo)
         edit.addSeparator()
         self.add_action(edit, "单击选择工具", lambda: self.set_map_selection_mode("click"), "V")
         self.add_action(edit, "框选工具", lambda: self.set_map_selection_mode("box"), "B")

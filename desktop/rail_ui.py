@@ -1727,17 +1727,37 @@ class RailEditor(OperationsEditor):
             )
         self.changed("车次已添加；复用共享轨道径路，可逐站编辑时刻")
 
+    def delete_corridor(self, ident):
+        before = self.document()
+        if ident not in {route['id'] for route in before['routes']}:
+            raise ValueError('所选通道不存在')
+        trains = [train['id'] for train in before['trains'] if train['route_id'] == ident]
+        if trains:
+            raise ValueError('通道仍被车次引用，请先删除或调整这些车次：' + '、'.join(trains))
+        payload = deepcopy(before)
+        payload['routes'] = [route for route in payload['routes'] if route['id'] != ident]
+        self.accept_batch(payload, before)
+        self.changed('通道已删除，可撤销；共享基础设施保留')
+
+    def import_station_choices(self, payload):
+        try:
+            from .rail_station_import import station_choices
+        except ImportError:
+            from rail_station_import import station_choices
+        library = self.line_library() if (self.directory / 'rail_lines.sqlite').exists() else None
+        return station_choices(payload, self.graph['edges'], self.graph['points'], library)
+
     def import_table(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "批量导入国铁车次表", str(Path(self.path).parent), "UTF-8 CSV (*.csv)"
         )
         if path:
             try:
-                self.accept_batch(
-                    merge_csv(
-                        Path(path).read_text(encoding="utf-8-sig"), self.document()
-                    )
-                )
+                before = self.document()
+                payload = merge_csv(Path(path).read_text(encoding='utf-8-sig'), before,
+                                    choices=self.import_station_choices(before))
+                self.accept_batch(payload, before)
+                self.message.setText('车次已导入；站名已匹配现有通道与站内位置，可撤销')
             except (ValueError, OSError, KeyError, TypeError) as error:
                 QMessageBox.warning(self, "整批未导入，原计划保留", str(error))
 
@@ -1763,7 +1783,8 @@ class RailEditor(OperationsEditor):
         )
         if path:
             try:
-                Path(path).write_text(export_template(self.document()), encoding="utf-8-sig")
+                payload = self.document()
+                Path(path).write_text(export_template(payload, self.import_station_choices(payload)), encoding="utf-8-sig")
                 self.message.setText("国铁车次导入模板已保存")
             except (ValueError, OSError) as error:
                 QMessageBox.warning(self, "模板未保存", str(error))
