@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
     QMenu,
+    QCheckBox,
 )
 
 try:
@@ -81,18 +82,30 @@ class SearchChoice(QComboBox):
             self.completer().complete()
 
     def showPopup(self):
-        if not self.count():
-            for key, label in self.search(""):
-                self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
-            self.setCurrentIndex(-1)
+        self.load_choices()
         super().showPopup()
+
+    def load_choices(self):
+        if self.count() and not getattr(self, "_choices_dirty", False):
+            return
+        value, label = self.currentData(), self.currentText()
+        self.blockSignals(True)
+        try:
+            self.clear()
+            for key, text in self.search(""):
+                self.addItem(text if isinstance(key, str) else f"{text} · {key}", key)
+            index = self.findData(value) if value is not None else -1
+            if value is not None and index < 0:
+                self.addItem(label, value)
+                index = self.count() - 1
+            self.setCurrentIndex(index)
+            self._choices_dirty = False
+        finally:
+            self.blockSignals(False)
 
     def wheelEvent(self, event):
         # The endpoint picker can be stepped through without opening its menu.
-        if not self.count():
-            for key, label in self.search(""):
-                self.addItem(label if isinstance(key, str) else f"{label} · {key}", key)
-            self.setCurrentIndex(-1)
+        self.load_choices()
         if self.count():
             step = -1 if event.angleDelta().y() > 0 else 1
             current = self.currentIndex()
@@ -355,6 +368,15 @@ class CorridorPanel(QWidget):
             ["起点 / 换线端点", "从该点可选的铁路线", "该线路上可到达的下一端点"]
         )
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        physical = QCheckBox("手工轨道端点：显示道岔和真实轨道节点，用于消除多径路歧义")
+        physical.setObjectName("corridorPhysicalEndpoints")
+        physical.setEnabled(hasattr(library, "workspace"))
+        form.addRow(physical)
+        physical.toggled.connect(lambda: [setattr(table.cellWidget(row, col), "_choices_dirty", True)
+                                          for row in range(table.rowCount()) for col in (0, 2)])
+        conflicts = getattr(getattr(library, "workspace", None), "conflicts", [])
+        if conflicts:
+            form.addRow(text_label(f"有 {len(conflicts)} 个工作区组合缺少源线路成员，请拆分这些组合并重新核对归属。", wrap=True))
 
         def suggest_name():
             if manual_name[0] or not table.rowCount():
@@ -407,6 +429,7 @@ class CorridorPanel(QWidget):
                             start,
                             selected_line,
                             query,
+                            **({"physical": physical.isChecked()} if hasattr(library, "workspace") else {}),
                         )
 
                     label = (
@@ -421,7 +444,9 @@ class CorridorPanel(QWidget):
                 else:
 
                     def search(query):
-                        return library.search_endpoints(query)
+                        return library.search_endpoints(query, **(
+                            {"physical": physical.isChecked()} if hasattr(library, "workspace") else {}
+                        ))
 
                     label = (
                         (
@@ -454,10 +479,12 @@ class CorridorPanel(QWidget):
                 combo.blockSignals(False)
 
             def start_changed():
+                line_choice.setProperty("sectionId", None)
                 clear_choice(line_choice)
                 clear_choice(end_choice)
 
             def line_changed():
+                line_choice.setProperty("sectionId", None)
                 clear_choice(end_choice)
                 if row and hasattr(library, "common_transfer_endpoint"):
                     previous_start = table.cellWidget(row - 1, 0).currentData()
@@ -474,6 +501,10 @@ class CorridorPanel(QWidget):
 
             start_choice.currentIndexChanged.connect(start_changed)
             line_choice.currentIndexChanged.connect(line_changed)
+            end_choice.currentIndexChanged.connect(lambda: line_choice.setProperty("sectionId", None))
+            line_choice.setProperty("sectionId", section)
+            if section:
+                line_choice.setToolTip("已指定物理区间：" + section)
             if row:
                 previous_end = table.cellWidget(row - 1, 2)
 
@@ -527,6 +558,67 @@ class CorridorPanel(QWidget):
         )
         actions.addWidget(add)
         actions.addWidget(remove)
+        choose_section = QPushButton("选择本行物理区间…")
+
+        def select_section():
+            row = table.currentRow() if table.currentRow() >= 0 else table.rowCount() - 1
+            if row < 0:
+                return
+            line_choice = table.cellWidget(row, 1)
+            line = line_choice.currentData()
+            if line not in library.lines:
+                QMessageBox.information(dialog, "选择物理区间", "请先为这一行选择铁路线。")
+                return
+            picker = QDialog(dialog)
+            picker.setWindowTitle("选择真实物理区间与方向")
+            picker.resize(780, 220)
+            layout = QFormLayout(picker)
+            choice = SearchChoice(
+                lambda query: [(entry["id"], entry["name"] + " · " + entry["id"])
+                               for entry in library.search_sections(query, line)],
+                "搜索区间、道岔或端点编号",
+            )
+            direction = QComboBox()
+            direction.addItems(["区间起点 → 终点", "区间终点 → 起点"])
+            layout.addRow("物理区间", choice)
+            layout.addRow("方向", direction)
+            layout.addRow(text_label("按实际拓扑决策点分段；选择后本行使用区间的真实起终点。", wrap=True))
+            controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            controls.accepted.connect(picker.accept)
+            controls.rejected.connect(picker.reject)
+            layout.addRow(controls)
+            if picker.exec() != QDialog.DialogCode.Accepted:
+                return
+            try:
+                section = library.section(choice.currentData(), line)
+                a, b = section["from_node"], section["to_node"]
+                if direction.currentIndex():
+                    a, b = b, a
+                if row:
+                    previous = table.cellWidget(row - 1, 2).currentData()
+                    if a not in library.endpoint_nodes(previous):
+                        raise ValueError("所选区间起点与上一行终点不一致，请先调整上一行或选择其他方向。")
+
+                def assign(combo, value, label):
+                    combo.blockSignals(True)
+                    combo.clear()
+                    combo.addItem(label, value)
+                    combo.setCurrentIndex(0)
+                    combo.blockSignals(False)
+
+                if row:
+                    assign(table.cellWidget(row - 1, 2), a, library.endpoint_label(a))
+                assign(table.cellWidget(row, 0), a, library.endpoint_label(a))
+                end = table.cellWidget(row, 2)
+                assign(end, b, library.endpoint_label(b))
+                end.currentIndexChanged.emit(0)
+                line_choice.setProperty("sectionId", section["id"])
+                line_choice.setToolTip("已指定物理区间：" + section["id"])
+            except (ValueError, KeyError) as error:
+                QMessageBox.warning(dialog, "区间未选择", str(error))
+
+        choose_section.clicked.connect(select_section)
+        actions.addWidget(choose_section)
         up = QPushButton("上移组合段")
         down = QPushButton("下移组合段")
 
@@ -553,11 +645,11 @@ class CorridorPanel(QWidget):
                         self.note.setText("请先选择有效端点和铁路线，再移动组合段。")
                         return
                     entries.append(value)
-                values.append(entries)
+                values.append((*entries, table.cellWidget(index, 1).property("sectionId")))
             values[row], values[target] = values[target], values[row]
             table.setRowCount(0)
-            for a, line, b in values:
-                add_row(a, line, None, b)
+            for a, line, b, section in values:
+                add_row(a, line, section, b)
             table.selectRow(target)
 
         up.clicked.connect(lambda: move(-1))
@@ -612,8 +704,12 @@ class CorridorPanel(QWidget):
                         raise ValueError("相邻组合段必须共用同一个端点")
                     if row == 0:
                         result.append({"kind": "endpoint", "node_id": a})
+                    line_entry = {"kind": "line", "line_id": line}
+                    section_id = table.cellWidget(row, 1).property("sectionId")
+                    if section_id:
+                        line_entry["section_id"] = section_id
                     result.extend([
-                        {"kind": "line", "line_id": line},
+                        line_entry,
                         {"kind": "endpoint", "node_id": b},
                     ])
                 if not name.text().strip():

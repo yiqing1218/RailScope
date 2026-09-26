@@ -686,12 +686,17 @@ class RailEditor(OperationsEditor):
             from .rail_lines import RailLineLibrary
         except ImportError:
             from rail_lines import RailLineLibrary
-        library = RailLineLibrary(self.graph["edges"], self.graph["points"])
+        base_library = RailLineLibrary(self.graph["edges"], self.graph["points"])
         corridors = []
         for route in payload["routes"]:
+            membership = route["extensions"].get("railscope.org/line-membership")
+            library = (RailLineLibrary(self.graph["edges"], self.graph["points"], membership=membership)
+                       if membership else base_library)
             sequence = route.get("sequence") or library.describe(route["path"])
             if hasattr(library, "normalize_sequence"):
                 sequence = library.normalize_sequence(sequence)
+            library.control_nodes.update(entry["node_id"] for entry in sequence[::2]
+                                         if isinstance(entry, dict) and "node_id" in entry)
             if (
                 library.resolve(sequence, resolution_policy(route["extensions"]))
                 != route["path"]
@@ -742,6 +747,7 @@ class RailEditor(OperationsEditor):
         stamp = database.stat().st_mtime_ns if database.exists() else None
         names_path = Path(self.path).parent / "rail_line_names.json"
         metadata_path = self.catalog_metadata_path
+        shared_metadata_path = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
         # The national index belongs only to the infrastructure snapshot.
         # Bundled/loaded plan edges are DTO data and must never change its
         # fingerprint, otherwise opening a plan rebuilds the 3 GB source index.
@@ -750,6 +756,7 @@ class RailEditor(OperationsEditor):
             stamp,
             names_path.stat().st_mtime_ns if names_path.exists() else None,
             metadata_path.stat().st_mtime_ns if metadata_path.exists() else None,
+            shared_metadata_path.stat().st_mtime_ns if shared_metadata_path.exists() else None,
         )
         if getattr(self, "_line_library_signature", None) == signature:
             return self._line_library
@@ -763,6 +770,10 @@ class RailEditor(OperationsEditor):
             if metadata_path.exists()
             else {}
         )
+        shared_metadata = (json.loads(shared_metadata_path.read_text(encoding="utf-8"))
+                           if shared_metadata_path.exists() else {})
+        metadata = {key: {**shared_metadata.get(key, {}), **metadata.get(key, {})}
+                    for key in shared_metadata.keys() | metadata.keys()}
         if database.exists():
             index = database.with_name("rail_lines.sqlite")
             if not index_ready(index, fingerprint(database, [])):
@@ -877,22 +888,43 @@ class RailEditor(OperationsEditor):
                 # rather than one of its physical rail anchors.  Persist the
                 # resolved endpoint sequence so the portable corridor remains
                 # valid without the station-alias index.
-                route["sequence"] = library.normalize_sequence(route["sequence"])
+                route_library = library
+                membership_key = "railscope.org/line-membership"
+                if hasattr(library, "with_membership"):
+                    saved_membership = route["extensions"].get(membership_key)
+                    if saved_membership:
+                        if not isinstance(saved_membership, dict) or not isinstance(saved_membership.get("groups", {}), dict):
+                            raise ValueError("通道线路归属快照无效")
+                        used_ids = {entry.get("line_id") for entry in route["sequence"][1::2] if isinstance(entry, dict)}
+                        saved_membership = {**saved_membership, "groups": {
+                            key: members for key, members in saved_membership.get("groups", {}).items() if key in used_ids
+                        }}
+                    route_library = library.with_membership(saved_membership)
+
+                def resolve(report):
+                    report("校验端点并组合既有物理线路…")
+                    if hasattr(route_library, "resolve_with_sequence"):
+                        sequence, path = route_library.resolve_with_sequence(route["sequence"], policy)
+                    else:
+                        sequence = route_library.normalize_sequence(route["sequence"])
+                        path = route_library.resolve(sequence, policy)
+                    membership = (route_library.membership_provenance(sequence)
+                                  if hasattr(route_library, "membership_provenance") else None)
+                    report("物理线路组合已完成")
+                    return sequence, path, membership
+
                 if interactive and hasattr(library, "connect"):
                     try:
                         from .background_work import prepare_with_progress
                     except ImportError:
                         from background_work import prepare_with_progress
 
-                    def resolve(report):
-                        report("校验端点并组合既有物理线路…")
-                        result = library.resolve(route["sequence"], policy)
-                        report("物理线路组合已完成")
-                        return result
-
-                    route["path"] = prepare_with_progress(self, "校验单向通道", resolve)
+                    resolved = prepare_with_progress(self, "校验单向通道", resolve)
                 else:
-                    route["path"] = library.resolve(route["sequence"], policy)
+                    resolved = resolve(lambda text: None)
+                route["sequence"], route["path"], membership = resolved
+                if membership:
+                    route["extensions"][membership_key] = membership
                 route["extensions"][RESOLUTION_KEY] = {
                     **route["extensions"].get(RESOLUTION_KEY, {}),
                     "policy": policy,

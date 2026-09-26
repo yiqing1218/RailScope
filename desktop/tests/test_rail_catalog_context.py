@@ -481,7 +481,8 @@ def test_station_connection_override_persists_and_updates_station_directory(
     widget.save_station_override("node/100", connected_lines=[connection])
     stored = json.loads(settings.read_text(encoding="utf-8"))
     assert stored["station:node/100"]["connected_lines"] == [
-        {**connection, "distance_m": 52.1}
+        {**connection, "distance_m": 52.1, "anchor_policy": "auto_reachable",
+         "anchor_verification_status": "automatic_nearest_hint"}
     ]
     assert widget.station_records[0]["line_ids"] == ["RL-B"]
     assert "RL-B" in widget.station_items["node/100"].toolTip(0)

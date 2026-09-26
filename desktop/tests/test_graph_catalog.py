@@ -298,6 +298,8 @@ def test_manual_station_connections_replace_detected_lines_and_bind_real_nearby_
             "distance_m": pytest.approx(connections[0]["distance_m"]),
             "source": "manual",
             "verification_status": "user_verified",
+            "anchor_policy": "auto_reachable",
+            "anchor_verification_status": "automatic_nearest_hint",
         }
     ]
     assert connections[0]["distance_m"] < 100
@@ -313,6 +315,7 @@ def test_manual_station_connections_replace_detected_lines_and_bind_real_nearby_
         value for value, _label in overridden.search_endpoints("测试站", line_id="RL-B")
     }
     assert overridden.reachable_nodes(endpoint, "RL-B", "乙线终点")[0][0] == "station:node/4"
+    assert overridden.reachable_nodes("station:node/4", "RL-B", "测试站")[0][0] == endpoint
 
     with pytest.raises(ValueError, match="没有找到.*真实轨道节点"):
         base.station_connection_override(endpoint, ["RL-FAR"])

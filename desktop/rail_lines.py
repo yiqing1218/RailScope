@@ -185,7 +185,12 @@ def line_identity(edge):
 
 
 class RailLineLibrary:
-    def __init__(self, edges, points, names=None):
+    def __init__(self, edges, points, names=None, membership=None):
+        try:
+            from .rail_line_workspace import membership_targets
+        except ImportError:
+            from rail_line_workspace import membership_targets
+        targets = membership_targets(membership)
         self.edges = {e["id"]: e for e in edges}
         self.lines, self.edge_lines, self.nodes = {}, {}, {}
         self.endpoint_aliases = {}
@@ -210,6 +215,8 @@ class RailLineLibrary:
                 self.control_nodes.add(node_id)
         for edge in self.edges.values():
             ident, source_name = line_identity(edge)
+            ident = targets.get(ident, ident)
+            source_name = (membership or {}).get("names", {}).get(ident, source_name)
             record = self.lines.setdefault(
                 ident,
                 {
@@ -381,10 +388,12 @@ class RailLineLibrary:
                 else:
                     raise ValueError("所选 RS 区间的真实端点与本行起终点不一致")
                 if any(
-                    not traversal_allowed(self.edges[leg["edge_id"]], leg["direction"])
+                    self.edges[leg["edge_id"]].get("construction")
+                    or self.edges[leg["edge_id"]].get("construction_status", "operating") != "operating"
+                    or not traversal_allowed(self.edges[leg["edge_id"]], leg["direction"])
                     for leg in directed_section
                 ):
-                    raise ValueError("所选 RS 区间不允许当前运行方向")
+                    raise ValueError("所选 RS 区间非运营状态或不允许当前运行方向")
                 path.extend(directed_section)
                 continue
             previous = {a: None}

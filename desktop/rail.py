@@ -590,7 +590,12 @@ def validate_corridors(routes, edges):
                     if leg["edge_id"] in lookup
                 ],
                 [],
+                membership=route["extensions"].get("railscope.org/line-membership"),
             )
+            # A saved path is a subset of the national graph. Preserve its
+            # explicit section boundaries even if off-path branches aren't loaded.
+            library.control_nodes.update(entry["node_id"] for entry in library.normalize_sequence(route["sequence"])[::2]
+                                         if isinstance(entry, dict) and "node_id" in entry)
             if (
                 library.resolve(
                     route["sequence"], resolution_policy(route["extensions"])

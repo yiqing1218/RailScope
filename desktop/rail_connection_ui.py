@@ -30,7 +30,7 @@ class StationConnectionSelector(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
             text_label(
-                "人工结果将替代自动识别。保存时逐条核验附近真实轨道节点。",
+                "手工指定接轨线路；通道按连通关系匹配端点。需要固定股道时，请在通道编排中选择物理区间。",
                 wrap=True,
             )
         )

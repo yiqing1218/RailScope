@@ -23,10 +23,12 @@ try:
     from .rail import migrate_legacy_train_paths, shared_document
     from .rail_lines import line_identity
     from .rail_categories import track_type
+    from .rail_line_workspace import membership_targets, MEMBERSHIP_KEY
 except ImportError:
     from rail import migrate_legacy_train_paths, shared_document
     from rail_lines import line_identity
     from rail_categories import track_type
+    from rail_line_workspace import membership_targets, MEMBERSHIP_KEY
 
 
 def _length(edge):
@@ -94,6 +96,30 @@ def _build_repository(graph, payload, registry, identity_db):
             verification_status=edge.get("verification_status", "OSM-derived"),
         )
         repo.memberships.append(LineMembership(canonical, line_id, source_id, "OSM-derived"))
+    # Workspace groupings are additional memberships on the shared physical
+    # edges. They never duplicate geometry or overwrite original ownership.
+    known_memberships = {(entry.edge_id, entry.line_id) for entry in repo.memberships}
+    source_edges = {edge["id"]: edge for edge in graph["edges"]}
+    for route in document["routes"]:
+        snapshot = route.get("extensions", {}).get(MEMBERSHIP_KEY)
+        targets = membership_targets(snapshot)
+        for leg in route["path"]:
+            edge = source_edges[leg["edge_id"]]
+            group = targets.get(line_identity(edge)[0])
+            if not group:
+                continue
+            line_id = group if group.startswith("IL-") else registry.resolve_alias("line", group, "IL", identity_db)
+            bindings["lines"][group] = line_id
+            repo.lines.setdefault(line_id, InfrastructureLine(
+                line_id, snapshot.get("names", {}).get(group, group), "rail",
+                source_id=group, construction_status="operating",
+                verification_status="topology_checked_not_dispatch_verified",
+            ))
+            pair = (bindings["edges"][edge["id"]], line_id)
+            if pair not in known_memberships:
+                repo.memberships.append(LineMembership(*pair, "workspace/" + snapshot.get("version", "unknown"),
+                                                        "topology_checked_not_dispatch_verified"))
+                known_memberships.add(pair)
     for snapshot_id in {edge.snapshot_id for edge in repo.edges.values() if edge.snapshot_id}:
         repo.snapshots[snapshot_id] = DatasetSnapshot(
             snapshot_id, "national-rail", "osm", "unknown", "unknown", "unknown"

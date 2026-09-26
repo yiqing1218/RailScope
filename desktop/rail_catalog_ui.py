@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QComboBox,
     QTreeWidgetItem,
-    QTreeWidget,
     QDialog,
     QLabel,
     QTableWidget,
@@ -25,7 +24,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QInputDialog,
-    QTabWidget,
     QAbstractItemView,
 )
 
@@ -562,6 +560,12 @@ class RailCatalog(QWidget):
 
     def _restore_local_overrides(self, value):
         previous = self.local_overrides
+        value = deepcopy(value)
+        # Undoing a grouping must not strand a Corridor/StationRoute/TrainRun
+        # created after it. Retain its immutable membership as a hidden alias.
+        for key, definition in previous.items():
+            if key.startswith("line-assembly:") and key not in value:
+                value[key] = {**definition, "active": False}
         changed = {
             key for key in previous.keys() | value.keys()
             if previous.get(key) != value.get(key)
@@ -1972,6 +1976,7 @@ class RailCatalog(QWidget):
                     or not isinstance(value.get("anchor_node"), (int, str))
                     or not isinstance(value.get("distance_m"), (int, float))
                     or value["distance_m"] < 0
+                    or value.get("anchor_policy", "auto_reachable") not in {"auto_reachable", "fixed"}
                 ):
                     raise ValueError("接轨线路覆盖数据无效")
                 normalized.append(
@@ -1981,6 +1986,10 @@ class RailCatalog(QWidget):
                         "distance_m": round(float(value["distance_m"]), 1),
                         "source": "manual",
                         "verification_status": "user_verified",
+                        "anchor_policy": value.get("anchor_policy", "auto_reachable"),
+                        "anchor_verification_status": (
+                            "user_verified" if value.get("anchor_policy") == "fixed" else "automatic_nearest_hint"
+                        ),
                     }
                 )
             if len({value["line_id"] for value in normalized}) != len(normalized):
@@ -2143,11 +2152,18 @@ class RailCatalog(QWidget):
             }
             for key in keys
         }
+        changes["line-assembly:" + ident] = {
+            "name": name,
+            "members": sorted(self.catalog[key].get("line_id") or key for key in keys),
+            "active": True,
+            "source": "manual",
+            "verification_status": "membership_edited_topology_checked_on_use",
+        }
         self._save_local_overrides(changes)
         self.metadata_changed.emit()
         self.pinned_line_key = sorted(keys)[0]
         self.populate()
-        self.note.setText(f"已将 {len(keys)} 个目录段组合为「{name}」；物理轨道和通道引用未改变。")
+        self.note.setText(f"已将 {len(keys)} 个目录段组合为「{name}」；通道按此归属查询，应用时校验连续性及唯一径路。")
         return ident
 
     def split_line_assembly(self, keys):
@@ -2164,6 +2180,16 @@ class RailCatalog(QWidget):
         if not assembly_ids and len(keys) < 2:
             raise ValueError("所选目录项没有可拆分的组合线路")
         changes = {key: {"separate_catalog_entry": True} for key in keys}
+        for ident in assembly_ids:
+            members = sorted(key for key, custom in self.overrides.items()
+                             if key in self.catalog and custom.get("assembly_id") == ident)
+            changes["line-assembly:" + ident] = {
+                "name": self.meta(members[0]).get("assembly_name") or ident,
+                "members": sorted(self.catalog[key].get("line_id") or key for key in members),
+                "active": False,
+                "source": "manual",
+                "verification_status": "historical_membership_preserved",
+            }
         for key, custom in self.overrides.items():
             if key not in self.catalog or custom.get("assembly_id") not in assembly_ids:
                 continue
@@ -2178,7 +2204,7 @@ class RailCatalog(QWidget):
         self._save_local_overrides(changes)
         self.metadata_changed.emit()
         self.populate()
-        self.note.setText(f"已拆分为 {len(changes)} 个独立目录段；原有物理轨道段保持不变。")
+        self.note.setText(f"已拆分为 {len(keys)} 个独立目录段；新通道按拆分后的归属查询，既有通道保留原始成员及路径。")
         return len(assembly_ids) or 1
 
     def _line_group_path(self, item):
