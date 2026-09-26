@@ -44,6 +44,22 @@ def classify_motorway(tags, provinces, way_id):
     return result
 
 
+def national_group(ref):
+    """UI grouping: radial/longitudinal/transverse routes vs regional routes.
+
+    Regional rings (G91--G99), connectors, parallel routes and city rings
+    belong in the latter group. This is a browsing taxonomy, not a change to
+    the official source classification or ref.
+    """
+    match = re.fullmatch(r"G(\d{1,4})([A-Z]?)", str(ref).upper())
+    if not match:
+        return "国家高速 · 待核对"
+    number = int(match.group(1))
+    if number <= 0 or len(match.group(1)) == 3:
+        return "国家高速 · 待核对"
+    return "国家干线" if len(match.group(1)) <= 2 and number <= 90 and not match.group(2) else "区域线路"
+
+
 def build_index(pbf, output, progress=None):
     """Stream one PBF into SQLite; publish it only after a complete scan."""
     import osmium
@@ -187,7 +203,79 @@ def routes(path, query=""):
                           "minx", "miny", "maxx", "maxy"), row)) for row in rows]
 
 
-def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT):
+def route(path, key):
+    with closing(sqlite3.connect(path)) as db:
+        row = db.execute(
+            "SELECT key,kind,province,ref,name,segment_count,minx,miny,maxx,maxy "
+            "FROM routes WHERE key=?", (key,),
+        ).fetchone()
+    fields = ("key", "kind", "province", "ref", "name", "segment_count", "minx", "miny", "maxx", "maxy")
+    return dict(zip(fields, row)) if row else None
+
+
+def sync_directory(path):
+    """Build a small derived folder index once per road snapshot."""
+    if not Path(path).is_file():
+        return
+    with closing(sqlite3.connect(path)) as db:
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS directory_nodes(
+                id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,label TEXT NOT NULL,
+                kind TEXT NOT NULL,object_id TEXT,path TEXT NOT NULL,
+                child_count INTEGER NOT NULL,total INTEGER NOT NULL,archived INTEGER NOT NULL,
+                province TEXT,city TEXT,object_type TEXT,name TEXT,line_id TEXT,station_id TEXT);
+            CREATE INDEX IF NOT EXISTS road_directory_parent ON directory_nodes(parent_id,label);
+            CREATE INDEX IF NOT EXISTS road_directory_object ON directory_nodes(object_id);
+            CREATE INDEX IF NOT EXISTS road_directory_province ON directory_nodes(province);
+            CREATE INDEX IF NOT EXISTS road_directory_type_name ON directory_nodes(object_type,name);
+            CREATE INDEX IF NOT EXISTS road_directory_archived ON directory_nodes(archived);
+            CREATE INDEX IF NOT EXISTS road_directory_line ON directory_nodes(line_id);
+            CREATE INDEX IF NOT EXISTS road_directory_station ON directory_nodes(station_id);
+        """)
+        count = db.execute("SELECT count(*) FROM routes").fetchone()[0]
+        existing = db.execute("SELECT value FROM metadata WHERE key='directory_route_count'").fetchone()
+        version = db.execute("SELECT value FROM metadata WHERE key='directory_version'").fetchone()
+        if existing and int(existing[0]) == count and version and version[0] == "2":
+            return
+        db.execute("DELETE FROM directory_nodes")
+        folders = {}
+        for key, kind, province, ref, name, segments in db.execute(
+            "SELECT key,kind,province,ref,name,segment_count FROM routes ORDER BY key"
+        ):
+            if kind == "national":
+                labels = ["国家高速", national_group(ref)]
+            elif kind == "provincial":
+                labels = ["省级高速", province]
+            else:
+                labels = ["待核对高速", province or "地区待核对"]
+            parent = ""
+            for depth in range(1, len(labels) + 1):
+                parts = labels[:depth]
+                folder_key = "folder:" + json.dumps(parts, ensure_ascii=False)
+                entry = folders.setdefault(folder_key, [parent, parts[-1], json.dumps(parts, ensure_ascii=False), 0])
+                entry[3] += 1
+                parent = folder_key
+            label = ref or name or "未命名高速"
+            db.execute(
+                "INSERT INTO directory_nodes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("object:" + key, parent, f"{label} · {segments:,} 段", "object", key,
+                 json.dumps(labels, ensure_ascii=False), 0, 1, 0, labels[0],
+                 labels[1], "motorway", label, key, None),
+            )
+        for folder_key, (parent, label, encoded, total) in folders.items():
+            labels = json.loads(encoded)
+            db.execute(
+                "INSERT INTO directory_nodes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (folder_key, parent, label, "folder", None, encoded, 0, total, 0,
+                 labels[0], labels[1] if len(labels) > 1 else "", "folder", label, None, None),
+            )
+        db.execute("UPDATE directory_nodes SET child_count=(SELECT count(*) FROM directory_nodes c WHERE c.parent_id=directory_nodes.id) WHERE kind='folder'")
+        db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_route_count',?)", (str(count),))
+        db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_version','2')")
+        db.commit()
+
+
+def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT, route_keys=None):
     if not Path(path).is_file():
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     west, south, east, north = bbox
@@ -197,7 +285,22 @@ def viewport(path, bbox, route_key=None, limit=VIEWPORT_LIMIT):
         raise ValueError("视窗上限无效")
     with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)) as db:
         db.execute("PRAGMA cache_size=-2048")
-        if route_key:
+        if route_keys is not None and route_key is None:
+            selected = list(dict.fromkeys(str(value) for value in route_keys))
+            if len(selected) > 100000:
+                raise ValueError("高速线路选择过大")
+            if not selected:
+                return {"type": "FeatureCollection", "features": [], "truncated": False}
+            db.execute("CREATE TEMP TABLE chosen_routes(key TEXT PRIMARY KEY)")
+            db.executemany("INSERT OR IGNORE INTO chosen_routes VALUES(?)", ((value,) for value in selected))
+            rows = db.execute(
+                "SELECT f.data FROM bounds b JOIN features f ON f.id=b.id "
+                "WHERE b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? "
+                "AND EXISTS(SELECT 1 FROM route_segments r JOIN chosen_routes c ON c.key=r.route_key "
+                "WHERE r.feature_id=f.id) LIMIT ?",
+                (west, east, south, north, limit + 1),
+            )
+        elif route_key:
             rows = db.execute(
                 "SELECT f.data FROM route_segments r JOIN features f ON f.id=r.feature_id "
                 "JOIN bounds b ON b.id=f.id WHERE r.route_key=? "

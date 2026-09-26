@@ -1,5 +1,9 @@
 # RailScope V0 + V1 + V5 — final report
 
+> Historical initial milestone report. Test counts and limitations below
+> describe that milestone, not the current version. See the
+> [project README](../../README.md) for current instructions.
+
 ## Implemented scope
 
 Implemented: engineering/map foundation (V0), infrastructure GIS and railway
@@ -38,7 +42,7 @@ occupancy → conflict → DispatchEvent → recalculation`.
 
 ## How to run and verify
 
-Follow [README.md](README.md). The bundled scenario deliberately creates
+Follow [README.md](../../README.md). The bundled scenario deliberately creates
 conflicts among 101, 102 and 201; select a train, apply a dispatch event, and
 reset to return to scheduled facts.
 

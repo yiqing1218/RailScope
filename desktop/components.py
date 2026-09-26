@@ -8,6 +8,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QTimer,
     QEvent,
+    QSize,
 )
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QTreeWidget,
+    QTabWidget,
 )
 
 THEME = """
@@ -97,12 +99,40 @@ QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color:
 """
 
 
-class GrowingTree(QTreeWidget):
-    """Content-height tree: scrolling belongs exclusively to the surrounding panel."""
+class CurrentPageTabs(QTabWidget):
+    """Size a sidebar tab strip from its current page, not the tallest hidden one."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.currentChanged.connect(lambda _index: self.updateGeometry())
+
+    def tabInserted(self, index):
+        super().tabInserted(index)
+        self.widget(index).installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched is self.currentWidget() and event.type() == QEvent.Type.LayoutRequest:
+            self.updateGeometry()
+        return super().eventFilter(watched, event)
+
+    def sizeHint(self):
+        page = self.currentWidget()
+        height = page.sizeHint().height() if page is not None else 0
+        return QSize(super().sizeHint().width(), max(0,height) + self.tabBar().sizeHint().height() + 4)
+
+    def minimumSizeHint(self):
+        return QSize(0, self.sizeHint().height())
+
+
+class GrowingTree(QTreeWidget):
+    """Small trees fit their rows; larger trees scroll inside a bounded viewport."""
+
+    MAX_VIEW_HEIGHT = 560
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self._height_pending = False
@@ -125,37 +155,31 @@ class GrowingTree(QTreeWidget):
     def set_filter_active(self, active):
         """Keep a useful directory viewport while rows are temporarily filtered."""
         if active:
-            self._filter_height_floor = max(self._filter_height_floor, min(900, max(320, self.height())))
+            self._filter_height_floor = min(320, self.MAX_VIEW_HEIGHT)
         else:
             self._filter_height_floor = 0
         self.schedule_height()
 
     def fit_content(self):
         self._height_pending = False
-        self.doItemsLayout()
+        total = 4 + (0 if self.isHeaderHidden() else self.header().height())
 
-        def height(item):
+        def rows(item):
             if item.isHidden():
-                return 0
-            value = max(
-                32,
-                self.visualItemRect(item).height(),
-                self.sizeHintForIndex(self.indexFromItem(item)).height(),
-            )
+                return
+            yield item
             if item.isExpanded():
-                value += sum(height(item.child(i)) for i in range(item.childCount()))
-            return value
+                for index in range(item.childCount()):
+                    yield from rows(item.child(index))
 
-        total = sum(
-            height(self.topLevelItem(i)) for i in range(self.topLevelItemCount())
-        )
-        self.setFixedHeight(
-            max(
-                32,
-                self._filter_height_floor,
-                total + 4 + (0 if self.isHeaderHidden() else self.header().height()),
-            )
-        )
+        for index in range(self.topLevelItemCount()):
+            for item in rows(self.topLevelItem(index)):
+                total += max(32, self.sizeHintForIndex(self.indexFromItem(item)).height())
+                if total >= self.MAX_VIEW_HEIGHT:
+                    break
+            if total >= self.MAX_VIEW_HEIGHT:
+                break
+        self.setFixedHeight(max(32, self._filter_height_floor, min(total, self.MAX_VIEW_HEIGHT)))
 
     def changeEvent(self, event):
         super().changeEvent(event)

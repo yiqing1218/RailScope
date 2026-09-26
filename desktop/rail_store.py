@@ -304,7 +304,7 @@ def upgrade_render_features(directory, catalog):
     return True
 
 
-def viewport(directory, kind, bbox, zoom, selection=None, limits=None):
+def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms=None):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
@@ -315,14 +315,20 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None):
     path = Path(directory) / "rail.sqlite"
     if not path.exists():
         return {"type": "FeatureCollection", "features": []}
-    minimum_zoom = {"railPoints": 10, "railPlatforms": 12, "railStationAreas": 11}
+    minimum_zoom = {
+        "rail": (min_zooms or {}).get("railLines", 0),
+        "railPoints": min((min_zooms or {}).get("railStations", 10),
+                          (min_zooms or {}).get("railSwitches", 15)),
+        "railPlatforms": (min_zooms or {}).get("railPlatforms", 12),
+        "railStationAreas": (min_zooms or {}).get("railAreas", 11),
+    }
     if zoom < minimum_zoom.get(kind, 0):
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     selection = selection if kind == "rail" and isinstance(selection, dict) else {}
     selected_values = {}
     for name in ("sections", "ways", "groups"):
         values = selection.get(name, [])
-        if not isinstance(values, list) or len(values) > 5000:
+        if not isinstance(values, list) or len(values) > 100000:
             raise ValueError("线路选择无效")
         if any(not isinstance(value, (str, int)) or isinstance(value, bool) for value in values):
             raise ValueError("线路选择无效")
@@ -349,6 +355,18 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None):
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            if kind == "railPoints":
+                station_zoom = (min_zooms or {}).get("railStations", 10)
+                switch_zoom = (min_zooms or {}).get("railSwitches", 15)
+                if zoom < switch_zoom:
+                    clauses.append("coalesce(json_extract(f.data,'$.properties.kind'),'')!='switch'")
+                if zoom < station_zoom:
+                    clauses.append("json_extract(f.data,'$.properties.kind')='switch'")
+                # Legacy indices may contain urban-only POIs. Keep the two
+                # station switches independent even before reimporting OSM.
+                clauses.append("coalesce(json_extract(f.data,'$.properties.node_tags.station'),'') NOT IN ('subway','light_rail','monorail')")
+                clauses.append("coalesce(json_extract(f.data,'$.properties.node_tags.subway'),'') NOT IN ('yes','true')")
+                clauses.append("coalesce(json_extract(f.data,'$.properties.node_tags.\"railway:station\"'),'')!='subway'")
             if selected:
                 selectors = []
                 for name, property_name in (

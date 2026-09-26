@@ -40,6 +40,18 @@ def test_real_platform_lines_and_switches_are_browsable_without_map_selection(qt
     assert widget.platform_tree.topLevelItemCount() == 1
     widget.focus_platform_item(widget.platform_tree.topLevelItem(0), 0)
     assert any(call[0] == "focus" for call in map_view.calls)
+    platform_control = widget.platform_tree.itemWidget(widget.platform_tree.topLevelItem(0), 1)
+    platform_control.click()
+    assert widget.asset_visible["platform"] == {8}
+    assert ("setRailAssetSelection", [8], [], [], []) in map_view.calls
+    widget.set_station_master("station", True)
+    partial = []
+    widget.station_partial_changed.connect(lambda group,on: partial.append(on))
+    widget.toggle_station_records({"node/1"}, False)
+    assert partial == []  # Turning off a city must not turn off the master layer.
+    assert widget.station_masters["station"]
+    widget.toggle_assets("switch", {2}, False)
+    assert widget.asset_hidden["switch"] == {2}
 
 
 def make_catalog(qtbot, tmp_path):
@@ -62,6 +74,42 @@ def make_catalog(qtbot, tmp_path):
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
     qtbot.addWidget(widget)
     return widget, path
+
+
+def test_manual_line_assembly_can_merge_across_folders_and_split(qtbot, tmp_path):
+    widget, source = make_catalog(qtbot, tmp_path)
+    original = source.read_bytes()
+    widget.move_items({"track21"}, ["江苏省", "南京市", "仙林铁路"])
+    assert widget.parents("track20") != widget.parents("track21")
+    ident = widget.merge_line_segments({"track20", "track21"}, "仙林铁路")
+    assert ident.startswith("RLU-")
+    assert widget.items["track20"] is widget.items["track21"]
+    assert widget.members[id(widget.items["track20"])] == {"track20", "track21"}
+    widget.split_line_assembly({"track20"})
+    assert widget.meta("track20").get("assembly_id") is None
+    assert widget.meta("track21").get("assembly_id") is None
+    assert widget.parents("track20") != widget.parents("track21")
+    assert source.read_bytes() == original
+
+
+def test_automatic_same_name_group_can_be_split_and_reloaded(qtbot,tmp_path):
+    widget, source=make_catalog(qtbot,tmp_path)
+    widget.save_overrides({key:{"display_name":"仙林铁路","folder_path":["江苏省","南京市"]} for key in widget.catalog})
+    assert widget.items['track20'] is widget.items['track21']
+    widget.split_line_assembly({'track20'})
+    assert widget.items['track20'] is not widget.items['track21']
+    widget.populate()
+    assert widget.items['track20'] is not widget.items['track21']
+
+
+def test_construction_master_keeps_individually_selected_operating_lines(qtbot,tmp_path):
+    widget,_=make_catalog(qtbot,tmp_path)
+    widget.save_overrides({'track21':{'construction':True}})
+    widget.toggle('track20',True)
+    widget.set_line_master('construction',True)
+    assert widget.visible == {'track20','track21'}
+    widget.set_line_master('construction',False)
+    assert widget.visible == {'track20'}
 
 
 def test_catalog_drop_finishes_after_qt_drop_event_returns(qtbot, monkeypatch):

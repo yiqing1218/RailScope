@@ -52,14 +52,14 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
-    QTreeWidgetItem,
+    QTreeView,
     QVBoxLayout,
     QWidget,
 )
 
 from components import Fold, Switch, THEME, switch_row, text_label, GrowingTree
 from geometry import build_demo_path
-from hierarchy import Hierarchy, label_order
+from hierarchy import Hierarchy
 from hierarchy_ui import HierarchyDialog
 from metro_data import (
     associate_station_areas,
@@ -84,8 +84,23 @@ from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
 from road_store import database_path as road_database_path, viewport as road_viewport
+from admin_store import database_path as admin_database_path, viewport as admin_viewport
+from metro_store import (
+    StationLookup, area_summary as metro_area_summary,
+    database_path as metro_database_path, ensure_index as ensure_metro_index,
+    feature_count as metro_feature_count, find_physical_aliases,
+    find_station as find_metro_station, iter_features as iter_metro_features,
+    iter_relation_features as iter_metro_relation_features,
+    route_summaries as metro_route_summaries,
+    station_directory_paths, sync_station_directory,
+    update_station_directory,
+    viewport as metro_viewport,
+)
+from lazy_directory import SqliteDirectoryModel
+from metro_line_directory import MetroLineDirectoryModel, sync_line_directory
 from road_catalog_ui import RoadCatalog
 from viewport_settings import DEFAULT as DEFAULT_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget
+from map_zoom_settings import LABELS as ZOOM_LABELS, load as load_map_zooms, save as save_map_zooms
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
@@ -101,6 +116,8 @@ from catalog_metadata import (
 )
 
 EMPTY = {"type": "FeatureCollection", "features": []}
+BASE_TYPES = ("standard", "satellite", "admin-province", "admin-city", "admin-county")
+BASE_LABELS = ("标准地图", "卫星影像 · 10 m", "行政区域 · 省级", "行政区域 · 市级", "行政区域 · 县级")
 DATA = active_directory(ROOT)
 # City names and provinces are UI grouping metadata, never written into OSM facts.
 REGIONS = [
@@ -236,21 +253,40 @@ class LocalHandler(SimpleHTTPRequestHandler):
             return
         super().do_HEAD()
 
+    def request_query(self):
+        return getattr(self, "_body_query", None) or parse_qs(urlsplit(self.path).query)
+
+    def do_POST(self):
+        # Large directory selections do not fit in HTTP's request line.
+        # These are read-only viewport queries; the body contains only filters.
+        if not self.valid_host() or urlsplit(self.path).path not in {"/api/metro", "/api/roads", "/api/rail"}:
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 8_000_000:
+                raise ValueError("Invalid body length")
+            values = json.loads(self.rfile.read(length))
+            if not isinstance(values, dict) or not all(isinstance(k, str) and isinstance(v, str) for k,v in values.items()):
+                raise ValueError("Invalid query")
+            self._body_query = {key: [value] for key,value in values.items()}
+        except (ValueError, UnicodeError):
+            self.send_error(400)
+            return
+        self.do_GET()
+
     def do_GET(self):
         if not self.valid_host():
             self.send_error(421)
             return
         path = urlsplit(self.path).path
-        if path == "/api/roads":
+        if path == "/api/admin":
             try:
-                query = parse_qs(urlsplit(self.path).query)
-                route_key = query.get("route", [None])[0]
-                if route_key and len(route_key) > 200:
-                    raise ValueError("高速线路编号无效")
-                result = road_viewport(
-                    road_database_path(ROOT),
+                query = self.request_query()
+                result = admin_viewport(
+                    admin_database_path(ROOT),
                     [float(value) for value in query["bbox"][0].split(",")],
-                    route_key,
+                    int(query.get("level", [4])[0]), float(query.get("zoom", [4])[0]),
                 )
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
@@ -258,7 +294,56 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
-            except (BrokenPipeError, ConnectionResetError):
+            except ConnectionError:
+                pass
+            except (ValueError, KeyError, OSError, sqlite3.Error):
+                self.send_error(400)
+            return
+        if path == "/api/metro":
+            try:
+                query = self.request_query()
+                selected = json.loads(query["selected"][0])
+                if not isinstance(selected, list):
+                    raise ValueError("地铁选择无效")
+                result = metro_viewport(
+                    self.server.metro_db,
+                    query["kind"][0],
+                    [float(value) for value in query["bbox"][0].split(",")],
+                    selected,
+                )
+                payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except ConnectionError:
+                pass
+            except (ValueError, KeyError, OSError, sqlite3.Error):
+                self.send_error(400)
+            return
+        if path == "/api/roads":
+            try:
+                query = self.request_query()
+                route_key = query.get("route", [None])[0]
+                if route_key and len(route_key) > 200:
+                    raise ValueError("高速线路编号无效")
+                selected = json.loads(query["routes"][0]) if "routes" in query else None
+                if selected is not None and not isinstance(selected, list):
+                    raise ValueError("高速目录选择无效")
+                result = road_viewport(
+                    road_database_path(ROOT),
+                    [float(value) for value in query["bbox"][0].split(",")],
+                    route_key,
+                    route_keys=selected,
+                )
+                payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except ConnectionError:
                 pass
             except (ValueError, KeyError, OSError, sqlite3.Error):
                 self.send_error(400)
@@ -267,7 +352,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
             try:
                 from rail_store import viewport
 
-                query = parse_qs(urlsplit(self.path).query)
+                query = self.request_query()
                 selection = {}
                 for query_name in ("sections", "ways", "groups"):
                     if query_name in query:
@@ -282,6 +367,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     float(query["zoom"][0]),
                     selection or None,
                     self.server.config.get("railViewportBudget"),
+                    self.server.config.get("minZooms"),
                 )
                 if query["kind"][0] == "railPoints":
                     switch_names = self.server.config.get("railSwitchNames", {})
@@ -297,7 +383,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
-            except (BrokenPipeError, ConnectionResetError):
+            except ConnectionError:
                 pass
             except (ValueError, KeyError, OSError):
                 self.send_error(400)
@@ -468,44 +554,15 @@ class Desk(QMainWindow):
             for route in self.catalog
             if "上海" in str(route.get("network", ""))
         }
-        features = []
-        self.route_centers = {}
-        self.route_bounds = {}
-        route_file = DATA / "china_metro_routes.geojson"
-        for feature in iter_geojson_features(route_file) if route_file.exists() else []:
-            relation = feature["properties"]["route_relation_id"]
-            coordinates = feature["geometry"]["coordinates"]
-            self.route_centers.setdefault(relation, coordinates[0])
-            xs, ys = zip(*coordinates)
-            bounds = self.route_bounds.setdefault(
-                relation, [min(xs), min(ys), max(xs), max(ys)]
-            )
-            bounds[:] = [
-                min(bounds[0], min(xs)),
-                min(bounds[1], min(ys)),
-                max(bounds[2], max(xs)),
-                max(bounds[3], max(ys)),
-            ]
-            if relation in shanghai_relations:
-                features.append(feature)
-        stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
         self.station_registry = StationRegistry(ROOT / "data/user_settings/workspace.sqlite")
-        self.display_stations = {
-            "type": "FeatureCollection",
-            "features": display_stations(stations, registry=self.station_registry),
-        }
-        self.station_areas = {
-            "type": "FeatureCollection",
-            "features": associate_station_areas(
-                read_json(DATA / "china_metro_station_areas.geojson", EMPTY)[
-                    "features"
-                ],
-                stations,
-            ),
-        }
-        self.station_areas["features"] = display_station_areas(
-            self.station_areas["features"], stations, registry=self.station_registry
-        )
+        self.metro_db = ensure_metro_index(DATA, registry=self.station_registry)
+        self.route_bounds = {}
+        self.route_centers = {}
+        for relation, bounds, center in metro_route_summaries(self.metro_db):
+            self.route_bounds[relation] = bounds
+            self.route_centers[relation] = center
+        features = list(iter_metro_relation_features(self.metro_db, "metro", shanghai_relations))
+        stations = list(iter_metro_relation_features(self.metro_db, "station_sources", shanghai_relations))
         self.shanghai_lines = build_shanghai_lines(self.catalog, features, stations)
         self.plan = Plan(self.shanghai_lines)
         for line in self.shanghai_lines:
@@ -531,9 +588,8 @@ class Desk(QMainWindow):
                 self.plan.load(self.plan_path)
             except (ValueError, KeyError, TypeError, OSError) as error:
                 self.plan_load_error = str(error)
-        self.construction = read_json(DATA / "china_metro_construction.geojson", EMPTY)
         self.construction_catalog = []
-        for feature in self.construction["features"]:
+        for feature in iter_metro_features(self.metro_db, "construction"):
             props = feature["properties"]
             tags = props.get("way_tags", {})
             engineering = (
@@ -555,10 +611,7 @@ class Desk(QMainWindow):
                     "engineering_name_explicit": bool(engineering),
                 }
             )
-        for feature in self.construction["features"]:
-            self.route_centers[-feature["properties"]["osm_way_id"]] = feature[
-                "geometry"
-            ]["coordinates"][0]
+            self.route_centers[-props["osm_way_id"]] = feature["geometry"]["coordinates"][0]
         self.demo_error = ""
         try:
             self.demo = build_demo_path(features)
@@ -574,7 +627,6 @@ class Desk(QMainWindow):
         self.visible_lines = set()
         self.flags = initial_visibility()
         self.switches = {}
-        self.tree_switches = {}
         self.imported = dict(EMPTY)
         self.selected_data = {}
         self.selected_features = []
@@ -614,11 +666,16 @@ class Desk(QMainWindow):
             ) + str(error)
         self.station_exclusions = set()
         self.station_direct_visible = set()
+        self.metro_station_master = False
         self.station_directory = {}
-        self.station_lookup = {}
+        self.station_lookup = StationLookup(self.metro_db, self.metro_station_overrides.values)
+        self.metro_station_model = SqliteDirectoryModel(self.metro_db)
+        self.metro_station_model.toggled.connect(self.station_tree_toggled)
+        self._sync_metro_directory()
         self.config = self.make_config()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), LocalHandler)
         self.server.config = self.config
+        self.server.metro_db = self.metro_db
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.map = MapView(self.server)
         self.operations = OperationsEditor(
@@ -700,26 +757,8 @@ class Desk(QMainWindow):
                 QMessageBox.warning(self, "站点样式未保存", str(error))
 
     def make_config(self):
-        sources = {
-            key: "/" + (DATA / name).relative_to(ROOT).as_posix()
-            if (DATA / name).exists()
-            else EMPTY
-            for key, name in {
-                "metro": "china_metro_routes.geojson",
-                "stations": "china_metro_stations.geojson",
-                "areas": "china_metro_station_areas.geojson",
-                "construction": "china_metro_construction.geojson",
-            }.items()
-        }
+        sources = {key: EMPTY for key in ("metro", "stations", "areas", "construction")}
         rail = ROOT / "data" / "raw" / "osm" / "beijing_highspeed.geojson"
-        sources["areas"] = self.station_areas
-        # Keep full raw members in Python/registry; do not clone each of them
-        # into Chromium and its GeoJSON workers just to draw a station marker.
-        sources["stations"] = {"type": "FeatureCollection", "features": [
-            {**feature, "properties": {key: value for key, value in feature["properties"].items() if key != "source_members"}}
-            for feature in self.display_stations["features"]
-        ]}
-        sources["construction"] = self.construction
         sources["rail"] = (
             "/data/raw/osm/beijing_highspeed.geojson" if rail.exists() else EMPTY
         )
@@ -753,9 +792,11 @@ class Desk(QMainWindow):
             "railStyles": load_rail_styles(ROOT / "data/user_settings/rail_styles.json"),
             "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
+            "metroViewport": True,
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "roadViewport": road_index_ready,
             "railViewportBudget": load_viewport_budget(ROOT / "data/user_settings/rail_viewport_budget.json"),
+            "minZooms": load_map_zooms(ROOT / "data/user_settings/map_min_zooms.json"),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
             "demo": self.demo,
@@ -948,6 +989,8 @@ class Desk(QMainWindow):
         self.add_action(edit, "单击选择工具", lambda: self.set_map_selection_mode("click"), "V")
         self.add_action(edit, "框选工具", lambda: self.set_map_selection_mode("box"), "B")
         self.add_action(edit, "移动所选对象到目录…", self.move_map_selection)
+        self.add_action(edit, "组合所选铁路段为线路…", self.merge_map_rail_segments)
+        self.add_action(edit, "拆分所选组合线路", self.split_map_rail_assembly)
         self.add_action(edit, "重命名所选对象…", self.rename_map_selection)
         self.add_action(edit, "归档所选对象", self.archive_map_selection)
         edit.addSeparator()
@@ -975,6 +1018,7 @@ class Desk(QMainWindow):
         self.add_action(map_menu, "定位上海 1 号线", lambda: self.map.call("focusDemo"))
         map_menu.addSeparator()
         self.add_action(map_menu, "地图元素加载上限…", self.edit_viewport_budget)
+        self.add_action(map_menu, "各类元素最远显示级别…", self.edit_map_min_zooms)
         run_menu = bar.addMenu("运行")
         run = run_menu.addMenu("地铁运行")
         self.add_action(
@@ -1034,6 +1078,7 @@ class Desk(QMainWindow):
         ).save())
         data = bar.addMenu("数据")
         self.add_action(data, "从全国 OSM 建立高速公路目录…", self.start_road_import)
+        self.add_action(data, "从全国 OSM 建立省市县行政边界…", self.start_admin_import)
         for kind, title in (
             ("rail-lines", "铁路线数据"),
             ("rail-stations", "铁路站数据"),
@@ -1171,6 +1216,35 @@ class Desk(QMainWindow):
         except OSError as error:
             QMessageBox.warning(self, "加载上限未保存", str(error))
 
+    def edit_map_min_zooms(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("各类元素最远显示级别")
+        form = QFormLayout(dialog)
+        form.addRow(text_label("数字越小，地图缩得越远时仍可见；0 表示任何缩放级别均可显示。", wrap=True))
+        controls = {}
+        for key, label in ZOOM_LABELS.items():
+            control = QSpinBox()
+            control.setRange(0, 22)
+            control.setValue(self.config["minZooms"][key])
+            controls[key] = control
+            form.addRow(label, control)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("应用")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            value = save_map_zooms(
+                ROOT / "data/user_settings/map_min_zooms.json",
+                {key: control.value() for key, control in controls.items()},
+            )
+            self.config["minZooms"] = value
+            self.map.call("setMinZooms", value)
+        except OSError as error:
+            QMessageBox.warning(self, "显示级别未保存", str(error))
+
     def show_plan_standard(self):
         from PySide6.QtWidgets import QTextBrowser
 
@@ -1188,8 +1262,9 @@ class Desk(QMainWindow):
     def audit_station_boundaries(self):
         from boundary_ui import BoundaryDialog
 
-        stations = read_json(DATA / "china_metro_stations.geojson", EMPTY)["features"]
-        dialog = BoundaryDialog(stations, self.station_areas["features"], self)
+        stations = list(iter_metro_features(self.metro_db, "station_sources"))
+        areas = list(iter_metro_features(self.metro_db, "areas"))
+        dialog = BoundaryDialog(stations, areas, self)
         dialog.located.connect(self.locate_station_record)
         dialog.exec()
 
@@ -1480,8 +1555,8 @@ class Desk(QMainWindow):
         )
         layout.addWidget(Fold("公路", self.reference_controls("road"), expanded=False))
         layout.addWidget(Fold("国铁", self.rail_controls(), expanded=False))
-        layout.addStretch()
         layout.addWidget(Fold("底图", self.base_controls(), expanded=False))
+        layout.addStretch()
         scroll.setWidget(body)
         return scroll
 
@@ -1491,12 +1566,8 @@ class Desk(QMainWindow):
         layout.setContentsMargins(8, 0, 8, 6)
         layout.setSpacing(5)
         self.base_combo = QComboBox()
-        self.base_combo.addItems(["标准地图", "卫星影像 · 10 m", "行政区划"])
-        self.base_combo.currentIndexChanged.connect(
-            lambda index: self.map.call(
-                "setBase", ("standard", "satellite", "admin")[index]
-            )
-        )
+        self.base_combo.addItems(BASE_LABELS)
+        self.base_combo.currentIndexChanged.connect(self.change_base)
         layout.addWidget(self.base_combo)
         details = QWidget()
         detail_layout = QVBoxLayout(details)
@@ -1537,21 +1608,23 @@ class Desk(QMainWindow):
         self.line_search.setPlaceholderText("筛选城市 / 线路")
         self.line_search.textChanged.connect(self.filter_tree)
         line_layout.addWidget(self.line_search)
-        self.tree = GrowingTree()
-        self.tree.setColumnCount(2)
+        self.tree = QTreeView()
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(14)
         self.tree.setUniformRowHeights(True)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 62)
+        self.tree.setMinimumHeight(280)
+        self.tree.setMaximumHeight(560)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.metro_line_model = MetroLineDirectoryModel(self.metro_db, self.route_lookup)
+        self.metro_line_model.toggled.connect(self.metro_line_tree_toggled)
+        self.tree.setModel(self.metro_line_model)
+        self.tree.expanded.connect(self.metro_line_model.fetchMore)
         self.populate_tree()
-        self.tree.itemDoubleClicked.connect(self.focus_tree_item)
+        self.tree.doubleClicked.connect(self.focus_tree_item)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.metro_context_menu)
-        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         line_layout.addWidget(self.tree)
         self.line_count = text_label("")
         line_layout.addWidget(self.line_count)
@@ -1560,24 +1633,17 @@ class Desk(QMainWindow):
         station_layout = QVBoxLayout(self.metro_station_page)
         station_layout.setContentsMargins(0, 0, 0, 0)
         station_layout.addWidget(text_label("地铁站目录", "sectionLabel"))
-        self.station_tree = GrowingTree()
-        self.station_tree.setColumnCount(2)
+        self.station_tree = QTreeView()
         self.station_tree.setHeaderHidden(True)
         self.station_tree.setRootIsDecorated(True)
         self.station_tree.setIndentation(14)
         self.station_tree.setUniformRowHeights(True)
-        self.station_tree.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.station_tree.header().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
-        self.station_tree.header().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Fixed
-        )
-        self.station_tree.setColumnWidth(1, 62)
+        self.station_tree.setMinimumHeight(280)
+        self.station_tree.setMaximumHeight(560)
         self.station_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.station_tree.itemDoubleClicked.connect(self.focus_station_tree_item)
+        self.station_tree.setModel(self.metro_station_model)
+        self.station_tree.expanded.connect(self.metro_station_model.fetchMore)
+        self.station_tree.doubleClicked.connect(self.focus_station_tree_item)
         self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.station_tree.customContextMenuRequested.connect(self.metro_station_context_menu)
         station_layout.addWidget(self.station_tree)
@@ -1595,14 +1661,13 @@ class Desk(QMainWindow):
     def metro_context_menu(self, position):
         from rail_catalog_ui import add_folder_move_menu
 
-        item = self.tree.itemAt(position)
-        if not item:
+        item = self.tree.indexAt(position)
+        if not item.isValid():
             return
-        selected = self.tree.selectedItems()
+        selected = self.tree.selectionModel().selectedRows()
         if item not in selected:
             self.tree.clearSelection()
-            item.setSelected(True)
-            self.tree.setCurrentItem(item)
+            self.tree.setCurrentIndex(item)
             selected = [item]
         ids = set().union(*(self.item_ids(value) for value in selected))
         if not ids:
@@ -1628,7 +1693,7 @@ class Desk(QMainWindow):
             "隐藏" if visible else "显示",
             lambda: self.toggle_metro_line_ids(ids, not visible),
         )
-        menu.addAction("定位到此线路 / 分组", lambda: self.focus_tree_item(item, 0))
+        menu.addAction("定位到此线路 / 分组", lambda: self.focus_tree_item(item))
         archived = all(
             self.metro_line_overrides.values.get(str(value), {}).get(
                 "archived", False
@@ -1644,7 +1709,7 @@ class Desk(QMainWindow):
 
     def edit_hierarchy(self, ids=None):
         if ids is None:
-            selected = self.tree.selectedItems()
+            selected = self.tree.selectionModel().selectedRows()
             ids = set().union(*(self.item_ids(item) for item in selected)) if selected else set()
         dialog = HierarchyDialog(self.hierarchy, self, ids)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1709,122 +1774,118 @@ class Desk(QMainWindow):
         self.refresh_hierarchy(relation_ids)
 
     def refresh_hierarchy(self, selected_ids=None):
-        expanded = {item.text(0) for item in self.tree_items if item.isExpanded()}
-        self.populate_tree()
+        relation_keys, affected = sync_line_directory(
+            self.metro_db, self.hierarchy.routes, self.hierarchy.parent,
+            self.metro_line_overrides.values,
+        )
+        self.metro_line_model.route_keys = relation_keys
+        self.metro_line_model.refresh_affected(affected)
+        self.leaf_count = len(set(relation_keys.values()))
         self.sync_tree_switches()
-        for item in self.tree_items:
-            if item.text(0) in expanded:
-                item.setExpanded(True)
-            if not item.childCount() and set(selected_ids or []) & self.item_ids(item):
-                self.tree.setCurrentItem(item)
-                item.parent().setExpanded(True)
-                item.parent().parent().setExpanded(True)
-        self.filter_tree(self.line_search.text())
-        self.populate_station_tree()
+        if selected_ids:
+            self.select_metro_tree_item(selected_ids)
+        self._sync_metro_directory(selected_ids)
         self.update_count()
 
-    def populate_station_tree(self):
-        self.station_directory, self.station_lookup = metro_station_directory(
-            self.display_stations["features"],
-            self.catalog,
-            self.hierarchy,
-            self.metro_station_overrides.values,
-        )
-        self.station_tree.clear()
-        self.station_tree_items = []
-        self.station_tree_switches = {}
-        aliases = 0
-        for province, cities in sorted(self.station_directory.items()):
-            province_item = QTreeWidgetItem([province, ""])
-            self.station_tree.addTopLevelItem(province_item)
-            province_ids = set()
-            for city, lines in sorted(cities.items()):
-                city_item = QTreeWidgetItem([city, ""])
-                province_item.addChild(city_item)
-                city_ids = set()
-                for line, stations in sorted(lines.items(), key=lambda item: label_order(item[0])):
-                    line_item = QTreeWidgetItem([line, ""])
-                    city_item.addChild(line_item)
-                    line_ids = set()
-                    for station in stations:
-                        aliases += 1
-                        leaf = QTreeWidgetItem([station["name"], ""])
-                        leaf.setData(0, Qt.ItemDataRole.UserRole, [station["id"]])
-                        leaf.setToolTip(
-                            0,
-                            f"线路站点对象：{station['id']}\n"
-                            f"物理车站实体：{station['physical_station_id']}\n"
-                            f"线路关系：{', '.join(map(str, station['route_relation_ids']))}",
+    def _metro_route_paths(self):
+        return {
+            str(route["osm_relation_id"]): [
+                *self.hierarchy.parent(route)[:2],
+                self.metro_line_overrides.values.get(str(route["osm_relation_id"]), {}).get("display_name")
+                or self.hierarchy.parent(route)[2],
+            ]
+            for route in self.catalog
+        }
+
+    def _sync_metro_directory(self, selected_ids=None):
+        self.metro_route_paths = self._metro_route_paths()
+        if selected_ids:
+            selected = [str(value) for value in selected_ids if int(value) > 0]
+            if selected:
+                placeholders = ",".join("?" for _ in selected)
+                with sqlite3.connect(self.metro_db) as db:
+                    aliases = {
+                        row[0] for row in db.execute(
+                            f"SELECT id FROM station_aliases WHERE route_id IN ({placeholders})",
+                            selected,
                         )
-                        line_item.addChild(leaf)
-                        self.install_station_switch(leaf, {station["id"]})
-                        line_ids.add(station["id"])
-                    line_item.setText(0, f"{line} · {len(stations)} 站")
-                    self.install_station_switch(line_item, line_ids)
-                    city_ids.update(line_ids)
-                self.install_station_switch(city_item, city_ids)
-                province_ids.update(city_ids)
-            self.install_station_switch(province_item, province_ids)
+                    }
+                affected = update_station_directory(
+                    self.metro_db, aliases, self.metro_route_paths,
+                    self.metro_station_overrides.values,
+                )
+                self.metro_station_model.refresh_affected(affected)
+        else:
+            sync_station_directory(
+                self.metro_db, self.metro_route_paths, self.metro_station_overrides.values
+            )
+            self.metro_station_model.reset_from_disk()
+            self.metro_station_model.fetchMore()
+        self._refresh_metro_station_paths()
+
+    def populate_station_tree(self):
+        self._refresh_metro_station_paths()
+        self.metro_station_model.reset_from_disk()
+        self.metro_station_model.fetchMore()
+        self.sync_station_tree_switches()
+        with sqlite3.connect(self.metro_db) as db:
+            aliases = db.execute(
+                "SELECT count(*) FROM directory_nodes WHERE kind='object'"
+            ).fetchone()[0]
         self.station_count.setText(
             f"{len(self.station_lookup):,} 个唯一站点实体 · {aliases:,} 个线路目录入口"
         )
-        self.station_tree.schedule_height()
+
+    def _refresh_metro_station_paths(self):
+        self.station_directory = {}
+        for province, city, line in station_directory_paths(self.metro_db):
+            self.station_directory.setdefault(province, {}).setdefault(city, {})[line] = None
 
     def effective_station_ids(self):
         if not self.flags.get("stations"):
             return set()
-        visible_routes = {value for value in self.visible_lines if value > 0}
-        return {
-            station_id
-            for station_id, record in self.station_lookup.items()
-            if (station_id in self.station_direct_visible
-                or visible_routes.intersection(record["route_relation_ids"]))
-            and station_id not in self.station_exclusions
-            and not record.get("archived", False)
-        }
+        # Visibility needs IDs only. Do not parse every national station's
+        # properties or make station visibility depend on line visibility.
+        with sqlite3.connect(self.metro_db) as db:
+            available = {row[0] for row in db.execute(
+                "SELECT object_id FROM directory_nodes WHERE kind='object' AND archived=0"
+            )}
+        selected = available if self.metro_station_master else self.station_direct_visible & available
+        return selected - self.station_exclusions
 
-    def install_station_switch(self, item, station_ids):
-        item.setData(0, Qt.ItemDataRole.UserRole, sorted(station_ids))
-        visible = self.effective_station_ids()
-        active = len(station_ids & visible)
-        control = Switch(active > 0)
-        control.setMixed(0 < active < len(station_ids))
-        control.toggled.connect(
-            lambda on, node=item: self.station_tree_toggled(node, on)
-        )
-        self.station_tree.setItemWidget(item, 1, control)
-        self.station_tree_items.append(item)
-        self.station_tree_switches[id(item)] = control
-
-    def station_tree_toggled(self, item, on):
-        station_ids = set(item.data(0, Qt.ItemDataRole.UserRole) or [])
+    def station_tree_toggled(self, key, on):
+        station_ids = self.metro_station_model.ids_below(key)
         if on:
             self.station_exclusions.difference_update(station_ids)
             self.station_direct_visible.update(station_ids)
-            self.set_flag("stations", True)
+            self.enable_metro_stations_from_catalog()
         else:
             self.station_exclusions.update(station_ids)
             self.station_direct_visible.difference_update(station_ids)
-        self.sync_station_tree_switches()
         self.send_directory_filter()
 
-    def sync_station_tree_switches(self):
-        visible = self.effective_station_ids()
-        for item in getattr(self, "station_tree_items", []):
-            ids = set(item.data(0, Qt.ItemDataRole.UserRole) or [])
-            active = len(ids & visible)
-            control = self.station_tree_switches[id(item)]
-            control.blockSignals(True)
-            control.setChecked(active > 0)
-            control.setMixed(0 < active < len(ids))
-            control.blockSignals(False)
+    def sync_station_tree_switches(self, visible=None):
+        self.metro_station_model.set_visible(
+            self.effective_station_ids() if visible is None else visible
+        )
 
-    def focus_station_tree_item(self, item, column):
-        if column != 0:
+    def enable_metro_stations_from_catalog(self):
+        self.flags["stations"] = True
+        control = self.switches.get("stations")
+        if control:
+            control.blockSignals(True)
+            control.setChecked(True)
+            control.blockSignals(False)
+        self.map.call("setVisibility", "stations", True)
+
+    def focus_station_tree_item(self, index):
+        if not index.isValid():
             return
-        station_ids = set(item.data(0, Qt.ItemDataRole.UserRole) or [])
+        station_ids = self.metro_station_model.ids_below(
+            self.metro_station_model._node(index).key
+        )
         station = next(
-            (self.station_lookup[value] for value in station_ids if value in self.station_lookup),
+            (self.station_lookup.get(value) for value in station_ids if self.station_lookup.get(value)),
             None,
         )
         if station and station["coordinates"]:
@@ -1838,40 +1899,39 @@ class Desk(QMainWindow):
             )
 
     def select_metro_station_item(self, station_id):
-        candidates = [
-            item
-            for item in getattr(self, "station_tree_items", [])
-            if not item.childCount()
-            and any(
-                value == station_id
-                or self.station_lookup.get(value, {}).get("physical_station_id") == station_id
-                for value in set(item.data(0, Qt.ItemDataRole.UserRole) or [])
-            )
-        ]
-        if not candidates:
+        aliases = [station_id] if self.station_lookup.get(station_id) else find_physical_aliases(self.metro_db, str(station_id))
+        with sqlite3.connect(self.metro_db) as db:
+            row = next((value for alias in aliases for value in db.execute(
+                "SELECT id FROM directory_nodes WHERE kind='object' AND object_id=? LIMIT 1", (alias,)
+            )), None)
+        if row is None:
             return False
-        item = candidates[0]
         self.metro_catalog_tabs.setCurrentWidget(self.metro_station_page)
-        ancestor = item.parent()
-        while ancestor:
-            ancestor.setExpanded(True)
+        index = self.metro_station_model.index_for_key(row[0])
+        if not index.isValid():
+            return False
+        ancestor = index.parent()
+        while ancestor.isValid():
+            self.station_tree.expand(ancestor)
             ancestor = ancestor.parent()
-        self.station_tree.setCurrentItem(item)
-        self.station_tree.scrollToItem(item)
+        self.station_tree.setCurrentIndex(index)
+        self.station_tree.scrollTo(index)
         return True
 
     def metro_station_context_menu(self, position):
         from rail_catalog_ui import add_folder_move_menu
 
-        item = self.station_tree.itemAt(position)
-        if item is None:
+        item = self.station_tree.indexAt(position)
+        if not item.isValid():
             return
-        if item not in self.station_tree.selectedItems():
+        selected = self.station_tree.selectionModel().selectedRows()
+        if item not in selected:
             self.station_tree.clearSelection()
-            self.station_tree.setCurrentItem(item)
+            self.station_tree.setCurrentIndex(item)
+            selected = [item]
         station_ids = set().union(*(
-            set(value.data(0, Qt.ItemDataRole.UserRole) or [])
-            for value in self.station_tree.selectedItems()
+            self.metro_station_model.ids_below(self.metro_station_model._node(value).key)
+            for value in selected
         ))
         if not station_ids:
             return
@@ -1914,11 +1974,10 @@ class Desk(QMainWindow):
         if on:
             self.station_exclusions.difference_update(station_ids)
             self.station_direct_visible.update(station_ids)
-            self.set_flag("stations", True)
+            self.enable_metro_stations_from_catalog()
         else:
             self.station_exclusions.update(station_ids)
             self.station_direct_visible.difference_update(station_ids)
-        self.sync_station_tree_switches()
         self.send_directory_filter()
 
     def move_metro_stations(self, station_ids, path):
@@ -1927,14 +1986,24 @@ class Desk(QMainWindow):
         self.metro_station_overrides.update_many({
             value: {"folder_path": list(path)} for value in station_ids
         })
-        self.populate_station_tree()
+        affected = update_station_directory(
+            self.metro_db, station_ids, self.metro_route_paths,
+            self.metro_station_overrides.values,
+        )
+        self.metro_station_model.refresh_affected(affected)
+        self._refresh_metro_station_paths()
         self.send_directory_filter()
 
     def archive_metro_stations(self, station_ids, archived=True):
         self.metro_station_overrides.update_many({
             value: {"archived": bool(archived)} for value in station_ids
         })
-        self.populate_station_tree()
+        affected = update_station_directory(
+            self.metro_db, station_ids, self.metro_route_paths,
+            self.metro_station_overrides.values,
+        )
+        self.metro_station_model.refresh_affected(affected)
+        self._refresh_metro_station_paths()
         self.send_directory_filter()
 
     def edit_metro_station_by_id(self, station_id):
@@ -1953,75 +2022,29 @@ class Desk(QMainWindow):
         })
 
     def populate_tree(self):
-        groups = {}
-        for route in self.hierarchy.routes:
-            relation = route["osm_relation_id"]
-            province, city, label = self.hierarchy.parent(route)
-            custom = self.metro_line_overrides.values.get(str(relation), {})
-            label = custom.get("display_name") or label
-            if custom.get("archived", False):
-                province, city = "已归档", province + " / " + city
-                self.visible_lines.discard(relation)
-            groups.setdefault(province, {}).setdefault(city, {}).setdefault(
-                label, []
-            ).append(route)
-        self.tree.clear()
-        self.tree_switches.clear()
-        self.tree_items = []
-        self.leaf_count = 0
-        for province, cities in sorted(groups.items()):
-            province_item = QTreeWidgetItem([province, ""])
-            self.tree.addTopLevelItem(province_item)
-            for city, lines in sorted(cities.items()):
-                city_item = QTreeWidgetItem([f"{city}  ·  {len(lines)} 线", ""])
-                province_item.addChild(city_item)
-                for title, routes in sorted(
-                    lines.items(),
-                    key=lambda item: label_order(item[0]),
-                ):
-                    leaf = QTreeWidgetItem([title, ""])
-                    swatch = QPixmap(12, 12)
-                    swatch.fill(QColor(routes[0].get("display_color") or "#718096"))
-                    leaf.setIcon(0, QIcon(swatch))
-                    city_item.addChild(leaf)
-                    leaf.setToolTip(0, "\n".join(route["name"] for route in routes))
-                    self.install_tree_switch(
-                        leaf, {route["osm_relation_id"] for route in routes}
-                    )
-                    self.leaf_count += 1
-                ids = set().union(
-                    *(
-                        self.item_ids(city_item.child(i))
-                        for i in range(city_item.childCount())
-                    )
-                )
-                self.install_tree_switch(city_item, ids)
-                city_item.setExpanded(False)
-            ids = set().union(
-                *(
-                    self.item_ids(province_item.child(i))
-                    for i in range(province_item.childCount())
-                )
-            )
-            self.install_tree_switch(province_item, ids)
+        archived = {
+            int(key) for key, value in self.metro_line_overrides.values.items()
+            if str(key).lstrip("-").isdigit() and value.get("archived", False)
+        }
+        self.visible_lines.difference_update(archived)
+        self.metro_line_model.route_keys, _affected = sync_line_directory(
+            self.metro_db, self.hierarchy.routes, self.hierarchy.parent,
+            self.metro_line_overrides.values,
+        )
+        self.metro_line_model.reset_from_disk()
+        self.metro_line_model.fetchMore()
+        self.metro_line_model.set_visible_routes(self.visible_lines)
+        self.leaf_count = len(set(self.metro_line_model.route_keys.values()))
 
     def item_ids(self, item):
-        return set(item.data(0, Qt.ItemDataRole.UserRole) or [])
-
-    def install_tree_switch(self, item, ids):
-        item.setData(0, Qt.ItemDataRole.UserRole, sorted(ids))
-        control = Switch(bool(ids & self.visible_lines))
-        control.setMixed(
-            bool(ids & self.visible_lines) and not ids <= self.visible_lines
+        if not item.isValid():
+            return set()
+        return self.metro_line_model.relation_ids_below(
+            self.metro_line_model._node(item).key
         )
-        control.setAccessibleName(item.text(0) + " 显示开关")
-        control.toggled.connect(lambda on, node=item: self.tree_toggled(node, on))
-        self.tree.setItemWidget(item, 1, control)
-        self.tree_switches[id(item)] = control
-        self.tree_items.append(item)
 
-    def tree_toggled(self, item, on):
-        ids = self.item_ids(item)
+    def metro_line_tree_toggled(self, key, on):
+        ids = self.metro_line_model.relation_ids_below(key)
         self.visible_lines.update(ids) if on else self.visible_lines.difference_update(
             ids
         )
@@ -2035,40 +2058,30 @@ class Desk(QMainWindow):
         self.update_count()
 
     def sync_tree_switches(self):
-        for item in self.tree_items:
-            ids = self.item_ids(item)
-            active = len(ids & self.visible_lines)
-            control = self.tree_switches[id(item)]
-            control.blockSignals(True)
-            control.setChecked(active > 0)
-            control.setMixed(0 < active < len(ids))
-            control.blockSignals(False)
+        self.metro_line_model.set_visible_routes(self.visible_lines)
 
     def filter_tree(self, text):
-        query = text.strip().lower()
-        self.tree.set_filter_active(bool(query))
-        self.station_tree.set_filter_active(bool(query))
+        query = text.strip()
+        self.metro_line_model.set_search(query)
+        self.metro_line_model.fetchMore()
+        self.metro_station_model.set_search(query)
+        self.metro_station_model.fetchMore()
+        if query:
+            for row in range(self.metro_line_model.rowCount()):
+                province = self.metro_line_model.index(row, 0)
+                self.tree.expand(province)
+                self.metro_line_model.fetchMore(province)
+                for city_row in range(self.metro_line_model.rowCount(province)):
+                    city = self.metro_line_model.index(city_row, 0, province)
+                    self.tree.expand(city)
 
-        def match(item, inherited=False):
-            own = inherited or query in item.text(0).lower()
-            children = [match(item.child(i), own) for i in range(item.childCount())]
-            found = own or any(children)
-            item.setHidden(not found)
-            if query and found and item.childCount():
-                item.setExpanded(True)
-            return found
-
-        for index in range(self.tree.topLevelItemCount()):
-            match(self.tree.topLevelItem(index))
-        self.tree.schedule_height()
-        for index in range(self.station_tree.topLevelItemCount()):
-            match(self.station_tree.topLevelItem(index))
-        self.station_tree.schedule_height()
-
-    def focus_tree_item(self, item, _column):
+    def focus_tree_item(self, item, _column=None):
         ids = self.item_ids(item)
-        if 199200 in ids:
-            self.map.call("focusDemo")
+        boxes = [self.route_bounds[key] for key in ids if key in self.route_bounds]
+        if boxes:
+            self.map.call("fit", [[min(b[0] for b in boxes), min(b[1] for b in boxes)],
+                                  [max(b[2] for b in boxes), max(b[3] for b in boxes)]],
+                          str(self.metro_line_model.data(item)).split(" · ", 1)[0])
         else:
             point = next(
                 (
@@ -2088,7 +2101,7 @@ class Desk(QMainWindow):
                 {
                     "layer": "metro",
                     "properties": {
-                        "name": item.text(0).split(" · ", 1)[0],
+                        "name": str(self.metro_line_model.data(item)).split(" · ", 1)[0],
                         "kind": "目录分组",
                         "line_count": len(routes),
                         "line_names": [route.get("name", "") for route in routes],
@@ -2098,23 +2111,22 @@ class Desk(QMainWindow):
 
     def select_metro_tree_item(self, relation_ids):
         relation_ids = {int(value) for value in relation_ids if value is not None}
-        candidates = [
-            item
-            for item in self.tree_items
-            if not item.childCount() and relation_ids & self.item_ids(item)
-        ]
-        if not candidates:
+        key = next((self.metro_line_model.key_for_relation(value) for value in relation_ids
+                    if self.metro_line_model.key_for_relation(value)), None)
+        if not key:
             return False
-        item = candidates[0]
         self.metro_catalog_tabs.setCurrentWidget(self.metro_line_page)
         if self.line_search.text():
             self.line_search.clear()
+        item = self.metro_line_model.index_for_key(key)
+        if not item.isValid():
+            return False
         ancestor = item.parent()
-        while ancestor:
-            ancestor.setExpanded(True)
+        while ancestor.isValid():
+            self.tree.expand(ancestor)
             ancestor = ancestor.parent()
-        self.tree.setCurrentItem(item)
-        self.tree.scrollToItem(item)
+        self.tree.setCurrentIndex(item)
+        self.tree.scrollTo(item)
         return True
 
     def update_count(self):
@@ -2127,8 +2139,9 @@ class Desk(QMainWindow):
         self.map.call(
             "setConstruction", sorted(-r for r in self.visible_lines if r < 0)
         )
-        self.map.call("setMetroStations", sorted(self.effective_station_ids()))
-        self.sync_station_tree_switches()
+        visible = self.effective_station_ids()
+        self.map.call("setMetroStations", sorted(visible))
+        self.sync_station_tree_switches(visible)
 
     def reference_controls(self, kind):
         body = QWidget()
@@ -2147,7 +2160,7 @@ class Desk(QMainWindow):
             self.road_catalog_widget = RoadCatalog(road_database_path(ROOT), self.map)
             self.road_catalog_widget.build_requested.connect(self.start_road_import)
             self.road_catalog_widget.route_selected.connect(
-                lambda _key: self.switches["road"].setChecked(True)
+                self.enable_road_from_catalog
             )
             layout.addWidget(self.road_catalog_widget)
         layout.addWidget(
@@ -2207,6 +2220,15 @@ class Desk(QMainWindow):
                 events.finished.emit(False, str(error))
 
         threading.Thread(target=run, daemon=True).start()
+
+    def enable_road_from_catalog(self, _key):
+        self.flags["road"] = True
+        control = self.switches.get("road")
+        if control:
+            control.blockSignals(True)
+            control.setChecked(True)
+            control.blockSignals(False)
+        self.map.call("setVisibility", "road", True)
 
     def run_controls(self):
         body = QWidget()
@@ -2344,13 +2366,14 @@ class Desk(QMainWindow):
             )
 
     def enable_rail_from_catalog(self):
-        self.flags["rail"] = True
-        control = self.switches.get("rail")
-        if control and not control.isChecked():
-            control.blockSignals(True)
-            control.setChecked(True)
-            control.blockSignals(False)
-        self.map.call("setVisibility", "rail", True)
+        for key in getattr(self.rail_catalog_widget, "requested_line_layers", {"rail"}):
+            self.flags[key] = True
+            control = self.switches.get(key)
+            if control:
+                control.blockSignals(True)
+                control.setChecked(True)
+                control.blockSignals(False)
+            self.map.call("setVisibility", key, True)
 
     def set_rail_station_partial(self, group, on):
         key = "railStations"
@@ -2461,7 +2484,7 @@ class Desk(QMainWindow):
     def restore_map_state(self):
         """Replay bounded Python-owned UI state after a renderer restart."""
         self.map.call(
-            "setBase", ("standard", "satellite", "admin")[self.base_combo.currentIndex()]
+            "setBase", BASE_TYPES[self.base_combo.currentIndex()]
         )
         for key, control in self.base_switches.items():
             self.map.call("setBaseDetail", key, control.isChecked())
@@ -2638,6 +2661,29 @@ class Desk(QMainWindow):
         menu.exec(QCursor.pos())
         menu.deleteLater()
 
+    def merge_map_rail_segments(self):
+        rail_lines, _stations, _metro_lines, _metro_stations = self._selected_catalog_objects()
+        if len(rail_lines) < 2:
+            QMessageBox.information(self, "组合铁路段", "请在地图上选择至少两个铁路段。")
+            return
+        default = self.rail_catalog_widget.display_name(sorted(rail_lines)[0])
+        name, accepted = QInputDialog.getText(
+            self, "组合铁路段", "组合后在目录中显示的线路名称", text=default
+        )
+        if not accepted:
+            return
+        try:
+            self.rail_catalog_widget.merge_line_segments(rail_lines, name)
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "线路未组合", str(error))
+
+    def split_map_rail_assembly(self):
+        rail_lines, _stations, _metro_lines, _metro_stations = self._selected_catalog_objects()
+        try:
+            self.rail_catalog_widget.split_line_assembly(rail_lines)
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "线路未拆分", str(error))
+
     def archive_map_selection(self):
         rail_lines, rail_stations, _metro_lines, metro_stations = self._selected_catalog_objects()
         if rail_lines:
@@ -2677,7 +2723,11 @@ class Desk(QMainWindow):
                 key: {"display_name": prefix + self.station_lookup[key]["name"]}
                 for key in metro_stations
             })
-            self.populate_station_tree()
+            affected = update_station_directory(
+                self.metro_db, metro_stations, self.metro_route_paths,
+                self.metro_station_overrides.values,
+            )
+            self.metro_station_model.refresh_affected(affected)
         if metro_lines:
             self.metro_line_overrides.update_many({
                 str(key): {"display_name": prefix + self.hierarchy.parent(self.route_lookup[key])[2]}
@@ -2686,15 +2736,67 @@ class Desk(QMainWindow):
         self.map.call("setRailStyles", self.config["railStyles"])
         self.change_run_mode(self.run_mode.currentIndex())
 
+    def change_base(self, index):
+        kind = BASE_TYPES[index]
+        self.map.call("setBase", kind)
+        if kind.startswith("admin-") and not admin_database_path(ROOT).is_file():
+            self.start_admin_import()
+
+    def start_admin_import(self):
+        if getattr(self, "admin_import_running", False):
+            return
+        pbf = ROOT / "data/raw/osm/china-latest.osm.pbf"
+        if not pbf.is_file():
+            self.base_hint.setText("尚无行政边界索引，请先下载全国 OSM 快照，再在数据菜单建立省市县行政边界。")
+            return
+        self.admin_import_running = True
+        self.base_hint.setText("正在后台建立省、市、县边界磁盘索引；可继续使用其他地图。")
+        events = RoadImportEvents(self)
+        self.admin_import_events = events
+        events.progress.connect(self.base_hint.setText)
+
+        def finished(ok, message):
+            self.admin_import_running = False
+            self.base_hint.setText(message if not ok else "省、市、县边界已就绪 · OSM 参考边界，非官方审定地图")
+            if ok:
+                self.map.call("reloadAdminViewport")
+
+        events.finished.connect(finished)
+
+        def run():
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, str(ROOT / "desktop/import_admin.py"), "--pbf", str(pbf)],
+                    cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    env={**os.environ, "PYTHONUTF8": "1"},
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                )
+                last = ""
+                for line in process.stdout:
+                    last = line.strip()
+                    if last:
+                        events.progress.emit(last)
+                events.finished.emit(process.wait() == 0, last or "行政边界导入失败")
+            except OSError as error:
+                events.finished.emit(False, str(error))
+
+        threading.Thread(target=run, daemon=True).start()
+
     def base_changed(self, kind, vector):
-        index = ("standard", "satellite", "admin").index(kind)
+        if kind not in BASE_TYPES:
+            return
+        index = BASE_TYPES.index(kind)
         self.base_combo.blockSignals(True)
         self.base_combo.setCurrentIndex(index)
         self.base_combo.blockSignals(False)
         enabled = vector and not kind.startswith("satellite")
         for control in self.base_switches.values():
             control.setEnabled(enabled)
-        if kind == "satellite":
+        if kind.startswith("admin-"):
+            if not getattr(self, "admin_import_running", False):
+                self.base_hint.setText("本地 OSM 行政边界 · 淡色分区 / 加粗边界 · 非官方审定地图" if admin_database_path(ROOT).is_file() else "行政边界尚未建立，请使用数据菜单建立省市县行政边界。")
+        elif kind == "satellite":
             self.base_hint.setText(
                 "EOX Sentinel-2 · 10 米像素 · 按需加载 · 免费限非商业用途，保留署名；不是亚米级影像"
             )
@@ -2775,6 +2877,7 @@ class Desk(QMainWindow):
                 self.visible_lines.difference_update(operating)
             self.sync_tree_switches()
             self.send_directory_filter()
+            self.update_count()
         elif key == "construction":
             projects = {route["osm_relation_id"] for route in self.construction_catalog}
             if on and not (self.visible_lines & projects):
@@ -2783,8 +2886,11 @@ class Desk(QMainWindow):
                 self.visible_lines.difference_update(projects)
             self.sync_tree_switches()
             self.send_directory_filter()
+            self.update_count()
         elif key == "stations":
-            self.sync_station_tree_switches()
+            self.metro_station_master = bool(on)
+            self.station_exclusions.clear()
+            self.station_direct_visible.clear()
             self.send_directory_filter()
         elif key in ("rail", "railConstruction"):
             self.rail_catalog_widget.set_line_master(
@@ -2792,6 +2898,8 @@ class Desk(QMainWindow):
             )
         elif key == "railStations":
             self.rail_catalog_widget.set_station_master("station", on)
+        elif key == "road":
+            self.road_catalog_widget.set_all(on)
 
     def set_all_lines(self, on):
         self.visible_lines = (
@@ -3443,7 +3551,12 @@ class Desk(QMainWindow):
                         display_name=name.text().strip(),
                         folder_path=[province.text(), city.text(), folder.text()],
                     )
-                    self.populate_station_tree()
+                    affected = update_station_directory(
+                        self.metro_db, {station_id}, self.metro_route_paths,
+                        self.metro_station_overrides.values,
+                    )
+                    self.metro_station_model.refresh_affected(affected)
+                    self._refresh_metro_station_paths()
                 elif rail_group in self.rail_catalog_widget.catalog:
                     path = [value for value in (province.text(), city.text(), folder.text()) if value.strip()]
                     display_name = name.text().strip()
@@ -3587,6 +3700,7 @@ class Desk(QMainWindow):
             self.raw.clear()
 
     def show_data_summary(self):
+        area_count, linked_areas = metro_area_summary(self.metro_db)
         self.display_feature(
             {
                 "layer": "数据源概览",
@@ -3609,16 +3723,11 @@ class Desk(QMainWindow):
                 ),
                 (
                     "真实站区面",
-                    f"{len(self.station_areas['features']):,}",
+                    f"{area_count:,}",
                 ),
                 (
                     "已关联线路的站区",
-                    str(
-                        sum(
-                            bool(f["properties"].get("route_relation_ids"))
-                            for f in self.station_areas["features"]
-                        )
-                    ),
+                    str(linked_areas),
                 ),
                 (
                     "站区缺失说明",
@@ -3714,13 +3823,7 @@ class Desk(QMainWindow):
             self.map.call("focusDemo")
             self._show_demo_details()
             return
-        result = next(
-            (
-                station for station in self.display_stations["features"]
-                if query in station["properties"].get("name", "")
-            ),
-            None,
-        ) if kind in ("全部", "地铁站") else None
+        result = find_metro_station(self.metro_db, query) if kind in ("全部", "地铁站") else None
         if result:
             self.map.call("focus", *result["geometry"]["coordinates"], 15)
             self.display_feature(
@@ -3776,17 +3879,13 @@ class Desk(QMainWindow):
         if self.flags["metro"]:
             features += [
                 f
-                for f in read_json(DATA / "china_metro_routes.geojson", EMPTY)[
-                    "features"
-                ]
+                for f in iter_metro_relation_features(self.metro_db, "metro", self.visible_lines)
                 if f["properties"]["route_relation_id"] in self.visible_lines
             ]
         if self.flags["stations"]:
             features += [
                 f
-                for f in read_json(DATA / "china_metro_stations.geojson", EMPTY)[
-                    "features"
-                ]
+                for f in iter_metro_relation_features(self.metro_db, "station_sources", self.visible_lines)
                 if any(
                     relation in self.visible_lines
                     for relation in f["properties"].get("route_relation_ids", [])
@@ -3794,7 +3893,7 @@ class Desk(QMainWindow):
             ]
             features += [
                 f
-                for f in self.station_areas["features"]
+                for f in iter_metro_relation_features(self.metro_db, "areas", self.visible_lines)
                 if any(
                     r in self.visible_lines
                     for r in f["properties"].get("route_relation_ids", [])
@@ -3803,7 +3902,7 @@ class Desk(QMainWindow):
         if self.flags["construction"]:
             features += [
                 f
-                for f in self.construction["features"]
+                for f in iter_metro_features(self.metro_db, "construction")
                 if -f["properties"]["osm_way_id"] in self.visible_lines
             ]
         if self.flags["rail"]:
@@ -3927,14 +4026,12 @@ def main():
                     and state["activeVehicles"] == 0,
                     "startup_no_shanghai_card": state and state["titleHidden"],
                     "no_line1_toolbar_button": state and not state["hasLine1Button"],
-                    "only_one_satellite_choice": window.base_combo.count() == 3,
+                    "only_one_satellite_choice": sum("卫星" in window.base_combo.itemText(i) for i in range(window.base_combo.count())) == 1,
                     "startup_base_map_only": state
                     and not any(state["visibility"].values())
                     and not window.visible_lines
                     and not window.rail_catalog_widget.visible,
-                    "startup_directory_switches_off": not any(
-                        s.isChecked() for s in window.tree_switches.values()
-                    ),
+                    "startup_directory_switches_off": not window.metro_line_model.active_relations,
                     "sidebar_no_horizontal_overflow": window.side_pages.widget(0)
                     .horizontalScrollBarPolicy()
                     == Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
@@ -3995,9 +4092,8 @@ def main():
                             editor.width() <= 1120
                             and editor.tabs.height() > editor.height() * 0.40
                         )
-                        checks["layer_trees_no_inner_scrollbar"] = all(
-                            t.verticalScrollBarPolicy()
-                            == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                        checks["layer_trees_use_bounded_viewports"] = all(
+                            t.maximumHeight() <= 560
                             for t in (window.tree, window.rail_catalog_widget.tree)
                         )
                         checks["builtin_g1_no_loader"] = not hasattr(
@@ -4203,20 +4299,17 @@ def main():
                         )
                         window.hierarchy = test_model
                         window.refresh_hierarchy(kunming_ids)
-                        leaf = next(
-                            i
-                            for i in window.tree_items
-                            if not i.childCount() and kunming_ids <= window.item_ids(i)
-                        )
+                        leaf_key = window.metro_line_model.key_for_relation(next(iter(kunming_ids)))
+                        leaf = window.metro_line_model.index_for_key(leaf_key)
                         checks["hierarchy_main_tree_updates"] = (
-                            leaf.text(0) == "4号线 · 自定义目录"
-                            and leaf.parent().text(0).startswith("昆明")
-                            and leaf.parent().parent().text(0) == "云南省"
+                            window.metro_line_model.data(leaf) == "4号线 · 自定义目录"
+                            and window.metro_line_model.data(leaf.parent()).startswith("昆明")
+                            and window.metro_line_model.data(leaf.parent().parent()).startswith("云南省")
                         )
                         checks["hierarchy_keeps_visibility"] = (
                             window.visible_lines == snapshot
-                            and window.tree_switches[id(leaf)].isChecked()
-                            == bool(snapshot & kunming_ids)
+                            and (window.metro_line_model.data(leaf, Qt.ItemDataRole.CheckStateRole)
+                                 != Qt.CheckState.Unchecked) == bool(snapshot & kunming_ids)
                         )
                         checks["hierarchy_keeps_osm_tags"] = (
                             original.lookup[7957933]["network"] == "昆明地铁"
@@ -4231,7 +4324,7 @@ def main():
                     QTimer.singleShot(300, edit_preview)
 
                 def exercise_bases():
-                    kinds = iter(("satellite", "admin", "standard"))
+                    kinds = iter(("satellite", "admin-province", "admin-city", "admin-county", "standard"))
 
                     def step():
                         kind = next(kinds, None)
@@ -4239,7 +4332,7 @@ def main():
                             QTimer.singleShot(200, finish)
                             return
                         window.base_combo.setCurrentIndex(
-                            ("standard", "satellite", "admin").index(kind)
+                            BASE_TYPES.index(kind)
                         )
                         attempts = [0]
 
@@ -4287,10 +4380,12 @@ def main():
                 window.set_flag("metro", True)
                 window.pause_demo()
                 parent = next(
-                    item for item in window.tree_items if item.text(0) == "上海市"
+                    window.metro_line_model.index(row, 0)
+                    for row in range(window.metro_line_model.rowCount())
+                    if window.metro_line_model.data(window.metro_line_model.index(row, 0)).startswith("上海市")
                 )
                 parent_ids = window.item_ids(parent)
-                window.tree_switches[id(parent)].click()
+                window.metro_line_model.setData(parent, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
                 parent_visibility_ok = sum(
                     value > 0 for value in window.visible_lines
                 ) == len(
@@ -4349,7 +4444,8 @@ def main():
                         - {-value for value in parent_ids if value < 0}
                     )
                     checks["parent_thumb_synchronized"] = (
-                        window.tree_switches[id(parent)].get_position() == 0
+                        window.metro_line_model.data(parent, Qt.ItemDataRole.CheckStateRole)
+                        == Qt.CheckState.Unchecked
                     )
                     checks["base_road_switch"] = (
                         controls["roadBaseVisibility"] == "none"

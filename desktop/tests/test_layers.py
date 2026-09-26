@@ -341,9 +341,14 @@ def test_large_topology_tree_is_bounded_and_still_searches_every_section(
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
     assert len(widget.items) == 2
     assert all(
-        not widget.tree.itemWidget(group, 1).isEnabled()
+        widget.tree.itemWidget(group, 1).isEnabled()
         for group in widget.groups.values()
     )
+    first_path = min(widget.groups, key=len)
+    original_items = dict(widget.items)
+    widget.tree.itemWidget(widget.groups[first_path], 1).click()
+    assert widget.visible == set(source)  # Includes the row beyond the UI limit.
+    assert widget.items == original_items
     widget.search.setText("RS-2")
     widget.search_timer.stop()
     widget.populate()

@@ -1,6 +1,9 @@
 .env
 __pycache__/
 .pytest_cache/
+.pytest-*/
+.ruff_cache/
+.codex-remote-attachments/
 .venv/
 node_modules/
 desktop/vendor/

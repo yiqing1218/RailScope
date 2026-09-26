@@ -141,7 +141,7 @@ def test_train_csv_exports_readable_stop_names_and_accepts_legacy_header():
     assert merged["trains"][-1]["id"] == "G9"
 
 
-def test_tree_grows_without_inner_scrollbar():
+def test_tree_has_bounded_height_and_no_empty_tail():
     from PySide6.QtWidgets import QApplication, QTreeWidgetItem
     from PySide6.QtCore import Qt
     from desktop.components import GrowingTree
@@ -157,7 +157,8 @@ def test_tree_grows_without_inner_scrollbar():
     parent.setExpanded(True)
     app.processEvents()
     assert tree.height() > collapsed + 300
-    assert tree.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert tree.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert tree.height() <= GrowingTree.MAX_VIEW_HEIGHT
     tree.set_filter_active(True)
     for i in range(parent.childCount()):
         parent.child(i).setHidden(True)

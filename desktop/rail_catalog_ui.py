@@ -7,6 +7,7 @@ from pathlib import Path
 import threading
 import sqlite3
 import math
+from uuid import uuid4
 from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
 from PySide6.QtWidgets import (
     QWidget,
@@ -29,7 +30,8 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import Switch, text_label, GrowingTree
+    from .components import text_label, GrowingTree, CurrentPageTabs
+    from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
@@ -40,7 +42,8 @@ try:
         station_directory_path,
     )
 except ImportError:
-    from components import Switch, text_label, GrowingTree
+    from components import text_label, GrowingTree, CurrentPageTabs
+    from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
     from catalog_metadata import (
@@ -54,6 +57,115 @@ except ImportError:
 MAX_CATALOG_TREE_ITEMS = 4000
 MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
+
+
+class _SignalCallbacks:
+    def __init__(self):
+        self.callbacks = []
+
+    def connect(self, callback):
+        self.callbacks.append(callback)
+
+    def emit(self, value):
+        for callback in list(self.callbacks):
+            callback(value)
+
+
+class TreeSwitch:
+    """Checkbox state adapter; one directory row never owns a QWidget."""
+
+    def __init__(self, checked=False):
+        self._checked = bool(checked)
+        self._mixed = False
+        self._enabled = True
+        self._blocked = False
+        self._item = None
+        self._tree = None
+        self._tooltip = ""
+        self._accessible_name = ""
+        self.toggled = _SignalCallbacks()
+
+    def attach(self, tree, item):
+        self._tree, self._item = tree, item
+        if self._tooltip:
+            item.setToolTip(1, self._tooltip)
+        if self._accessible_name:
+            item.setData(1, Qt.ItemDataRole.AccessibleTextRole, self._accessible_name)
+        self._render()
+
+    def _render(self):
+        if self._item is None:
+            return
+        tree = self._tree
+        blocked = tree.blockSignals(True)
+        try:
+            flags = self._item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+            if self._enabled:
+                flags |= Qt.ItemFlag.ItemIsUserCheckable
+            else:
+                flags &= ~Qt.ItemFlag.ItemIsUserCheckable
+            self._item.setFlags(flags)
+            state = Qt.CheckState.PartiallyChecked if self._mixed else (
+                Qt.CheckState.Checked if self._checked else Qt.CheckState.Unchecked
+            )
+            self._item.setCheckState(1, state)
+        finally:
+            tree.blockSignals(blocked)
+
+    def setChecked(self, value):
+        self._checked = bool(value)
+        self._mixed = False
+        self._render()
+
+    def isChecked(self):
+        return self._checked
+
+    def setMixed(self, value):
+        self._mixed = bool(value)
+        self._render()
+
+    def setEnabled(self, value):
+        self._enabled = bool(value)
+        self._render()
+
+    def isEnabled(self):
+        return self._enabled
+
+    def blockSignals(self, value):
+        previous = self._blocked
+        self._blocked = bool(value)
+        return previous
+
+    def setToolTip(self, text):
+        self._tooltip = text
+        if self._item is not None:
+            self._item.setToolTip(1, text)
+
+    def setAccessibleName(self, text):
+        self._accessible_name = text
+        if self._item is not None:
+            self._item.setData(1, Qt.ItemDataRole.AccessibleTextRole, text)
+
+    def click(self):
+        if self._enabled:
+            self._user_toggled(not self._checked)
+
+    def _user_toggled(self, value):
+        if not self._enabled:
+            self._render()
+            return
+        self._checked, self._mixed = bool(value), False
+        self._render()
+        if not self._blocked:
+            self.toggled.emit(self._checked)
+
+    def deleteLater(self):
+        self._item = None
+        self._tree = None
+        self.toggled.callbacks.clear()
+
+
+Switch = TreeSwitch
 
 
 def _read_catalog_overrides(path):
@@ -100,6 +212,37 @@ class CatalogTree(GrowingTree):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.drop_callback = None
+        self._switches = {}
+        self.itemChanged.connect(self._checkbox_changed)
+
+    def setItemWidget(self, item, column, control):
+        if column != 1 or not isinstance(control, TreeSwitch):
+            return super().setItemWidget(item, column, control)
+        self._switches[id(item)] = control
+        control.attach(self, item)
+
+    def itemWidget(self, item, column):
+        if column == 1:
+            return self._switches.get(id(item))
+        return super().itemWidget(item, column)
+
+    def removeItemWidget(self, item, column):
+        if column == 1:
+            self._switches.pop(id(item), None)
+            return
+        super().removeItemWidget(item, column)
+
+    def clear(self):
+        for control in self._switches.values():
+            control.deleteLater()
+        self._switches.clear()
+        super().clear()
+
+    def _checkbox_changed(self, item, column):
+        if column == 1:
+            control = self._switches.get(id(item))
+            if control is not None:
+                control._user_toggled(item.checkState(1) != Qt.CheckState.Unchecked)
 
     def dropEvent(self, event):
         target = self.itemAt(event.position().toPoint())
@@ -197,15 +340,7 @@ class RailCatalog(QWidget):
         self.directory = Path(directory).resolve()
         self.path = Path(settings)
         self.shared_path = Path(shared_path) if shared_path is not None else SHARED_CATALOG_PATH
-        source = Path(directory) / "rail_catalog.json"
-        self.catalog = (
-            json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
-        )
-        cache = Path(directory) / "rail_catalog.topology.json"
-        if cache.exists():
-            value = json.loads(cache.read_text(encoding="utf-8"))
-            if value.get("version") == VERSION:
-                self.catalog = value["catalog"]
+        self.catalog = RailCatalogIndex(build_catalog_index(self.directory))
         self.shared_overrides = {}
         self.local_overrides = {}
         self.overrides = {}
@@ -224,6 +359,8 @@ class RailCatalog(QWidget):
         self.station_excluded = set()
         self.station_direct_visible = set()
         self.station_direct_groups = {}
+        self.asset_visible = {"platform": set(), "switch": set()}
+        self.asset_hidden = {"platform": set(), "switch": set()}
         self.station_folder_paths = set()
         self.transient_station_records = {}
         self.selected_switch_owners = {}
@@ -255,10 +392,11 @@ class RailCatalog(QWidget):
         self.search_timer.setInterval(180)
         self.search_timer.timeout.connect(self.populate)
         search.textChanged.connect(self.search_changed)
-        self.tabs = QTabWidget()
+        self.tabs = CurrentPageTabs()
         self.line_page = QWidget()
         line_layout = QVBoxLayout(self.line_page)
         line_layout.setContentsMargins(0, 0, 0, 0)
+        line_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         line_layout.addWidget(text_label("全国铁路线", "sectionLabel"))
         self.tree = CatalogTree()
         self.tree.setColumnCount(2)
@@ -280,11 +418,11 @@ class RailCatalog(QWidget):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         line_layout.addWidget(self.tree)
-        line_layout.addStretch(1)
         self.tabs.addTab(self.line_page, "线路目录")
         self.station_page = QWidget()
         station_layout = QVBoxLayout(self.station_page)
         station_layout.setContentsMargins(0, 0, 0, 0)
+        station_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         station_layout.addWidget(text_label("省 / 市 / 车站实体", "sectionLabel"))
         self.station_tree = CatalogTree()
         self.station_tree.setColumnCount(2)
@@ -292,6 +430,7 @@ class RailCatalog(QWidget):
         self.station_tree.setIndentation(12)
         self.station_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.station_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.station_tree.header().setStretchLastSection(False)
         self.station_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.station_tree.setColumnWidth(1, 62)
         self.station_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -309,12 +448,12 @@ class RailCatalog(QWidget):
         station_layout.addWidget(self.station_tree)
         self.station_note = text_label("正在读取车站实体目录…", wrap=True)
         station_layout.addWidget(self.station_note)
-        station_layout.addStretch(1)
         self.tabs.addTab(self.station_page, "车站目录")
         self.yard_page = QWidget()
         yard_layout = QVBoxLayout(self.yard_page)
         yard_layout.setContentsMargins(0, 0, 0, 0)
-        self.yard_tree = QTreeWidget()
+        self.yard_tree = CatalogTree()
+        self.yard_tree.setColumnCount(2)
         self.yard_tree.setHeaderHidden(True)
         self.yard_tree.itemDoubleClicked.connect(self.focus_yard_item)
         yard_layout.addWidget(self.yard_tree)
@@ -322,9 +461,15 @@ class RailCatalog(QWidget):
         self.platform_page = QWidget()
         platform_layout = QVBoxLayout(self.platform_page)
         platform_layout.setContentsMargins(0, 0, 0, 0)
-        self.platform_tree = QTreeWidget()
+        self.platform_tree = CatalogTree()
+        self.platform_tree.setColumnCount(2)
         self.platform_tree.setHeaderHidden(True)
         self.platform_tree.itemDoubleClicked.connect(self.focus_platform_item)
+        for asset_tree in (self.yard_tree, self.platform_tree):
+            asset_tree.header().setStretchLastSection(False)
+            asset_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            asset_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+            asset_tree.setColumnWidth(1, 62)
         platform_layout.addWidget(self.platform_tree)
         self.tabs.addTab(self.platform_page, "站台线目录")
         self.tabs.currentChanged.connect(self._load_catalog_tab)
@@ -367,7 +512,11 @@ class RailCatalog(QWidget):
             )
         )
         ways = {w for key in self.visible for w in self.catalog[key]["way_ids"]}
-        self.catalog = catalog
+        if isinstance(self.catalog, RailCatalogIndex):
+            self.catalog.close()
+        self.catalog = RailCatalogIndex(build_catalog_index(self.directory, catalog))
+        if hasattr(self, "_source_construction_keys"):
+            del self._source_construction_keys
         self.excluded = set()
         if was_all and len(catalog) > MAX_CATALOG_TREE_ITEMS:
             self.all_visible = True
@@ -471,9 +620,8 @@ class RailCatalog(QWidget):
             "具体端点线段保存在对象属性和通道编辑器中。"
         )
         if len(self.catalog) > MAX_CATALOG_TREE_ITEMS:
-            named = sum(
-                not self.display_name(key).startswith("未命名轨道")
-                for key in self.catalog
+            named = self.catalog.matching_count("") if isinstance(self.catalog, RailCatalogIndex) else sum(
+                not self.display_name(key).startswith("未命名轨道") for key in self.catalog
             )
             return (
                 base
@@ -484,6 +632,9 @@ class RailCatalog(QWidget):
 
     def meta(self, key):
         record = self.catalog[key]
+        return self._effective_record(key, record)
+
+    def _effective_record(self, key, record):
         legacy = json.dumps(
             [record.get("province", ""), record.get("name", key)],
             ensure_ascii=False,
@@ -502,6 +653,7 @@ class RailCatalog(QWidget):
     def populate(self):
         if not hasattr(self, "tree"):
             return
+        self._sync_folder_index()
         expanded = {
             key
             for key, item in getattr(self, "groups", {}).items()
@@ -528,6 +680,7 @@ class RailCatalog(QWidget):
                 meta.get("from_node", ""),
                 meta.get("to_node", ""),
                 meta.get("track_type", ""),
+                meta.get("assembly_name", ""),
             )
             return query in " ".join(map(str, values)).casefold()
 
@@ -535,15 +688,18 @@ class RailCatalog(QWidget):
         # groups.  Taking the first 4,000 insertion-order records used to hide
         # almost every properly named business line.  Named yard groups are
         # included and can also be reached from their station owner.
-        candidates = [
-            name
-            for name in self.catalog
-            if matches(name)
-            and (
-                bool(query)
-                or not self.display_name(name).startswith("未命名轨道")
-            )
-        ]
+        if isinstance(self.catalog, RailCatalogIndex):
+            candidates = self.catalog.candidate_keys(query, MAX_CATALOG_TREE_ITEMS + 1)
+            for key, custom in self.overrides.items():
+                if key in self.catalog and query and query in str(custom.get("display_name") or custom.get("assembly_name") or "").casefold() and key not in candidates:
+                    candidates.append(key)
+            matched = self.catalog.matching_count(query)
+        else:
+            candidates = [
+                name for name in self.catalog
+                if matches(name) and (bool(query) or not self.display_name(name).startswith("未命名轨道"))
+            ]
+            matched = len(candidates)
         candidates.sort(
             key=lambda key: (
                 self.display_name(key).startswith("未命名轨道"),
@@ -551,22 +707,33 @@ class RailCatalog(QWidget):
                 str(key),
             )
         )
-        matched = len(candidates)
         names = candidates[:MAX_CATALOG_TREE_ITEMS]
         pinned = getattr(self, "pinned_line_key", None)
         if pinned in self.catalog and pinned not in names:
             names.append(pinned)
+        if pinned in self.catalog:
+            assembly = self.meta(pinned).get("assembly_id")
+            if assembly:
+                names.extend(
+                    key for key, custom in self.overrides.items()
+                    if custom.get("assembly_id") == assembly
+                    and key in self.catalog and key not in names
+                )
         self.catalog_limited = matched > len(names)
         merged_lines = {}
         for name in names:
-            merged_lines.setdefault(
-                (self.parents(name), self.display_name(name).strip().casefold()), []
-            ).append(name)
-        for (parents, _normalized_label), component_names in merged_lines.items():
+            assembly = self.meta(name).get("assembly_id")
+            grouping = ("assembly", assembly) if assembly else (
+                self.parents(name), self.display_name(name).strip().casefold(),
+                name if self.meta(name).get("separate_catalog_entry") else ""
+            )
+            merged_lines.setdefault(grouping, []).append(name)
+        for grouping, component_names in merged_lines.items():
             component_names = sorted(component_names)
             name = component_names[0]
             record = self.catalog[name]
             meta = self.meta(name)
+            parents = self.parents(name)
             parent = self.tree.invisibleRootItem()
             key = ()
             for label in parents:
@@ -574,7 +741,7 @@ class RailCatalog(QWidget):
                 if key not in groups:
                     groups[key] = QTreeWidgetItem(parent, [label])
                 parent = groups[key]
-            label = self.display_name(name)
+            label = meta.get("assembly_name") or self.display_name(name)
             item = QTreeWidgetItem(parent, [label])
             count = sum(
                 component.get("edge_count")
@@ -622,25 +789,21 @@ class RailCatalog(QWidget):
                 lambda on, values=set(component_names): self.toggle_group(values, on)
             )
             self.tree.setItemWidget(item, 1, switch)
-        for item in groups.values():
+        for path, item in groups.items():
             keys = self.members[id(item)]
             displayed_items = {id(self.items[key]) for key in keys if key in self.items}
             item.setText(0, item.text(0) + f" · {len(displayed_items)} 项")
             visible_keys = {key for key in keys if self.is_visible(key)}
             control = Switch(bool(visible_keys))
-            control.setEnabled(
-                not self.catalog_limited
-                and not all(self.meta(k).get("archived", False) for k in keys)
-            )
-            if self.catalog_limited:
-                control.setToolTip("结果过多，请先搜索具体物理线路、车站或稳定编号。")
+            control.setEnabled(not all(self.meta(k).get("archived", False) for k in keys))
             control.setMixed(bool(visible_keys) and visible_keys != keys)
-            control.toggled.connect(lambda on, k=keys: self.toggle_group(k, on))
+            control.toggled.connect(lambda on, p=path: self.toggle_line_folder(p, on))
             self.tree.setItemWidget(item, 1, control)
         for key, item in groups.items():
             item.setExpanded(key in expanded)
         self.groups = groups
         self.line_group_paths = {id(item): path for path, item in groups.items()}
+        self._sync_folder_switches()
         self.line_folder_paths.update(
             path[1:] if path and path[0] == "已归档" else path for path in groups
         )
@@ -662,6 +825,9 @@ class RailCatalog(QWidget):
 
     def parents(self, key):
         meta = self.meta(key)
+        return self._record_parents(meta)
+
+    def _record_parents(self, meta):
         folders = meta.get("folder_path")
         parents = (
             tuple(folders)
@@ -669,6 +835,34 @@ class RailCatalog(QWidget):
             else tuple(catalog_parents(meta, self.mode.currentIndex()))
         )
         return (("已归档",) + parents) if meta.get("archived", False) else parents
+
+    def _sync_folder_index(self):
+        if isinstance(self.catalog, RailCatalogIndex):
+            def resolve(key, record):
+                meta = self._effective_record(key, record)
+                return self._record_parents(meta), bool(meta.get("archived"))
+            self.folder_totals = self.catalog.sync_directory_paths(self.mode.currentIndex(), self.overrides, resolve)
+
+    def toggle_line_folder(self, path, on):
+        self._sync_folder_index()
+        keys = self.catalog.folder_keys(path) if isinstance(self.catalog, RailCatalogIndex) else {
+            key for key in self.catalog if self.parents(key)[:len(path)] == tuple(path)
+        }
+        self.toggle_group(keys, on)
+
+    def _sync_folder_switches(self):
+        if not isinstance(self.catalog, RailCatalogIndex):
+            return
+        selected = self.catalog.selected_folder_counts(self.excluded if self.all_visible else self.visible)
+        for path, item in getattr(self, "groups", {}).items():
+            total = self.folder_totals.get(path, 0)
+            count = total - selected.get(path, 0) if self.all_visible else selected.get(path, 0)
+            control = self.tree.itemWidget(item, 1)
+            if control is not None:
+                control.blockSignals(True)
+                control.setChecked(count > 0)
+                control.setMixed(0 < count < total)
+                control.blockSignals(False)
 
     def set_query(self, text, search_type="全部"):
         """Receive the single map-header search instead of owning a second box."""
@@ -726,11 +920,13 @@ class RailCatalog(QWidget):
             item = QTreeWidgetItem(self.platform_tree, [f"站台线 {record['name']} · OSM {record['way_id']}"])
             item.setData(0, Qt.ItemDataRole.UserRole, record["way_id"])
             item.setToolTip(0, "真实 OSM railway=platform 线；目录显示不代表已核验停靠股道")
+            self._asset_switch(self.platform_tree, item, "platform", {record["way_id"]})
 
     def populate_yard_tree(self):
         self.yard_tree.clear()
         groups = {}
-        for key, group in sorted(self.catalog.items(), key=lambda value: (str(value[1].get("station_name") or ""), value[0])):
+        groups_source = self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items()
+        for key, group in sorted(groups_source, key=lambda value: (str(value[1].get("station_name") or ""), value[0])):
             if not str(key).startswith("ST-"):
                 continue
             provinces = group.get("provinces") or []
@@ -742,6 +938,54 @@ class RailCatalog(QWidget):
             item = QTreeWidgetItem(parent, [f"{self.display_name(key)} · {group.get('track_type', '')}"])
             item.setData(0, Qt.ItemDataRole.UserRole, key)
             item.setToolTip(0, f"稳定目录编号：{key}\n{group.get('type_evidence', '分类待核对')}")
+            self._asset_switch(self.yard_tree, item, "yard", {key})
+        for parent in groups.values():
+            keys = {parent.child(i).data(0, Qt.ItemDataRole.UserRole) for i in range(parent.childCount())}
+            self._asset_switch(self.yard_tree, parent, "yard", keys)
+
+    def _asset_is_visible(self, kind, key):
+        if kind == "yard":
+            return self.is_visible(key)
+        return (self.station_masters["station"] or key in self.asset_visible[kind]) and key not in self.asset_hidden[kind]
+
+    def _asset_switch(self, tree, item, kind, keys):
+        control = Switch(False)
+        control.asset_spec = (kind, set(keys))
+        control.toggled.connect(lambda on: self.toggle_assets(kind, keys, on))
+        tree.setItemWidget(item, 1, control)
+        self._update_asset_control(control)
+
+    def _update_asset_control(self, control):
+        kind, keys = control.asset_spec
+        visible = {key for key in keys if self._asset_is_visible(kind, key)}
+        control.blockSignals(True)
+        control.setChecked(bool(visible))
+        control.setMixed(bool(visible) and visible != keys)
+        control.blockSignals(False)
+
+    def _sync_asset_switches(self):
+        for tree in (self.station_tree, self.yard_tree, self.platform_tree):
+            for control in tree._switches.values():
+                if hasattr(control, "asset_spec"):
+                    self._update_asset_control(control)
+
+    def toggle_assets(self, kind, keys, on):
+        if kind == "yard":
+            self.toggle_group(keys, on)
+            return
+        if on:
+            self.asset_visible[kind].update(keys)
+            self.asset_hidden[kind].difference_update(keys)
+        else:
+            self.asset_visible[kind].difference_update(keys)
+            self.asset_hidden[kind].update(keys)
+        if not self.station_masters["station"]:
+            self.station_partial_changed.emit("station", self._any_station_assets_visible())
+        self._sync_asset_switches()
+        self.send_station_visibility()
+
+    def _any_station_assets_visible(self):
+        return bool(self.station_direct_visible or any(self.asset_visible.values()))
 
     def focus_yard_item(self, item, column):
         key = item.data(0, Qt.ItemDataRole.UserRole)
@@ -834,6 +1078,7 @@ class RailCatalog(QWidget):
                 leaf = QTreeWidgetItem(item, [self.switch_name(switch_id), ""])
                 leaf.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
                 leaf.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
+                self._asset_switch(self.station_tree, leaf, "switch", {switch_id})
         record["member_switch_ids"] = sorted(known)
 
     def populate_station_tree(self):
@@ -861,7 +1106,8 @@ class RailCatalog(QWidget):
             if len(point) >= 2:
                 station_grid.setdefault((int(point[0]*100), int(point[1]*100)), []).append(record)
         yards = {}
-        for key, group in self.catalog.items():
+        groups_source = self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items()
+        for key, group in groups_source:
             if not str(key).startswith("ST-"):
                 continue
             candidates = {sid for province in group.get("provinces", []) for sid in by_name.get((str(group.get("station_name") or "").removesuffix("站").casefold(), province), [])}
@@ -924,6 +1170,7 @@ class RailCatalog(QWidget):
                 switch_item = QTreeWidgetItem(item, [self.switch_name(switch_id), ""])
                 switch_item.setToolTip(0, f"归属：{record['name']}\nOSM 道岔节点：{switch_id}")
                 switch_item.setData(0, Qt.ItemDataRole.UserRole, ("switch", switch_id))
+                self._asset_switch(self.station_tree, switch_item, "switch", {switch_id})
             item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
         for path, item in groups.items():
             members = self.station_members.get(id(item), set())
@@ -942,7 +1189,7 @@ class RailCatalog(QWidget):
         shown = len(self.station_records)
         suffix = "；结果已限制，请在主地图搜索框继续缩小范围" if shown < self.station_total else ""
         self.station_note.setText(
-            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；已关联道岔列在站点下，其余可到道岔目录检索{suffix}。"
+            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；展开站点可查看关联道岔，其余道岔可在地图选择{suffix}。"
         )
         self.station_tree.schedule_height()
         self.station_tree.setUpdatesEnabled(True)
@@ -955,12 +1202,16 @@ class RailCatalog(QWidget):
                 leaf = QTreeWidgetItem(folder, [f"{self.display_name(key)} · {group.get('track_type', '')}", ""])
                 leaf.setData(0, Qt.ItemDataRole.UserRole, ("yard", key))
                 leaf.setToolTip(0, f"目录编号：{key}\n来源：{group.get('type_evidence', '待核对')}")
+                self._asset_switch(self.station_tree, leaf, "yard", {key})
+            self._asset_switch(self.station_tree, folder, "yard", set(yards))
         if platforms:
             folder = QTreeWidgetItem(item, ["真实站台线（邻近推断，待核验）", ""])
             for platform in platforms:
                 leaf = QTreeWidgetItem(folder, [f"站台线 {platform['name']}", ""])
                 leaf.setData(0, Qt.ItemDataRole.UserRole, ("platform", platform["way_id"]))
                 leaf.setToolTip(0, f"OSM 来源轨道：{platform['way_id']}；邻近关联，非运行股道认定")
+                self._asset_switch(self.station_tree, leaf, "platform", {platform["way_id"]})
+            self._asset_switch(self.station_tree, folder, "platform", {value["way_id"] for value in platforms})
 
     def _apply_station_override(self, record):
         custom = self.overrides.get("station:" + record["id"], {})
@@ -1021,6 +1272,9 @@ class RailCatalog(QWidget):
         )
 
     def set_station_master(self, group, on):
+        for kind in self.asset_visible:
+            self.asset_visible[kind].clear()
+            self.asset_hidden[kind].clear()
         # One business master controls both owners and their child switches.
         self.station_masters["station"] = bool(on)
         self.station_masters["control"] = bool(on)
@@ -1050,11 +1304,13 @@ class RailCatalog(QWidget):
                     self.station_direct_groups[station_id] = "station"
                 else:
                     self.station_direct_groups.pop(station_id, None)
-        self.station_partial_changed.emit("station", bool(self.station_direct_visible))
+        if not self.station_masters["station"]:
+            self.station_partial_changed.emit("station", self._any_station_assets_visible())
         self.sync_station_switches()
         self.send_station_visibility()
 
     def sync_station_switches(self):
+        self._sync_asset_switches()
         for record in self.station_records:
             item = self.station_items.get(record["id"])
             if not item:
@@ -1092,17 +1348,26 @@ class RailCatalog(QWidget):
                 self.station_direct_groups[record["id"]] = group
             else:
                 self.station_direct_groups.pop(record["id"], None)
-            partial = bool(self.station_direct_visible)
+            partial = self._any_station_assets_visible()
             self.station_partial_changed.emit(group, partial)
         item = self.station_items.get(record["id"])
-        control = self.station_tree.itemWidget(item, 1) if item is not None else None
-        if control is not None and control.isChecked() != self.station_is_visible(record):
-            control.blockSignals(True)
-            control.setChecked(self.station_is_visible(record))
-            control.blockSignals(False)
+        while item is not None:
+            control = self.station_tree.itemWidget(item, 1)
+            members = self.station_members.get(id(item), {record["id"]})
+            visible = {key for key in members if key in self.station_record_by_id
+                       and self.station_is_visible(self.station_record_by_id[key])}
+            if control is not None:
+                control.blockSignals(True)
+                control.setChecked(bool(visible))
+                control.setMixed(bool(visible) and visible != members)
+                control.blockSignals(False)
+            item = item.parent()
         self.send_station_visibility()
 
     def send_station_visibility(self):
+        self.map.call("setRailAssetSelection",
+                      sorted(self.asset_visible["platform"]), sorted(self.asset_hidden["platform"]),
+                      sorted(self.asset_visible["switch"]), sorted(self.asset_hidden["switch"]))
         hidden_ids = self.station_excluded | {
             key.removeprefix("station:")
             for key, value in self.overrides.items()
@@ -1850,6 +2115,72 @@ class RailCatalog(QWidget):
             "已移动目录项：" + " / ".join(folders) + "；原始分类和数据保留。"
         )
 
+    def merge_line_segments(self, keys, name):
+        """Group catalog components under one stable workspace line identity."""
+        keys = set(keys)
+        name = str(name).strip()
+        if len(keys) < 2:
+            raise ValueError("请至少选择两个铁路目录段")
+        if not name:
+            raise ValueError("组合线路名称不能为空")
+        if any(key not in self.catalog for key in keys):
+            raise ValueError("选择中包含已失效的铁路段")
+        if any(self.meta(key).get("assembly_id") for key in keys):
+            raise ValueError("请先拆分已组合的线路，再重新组合")
+        ident = "RLU-" + uuid4().hex
+        first_path = self.parents(sorted(keys)[0])
+        folder = list(first_path[1:] if first_path and first_path[0] == "已归档" else first_path)
+        def active_path(key):
+            path = self.parents(key)
+            return list(path[1:] if path and path[0] == "已归档" else path)
+        changes = {
+            key: {
+                "assembly_id": ident,
+                "assembly_name": name,
+                "assembly_previous_folder_path": active_path(key),
+                "folder_path": folder,
+                "assembly_verification_status": "user_grouping_unverified",
+            }
+            for key in keys
+        }
+        self._save_local_overrides(changes)
+        self.metadata_changed.emit()
+        self.pinned_line_key = sorted(keys)[0]
+        self.populate()
+        self.note.setText(f"已将 {len(keys)} 个目录段组合为「{name}」；物理轨道和通道引用未改变。")
+        return ident
+
+    def split_line_assembly(self, keys):
+        keys = set(keys)
+        # A same-name source group can be split just like a manual assembly.
+        for key in list(keys):
+            item = self.items.get(key)
+            if item is not None:
+                keys.update(self.members.get(id(item), set()))
+        assembly_ids = {
+            self.meta(key).get("assembly_id")
+            for key in keys if key in self.catalog
+        } - {None, ""}
+        if not assembly_ids and len(keys) < 2:
+            raise ValueError("所选目录项没有可拆分的组合线路")
+        changes = {key: {"separate_catalog_entry": True} for key in keys}
+        for key, custom in self.overrides.items():
+            if key not in self.catalog or custom.get("assembly_id") not in assembly_ids:
+                continue
+            changes[key] = {
+                "assembly_id": None,
+                "separate_catalog_entry": True,
+                "assembly_name": None,
+                "assembly_previous_folder_path": None,
+                "assembly_verification_status": None,
+                "folder_path": list(custom.get("assembly_previous_folder_path") or self.parents(key)),
+            }
+        self._save_local_overrides(changes)
+        self.metadata_changed.emit()
+        self.populate()
+        self.note.setText(f"已拆分为 {len(changes)} 个独立目录段；原有物理轨道段保持不变。")
+        return len(assembly_ids) or 1
+
     def _line_group_path(self, item):
         return self.line_group_paths.get(id(item)) if item is not None else None
 
@@ -1875,15 +2206,14 @@ class RailCatalog(QWidget):
         control = self.tree.itemWidget(item, 1)
         if control is None:
             control = Switch(False)
-            control.toggled.connect(lambda on, values=keys: self.toggle_group(values, on))
+            control.toggled.connect(lambda on, p=path: self.toggle_line_folder(p, on))
             self.tree.setItemWidget(item, 1, control)
         visible = {key for key in keys if self.is_visible(key)}
         control.blockSignals(True)
         control.setChecked(bool(visible))
         control.setMixed(bool(visible) and visible != keys)
         control.setEnabled(
-            not self.catalog_limited
-            and bool(keys)
+            bool(keys)
             and not all(self.meta(key).get("archived", False) for key in keys)
         )
         control.blockSignals(False)
@@ -2102,6 +2432,20 @@ class RailCatalog(QWidget):
                 else "查看端点与相邻线段…",
                 lambda: self.show_topology(leaf),
             )
+        if len(keys) >= 2:
+            def merge_selected():
+                default = self.display_name(sorted(keys)[0])
+                value, accepted = QInputDialog.getText(
+                    self, "组合铁路段", "组合后在目录中显示的线路名称", text=default
+                )
+                if accepted:
+                    perform(lambda: self.merge_line_segments(keys, value))
+            menu.addAction("将所选铁路段组合为一条线路…", merge_selected)
+        if len(keys) > 1 or any(self.meta(key).get("assembly_id") for key in keys):
+            menu.addAction(
+                "拆分所选组合线路",
+                lambda: perform(lambda: self.split_line_assembly(keys)),
+            )
         menu.addSeparator()
         archived = all(self.meta(key).get("archived", False) for key in keys)
         menu.addAction(
@@ -2210,12 +2554,13 @@ class RailCatalog(QWidget):
 
     def toggle_group(self, keys, on):
         keys = {key for key in keys if not self.meta(key).get("archived", False)}
+        self.requested_line_layers = {"railConstruction" if self.meta(key).get("construction") else "rail" for key in keys}
         if self.all_visible:
             self.excluded.difference_update(keys) if on else self.excluded.update(keys)
         else:
             self.visible.update(keys) if on else self.visible.difference_update(keys)
         self.send_visibility(on)
-        QTimer.singleShot(0, self.populate)
+        self._sync_line_switches()
 
     def set_all(self, on):
         self.line_masters = {"operating": bool(on), "construction": bool(on)}
@@ -2232,30 +2577,33 @@ class RailCatalog(QWidget):
                 else set()
             )
         self.send_visibility(False)
-        self.populate()
+        self._sync_line_switches()
 
     def set_line_master(self, group, on):
         if group not in self.line_masters:
             raise ValueError("铁路总开关类型无效")
         self.line_masters[group] = bool(on)
-        construction = {
-            key for key in self.catalog if self.meta(key).get("construction")
-            and not self.meta(key).get("archived", False)
-        }
-        if self.line_masters["operating"]:
-            self.all_visible = True
-            self.visible = set()
-            self.excluded = set() if self.line_masters["construction"] else construction
-        elif self.line_masters["construction"]:
-            self.all_visible = False
-            self.excluded = set()
-            self.visible = construction
+        if not hasattr(self, "_source_construction_keys"):
+            self._source_construction_keys = {key for key, record in self.catalog.items() if record.get("construction")}
+        construction = set(self._source_construction_keys)
+        for key, custom in self.overrides.items():
+            if key in self.catalog:
+                if custom.get("archived") or custom.get("construction") is False:
+                    construction.discard(key)
+                elif custom.get("construction"):
+                    construction.add(key)
+        if group == "construction":
+            if self.all_visible:
+                self.excluded.difference_update(construction) if on else self.excluded.update(construction)
+            else:
+                self.visible.update(construction) if on else self.visible.difference_update(construction)
         else:
-            self.all_visible = False
-            self.excluded = set()
-            self.visible = set()
+            retained = construction - self.excluded if self.all_visible else construction & self.visible
+            self.all_visible = bool(on)
+            self.excluded = construction - retained if on else set()
+            self.visible = set() if on else retained
         self.send_visibility(False)
-        self.populate()
+        self._sync_line_switches()
 
     def has_visible_lines(self):
         return self.all_visible or bool(self.visible)
@@ -2270,6 +2618,7 @@ class RailCatalog(QWidget):
     def toggle(self, name, on):
         if self.meta(name).get("archived", False):
             return
+        self.requested_line_layers = {"railConstruction" if self.meta(name).get("construction") else "rail"}
         if self.all_visible:
             self.excluded.discard(name) if on else self.excluded.add(name)
         elif on:
@@ -2277,11 +2626,18 @@ class RailCatalog(QWidget):
         else:
             self.visible.discard(name)
         self.send_visibility(on)
+        self._sync_line_switches()
+
+    def _sync_line_switches(self):
+        self._sync_asset_switches()
         # Update ancestors without destroying the switch handling the current event.
-        for key, item in self.items.items():
+        for item in {id(value): value for value in self.items.values()}.values():
             control = self.tree.itemWidget(item, 1)
+            keys = self.members.get(id(item), set())
+            visible_keys = {key for key in keys if self.is_visible(key)}
             control.blockSignals(True)
-            control.setChecked(self.is_visible(key))
+            control.setChecked(bool(visible_keys))
+            control.setMixed(bool(visible_keys) and visible_keys != keys)
             control.blockSignals(False)
         for item in self.groups.values():
             control = self.tree.itemWidget(item, 1)
@@ -2291,14 +2647,15 @@ class RailCatalog(QWidget):
             control.setChecked(bool(visible_keys))
             control.setMixed(bool(visible_keys) and visible_keys != keys)
             control.blockSignals(False)
+        self._sync_folder_switches()
 
     def send_visibility(self, request_enable):
+        archived = {
+            name for name, custom in self.overrides.items()
+            if custom.get("archived", False) and name in self.catalog
+        }
         if self.all_visible:
-            hidden = self.excluded | {
-                name
-                for name in self.catalog
-                if self.meta(name).get("archived", False)
-            }
+            hidden = self.excluded | archived
             if not hidden:
                 self.map.call("setRailSelection", None, None)
             else:
@@ -2307,9 +2664,7 @@ class RailCatalog(QWidget):
                 self.enabled_requested.emit()
             self.map.call("setRailLineSelection", None)
             return
-        active_count = sum(
-            not self.meta(name).get("archived", False) for name in self.catalog
-        )
+        active_count = len(self.catalog) - len(archived)
         if active_count and len(self.visible) == active_count:
             # Null removes the MapLibre filter. Sending hundreds of thousands
             # of IDs would waste RAM and can exhaust the WebGL process.
@@ -2342,6 +2697,7 @@ class RailCatalog(QWidget):
             way
             for name in sorted(names)
             if not self.catalog[name].get("edge_ids")
+            and not self.catalog[name].get("catalog_group_id")
             for way in self.catalog[name]["way_ids"]
         ]
         groups = [

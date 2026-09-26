@@ -1,5 +1,8 @@
 # RailScope V0 + V1 + V5 plan
 
+> Historical initial milestone plan. For current setup, features and known
+> limitations, see the [project README](../../README.md).
+
 Version scope follows the current request.  The master specification remains the
 architecture, data, GIS, topology, and engineering baseline; its V2/V3 product
 scope is intentionally not implemented in this iteration.

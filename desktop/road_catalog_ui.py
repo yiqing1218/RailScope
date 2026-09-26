@@ -2,14 +2,16 @@
 
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QTreeView, QVBoxLayout, QWidget
 
 try:
     from .components import text_label
-    from .road_store import routes
+    from .lazy_directory import SqliteDirectoryModel
+    from .road_store import route, routes, sync_directory
 except ImportError:
     from components import text_label
-    from road_store import routes
+    from lazy_directory import SqliteDirectoryModel
+    from road_store import route, routes, sync_directory
 
 
 class RoadCatalog(QWidget):
@@ -25,15 +27,16 @@ class RoadCatalog(QWidget):
         layout.setSpacing(7)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索 G / S 编号、高速名称或省份")
-        self.search.returnPressed.connect(self.refresh)
+        self.search.textChanged.connect(self.filter_rows)
         layout.addWidget(self.search)
-        self.tree = QTreeWidget()
+        self.tree = QTreeView()
         self.tree.setHeaderHidden(True)
         self.tree.setUniformRowHeights(True)
         self.tree.setMinimumHeight(260)
         self.tree.setMaximumHeight(440)
-        self.tree.itemClicked.connect(self.select_item)
-        self.tree.itemDoubleClicked.connect(self.focus_item)
+        self.model = None
+        self.visible_routes = set()
+        self.tree.doubleClicked.connect(self.focus_item)
         layout.addWidget(self.tree)
         controls = QHBoxLayout()
         self.build = QPushButton("从全国 OSM 快照建立 / 更新目录")
@@ -45,48 +48,52 @@ class RoadCatalog(QWidget):
         self.refresh()
 
     def refresh(self):
-        self.tree.clear()
         if not self.database.is_file():
             self.note.setText("尚未建立全国高速目录。可使用本机已下载的全国 OSM 快照提取。")
             return
+        sync_directory(self.database)
         records = routes(self.database, self.search.text().strip())
-        roots = {
-            "national": QTreeWidgetItem(self.tree, ["国家高速"]),
-            "provincial": QTreeWidgetItem(self.tree, ["省级高速"]),
-            "unresolved": QTreeWidgetItem(self.tree, ["待核对高速"]),
-        }
-        provinces = {}
-        for record in records:
-            kind = record["kind"]
-            parent = roots[kind]
-            if kind != "national":
-                province = record["province"]
-                group_key = kind, province
-                if group_key not in provinces:
-                    provinces[group_key] = QTreeWidgetItem(parent, [province])
-                parent = provinces[group_key]
-            label = record["ref"] or record["name"] or "未命名高速"
-            item = QTreeWidgetItem(parent, [f"{label} · {record['segment_count']:,} 段"])
-            item.setData(0, Qt.ItemDataRole.UserRole, record)
-            sample_name = f"；路段名称示例：{record['name']}" if record["ref"] and record["name"] else ""
-            item.setToolTip(0, f"OSM highway=motorway；编号取自 ref{sample_name}；双击定位。")
-        for root in roots.values():
-            root.setExpanded(True)
+        if self.model is None:
+            self.model = SqliteDirectoryModel(self.database)
+            self.model.toggled.connect(self.toggle_node)
+            self.tree.setModel(self.model)
+        self.model.set_search(self.search.text())
+        self.model.fetchMore()
+        self.model.set_visible(self.visible_routes)
         self.note.setText(f"当前快照：{len(records):,} 条高速目录项。G 为国家高速，S 为省级高速；编号缺失的路段单独待核对。数据：© OpenStreetMap contributors。")
 
-    def select_item(self, item, _column):
-        record = item.data(0, Qt.ItemDataRole.UserRole)
-        self.map.call("setRoadRouteSelection", record["key"] if record else None)
-        if record:
-            self.route_selected.emit(record["key"])
+    def filter_rows(self, text):
+        if self.model is not None:
+            self.model.set_search(text)
+            self.model.fetchMore()
 
-    def focus_item(self, item, _column):
-        record = item.data(0, Qt.ItemDataRole.UserRole)
+    def toggle_node(self, key, on):
+        keys = self.model.ids_below(key)
+        self.visible_routes.update(keys) if on else self.visible_routes.difference_update(keys)
+        self.model.set_visible(self.visible_routes)
+        self.map.call("setRoadRouteSelection", None)
+        self.map.call("setRoadRoutes", sorted(self.visible_routes))
+        if on and keys:
+            self.route_selected.emit(next(iter(keys)))
+
+    def set_all(self, on):
+        if self.model is None:
+            return
+        self.visible_routes = {record["key"] for record in routes(self.database)} if on else set()
+        self.model.set_visible(self.visible_routes)
+        self.map.call("setRoadRouteSelection", None)
+        self.map.call("setRoadRoutes", sorted(self.visible_routes))
+
+    def select_item(self, index):
+        # Selecting a row must never narrow the independently checked routes.
+        pass
+
+    def focus_item(self, index):
+        key = self.model.data(index, Qt.ItemDataRole.UserRole)
+        record = route(self.database, key) if key and key.startswith(("G/", "S/", "U/")) else None
         if record:
             self.map.call(
                 "fit",
                 [[record["minx"], record["miny"]], [record["maxx"], record["maxy"]]],
                 record["ref"] or record["name"],
             )
-            self.map.call("setRoadRouteSelection", record["key"])
-            self.route_selected.emit(record["key"])
