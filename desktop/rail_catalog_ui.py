@@ -2843,31 +2843,14 @@ class RailCatalog(QWidget):
         database = self.directory / "rail_lines.sqlite"
         if not line_ids or not database.exists():
             return {"station_names": [], "connected_line_names": []}
-        marks = ",".join("?" for _ in line_ids)
-        with sqlite3.connect(database) as db:
-            try:
-                from .rail_line_store import DiskRailLineLibrary
-            except ImportError:
-                from rail_line_store import DiskRailLineLibrary
-            library = DiskRailLineLibrary(database, metadata=self.overrides)
-            stations = list(dict.fromkeys(name for line_id in line_ids
-                if line_id in library.lines for _, name in library.line_stations(line_id)))
-            connected = [
-                row[0]
-                for row in db.execute(
-                    "SELECT DISTINCT l.source_name FROM line_nodes own "
-                    "JOIN line_nodes other ON other.node_id=own.node_id "
-                    "JOIN lines l ON l.id=other.line_id "
-                    f"WHERE own.line_id IN ({marks}) AND other.line_id NOT IN ({marks}) "
-                    "ORDER BY l.source_name LIMIT 100",
-                    [*line_ids, *line_ids],
-                )
-                if row[0]
-            ]
-        return {
-            "station_names": stations[:500],
-            "connected_line_names": connected,
-        }
+        try:
+            from .rail_line_store import DiskRailLineLibrary
+            from .rail_relationships import line_relationships
+        except ImportError:
+            from rail_line_store import DiskRailLineLibrary
+            from rail_relationships import line_relationships
+        library = DiskRailLineLibrary(database, metadata=self.overrides)
+        return line_relationships(library, line_ids)
 
     def select_way(self, way_id, province=None, section_id=None, group_id=None):
         """Reveal the exact map-selected RS section, with legacy way fallback."""

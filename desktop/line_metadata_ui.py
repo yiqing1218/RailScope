@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QScrollArea,
     QTabWidget,
@@ -27,6 +28,7 @@ class LineMetadataDialog(QDialog):
         self.resize(720, 700)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
+        self.tabs = tabs
         general = QWidget()
         general_form = QFormLayout(general)
         self.name = QLineEdit(name)
@@ -69,9 +71,19 @@ class LineMetadataDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
-        buttons.accepted.connect(self.accept)
+        self.relationship_validator = None
+        self.relationship_updates = {}
+        buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def save(self):
+        try:
+            if self.relationship_validator:
+                self.relationship_updates = self.relationship_validator()
+            self.accept()
+        except ValueError as error:
+            QMessageBox.warning(self, '关联关系未保存', str(error))
 
     def values(self):
         attributes = {}

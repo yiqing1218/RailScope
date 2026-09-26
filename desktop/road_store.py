@@ -71,6 +71,7 @@ def build_index(pbf, output, progress=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + "." + uuid4().hex + ".tmp")
     index = ProvinceIndex()
+    snapshot = str(pbf.stat().st_mtime_ns)
     count = 0
     db = sqlite3.connect(temporary)
     db.executescript(
@@ -83,11 +84,17 @@ def build_index(pbf, output, progress=None):
         "PRIMARY KEY(route_key,feature_id));"
         "CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
     )
+    try:
+        from .road_services import create_tables, build_services
+    except ImportError:
+        from road_services import create_tables, build_services
+    create_tables(db)
 
     class Motorways(osmium.SimpleHandler):
         def way(self, way):
             nonlocal count
-            if way.tags.get("highway") != "motorway":
+            construction = (way.tags.get('highway') == 'construction' and way.tags.get('construction') == 'motorway') or way.tags.get('construction:highway') == 'motorway'
+            if way.tags.get("highway") != "motorway" and not construction:
                 return
             coordinates = []
             for node in way.nodes:
@@ -99,6 +106,8 @@ def build_index(pbf, output, progress=None):
             tags = dict(way.tags)
             provinces = index.along(coordinates)
             routes = classify_motorway(tags, provinces, int(way.id))
+            if construction:
+                routes = [(key + '/construction', kind, province, ref, name) for key, kind, province, ref, name in routes]
             count += 1
             xs, ys = zip(*coordinates)
             minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
@@ -109,6 +118,11 @@ def build_index(pbf, output, progress=None):
                     "name": tags.get("name:zh") or tags.get("name") or tags.get("ref") or "未命名高速路段",
                     "ref": tags.get("ref", ""),
                     "highway": "motorway",
+                    "construction": construction,
+                    "construction_status": "construction" if construction else "operating",
+                    "source_tags": tags,
+                    "snapshot": snapshot,
+                    "verification_status": "source_unverified",
                     "road_class": "national" if any(entry[1] == "national" for entry in routes) else routes[0][1],
                     "route_keys": [entry[0] for entry in routes],
                     "provinces": provinces,
@@ -153,6 +167,9 @@ def build_index(pbf, output, progress=None):
                 str(native_source), locations=True,
                 idx=f"sparse_file_array,{location_index}",
             )
+            if progress:
+                progress('正在提取服务区 POI、真实轮廓和建筑…')
+            build_services(pbf, db, index, location_index, output.parent.parent / 'admin/admin.sqlite')
         finally:
             del handler
             gc.collect()
@@ -170,6 +187,14 @@ def build_index(pbf, output, progress=None):
         db.execute("CREATE INDEX route_segments_feature ON route_segments(feature_id)")
         db.commit()
         db.close()
+        # Publish complete directory tables with the snapshot: active Qt models
+        # may query immediately, before the import-finished callback refreshes.
+        sync_directory(temporary)
+        try:
+            from .road_services import sync_directory as sync_services
+        except ImportError:
+            from road_services import sync_directory as sync_services
+        sync_services(temporary)
         for attempt in range(10):
             try:
                 temporary.replace(output)
@@ -236,7 +261,7 @@ def sync_directory(path):
         count = db.execute("SELECT count(*) FROM routes").fetchone()[0]
         existing = db.execute("SELECT value FROM metadata WHERE key='directory_route_count'").fetchone()
         version = db.execute("SELECT value FROM metadata WHERE key='directory_version'").fetchone()
-        if existing and int(existing[0]) == count and version and version[0] == "2":
+        if existing and int(existing[0]) == count and version and version[0] == "3":
             return
         db.execute("DELETE FROM directory_nodes")
         folders = {}
@@ -256,7 +281,9 @@ def sync_directory(path):
                 entry = folders.setdefault(folder_key, [parent, parts[-1], json.dumps(parts, ensure_ascii=False), 0])
                 entry[3] += 1
                 parent = folder_key
-            label = ref or name or "未命名高速"
+            label = ' · '.join(dict.fromkeys(value for value in (ref, name) if value)) or "未命名高速"
+            if key.endswith('/construction'):
+                label += '（在建）'
             db.execute(
                 "INSERT INTO directory_nodes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("object:" + key, parent, f"{label} · {segments:,} 段", "object", key,
@@ -272,7 +299,7 @@ def sync_directory(path):
             )
         db.execute("UPDATE directory_nodes SET child_count=(SELECT count(*) FROM directory_nodes c WHERE c.parent_id=directory_nodes.id) WHERE kind='folder'")
         db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_route_count',?)", (str(count),))
-        db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_version','2')")
+        db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_version','3')")
         db.commit()
 
 

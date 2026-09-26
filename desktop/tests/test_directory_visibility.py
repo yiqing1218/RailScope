@@ -13,6 +13,7 @@ def test_station_list_details_are_scrollable_and_clear_on_next_selection(qtbot):
     field = table.cellWidget(0, 1)
     assert isinstance(field, QPlainTextEdit) and field.isReadOnly()
     assert field.toPlainText().endswith('108. 站点108')
+    assert table.item(0, 1).text() == ''  # Avoid painting a second copy under the editor.
     assert table.rowHeight(0) == 240
     Desk.set_property_rows(view, [('名称', '南京南')])
     assert table.cellWidget(0, 1) is None

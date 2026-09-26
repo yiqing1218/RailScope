@@ -18,11 +18,11 @@ def test_administrative_levels_and_spatial_query(tmp_path):
     database = tmp_path / "admin.sqlite"
     assert build_index(pbf,database) == 3
     for level in (4,5,6):
-        result = viewport(database,[119,29,122,32],level,5)
+        result = viewport(database,[119,29,122,32],level,5,land_only=False)
         assert len(result["features"]) == 1
         assert result["features"][0]["properties"]["admin_level"] == level
         assert result["features"][0]["properties"]["verification_status"] == "source_unverified"
-        assert viewport(database,[0,0,1,1],level,12)["features"] == []
+        assert viewport(database,[0,0,1,1],level,12,land_only=False)["features"] == []
     with sqlite3.connect(database) as db:
         assert db.execute("SELECT count(*) FROM bounds").fetchone()[0] == 3
     assert viewport(tmp_path/"absent.sqlite",[0,0,1,1])["missing"]

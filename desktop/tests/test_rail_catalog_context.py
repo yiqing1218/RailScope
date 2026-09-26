@@ -611,6 +611,7 @@ def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
     rows = []
     inspector = SimpleNamespace(
         rail_catalog_widget=catalog, route_lookup={}, selected_title=Field(),
+        rail_operations=SimpleNamespace(line_library=lambda: SimpleNamespace(connected_lines=lambda *args, **kwargs: [{'id':'RL-test','name':'测试接轨线'}])),
         selected_type=Field(), raw=Field(), right=Field(), detail_rail=Field(),
         set_property_rows=rows.extend, _restore_inspector_width=lambda: None,
     )
@@ -620,5 +621,6 @@ def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
     })
     assert inspector.selected_title.value == "麻套编辑名"
     assert ("所属目录", "山东省 / 泰安") in rows
+    assert ('经过线路', '1. 测试接轨线') in rows
     assert not {"所属地区", "省级行政区", "城市"} & {label for label, _value in rows}
     assert inspector.selected_data["properties"]["station_overview"]["region"] == "山东省泰安"

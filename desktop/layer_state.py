@@ -15,6 +15,8 @@ def initial_visibility():
             "railVehicles",
             "railPlan",
             "road",
+            "roadConstruction",
+            "roadServices",
             "imported",
             "vehicles",
         )

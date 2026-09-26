@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import argparse
 import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -100,6 +101,7 @@ from metro_store import (
 from lazy_directory import SqliteDirectoryModel
 from metro_line_directory import MetroLineDirectoryModel, sync_line_directory
 from road_catalog_ui import RoadCatalog
+from road_services import viewport as road_services_viewport
 from viewport_settings import DEFAULT as DEFAULT_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget
 from map_zoom_settings import LABELS as ZOOM_LABELS, load as load_map_zooms, save as save_map_zooms
 from data_install_ui import DataDownloadDialog
@@ -332,13 +334,15 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 selected = json.loads(query["routes"][0]) if "routes" in query else None
                 if selected is not None and not isinstance(selected, list):
                     raise ValueError("高速目录选择无效")
-                result = road_viewport(
-                    road_database_path(ROOT),
-                    [float(value) for value in query["bbox"][0].split(",")],
-                    route_key,
-                    route_keys=selected,
-                    zoom=float(query.get('zoom', ['12'])[0]),
-                )
+                bbox = [float(value) for value in query['bbox'][0].split(',')]
+                zoom = float(query.get('zoom', ['12'])[0])
+                if len(bbox) != 4 or not all(math.isfinite(v) for v in (*bbox, zoom)) or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90) or not 0 <= zoom <= 24:
+                    raise ValueError('公路视窗无效')
+                if query.get('kind', ['roads'])[0] == 'services':
+                    selected = json.loads(query['selected'][0]) if 'selected' in query else None
+                    result = road_services_viewport(road_database_path(ROOT), bbox, selected, zoom)
+                else:
+                    result = road_viewport(road_database_path(ROOT), bbox, route_key, route_keys=selected, zoom=zoom)
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2173,7 +2177,7 @@ class Desk(QMainWindow):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(8, 0, 8, 8)
         layout.addWidget(
-            self.new_switch(kind, "道路参考" if kind == "road" else "高铁轨道")
+            self.new_switch(kind, "运营高速" if kind == "road" else "高铁轨道")
         )
         if kind == "rail":
             path = ROOT / "data/raw/osm/beijing_highspeed.geojson"
@@ -2182,16 +2186,19 @@ class Desk(QMainWindow):
                 text_label(f"北京周边 OSM 数据 · {count} 个轨道要素", wrap=True)
             )
         else:
+            layout.addWidget(self.new_switch('roadConstruction', '在建高速'))
+            layout.addWidget(self.new_switch('roadServices', '服务区'))
             self.road_catalog_widget = RoadCatalog(road_database_path(ROOT), self.map)
             self.road_catalog_widget.build_requested.connect(self.start_road_import)
             self.road_catalog_widget.route_selected.connect(
                 self.enable_road_from_catalog
             )
+            self.road_catalog_widget.service_selected.connect(lambda _: self.enable_road_from_catalog('service'))
             layout.addWidget(self.road_catalog_widget)
         layout.addWidget(
             text_label("可通过「文件 → 导入」添加其他区域数据。", wrap=True)
             if kind == "rail" else
-            text_label("分类取自 OSM 的 highway=motorway 和 G / S 编号。", wrap=True)
+            text_label("运营与在建高速按 G／S 编号分类。服务区统一显示 POI、真实轮廓与建筑；缺失轮廓不推测补画。", wrap=True)
         )
         return body
 
@@ -2247,13 +2254,14 @@ class Desk(QMainWindow):
         threading.Thread(target=run, daemon=True).start()
 
     def enable_road_from_catalog(self, _key):
-        self.flags["road"] = True
-        control = self.switches.get("road")
+        key = 'roadServices' if _key == 'service' else 'roadConstruction' if _key.endswith('/construction') else 'road'
+        self.flags[key] = True
+        control = self.switches.get(key)
         if control:
             control.blockSignals(True)
             control.setChecked(True)
             control.blockSignals(False)
-        self.map.call("setVisibility", "road", True)
+        self.map.call("setVisibility", key, True)
 
     def run_controls(self):
         body = QWidget()
@@ -2924,8 +2932,10 @@ class Desk(QMainWindow):
             )
         elif key == "railStations":
             self.rail_catalog_widget.set_station_master("station", on)
-        elif key == "road":
-            self.road_catalog_widget.set_all(on)
+        elif key in ('road', 'roadConstruction'):
+            self.road_catalog_widget.set_all(on, construction=key == 'roadConstruction')
+        elif key == 'roadServices':
+            self.road_catalog_widget.set_services_all(on)
 
     def set_all_lines(self, on):
         self.visible_lines = (
@@ -3154,8 +3164,9 @@ class Desk(QMainWindow):
                 props["city"] = folder[1] if len(folder) > 1 else ""
                 props["folder_path"] = list(folder)
                 props["station_type"] = record["station_type"]
-                props["line_ids"] = record["line_ids"]
-                props["line_names"] = record["line_names"]
+                connected = self.rail_operations.line_library().connected_lines('station:' + record['id'], limit=10000)
+                props["line_ids"] = [line['id'] for line in connected]
+                props["line_names"] = [line['name'] for line in connected]
                 props["station_overview"] = station_overview(
                     props,
                     record,
@@ -3242,7 +3253,7 @@ class Desk(QMainWindow):
             "track_type": "轨道类型",
             "kind": "对象种类",
             "station_type": "车站类型",
-            "line_names": "接轨线路",
+            "line_names": "经过线路",
             "station_names": "途经站点",
             "connected_line_names": "联络 / 相接线路",
             "verification_status": "核验状态",
@@ -3378,6 +3389,24 @@ class Desk(QMainWindow):
                 primary.get("track_type", "未确认类型"),
                 self,
             )
+            from rail_relationship_ui import RelationshipSelector
+            from rail_relationships import line_relationships, relationship_changes
+            library = self.rail_operations.line_library()
+            line_ids = list(dict.fromkeys(library.workspace.canonical(self.rail_catalog_widget.catalog[key]['line_id'])
+                for key in rail_groups if self.rail_catalog_widget.catalog[key].get('line_id')))
+            if line_ids:
+                relationships = line_relationships(library, line_ids)
+                station_selector = RelationshipSelector(
+                    lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
+                    zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
+                line_selector = RelationshipSelector(
+                    lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
+                    zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
+                dialog.tabs.addTab(station_selector, '途经站点')
+                dialog.tabs.addTab(line_selector, '联络 / 相接线路')
+                line_selector.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
+                dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
+                    station_selector.values(), line_selector.values())
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -3406,6 +3435,7 @@ class Desk(QMainWindow):
                 )
                 self.refresh_hierarchy({int(relation)})
             else:
+                relationship_updates = dialog.relationship_updates
                 changed = {}
                 if value["display_name"] != display_name:
                     changed["display_name"] = value["display_name"]
@@ -3419,7 +3449,15 @@ class Desk(QMainWindow):
                     key: dict(changed)
                     for key in rail_groups
                 }
-                if changed:
+                if relationship_updates:
+                    for key, values in changes.items():
+                        relationship_updates.setdefault(key, {}).update(values)
+                    self.rail_catalog_widget._save_local_overrides(relationship_updates)
+                    self.rail_catalog_widget.metadata_changed.emit()
+                    self.rail_catalog_widget._refresh_station_items({key.removeprefix('station:') for key in relationship_updates if key.startswith('station:')})
+                    self.rail_catalog_widget.populate()
+                    self.rail_catalog_widget.send_visibility(False)
+                elif changed:
                     self.rail_catalog_widget.save_overrides(changes)
                 if "display_name" in changed:
                     line_names = {
@@ -3456,12 +3494,18 @@ class Desk(QMainWindow):
         merged_groups = props.get("merged_catalog_ids", [])
         rail_group = props.get("catalog_group_id")
         rail_groups = merged_groups or ([rail_group] if rail_group else [])
-        if rail_groups and layer in ("rail", "rail-construction"):
+        if rail_groups and layer in ("rail", "rail-stripes", "rail-construction"):
             self.edit_line_metadata(feature, "rail", rail_groups=rail_groups)
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("编辑工作区名称与目录 · 原始 OSM 数据保留")
-        form = QFormLayout(dialog)
+        dialog_layout = QVBoxLayout(dialog)
+        fields = QWidget()
+        form = QFormLayout(fields)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(fields)
+        dialog_layout.addWidget(scroll)
         name = QLineEdit(
             str(props.get("display_name") or props.get("source_name") or props.get("name") or "")
         )
@@ -3546,7 +3590,7 @@ class Desk(QMainWindow):
                     self.rail_operations.line_library(),
                     "station:" + record["id"],
                 )
-                form.addRow("接轨线路", connection_selector)
+                form.addRow("经过线路（接轨关系）", connection_selector)
                 overview = station_overview(props, record, custom)
                 for key, label in STATION_OVERVIEW_FIELDS:
                     if key == "region":
@@ -3573,7 +3617,7 @@ class Desk(QMainWindow):
         )
         buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
         buttons.rejected.connect(dialog.reject)
-        form.addRow(buttons)
+        dialog_layout.addWidget(buttons)
 
         def save():
             try:
@@ -3657,6 +3701,9 @@ class Desk(QMainWindow):
             right.setToolTip(value)
             self.properties.setItem(row, 1, right)
             if "\n" in value:
+                # The transparent editor used to paint over the item's own
+                # multiline text, producing two overlapping copies.
+                right.setText('')
                 text = QPlainTextEdit(value)
                 text.setReadOnly(True)
                 text.setStyleSheet("QPlainTextEdit { border: 0; background: transparent; }")

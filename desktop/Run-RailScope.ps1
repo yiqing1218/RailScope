@@ -67,7 +67,7 @@ try {
         Write-Host 'Updating the local package installer to the security baseline...'
         Invoke-NativeChecked -Executable $pythonPath -CommandArguments @('-m', 'pip', 'install', '--upgrade', 'pip>=26.2', '--disable-pip-version-check')
     }
-    if (-not (Test-PythonCommand -Executable $pythonPath -Code 'import PySide6, osmium; from PySide6.QtWebEngineWidgets import QWebEngineView')) {
+    if (-not (Test-PythonCommand -Executable $pythonPath -Code 'import PySide6, osmium, shapely; from PySide6.QtWebEngineWidgets import QWebEngineView')) {
         if ($NoInstall) { throw 'Desktop dependencies are missing.' }
         Write-Host 'Installing desktop dependencies. First launch requires internet and may take several minutes...'
         Invoke-NativeChecked -Executable $pythonPath -CommandArguments @('-m', 'pip', 'install', '-r', (Join-Path $scriptRoot 'requirements.txt'), '--disable-pip-version-check', '--retries', '5', '--timeout', '90')

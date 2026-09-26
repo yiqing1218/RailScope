@@ -8,7 +8,7 @@ import sqlite3
 from threading import Lock
 from uuid import uuid4
 
-VERSION = 2
+VERSION = 3
 _build_lock = Lock()
 
 
@@ -96,10 +96,10 @@ def ensure_overview(source):
                 for (raw,) in src.execute('SELECT data FROM features ORDER BY id'):
                     feature = json.loads(raw)
                     props = feature['properties']
-                    key = json.dumps([props.get('road_class','unresolved'), sorted(props.get('route_keys',[]))],ensure_ascii=False)
+                    key = json.dumps([props.get('road_class','unresolved'), props.get('construction',False), props.get('name',''), sorted(props.get('route_keys',[]))],ensure_ascii=False)
                     if key not in groups:
                         groups[key] = {k: v for k, v in props.items() if k != 'osm_way_id'}
-                        groups[key]['name'] = props.get('ref') or props.get('name', '高速公路')
+                        groups[key]['name'] = props.get('name') or props.get('ref') or '高速公路'
                     groups[key]['provinces'] = sorted(set(groups[key].get('provinces', [])) | set(props.get('provinces', [])))
                     coords = feature['geometry']['coordinates']
                     target.execute('INSERT INTO staging VALUES(?,?)',(key,json.dumps(coords,separators=(',',':'))))

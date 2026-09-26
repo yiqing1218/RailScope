@@ -4,6 +4,8 @@ import json
 from types import SimpleNamespace
 from threading import Thread
 from urllib.request import urlopen, Request
+from urllib.error import HTTPError
+import pytest
 
 
 def test_ready_bridge_dispatches_visibility_and_focus():
@@ -54,3 +56,29 @@ def test_metro_viewport_is_served_over_http(monkeypatch):
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+def test_service_viewport_post_and_invalid_bounds(monkeypatch):
+    import launcher
+    calls = []
+    def query(*args):
+        calls.append(args)
+        return {'type':'FeatureCollection','features':[]}
+    monkeypatch.setattr(launcher,'road_services_viewport',query)
+    server = ThreadingHTTPServer(('127.0.0.1',0),launcher.LocalHandler)
+    worker = Thread(target=server.serve_forever,daemon=True)
+    worker.start()
+    try:
+        url = f'http://127.0.0.1:{server.server_port}/api/roads'
+        body = {'kind':'services','bbox':'120,30,122,32','zoom':'13','selected':'["RSA-test"]'}
+        request = Request(url,data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+        with urlopen(request,timeout=3) as response:
+            assert response.status == 200
+        assert calls[-1][1:] == ([120,30,122,32],['RSA-test'],13)
+        body['bbox'] = 'nan,30,122,32'
+        request = Request(url,data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+        with pytest.raises(HTTPError) as error:
+            urlopen(request,timeout=3)
+        assert error.value.code == 400 and len(calls)==1
+    finally:
+        server.shutdown();server.server_close();worker.join()

@@ -153,7 +153,7 @@ def build_index(pbf, output, progress=None):
     return count
 
 
-def viewport(path, bbox, level=4, zoom=4):
+def viewport(path, bbox, level=4, zoom=4, land_only=True):
     if level not in LEVELS or len(bbox) != 4 or not all(math.isfinite(v) for v in (*bbox, zoom)):
         raise ValueError("行政边界查询参数无效")
     west, south, east, north = bbox
@@ -162,6 +162,12 @@ def viewport(path, bbox, level=4, zoom=4):
     result = {"type": "FeatureCollection", "features": [], "level": level}
     if not Path(path).is_file():
         return {**result, "missing": True}
+    if land_only:
+        try:
+            from .admin_land import ensure_clipped
+        except ImportError:
+            from admin_land import ensure_clipped
+        path = ensure_clipped(path)
     column = "coarse" if zoom < 7 else "medium" if zoom < 10 else "detail"
     size = 0
     with closing(sqlite3.connect(Path(path).as_uri() + "?mode=ro", uri=True)) as db:
