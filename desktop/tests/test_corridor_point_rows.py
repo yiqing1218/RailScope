@@ -54,3 +54,23 @@ def test_two_column_rows_line_first_transfer_and_legacy_roundtrip(qtbot, tmp_pat
     table.remove_point(1)
     # Deleting a transfer must not silently keep an endpoint on the wrong line.
     assert table.cellWidget(1, 0).currentData() is None
+
+    table.set_sequence([])
+    table.assign(0, 0, 1)
+    table.assign(0, 1, b)
+    assert table.cellWidget(0, 0).currentData() is None
+
+
+def test_editing_selected_text_drops_old_id_and_completion_emits(qtbot):
+    from desktop.corridor_ui import SearchChoice
+    choice = SearchChoice(lambda q: [('a', '甲站'), ('b', '乙站')], '站点', 'a', '甲站')
+    qtbot.addWidget(choice)
+    committed = []
+    choice.selection_committed.connect(lambda: committed.append(choice.currentData()))
+    choice.text_edited('乙')
+    assert choice.currentData() is None and committed[-1] is None
+    choice.find_results()
+    choice.setCurrentIndex(choice.findData('b'))  # Qt completer may select first.
+    committed.clear()
+    choice.select_result('乙站')
+    assert committed == ['b'] and not choice._search_timer.isActive()

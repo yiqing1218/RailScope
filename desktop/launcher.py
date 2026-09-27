@@ -85,6 +85,7 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
+from display_names import apply_names, object_key
 from road_store import database_path as road_database_path, viewport as road_viewport
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
@@ -314,6 +315,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     [float(value) for value in query["bbox"][0].split(",")],
                     selected,
                 )
+                apply_names(result, getattr(self.server, 'config', {}).get('metroDisplayOverrides'))
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -343,6 +345,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     result = road_services_viewport(road_database_path(ROOT), bbox, selected, zoom)
                 else:
                     result = road_viewport(road_database_path(ROOT), bbox, route_key, route_keys=selected, zoom=zoom)
+                apply_names(result, getattr(self.server, 'config', {}).get('railDisplayOverrides'))
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -376,6 +379,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
                 )
+                apply_names(result, self.server.config.get('railDisplayOverrides'),
+                            self.server.config.get('railLineNames'), self.server.config.get('railWayNames'))
                 if query["kind"][0] == "railPoints":
                     switch_names = self.server.config.get("railSwitchNames", {})
                     for feature in result["features"]:
@@ -1655,7 +1660,7 @@ class Desk(QMainWindow):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.metro_context_menu)
         line_layout.addWidget(self.tree)
-        self.line_count = text_label("")
+        self.line_count = text_label("", wrap=True)
         line_layout.addWidget(self.line_count)
         self.metro_catalog_tabs.addTab(self.metro_line_page, "地铁线路目录")
         self.metro_station_page = QWidget()
@@ -1676,7 +1681,7 @@ class Desk(QMainWindow):
         self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.station_tree.customContextMenuRequested.connect(self.metro_station_context_menu)
         station_layout.addWidget(self.station_tree)
-        self.station_count = text_label("")
+        self.station_count = text_label("", wrap=True)
         station_layout.addWidget(self.station_count)
         self.metro_catalog_tabs.addTab(self.metro_station_page, "地铁站目录")
         layout.addWidget(self.metro_catalog_tabs)
@@ -2368,6 +2373,7 @@ class Desk(QMainWindow):
         self.rail_operations.names_changed.connect(
             lambda: self.rail_catalog_widget.reload_names(names_path)
         )
+        self.rail_operations.names_changed.connect(self.refresh_map_names)
         self.rail_catalog_widget.line_names_changed.connect(
             self.rail_operations.save_line_names
         )
@@ -2375,8 +2381,10 @@ class Desk(QMainWindow):
             self.rail_operations.invalidate_line_library
         )
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
+        self.rail_catalog_widget.metadata_changed.connect(self.refresh_map_names)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
         self.refresh_switch_names()
+        self.refresh_map_names()
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
         )
@@ -2729,6 +2737,22 @@ class Desk(QMainWindow):
             self.archive_metro_lines(_metro_lines, True)
 
     def rename_map_selection(self):
+        if len(self.selected_features) == 1:
+            feature = self.selected_features[0]
+            props = feature.get('properties', {})
+            layer = feature.get('layer', feature.get('__layer', ''))
+            if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and not props.get('catalog_group_id'):
+                key = object_key(props)
+                if key and props.get('kind') not in ('station', 'halt', 'signal_box'):
+                    value, accepted = QInputDialog.getText(self, '重命名对象', '地图显示名称',
+                        text=props.get('display_name') or props.get('name') or '')
+                    if accepted and value.strip():
+                        self.rail_catalog_widget._save_local_overrides({key: {
+                            'display_name': value.strip(), 'source': 'manual', 'verification_status': 'user_named'}})
+                        self.rail_catalog_widget.metadata_changed.emit()
+                        props['display_name'] = value.strip()
+                        self.display_feature(feature)
+                    return
         if len(self.selected_switch_ids()) == 1 and len(self.selected_features) == 1:
             self.rail_catalog_widget.rename_switch(self.selected_switch_ids()[0])
             return
@@ -2768,6 +2792,7 @@ class Desk(QMainWindow):
             })
         self.map.call("setRailStyles", self.config["railStyles"])
         self.map.call("setRoadStyles", self.config["roadStyles"])
+        self.refresh_map_names()
         self.change_run_mode(self.run_mode.currentIndex())
 
     def change_base(self, index):
@@ -2957,6 +2982,24 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.update_count()
 
+    def refresh_map_names(self):
+        """HTTP viewport responses and on-map labels use the same overrides."""
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        path = self.rail_operations.path.parent
+        self.config['railLineNames'] = read_json(path / 'rail_line_names.json', {})
+        self.config['railWayNames'] = read_json(path / 'rail_way_names.json', {})
+        self.config['metroDisplayOverrides'] = {
+            **self.metro_line_overrides.values, **self.metro_station_overrides.values,
+            **self.rail_catalog_widget.overrides}
+        self.map.call('reloadRailViewport')
+        self.map.call('reloadMetroViewport')
+        self.map.call('reloadRoadViewport')
+        self.rail_operations.push_corridors()
+        selected = getattr(self, 'selected_data', {})
+        if selected:
+            apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
+                        self.config['railLineNames'], self.config['railWayNames'])
+
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
             key.removeprefix("switch:node/"): value["display_name"]
@@ -2964,6 +3007,7 @@ class Desk(QMainWindow):
             if key.startswith("switch:node/") and value.get("display_name")
         }
         self.map.call("reloadRailViewport")
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
         selected = getattr(self, "selected_data", {})
         if (hasattr(self, "properties") and selected.get("properties", {}).get("kind") == "switch"):
             self.display_feature(selected)
@@ -3040,6 +3084,9 @@ class Desk(QMainWindow):
 
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
+        config = getattr(self, 'config', {})
+        apply_names({'features': [feature]}, config.get('railDisplayOverrides'),
+                    config.get('railLineNames'), config.get('railWayNames'))
         props = dict(feature.get("properties", {}))
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             props["display_name"] = self.rail_catalog_widget.switch_name(props["osm_node_id"])
@@ -3470,6 +3517,7 @@ class Desk(QMainWindow):
                     if line_names:
                         self.rail_catalog_widget.line_names_changed.emit(line_names)
             self.load_status.setText("  线路概览已保存到工作区；原始 OSM 数据未修改")
+            self.refresh_map_names()
             self.display_feature(feature)
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "线路信息未保存", str(error))
@@ -3683,6 +3731,7 @@ class Desk(QMainWindow):
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")
+                self.refresh_map_names()
                 self.display_feature(feature)
             except (ValueError, OSError) as error:
                 QMessageBox.warning(dialog, "目录修改未保存", str(error))

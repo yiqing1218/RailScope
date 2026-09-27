@@ -10,7 +10,7 @@ except ImportError:
     from rail_lines import edge_length, traversal_allowed
 
 
-def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges=None, last_edges=None):
+def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges=None, last_edges=None, reference_edges=()):
     """One arrival's search cannot backtrack through its already travelled path."""
     root = (origin, False, False)
     scores, previous = {root: 0.0}, {}
@@ -28,7 +28,7 @@ def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges
                 continue
             if key == root and first_edges and ident not in first_edges:
                 continue
-            target = (other, used_line or library.edge_lines[ident] == line_id,
+            target = (other, used_line or library.edge_lines[ident] == line_id or ident in reference_edges,
                       not last_edges or ident in last_edges)
             rank = score + edge_length(library.edges[ident])
             if target not in scores or rank < scores[target]:
@@ -48,10 +48,11 @@ def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges
             yield node, scores[key], list(reversed(legs))
 
 
-def station_transfer_path(library, sequence, candidates, local_edges, gaps, terminal_targets=None):
-    """Route rows jointly, allowing off-line track only at named transfer stations.
+def station_transfer_path(library, sequence, candidates, local_edges, gaps, terminal_targets=None, reference_edges=None):
+    """Route rows jointly using station tracks and bounded real line connectors.
 
-    Each row must traverse its requested line. Boundary candidates can lie on
+    Each row must traverse its requested line or a verified-topology connection
+    between that line's fragments. Boundary candidates can lie on
     either side's track, so a crossover before OR after the station is possible.
     Only edge references are carried between rows, never geometry copies.
     """
@@ -66,6 +67,7 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps, term
         else:
             allowed.update(local_edges.get(row, ()))
             allowed.update(local_edges.get(row + 1, ()))
+            allowed.update((reference_edges or {}).get(row, ()))
         graph = defaultdict(list)
         for ident in sorted(allowed):
             edge = library.edges[ident]
@@ -85,7 +87,8 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps, term
                     visited.add(edge["to_node"] if leg["direction"] == "forward" else edge["from_node"])
             first_edges = terminal_targets.get(0) if row == 0 else None
             last_edges = terminal_targets.get(row + 1) if row == len(sequence[1::2])-1 else None
-            for node, length, row_path in _paths_from(library, graph, origin, line_id, candidates[row + 1], visited, first_edges, last_edges):
+            for node, length, row_path in _paths_from(library, graph, origin, line_id, candidates[row + 1], visited, first_edges, last_edges,
+                                                      (reference_edges or {}).get(row, ())):
                 rank = (score[0] + length, score[1] + gaps[row + 1].get(node, 0.0))
                 if node in next_states and next_states[node][0] <= rank:
                     continue
@@ -96,7 +99,7 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps, term
                 next_states[node] = (rank, previous_chunks + [(notation, row_path)])
         states = next_states
         if not states:
-            raise ValueError(f"第 {row + 1} 行未找到经过所选线路的连续站内换线路径")
+            raise ValueError(f"第 {row + 1} 行起终点不连通，未找到经过所选线路的连续换线路径")
     _, chunks = min(states.values(), key=lambda value: value[0])
     normalized, path = [], []
     for notation, legs in chunks:

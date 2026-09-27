@@ -388,7 +388,7 @@ class _DirectoryMapping(Mapping):
                 ),
             }
         if self.kind == "nodes":
-            return self.store.node_label(row)
+            return self.store.node_display_label(row)
         ident, line, a, b, construction, length, kind, evidence, source_way, direction = row
         return {
             "id": ident,
@@ -417,8 +417,21 @@ class DiskRailLineLibrary:
         self._parallel_anchors = {}
         self._reachable_cache = OrderedDict()
         self._connection_cache = OrderedDict()
+        self._reference_cache = OrderedDict()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
+            self._node_display_names = {}
+            for key, value in self.metadata.items():
+                if not value.get('display_name'):
+                    continue
+                for prefix in ('object:network_node_id:', 'object:osm_node_id:',
+                               'object:infrastructure_id:node/', 'node:', 'switch:node/'):
+                    if key.startswith(prefix):
+                        ident = key.removeprefix(prefix)
+                        ident = int(ident) if ident.isdigit() else ident
+                        row = db.execute('SELECT node_id FROM node_aliases WHERE source_id=?', (ident,)).fetchone()
+                        self._node_display_names[row[0] if row else ident] = value['display_name']
+                        break
         self.lines = _DirectoryMapping(self, "lines")
         self.nodes = _DirectoryMapping(self, "nodes")
         self.edges = _DirectoryMapping(self, "edges")
@@ -613,6 +626,15 @@ class DiskRailLineLibrary:
         }.get(kind, "轨道端点")
         return f"{name or '未命名' + label} · {label} · {ident}"
 
+    def node_display_label(self, row):
+        ident = row[0]
+        keys = [f'object:network_node_id:{ident}', f'node:{ident}', f'switch:node/{ident}',
+                f'object:infrastructure_id:node/{ident}', f'object:osm_node_id:{ident}']
+        name = next((self.metadata[key]['display_name'] for key in keys
+                     if self.metadata.get(key, {}).get('display_name')), None)
+        name = name or self._node_display_names.get(ident)
+        return str(name) if name else self.node_label(row)
+
     def search_lines(self, query="", limit=100, offset=0, endpoint=None):
         term = (
             "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
@@ -770,6 +792,11 @@ class DiskRailLineLibrary:
                 ).fetchone()
             return self.station_display_name(row[0]) if row else source_id
         with self.connect() as db:
+            node = db.execute('SELECT id,label,kind FROM nodes WHERE id=?', (endpoint,)).fetchone()
+            if node:
+                custom = self.node_display_label(node)
+                if custom != self.node_label(node):
+                    return custom
             row = db.execute(
                 "SELECT alias FROM station_aliases WHERE anchor_node=? "
                 "ORDER BY distance_m,source_id NOT LIKE 'node/%' LIMIT 1",
@@ -789,11 +816,19 @@ class DiskRailLineLibrary:
         connected = [line["name"] for line in self.connected_lines(endpoint)]
         return label + " · 接轨：" + (" / ".join(connected) if connected else "待关联")
 
-    def search_endpoints(self, query="", line_id=None, limit=100, reachable=None, physical=False):
+    def search_endpoints(self, query="", line_id=None, limit=100, reachable=None, physical=False,
+                         reference=False, next_line=None):
         """Logical stations by default; exact rail nodes for explicit disambiguation."""
         line_id = self.workspace.canonical(line_id)
-        term = "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        search_text = query.split(' · 接轨：', 1)[0].strip().removesuffix('站')
+        term = "%" + search_text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         with self.connect() as db:
+            reference_graph = self.reference_library(line_id) if reference and line_id else None
+            reference_nodes = set(reference_graph.nodes) if reference_graph else set()
+            if reference_graph:
+                reference_nodes.update(n for e in reference_graph.edges.values() for n in (e['from_node'], e['to_node']))
+                db.execute('CREATE TEMP TABLE reference_nodes(id PRIMARY KEY)')
+                db.executemany('INSERT INTO reference_nodes VALUES(?)', ((node,) for node in reference_nodes))
             columns = {row[1] for row in db.execute("PRAGMA table_info(station_aliases)")}
             coordinates = (
                 ",min(a.source_x),min(a.source_y)"
@@ -815,10 +850,15 @@ class DiskRailLineLibrary:
             if line_id:
                 line_clause = (
                     " AND (a.anchor_node IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
+                    + (" OR a.anchor_node IN (SELECT id FROM reference_nodes)" if reference_graph else "")
                     + (f" OR a.source_id IN ({source_marks})" if override_sources else "")
                     + ")"
                 )
-            args = [term, term]
+            renamed_sources = [key.removeprefix('station:') for key, value in self.metadata.items()
+                               if key.startswith('station:') and value.get('display_name')
+                               and search_text.casefold() in value['display_name'].casefold()]
+            renamed_clause = (' OR a.source_id IN (' + ','.join('?' for _ in renamed_sources) + ')') if renamed_sources else ''
+            args = [term, term, *renamed_sources]
             if line_id:
                 args.append(line_id)
                 args.extend(override_sources)
@@ -831,11 +871,11 @@ class DiskRailLineLibrary:
                 # Check all recovered anchors below, before the result limit.
             rows = db.execute(
                 "SELECT a.source_id,a.alias,min(a.distance_m)" + coordinates + " FROM station_aliases a "
-                "WHERE (a.alias LIKE ? ESCAPE '!' OR a.source_id LIKE ? ESCAPE '!')"
+                "WHERE (a.alias LIKE ? ESCAPE '!' OR a.source_id LIKE ? ESCAPE '!'" + renamed_clause + ")"
                 + line_clause
                 + " AND a.confidence>=0.5 AND a.distance_m<=2500 "
                 "GROUP BY a.source_id,a.alias ORDER BY a.alias,a.source_id NOT LIKE 'node/%',min(a.distance_m) LIMIT ?",
-                (*args, -1 if reachable is not None else limit * 12),
+                (*args, -1 if reachable is not None or next_line else limit * 12),
             ).fetchall()
             # Merge duplicate OSM points/buildings for one named station by a
             # small coordinate cell.  The selected entity keeps every physical
@@ -869,6 +909,7 @@ class DiskRailLineLibrary:
                 return list(dict.fromkeys(values))
 
             result = []
+            seen_stations = set()
             query_key = query.casefold()
             for key, metadata in sorted(self.metadata.items()):
                 if not key.startswith("station:signalbox/"):
@@ -886,8 +927,11 @@ class DiskRailLineLibrary:
                 self._station_groups[source_id] = [source_id]
                 self._station_group_labels[source_id] = label
                 if reachable is not None and not reachable.intersection(
+                    self.reference_candidates("station:" + source_id, line_id) if reference else
                     self.endpoint_candidates("station:" + source_id, [line_id])
                 ):
+                    continue
+                if next_line and not self.endpoint_candidates('station:' + source_id, [next_line]):
                     continue
                 connected = [line["name"] for line in self.connected_lines("station:" + source_id)]
                 result.append((
@@ -899,6 +943,8 @@ class DiskRailLineLibrary:
             for entries in grouped.values():
                 entries.sort(key=lambda item: (item[2], item[0]))
                 primary, alias, _ = entries[0]
+                if primary in seen_stations:
+                    continue
                 alias = self.station_display_name(alias)
                 sources = list(dict.fromkeys(item[0] for item in entries))
                 self._station_groups[primary] = sources
@@ -925,14 +971,20 @@ class DiskRailLineLibrary:
                         for line in self.connected_lines("station:" + primary)
                     ]
                 self._station_group_labels[primary] = alias
+                alias = self.endpoint_label('station:' + primary)
                 if reachable is not None and not reachable.intersection(
+                    self.reference_candidates("station:" + primary, line_id) if reference else
                     self.endpoint_candidates("station:" + primary, [line_id])
                 ):
+                    continue
+                if next_line and not (self.reference_candidates('station:' + primary, next_line) if reference else
+                                      self.endpoint_candidates('station:' + primary, [next_line])):
                     continue
                 result.append((
                     "station:" + primary,
                     alias + " · 接轨：" + (" / ".join(connected) if connected else "待关联"),
                 ))
+                seen_stations.add(primary)
                 if len(result) >= limit:
                     break
 
@@ -941,7 +993,12 @@ class DiskRailLineLibrary:
                     " AND n.id IN (SELECT node_id FROM line_nodes WHERE line_id=?)"
                     if line_id else ""
                 )
-                control_args = [line_id] if line_id else []
+                if reference_graph:
+                    control_clause = ' AND n.id IN (SELECT id FROM reference_nodes)'
+                control_args = [line_id] if line_id and not reference_graph else []
+                if next_line:
+                    control_clause += ' AND n.id IN (SELECT node_id FROM line_nodes WHERE line_id=?)'
+                    control_args.append(self.workspace.canonical(next_line))
                 control_kind = (
                     "1=1" if physical and (line_id or query) else
                     "((n.kind IN ('junction','signal_box') AND n.label IS NOT NULL) "
@@ -949,44 +1006,63 @@ class DiskRailLineLibrary:
                 )
                 if reachable is not None:
                     control_clause += " AND n.id IN (SELECT id FROM reachable_nodes)"
+                renamed_nodes = []
+                for key, value in self.metadata.items():
+                    if not value.get('display_name') or search_text.casefold() not in value['display_name'].casefold():
+                        continue
+                    for prefix in ('object:network_node_id:', 'object:osm_node_id:',
+                                   'object:infrastructure_id:node/', 'node:', 'switch:node/'):
+                        if key.startswith(prefix):
+                            ident = key.removeprefix(prefix)
+                            renamed_nodes.extend(self.endpoint_nodes(int(ident) if ident.isdigit() else ident))
+                            break
+                renamed_clause = (' OR n.id IN (' + ','.join('?' for _ in renamed_nodes) + ')') if renamed_nodes else ''
                 controls = db.execute(
                     "SELECT n.id,n.label,n.kind FROM nodes n WHERE "
                     + control_kind + " AND "
-                    "(coalesce(n.label,'') LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!')"
+                    "(coalesce(n.label,'') LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!'" + renamed_clause + ")"
                     + control_clause
                     + " ORDER BY n.label,n.id LIMIT ?",
-                    (term, term, *control_args, limit - len(result)),
+                    (term, term, *renamed_nodes, *control_args, limit - len(result)),
                 ).fetchall()
                 for node, label, kind in controls:
                     connected_lines = self.connected_lines(node, physical=physical)
-                    if line_id and not any(
+                    if line_id and not reference_graph and not any(
                         value["id"] == line_id for value in connected_lines
                     ):
                         continue
                     connected = [value["name"] for value in connected_lines]
                     result.append((
                         node,
-                        self.node_label((node, label, kind))
+                        self.node_display_label((node, label, kind))
                         + " · 接轨："
                         + (" / ".join(connected) if connected else "待关联"),
                     ))
         return result[:limit]
 
-    def reachable_nodes(self, from_node, line_id, query="", limit=100, physical=False):
+    def reachable_nodes(self, from_node, line_id, query="", limit=100, physical=False,
+                        reference=False, next_line=None):
         """Named/control endpoints reachable on one selected physical line."""
-        key = (from_node, line_id, query, limit, physical)
+        key = (from_node, line_id, query, limit, physical, reference, next_line)
         if key in self._reachable_cache:
             self._reachable_cache.move_to_end(key)
             return list(self._reachable_cache[key])
         if line_id not in self.lines:
             return []
-        selected = self.selected_library([line_id])
         line_id = self.workspace.canonical(line_id)
-        starts = self.endpoint_candidates(from_node, [line_id])
+        selected = self.reference_library(line_id) if reference else self.selected_library([line_id])
+        starts = self.reference_candidates(from_node, line_id) if reference else self.endpoint_candidates(from_node, [line_id])
         if not starts:
             return []
         stack, reachable = list(starts), set(starts)
         graph = selected.lines[line_id]["graph"]
+        if reference:
+            from collections import defaultdict
+            graph = defaultdict(list)
+            for edge in selected.edges.values():
+                a, b, ident = edge['from_node'], edge['to_node'], edge['id']
+                graph[a].append((b, ident, 'forward'))
+                graph[b].append((a, ident, 'reverse'))
         while stack:
             node = stack.pop()
             for other, edge_id, direction in graph.get(node, []):
@@ -996,7 +1072,8 @@ class DiskRailLineLibrary:
                 if other not in reachable:
                     reachable.add(other)
                     stack.append(other)
-        candidates = self.search_endpoints(query, line_id, max(limit * 5, 500), reachable=reachable, physical=physical)
+        candidates = self.search_endpoints(query, line_id, max(limit * 5, 500), reachable=reachable,
+                                           physical=physical, reference=reference, next_line=next_line)
         start_name = self.endpoint_label(from_node)
         start_key = "".join(start_name.split()).removesuffix("站").casefold()
         result = [
@@ -1005,13 +1082,48 @@ class DiskRailLineLibrary:
             if item[0] != from_node
             and (physical or "".join(self.endpoint_label(item[0]).split()).removesuffix("站").casefold()
                  != start_key)
-            and any(node in reachable for node in self.endpoint_candidates(item[0], [line_id]))
+            and any(node in reachable for node in (self.reference_candidates(item[0], line_id) if reference else
+                                                   self.endpoint_candidates(item[0], [line_id])))
         ]
         result = result[:limit]
         self._reachable_cache[key] = result
         if len(self._reachable_cache) > 32:
             self._reachable_cache.popitem(last=False)
         return list(result)
+
+    def reference_library(self, line_id):
+        """Small cached working graph; does not change source line membership."""
+        line_id = self.workspace.canonical(line_id)
+        if line_id in self._reference_cache:
+            self._reference_cache.move_to_end(line_id)
+            return self._reference_cache[line_id]
+        try:
+            from .rail_reference import line_connectors
+        except ImportError:
+            from rail_reference import line_connectors
+        selected = self.selected_library([line_id])
+        connectors = line_connectors(self, selected, line_id)
+        if connectors:
+            edges = [{**edge, 'line_id': selected.edge_lines[ident],
+                      'line_name': selected.lines[selected.edge_lines[ident]]['name']}
+                     for ident, edge in selected.edges.items()]
+            graph = RailLineLibrary([*edges, *connectors.values()], [])
+            graph.control_nodes.update(selected.control_nodes)
+            graph.split_nodes = selected.split_nodes
+            selected = graph
+        self._reference_cache[line_id] = selected
+        if len(self._reference_cache) > 8:
+            self._reference_cache.popitem(last=False)
+        return selected
+
+    def reference_candidates(self, endpoint, line_id):
+        direct = self.endpoint_candidates(endpoint, [line_id])
+        # A manually asserted line/anchor remains authoritative in auto mode.
+        if self._station_connection_override(self._station_sources(endpoint)) is not None:
+            return direct
+        graph = self.reference_library(line_id)
+        nodes = {n for edge in graph.edges.values() for n in (edge['from_node'], edge['to_node'])}
+        return list(dict.fromkeys([*direct, *(n for n in self.endpoint_nodes(endpoint) if n in nodes)]))
 
     def line_stations(self, line_id, query=""):
         """The same station/override contract used by the corridor picker."""
@@ -1353,10 +1465,7 @@ class DiskRailLineLibrary:
             normalized = self.normalize_sequence(sequence, selected, policy)
             return normalized, selected.resolve(normalized, policy, selection=selection)
         except ValueError:
-            if replay or policy != "auto" or not any(
-                isinstance(entry, dict) and str(entry.get("node_id", "")).startswith("station:")
-                for entry in sequence[2:-1:2]
-            ):
+            if replay or policy != "auto":
                 raise
         return self.resolve_station_transfers(sequence, selected)
 
@@ -1427,11 +1536,12 @@ class DiskRailLineLibrary:
                     # Explicit anchor constraints must not be relaxed by a fallback.
                     choices = self.endpoint_candidates(endpoint, lines)
                 else:
-                    per_line = [self.endpoint_candidates(endpoint, [line]) for line in lines]
+                    per_line = [self.reference_candidates(endpoint, line) for line in lines]
                     choices = list(dict.fromkeys(node for values in per_line for node in values)) if all(per_line) else []
                 transfer_stations[row] = endpoint
             else:
-                choices = self.endpoint_candidates(endpoint, lines)
+                choices = (self.reference_candidates(endpoint, lines[0]) if len(set(lines)) == 1
+                           else self.endpoint_candidates(endpoint, lines))
             if not choices:
                 raise ValueError(f"{self.endpoint_label(endpoint)} 缺少所选线路的有效接轨点，请检查人工接轨设置")
             candidates.append(choices)
@@ -1439,6 +1549,15 @@ class DiskRailLineLibrary:
                 for entry, choices in zip(sequence[::2], candidates)]
         base_edges = {ident: {**edge, "line_id": selected.edge_lines[ident]}
                       for ident, edge in selected.edges.items()}
+        reference_edges = {}
+        for row, entry in enumerate(sequence[1::2]):
+            if entry.get('section_id'):
+                continue
+            reference = self.reference_library(entry['line_id'])
+            added = {ident: {**edge, 'line_id': reference.edge_lines[ident]}
+                     for ident, edge in reference.edges.items() if reference.edge_lines[ident] != entry['line_id']}
+            reference_edges[row] = set(added)
+            base_edges.update(added)
         # Most crossovers are within 3 km; expand only on failure. No national
         # geometry or unrelated complete mainlines are loaded for connections.
         for radius in (3000, 8000, 20000):
@@ -1451,7 +1570,8 @@ class DiskRailLineLibrary:
             graph.control_nodes.update(selected.control_nodes)
             graph.split_nodes = selected.split_nodes
             try:
-                return station_transfer_path(graph, sequence, candidates, local, gaps, terminal_targets)
+                return station_transfer_path(graph, sequence, candidates, local, gaps, terminal_targets,
+                                             reference_edges=reference_edges)
             except ValueError as error:
                 last_error = str(error)
         raise ValueError(last_error + "；已检查换线站周边 20 km 的真实轨道，请核对缺失连接或手工指定中间端点")

@@ -478,6 +478,7 @@ class RailCatalog(QWidget):
             wrap=True,
         )
         layout.addWidget(self.note)
+        self.name_identified_yards()
         self.populate()
         self.populate_station_tree()
         self.populate_yard_tree()
@@ -513,6 +514,7 @@ class RailCatalog(QWidget):
         if isinstance(self.catalog, RailCatalogIndex):
             self.catalog.close()
         self.catalog = RailCatalogIndex(build_catalog_index(self.directory, catalog))
+        self.name_identified_yards()
         if hasattr(self, "_source_construction_keys"):
             del self._source_construction_keys
         self.excluded = set()
@@ -542,6 +544,26 @@ class RailCatalog(QWidget):
             key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
             for key in keys
         }
+
+    def name_identified_yards(self):
+        """Name already-associated yard groups in the workspace, never in OSM."""
+        groups = self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items()
+        source = self.directory / 'rail.sqlite'
+        snapshot = str(source.stat().st_mtime_ns) if source.exists() else 'unknown'
+        changes = {}
+        for key, record in groups:
+            station = record.get('station_name')
+            if (str(key).startswith('ST-') and station and station != '未关联站场'
+                    and not self.overrides.get(key, {}).get('display_name')):
+                changes[key] = {
+                    'display_name': station.removesuffix('站') + '站 · 站场股道（参考）',
+                    'source': 'automatic_station_group', 'snapshot': snapshot,
+                    'verification_status': 'automatic_reference',
+                    'confidence': record.get('station_assignment_confidence'),
+                }
+        if changes:
+            self._save_local_overrides(changes)
+        return len(changes)
 
     def _save_local_overrides(self, changes):
         before = deepcopy(self.local_overrides)
@@ -1888,43 +1910,64 @@ class RailCatalog(QWidget):
         source = self.directory / "rail.sqlite"
         if not custom or not source.exists():
             return {"type": "FeatureCollection", "features": []}
-        with sqlite3.connect(source) as db:
-            for ident, value in custom:
-                switch_ids = [int(item) for item in value["member_switch_ids"] if str(item).isdigit()]
-                if len(switch_ids) < 2:
-                    continue
-                marks = ",".join("?" for _ in switch_ids)
-                rows = db.execute(
-                    "SELECT json_extract(data,'$.geometry.coordinates[0]'),"
-                    "json_extract(data,'$.geometry.coordinates[1]') FROM features "
-                    "WHERE kind='railPoints' "
-                    f"AND json_extract(data,'$.properties.osm_node_id') IN ({marks})",
-                    switch_ids,
-                ).fetchall()
-                if len(rows) < 2:
-                    continue
-                xs, ys = [float(row[0]) for row in rows], [float(row[1]) for row in rows]
-                pad = max(.00012, min(.001, max(max(xs) - min(xs), max(ys) - min(ys)) * .15))
-                west, east, south, north = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
-                props = {
-                    "infrastructure_id": ident,
-                    "name": value.get("display_name") or "未命名线路所",
-                    "kind": "signal_box",
-                    "member_switch_ids": switch_ids,
-                    "line_ids": [
-                        item.get("line_id") for item in value.get("connected_lines", [])
-                        if isinstance(item, dict) and item.get("line_id")
-                    ],
-                }
-                features.extend([
-                    {"type": "Feature", "properties": props, "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
-                    }},
-                    {"type": "Feature", "properties": props, "geometry": {
-                        "type": "Point", "coordinates": [sum(xs) / len(xs), sum(ys) / len(ys)],
-                    }},
-                ])
+        switch_ids = sorted({int(item) for _, value in custom for item in value['member_switch_ids']
+                             if str(item).isdigit()})
+        index = self.directory / 'rail_lines.sqlite'
+        signature = (source.stat().st_mtime_ns, index.stat().st_mtime_ns if index.exists() else None, tuple(switch_ids))
+        if getattr(self, '_signal_box_coordinate_signature', None) != signature:
+            coordinates = {}
+            if index.exists():
+                with sqlite3.connect(index) as db:
+                    for start in range(0, len(switch_ids), 800):
+                        batch = switch_ids[start:start + 800]
+                        for node, x, y in db.execute(
+                                'SELECT a.source_id,n.x,n.y FROM node_aliases a JOIN nodes n ON n.id=a.node_id '
+                                'WHERE a.source_id IN (' + ','.join('?' for _ in batch) + ')', batch):
+                            if x is not None and y is not None:
+                                coordinates[int(node)] = (x, y)
+            missing = set(switch_ids) - coordinates.keys()
+            if missing:
+                # Legacy snapshots without the endpoint index need only ONE
+                # source scan for all signal boxes, never one per box/rename.
+                with sqlite3.connect(source) as db:
+                    for node, x, y in db.execute(
+                            "SELECT json_extract(data,'$.properties.osm_node_id'),"
+                            "json_extract(data,'$.geometry.coordinates[0]'),"
+                            "json_extract(data,'$.geometry.coordinates[1]') FROM features WHERE kind='railPoints'"):
+                        if node in missing and x is not None and y is not None:
+                            coordinates[node] = (x, y)
+            self._signal_box_coordinates = coordinates
+            self._signal_box_coordinate_signature = signature
+        coordinates = self._signal_box_coordinates
+        for ident, value in custom:
+            switch_ids = [int(item) for item in value["member_switch_ids"] if str(item).isdigit()]
+            if len(switch_ids) < 2:
+                continue
+            rows = [coordinates[node] for node in switch_ids if node in coordinates]
+            if len(rows) < 2:
+                continue
+            xs, ys = [float(row[0]) for row in rows], [float(row[1]) for row in rows]
+            pad = max(.00012, min(.001, max(max(xs) - min(xs), max(ys) - min(ys)) * .15))
+            west, east, south, north = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
+            props = {
+                "infrastructure_id": ident,
+                "name": value.get("display_name") or "未命名线路所",
+                "kind": "signal_box",
+                "member_switch_ids": switch_ids,
+                "line_ids": [
+                    item.get("line_id") for item in value.get("connected_lines", [])
+                    if isinstance(item, dict) and item.get("line_id")
+                ],
+            }
+            features.extend([
+                {"type": "Feature", "properties": props, "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
+                }},
+                {"type": "Feature", "properties": props, "geometry": {
+                    "type": "Point", "coordinates": [sum(xs) / len(xs), sum(ys) / len(ys)],
+                }},
+            ])
         return {"type": "FeatureCollection", "features": features}
 
     def select_station_record(self, station_id):

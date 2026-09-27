@@ -43,10 +43,12 @@ try:
     from .components import Switch, switch_row, text_label, GrowingTree, Fold
     from .geometry import interpolate
     from .operating import parse_time, format_time
+    from .vehicle_motion import motion_frames
 except ImportError:
     from components import Switch, switch_row, text_label, GrowingTree, Fold
     from geometry import interpolate
     from operating import parse_time, format_time
+    from vehicle_motion import motion_frames
 
 
 class TimeHandle(QGraphicsEllipseItem):
@@ -293,7 +295,9 @@ class OperationsEditor(QFrame):
         self.refresh()
         self.timer = QTimer(self)
         self.timer.setInterval(100)
-        self.timer.timeout.connect(self.tick)
+        # A callable connection also works for RailEditor after the base
+        # editor's dynamic Qt slots have been registered by another instance.
+        self.timer.timeout.connect(lambda: self.tick())
         self.timer.start()
         map_view.bridge.initialized.connect(self.map_ready)
 
@@ -804,6 +808,8 @@ class OperationsEditor(QFrame):
             self.push_positions()
             self.message.setText(f"{self.selected_train} 已使用独立列车标记")
         self.map.call("setVehicleAppearance", self.appearance)
+        if self.plan.system != "rail":
+            self.push_positions()
 
     def choose_marker_color(self):
         if self.plan.system != "rail" or not self.selected_train:
@@ -875,7 +881,7 @@ class OperationsEditor(QFrame):
         ):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
-                display = train.get("extensions", {}).get("railscope.org/display", {})
+                display = {**self.appearance, **train.get("extensions", {}).get("railscope.org/display", {})}
                 features.append(
                     {
                         "type": "Feature",
@@ -890,6 +896,8 @@ class OperationsEditor(QFrame):
                             "distance_km": round(position["distance_m"] / 1000, 3),
                             "simulation_time": format_time(self.clock),
                             "source": train["source"],
+                            "motion_frames": motion_frames(self.plan, train, line['path'], self.clock,
+                                position['distance_m'], self.speed, self.playing),
                             "display_style": display.get("style", "glow"),
                             "display_size": max(8, min(40, int(display.get("size", 14)))),
                             "display_color": display.get("color", line["color"]),

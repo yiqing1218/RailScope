@@ -58,6 +58,43 @@ def test_name_template_works_without_existing_train():
     assert merge_csv(text, payload)['trains']
 
 
+@pytest.mark.parametrize('typed', ['福州南', '福州南站', ' 福州 南 站 ', '福州火车南站', '福州南火车站', '福州南高铁站'])
+def test_conventional_station_wording_and_direction_are_preserved(typed):
+    payload, _ = named_plan()
+    payload['routes'][0]['extensions'][POSITION_KEY][0]['station_name'] = '福州火车南站'
+    text = f'车次,站名,到达时间,出发时间\nG9,{typed},08:00,08:00\nG9,合肥南,09:00,09:00\n'
+    assert merge_csv(text, payload)['trains'][0]['stops'][0]['node_id'] == 1
+    with pytest.raises(ValueError, match='找不到'):
+        merge_csv(text.replace(typed, '福州北站'), payload)
+
+
+def test_matched_station_name_survives_unnamed_physical_anchor():
+    from desktop.rail import compile_rail_plan, expanded_document
+    payload, edges = named_plan()
+    payload['routes'][0]['extensions'].pop(POSITION_KEY)
+    choices = {'corridor/full': [{'name': '福州火车南站', 'node_id': 1, 'order': 0},
+                               {'name': '乐清东站', 'node_id': 5, 'order': 4}]}
+    imported = merge_csv('车次,站名,到达时间,出发时间\nG9,福州南,08:00,08:00\nG9,乐清东站,09:00,09:00\n', payload, choices)
+    _, lines = compile_rail_plan(expanded_document(imported), edges, [], [])
+    assert lines[0]['stations'][-1]['name'] == '乐清东站'
+
+
+def test_new_name_matches_saved_old_station_identity_and_keeps_track_offset(tmp_path):
+    from desktop.rail_line_store import DiskRailLineLibrary
+    from desktop.rail_station_import import station_choices
+    from desktop.tests.test_line_membership import aliases, edge, install
+    payload, _ = named_plan()
+    reference = payload['routes'][0]['extensions'][POSITION_KEY][-1]
+    reference.update(station_name='绅坊站', station_id='station:node/yueqing')
+    library = DiskRailLineLibrary(install(tmp_path, [edge('a', 1, 5)]))
+    aliases(library.path, [('node/yueqing', name, 100, 5, 1, 'source', 1, 118, 32)
+                          for name in ('绅坊站', '乐清东')])
+    choices = station_choices(payload, library=library)
+    result = merge_csv('车次,站名,到达时间,出发时间\nG9,南京南,08:00,08:00\nG9,乐清东站,09:00,09:00\n', payload, choices)
+    assert result['trains'][0]['stops'][-1]['extensions'][STOP_POSITION_KEY] == reference
+    assert len([v for v in library.search_endpoints() if v[0] == 'station:node/yueqing']) == 1
+
+
 def test_same_named_stations_are_not_guessed_and_explicit_id_can_disambiguate():
     payload, _ = named_plan()
     twin = deepcopy(payload['routes'][0]['extensions'][POSITION_KEY][0])

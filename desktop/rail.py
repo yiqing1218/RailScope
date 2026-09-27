@@ -501,7 +501,8 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             stations.append(
                 {
                     "id": str(stop["node_id"]),
-                    "name": names.get(stop["node_id"], str(stop["node_id"])),
+                    "name": (stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('display_name')
+                             or names.get(stop["node_id"], str(stop["node_id"]))),
                     "distance_m": stop_distance,
                 }
             )

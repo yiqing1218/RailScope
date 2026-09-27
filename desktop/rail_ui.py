@@ -281,6 +281,33 @@ class RailEditor(OperationsEditor):
                     )
         coordinates = {node: coord for edge in edges for node, coord in zip(
             edge.get("node_ids", [edge["from_node"], edge["to_node"]]), edge["coordinates"])}
+        # A timetable stop may refer to a switch or an unlabelled track anchor.
+        # Recover the station alias for display without changing that reference.
+        labels = {}
+        stop_nodes = {s['node_id'] for t in original_payload['trains'] for s in t['stops']}
+        line_index = self.directory / 'rail_lines.sqlite'
+        if line_index.exists() and stop_nodes:
+            with sqlite3.connect(line_index) as db:
+                nodes = sorted(stop_nodes, key=str)
+                for start in range(0, len(nodes), 800):
+                    batch = nodes[start:start+800]
+                    for node, alias, source in db.execute(
+                        'SELECT anchor_node,alias,station_node_id FROM station_aliases WHERE anchor_node IN ('
+                        + ','.join('?' for _ in batch) + ') AND confidence>=0.5 '
+                        'ORDER BY distance_m,length(alias),alias', batch):
+                        labels.setdefault(node, (alias, source))
+        for train in original_payload['trains']:
+            for stop in train['stops']:
+                matched = stop.get('extensions', {}).get('railscope.org/stop-name', {})
+                if matched.get('display_name'):
+                    labels[stop['node_id']] = (matched['display_name'], labels.get(stop['node_id'], ('', stop['node_id']))[1])
+        for node, (label, source) in labels.items():
+            if node not in coordinates:
+                continue
+            points = [p for p in points if p['properties'].get('osm_node_id') != node]
+            points.append({'type': 'Feature', 'properties': {'osm_node_id': node, 'name': label,
+                'kind': 'stop', 'source_station_node': source or node, 'name_source': 'station_alias'},
+                'geometry': {'type': 'Point', 'coordinates': coordinates[node]}})
         for route in original_payload["routes"]:
             for position in route.get("extensions", {}).get(POSITION_KEY, []):
                 node = position["node_id"]
@@ -476,8 +503,8 @@ class RailEditor(OperationsEditor):
                     continue
                 source_node = data.get("source_station_node", data["osm_node_id"])
                 shared = self.shared_station_features.get(source_node, station)
-                display_name = shared["properties"].get("name") or data.get("name")
-                if not display_name or str(display_name).isdigit():
+                display_name = stop_names.get(data['osm_node_id']) or shared["properties"].get("display_name") or shared["properties"].get("name") or data.get("name")
+                if not display_name or str(display_name).isdigit() or str(display_name).startswith('未命名'):
                     display_name = stop_names.get(data["osm_node_id"]) or stop_names.get(source_node)
                 if not display_name or str(display_name).isdigit():
                     display_name = "未命名铁路控制点"
@@ -501,9 +528,14 @@ class RailEditor(OperationsEditor):
                             node_coordinates[data["osm_node_id"]])},
                     }
                 )
-        self.map.call(
-            "setRailPlan", {"type": "FeatureCollection", "features": features}
-        )
+        try:
+            from .display_names import apply_names
+        except ImportError:
+            from display_names import apply_names
+        collection = {'type': 'FeatureCollection', 'features': features}
+        if self.catalog_metadata_path.exists():
+            apply_names(collection, json.loads(self.catalog_metadata_path.read_text(encoding='utf-8')))
+        self.map.call('setRailPlan', collection)
         self.map.call("setVisibility", "railPlan", bool(features))
 
     def load_g1_example(self):
@@ -1001,8 +1033,8 @@ class RailEditor(OperationsEditor):
                         requested_sequence = old_selection.get("requested_sequence", requested_sequence)
                     resolution.update({
                         "source": "automatic_reference",
-                        "method": "reachable_lines_with_local_station_connections",
-                        "version": 2,
+                        "method": "reachable_lines_with_station_and_fragment_connections",
+                        "version": 3,
                         "verification_status": "automatic_reference_not_dispatch_verified",
                         "confidence": None,
                         "snapshot": membership.get("snapshot") if membership else "portable_reference",

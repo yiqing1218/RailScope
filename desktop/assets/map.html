@@ -44,6 +44,7 @@
   <script type="module">
     import * as maplibregl from '/desktop/vendor/maplibre-gl.mjs';
     window.maplibregl = maplibregl;
+    await import('./vehicle-motion.js');
     await import('./map.js');
   </script>
 </body>

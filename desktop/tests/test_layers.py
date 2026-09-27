@@ -312,7 +312,7 @@ def test_topology_catalog_upgrades_old_way_rendering_without_reimport(tmp_path):
     )
 
 
-def test_large_topology_tree_is_bounded_and_still_searches_every_section(
+def test_named_topology_tree_is_complete_and_searches_every_section(
     tmp_path, monkeypatch
 ):
     import desktop.rail_catalog_ui as catalog_module
@@ -339,7 +339,7 @@ def test_large_topology_tree_is_bounded_and_still_searches_every_section(
     )
     view = MapStub()
     widget = RailCatalog(tmp_path, tmp_path / "settings.json", view)
-    assert len(widget.items) == 2
+    assert len(widget.items) == 3  # Named lines must not disappear at the search-result limit.
     assert all(
         widget.tree.itemWidget(group, 1).isEnabled()
         for group in widget.groups.values()

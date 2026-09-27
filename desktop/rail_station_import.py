@@ -4,12 +4,16 @@ from copy import deepcopy
 
 try:
     from .station_positions import POSITION_KEY, STOP_POSITION_KEY
+    from .station_search import rail_name_key
 except ImportError:
     from station_positions import POSITION_KEY, STOP_POSITION_KEY
+    from station_search import rail_name_key
+
+STOP_NAME_KEY = 'railscope.org/stop-name'
 
 
 def name_key(value):
-    return ''.join(str(value).split()).removesuffix('站').casefold()
+    return rail_name_key(value)
 
 
 def station_choices(payload, edges=(), points=(), library=None):
@@ -36,6 +40,19 @@ def station_choices(payload, edges=(), points=(), library=None):
                     'order': order.get(p['node_id'], p['distance_m'])} for p in references]
         if library is not None:
             for position in references:
+                # The corridor may have been saved using an old name (绅坊).
+                # Match all aliases of that SAME station identity, retaining
+                # its exact saved edge offset rather than selecting a new node.
+                if hasattr(library, 'connect') and str(position['station_id']).startswith('station:'):
+                    sources = library._station_sources(position['station_id'])
+                    with library.connect() as db:
+                        aliases = [row[0] for row in db.execute(
+                            'SELECT DISTINCT alias FROM station_aliases WHERE source_id IN ('
+                            + ','.join('?' for _ in sources) + ')', sources)]
+                    for alias in aliases:
+                        preferred.add(name_key(alias))
+                        choices.append({'name': library.station_display_name(alias), 'node_id': position['node_id'],
+                                        'position': position, 'order': order.get(position['node_id'], position['distance_m'])})
                 renamed = library.metadata.get(position['station_id'], {}).get('display_name')
                 if renamed:
                     preferred.add(name_key(renamed))
@@ -84,7 +101,11 @@ def resolve_stops(rows, choices):
             continue
         label = row.get('stop_name') or node
         if not matching:
-            raise ValueError(f'第 {number} 行：通道中找不到车站“{label}”')
+            from difflib import get_close_matches
+            names = {name_key(c['name']): c['name'] for c in choices}
+            nearby = get_close_matches(name_key(label), names, n=3, cutoff=.5)
+            hint = ('；可核对：' + '、'.join(names[k] for k in nearby)) if nearby else ''
+            raise ValueError(f'第 {number} 行：通道中找不到车站“{label}”' + hint)
         if node and row.get('stop_name'):
             matching = [c for c in matching if name_key(c['name']) == name_key(row['stop_name'])]
             if not matching:
@@ -98,8 +119,11 @@ def resolve_stops(rows, choices):
             raise ValueError(f'第 {number} 行：通道内有多个同名站“{label}”，请在软件中核对后填写 node_id')
         chosen = matching[0]
         previous = chosen['order']
-        stop = {'node_id': chosen['node_id']}
+        stop = {'node_id': chosen['node_id'], 'extensions': {STOP_NAME_KEY: {
+            'display_name': chosen['name'], 'input_name': row.get('stop_name', ''),
+            'node_id': chosen['node_id'], 'source': 'corridor_station_name_match',
+            'version': 1, 'verification_status': 'matched_alias', 'confidence': None}}}
         if chosen.get('position'):
-            stop['extensions'] = {STOP_POSITION_KEY: deepcopy(chosen['position'])}
+            stop['extensions'][STOP_POSITION_KEY] = deepcopy(chosen['position'])
         result.append(stop)
     return result
