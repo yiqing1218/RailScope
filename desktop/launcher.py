@@ -85,7 +85,7 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
-from display_names import apply_names, object_key
+from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation
 from road_store import database_path as road_database_path, viewport as road_viewport
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
@@ -380,6 +380,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     metro_database=getattr(self.server, "metro_db", None),
                 )
                 from rail_station_directory import load_directory
+                apply_rail_presentation(result, self.server.config.get('railLinePresentation', {}),
+                                        self.server.config.get('railDisplayOverrides'))
                 apply_names(result, self.server.config.get('railDisplayOverrides'),
                             self.server.config.get('railLineNames'), self.server.config.get('railWayNames'),
                             load_directory(active_rail_directory(ROOT) / 'rail_lines.sqlite'))
@@ -2990,6 +2992,7 @@ class Desk(QMainWindow):
         path = self.rail_operations.path.parent
         self.config['railLineNames'] = read_json(path / 'rail_line_names.json', {})
         self.config['railWayNames'] = read_json(path / 'rail_way_names.json', {})
+        self.config['railLinePresentation'] = rail_line_presentation(self.rail_operations.line_library())
         self.config['metroDisplayOverrides'] = {
             **self.metro_line_overrides.values, **self.metro_station_overrides.values,
             **self.rail_catalog_widget.overrides}
@@ -3001,6 +3004,8 @@ class Desk(QMainWindow):
         if selected:
             apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
                         self.config['railLineNames'], self.config['railWayNames'])
+            apply_rail_presentation({'features': [selected]}, self.config['railLinePresentation'],
+                                    self.config['railDisplayOverrides'])
 
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
@@ -3087,6 +3092,8 @@ class Desk(QMainWindow):
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         config = getattr(self, 'config', {})
+        apply_rail_presentation({'features': [feature]}, config.get('railLinePresentation', {}),
+                                config.get('railDisplayOverrides'))
         apply_names({'features': [feature]}, config.get('railDisplayOverrides'),
                     config.get('railLineNames'), config.get('railWayNames'))
         props = dict(feature.get("properties", {}))
@@ -3288,18 +3295,21 @@ class Desk(QMainWindow):
             "speed_multiplier": "演示速度",
             "color_raw": "原始颜色",
             "color_source": "颜色来源",
-            "infrastructure_id": "稳定基础设施编号",
+            "line_id": "所属线路稳定编号（上下行共用）",
+            "infrastructure_id": ("原始 OSM 要素编号" if str(props.get('infrastructure_id', '')).startswith(('way/', 'node/', 'relation/'))
+                                  else "稳定基础设施编号"),
             "station_id": "唯一车站编号",
             "area_id": "真实轮廓编号",
             "network_edge_id": "物理轨道段编号",
             "section_id": "端点线段编号",
             "catalog_group_id": "目录对象编号",
-            "line_id": "物理线路编号",
+            "source_line_id": "原始线路分组编号",
             "from_node": "起端点编号",
             "from_name": "起端点",
             "to_node": "终端点编号",
             "to_name": "终端点",
             "track_type": "轨道类型",
+            "display_track_type": "地图显示样式类型",
             "kind": "对象种类",
             "station_type": "车站类型",
             "line_names": "经过线路",

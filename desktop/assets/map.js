@@ -65,6 +65,10 @@ function styleWorkbench(style) {
       else if(sl==='building')paint['fill-color']='#e3e9ed';
       else if(sl==='landuse')paint['fill-color']='#edf0ed';
       else if(sl==='landcover'||sl==='park')paint['fill-color']='#e3ede6';
+      else if(sl==='transportation')paint['fill-color']='#eef2f3';
+      // Pattern-only fills otherwise fall back to MapLibre's opaque black
+      // after the sprite is removed (pedestrian plazas, courtyards, etc.).
+      else if(paint['fill-color']===undefined)paint['fill-color']='#e3e9ed';
     }
     if(layer.type==='line'&&sl==='transportation')paint['line-color']=layer.id.includes('casing')?'#ccd6dd':'#fafcfd';
     if(layer.type==='line'&&sl==='waterway')paint['line-color']='#b9d4e0';
@@ -314,7 +318,8 @@ function applyRailStyles(){
   const curve=Array.isArray(styles._zoom_width_curve)&&styles._zoom_width_curve.length>=2
     ?styles._zoom_width_curve
     :[{zoom:3,scale:.8},{zoom:5,scale:.9},{zoom:8,scale:1.05},{zoom:12,scale:1.25},{zoom:16,scale:1.5},{zoom:19,scale:1.8}];
-  const colors=['match',['get','track_type']],widths=['match',['get','track_type']];
+  const role=['coalesce',['get','display_track_type'],['get','track_type']];
+  const colors=['match',role],widths=['match',role];
   for(const [type,style] of entries){
     colors.push(type,style.color);widths.push(type,Number(style.width));
   }
@@ -329,7 +334,7 @@ function applyRailStyles(){
   if(map.getLayer('rail-construction'))map.setPaintProperty('rail-construction','line-opacity',.65);
   if(map.getLayer('rail-stripes')){
     const solid=entries.filter(([,style])=>style.pattern==='solid').map(([type])=>type);
-    map.setPaintProperty('rail-stripes','line-opacity',['case',['in',['get','track_type'],['literal',solid]],0,1]);
+    map.setPaintProperty('rail-stripes','line-opacity',['case',['in',role,['literal',solid]],0,1]);
   }
 }
 function applyMetroStyles(){
