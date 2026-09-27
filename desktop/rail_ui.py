@@ -177,7 +177,15 @@ class RailEditor(OperationsEditor):
             from .domain_adapter import build_repository
         except ImportError:
             from domain_adapter import build_repository
-        return build_repository(self.graph, self.document(), identity_path)
+        shared = Path(__file__).resolve().parents[1] / 'data/catalog/rail_catalog_overrides.json'
+        values = {}
+        for path in (shared, self.catalog_metadata_path):
+            try:
+                for key, value in json.loads(Path(path).read_text(encoding='utf-8')).items():
+                    values[key] = {**values.get(key, {}), **value}
+            except (OSError, ValueError):
+                continue
+        return build_repository(self.graph, self.document(), identity_path, values, self.directory / 'rail.sqlite')
 
     def play(self):
         if not self.plan.trains:
@@ -482,6 +490,7 @@ class RailEditor(OperationsEditor):
                 "name": route.get("name", corridor_id) if route else "单向参考通道",
                 "source": self.rail_payload["source"],
                 "corridor_id": corridor_id,
+                "color": route.get("color", "#466979"),
                 "train_ids": trains,
                 "track_changes": (route or {}).get("track_changes", []),
             }
@@ -514,7 +523,7 @@ class RailEditor(OperationsEditor):
                         "verification_status":boundary["verification_status"],
                         "position_source":boundary["source"]},
                         "geometry":{"type":"Point", "coordinates":boundary["coordinate"]}})
-            key = tuple((leg["edge_id"], leg["direction"]) for leg in route["path"])
+            key = (route.get("color", "#466979"), tuple((leg["edge_id"], leg["direction"]) for leg in route["path"]))
             if key not in drawn_paths:
                 drawn_paths.add(key)
                 features.append(
@@ -834,6 +843,7 @@ class RailEditor(OperationsEditor):
                 {
                     "id": route["id"],
                     "name": route.get("name", route["id"]),
+                    "color": route.get("color", "#466979"),
                     "sequence": sequence,
                     "extensions": extensions,
                 }
@@ -1002,7 +1012,7 @@ class RailEditor(OperationsEditor):
                 strict_fields(
                     route,
                     {"id", "name", "sequence", "extensions"},
-                    set(),
+                    {"color"},
                     "端点—线路通道",
                 )
                 # Resolve from the infrastructure every time, including G1 notation.
@@ -1101,7 +1111,7 @@ class RailEditor(OperationsEditor):
             strict_fields(
                 route,
                 {"id", "path", "extensions"},
-                {"name", "track_changes", "sequence"},
+                {"name", "track_changes", "sequence", "color"},
                 "单向运行通道",
             )
             routes[route["id"]] = {**routes.get(route["id"], {}), **deepcopy(route)}

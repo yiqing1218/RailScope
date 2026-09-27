@@ -333,6 +333,9 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         if any(not isinstance(value, (str, int)) or isinstance(value, bool) for value in values):
             raise ValueError("线路选择无效")
         selected_values[name] = list(dict.fromkeys(values))
+    excluded = selection.get("exclude", False)
+    if type(excluded) is not bool:
+        raise ValueError("线路排除选项无效")
     selected = any(selected_values.values())
     budget = normalize(limits) if limits is not None else DEFAULT
     feature_limit = budget["features"]
@@ -355,6 +358,13 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            if kind == "rail" and "states" in selection:
+                states = selection['states']
+                if not isinstance(states, list) or any(v not in ('operating','construction','planned','disused','unknown') for v in states):
+                    raise ValueError('线路状态选择无效')
+                marks = ','.join('?' for _ in states) or "NULL"
+                clauses.append(f"coalesce(json_extract(f.data,'$.properties.construction_status'),CASE WHEN json_extract(f.data,'$.properties.construction')=1 THEN 'construction' ELSE 'operating' END) IN ({marks})")
+                parameters.extend(states)
             if kind != "rail":
                 try:
                     from .transport_modes import rail_display_predicate
@@ -387,7 +397,8 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                             f"json_extract(f.data, '$.properties.{property_name}') IN ({placeholders})"
                         )
                         parameters.extend(values)
-                clauses.append("(" + " OR ".join(selectors) + ")")
+                predicate = "(" + " OR ".join(selectors) + ")"
+                clauses.append("NOT coalesce(" + predicate + ",0)" if excluded else predicate)
             else:
                 clauses.append('(? >= 10 OR f.service="main")')
                 parameters.append(zoom)
@@ -440,24 +451,22 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         if line_path.exists():
             line_map = {node_id: set() for node_id in node_ids}
             line_names = {}
+            construction_map, operating_map = {}, {}
             with closing(sqlite3.connect(str(line_path))) as lines:
                 for start in range(0, len(node_ids), 800):
                     batch = node_ids[start : start + 800]
                     marks = ",".join("?" for _ in batch)
-                    for node_id, line_id in lines.execute(
-                        "SELECT a.source_id,l.line_id FROM node_aliases a "
-                        "JOIN line_nodes l ON l.node_id=a.node_id "
-                        f"WHERE a.source_id IN ({marks})",
-                        batch,
-                    ):
-                        line_map.setdefault(node_id, set()).add(line_id)
-                    for node_id, line_id in lines.execute(
-                        "SELECT a.station_node_id,l.line_id FROM station_aliases a "
-                        "JOIN line_nodes l ON l.node_id=a.anchor_node "
-                        f"WHERE a.station_node_id IN ({marks})",
-                        batch,
-                    ):
-                        line_map.setdefault(node_id, set()).add(line_id)
+                    # State belongs to the incident edge, not to every node of
+                    # a long railway that happens to contain a construction part.
+                    for table, source, anchor in (('node_aliases','source_id','node_id'),
+                                                   ('station_aliases','station_node_id','anchor_node')):
+                        for endpoint in ('a', 'b'):
+                            for node_id, line_id, construction in lines.execute(
+                                f"SELECT a.{source},e.line_id,e.construction FROM {table} a "
+                                f"JOIN edges e ON e.{endpoint}=a.{anchor} WHERE a.{source} IN ({marks})", batch):
+                                line_map.setdefault(node_id, set()).add(line_id)
+                                target = construction_map if construction else operating_map
+                                target.setdefault(node_id, set()).add(line_id)
                 used_line_ids = sorted(set().union(*line_map.values())) if line_map else []
                 for start in range(0, len(used_line_ids), 800):
                     batch = used_line_ids[start : start + 800]
@@ -476,6 +485,8 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                     *(line_map.get(node, set()) for node in associated)
                 )) if associated else []
                 props["line_ids"] = line_ids
+                props['construction_line_ids'] = sorted({v for node in associated for v in construction_map.get(node, ())})
+                props['operating_line_ids'] = sorted({v for node in associated for v in operating_map.get(node, ())})
                 props["line_names"] = [line_names.get(value, value) for value in line_ids]
     for feature in features:
         props = feature["properties"]

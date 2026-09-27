@@ -31,17 +31,12 @@ def test_track_numbering_is_per_track_persistent_and_preserves_source_names(tmp_
     assert features[0]['properties']['network_edge_id'] == 'a1'
 
 
-def test_map_rename_targets_one_track_instead_of_station_group(monkeypatch):
-    from desktop.launcher import Desk, QInputDialog
+def test_map_rename_opens_track_entity_editor_not_line_metadata():
+    from desktop.launcher import Desk
     feature = {'layer': 'rail', 'properties': {'catalog_group_id': 'ST-test',
                 'section_id': 'RS-one', 'network_edge_id': 'edge-one'}}
-    changes, signals = [], []
-    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ('到发5道', True))
-    desk = SimpleNamespace(selected_features=[feature], rail_catalog_widget=SimpleNamespace(
-        _save_local_overrides=changes.append, metadata_changed=SimpleNamespace(emit=lambda: signals.append(True))),
-        display_feature=lambda f: None)
+    edits = []
+    desk = SimpleNamespace(selected_features=[feature], edit_station_tracks=lambda: edits.append(feature))
     Desk.rename_map_selection(desk)
-    assert list(changes[0]) == ['object:section_id:RS-one']
-    assert changes[0]['object:section_id:RS-one']['display_name'] == '到发5道'
-    assert signals == [True]
+    assert edits == [feature]
     assert yard_track_key({'catalog_group_id': 'RL-main', 'network_edge_id': 'e'}) is None

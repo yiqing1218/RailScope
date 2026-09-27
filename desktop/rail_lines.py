@@ -70,6 +70,7 @@ LEGACY_CORRIDOR_COLUMNS = tuple(
     column for column in CORRIDOR_COLUMNS if column != "section_id"
 )
 EXTENDED_CORRIDOR_COLUMNS = (*CORRIDOR_COLUMNS, "extensions")
+COLORED_CORRIDOR_COLUMNS = (*EXTENDED_CORRIDOR_COLUMNS, "color")
 
 
 def edge_endpoints(edge):
@@ -100,7 +101,7 @@ def _endpoint(value):
 
 def import_corridor_csv(text):
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS)):
+    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS), list(COLORED_CORRIDOR_COLUMNS)):
         raise ValueError(
             "通道 CSV 表头必须为：" + ",".join(CORRIDOR_COLUMNS)
             + "（旧版不含 section_id 仍可导入）"
@@ -120,11 +121,17 @@ def import_corridor_csv(text):
             {
                 "id": row["corridor_id"],
                 "name": row["corridor_name"],
+                **({"color": row["color"]} if row.get("color") else {}),
                 "sequence": [],
                 "extensions": {RESOLUTION_KEY: {"policy": "strict"}},
             },
         )
         sequence = route["sequence"]
+        if row.get('color'):
+            from railscope.presentation import valid_color
+            valid_color(row['color'])
+        if row.get('color', '') != route.get('color', ''):
+            raise ValueError('同一通道的颜色必须一致')
         if row.get("extensions"):
             if sequence:
                 raise ValueError("通道 CSV 的 extensions 只填写在每个通道的首行")
@@ -159,7 +166,7 @@ def import_corridor_csv(text):
 
 def export_corridor_csv(document):
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=EXTENDED_CORRIDOR_COLUMNS)
+    writer = csv.DictWriter(output, fieldnames=COLORED_CORRIDOR_COLUMNS)
     writer.writeheader()
     for route in document["corridors"]:
         sequence = route["sequence"]
@@ -168,6 +175,7 @@ def export_corridor_csv(document):
                 {
                     "corridor_id": route["id"],
                     "corridor_name": route["name"],
+                    "color": route.get("color", ""),
                     "segment": (index + 1) // 2,
                     "from_node": sequence[index - 1]["node_id"],
                     "line_id": sequence[index]["line_id"],

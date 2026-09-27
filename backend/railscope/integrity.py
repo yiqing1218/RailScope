@@ -77,10 +77,10 @@ def path_refs(repo, legs, allow_nonoperating=False):
 
 def references(repo, kind, ident):
     """Return stable IDs, not map features; include transitive corridor/run impact."""
-    result={key:[] for key in ('lines','sections','corridors','station_routes','train_runs')}
+    result={key:[] for key in ('lines','sections','corridors','station_routes','station_tracks','train_runs')}
     if kind=='edge':
         result['lines']=[m.line_id for m in repo.memberships if m.edge_id==ident]
-        for collection in ('sections','corridors','station_routes'):
+        for collection in ('sections','corridors','station_routes','station_tracks'):
             result[collection]=[p.id for p in getattr(repo,collection).values() if any(r.edge_id==ident for r in p.edge_refs)]
     elif kind=='station':
         node_ids={n.id for n in repo.nodes.values() if n.station_id==ident}
@@ -101,6 +101,24 @@ def references(repo, kind, ident):
 
 def validate_repository(repo):
     errors=[]
+    from .presentation import valid_color, design_speed
+    for line in repo.lines.values():
+        try: design_speed(line.design_speed_kmh)
+        except ValueError as exc: errors.append(f'line {line.id}: {exc}')
+    for corridor in repo.corridors.values():
+        try: valid_color(corridor.color)
+        except ValueError as exc: errors.append(f'corridor {corridor.id}: {exc}')
+    for geometry in repo.service_area_geometries.values():
+        if geometry.service_area_id not in repo.service_areas:
+            errors.append(f'service geometry {geometry.id}: owner missing')
+    for track in repo.station_tracks.values():
+        if track.edge_refs:
+            try:
+                expected = path_refs(repo, [(r.edge_id, r.forward) for r in track.edge_refs], allow_nonoperating=True)
+                if expected != track.edge_refs:
+                    raise ValueError('股道边序或累计里程无效')
+            except ValueError as exc:
+                errors.append(f'station track {track.id}: {exc}')
     for edge in repo.edges.values():
         if edge.from_node_id not in repo.nodes or edge.to_node_id not in repo.nodes:
             errors.append(f'edge {edge.id}: endpoint missing')
@@ -185,7 +203,7 @@ def validate_repository(repo):
 
 def delete_edge(repo, edge_id):
     refs=references(repo,'edge',edge_id)
-    if any(refs[k] for k in ('sections','corridors','station_routes','train_runs')):
+    if any(refs[k] for k in ('sections','corridors','station_routes','station_tracks','train_runs')):
         raise ValueError(f"轨道被 {len(refs['corridors'])} 个 Corridor、{len(refs['train_runs'])} 个 TrainRun 引用：{refs}")
     del repo.edges[edge_id]
     repo.memberships[:]=[m for m in repo.memberships if m.edge_id!=edge_id]

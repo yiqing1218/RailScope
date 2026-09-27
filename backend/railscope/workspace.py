@@ -18,6 +18,7 @@ from .integrity import validate_repository, references, delete_edge, path_refs
 from .identity import new_id
 
 TYPES={
+    'service_areas':d.ServiceArea,'service_area_geometries':d.ServiceAreaGeometry,
     'sources':d.DataSource,'snapshots':d.DatasetSnapshot,'lines':d.InfrastructureLine,
     'nodes':d.NetworkNode,'edges':d.NetworkEdge,'stations':d.Station,
     'sections':d.RouteSection,'corridors':d.Corridor,'station_routes':d.StationRoute,
@@ -154,7 +155,7 @@ class EditSession:
         self.dirty=False
 
     def edit_line(self,line_id,**values):
-        allowed={'name','railway_type','construction_status'}
+        allowed={'name','railway_type','construction_status','design_speed_kmh'}
         if not set(values)<=allowed: raise ValueError('不允许改变线路身份或原始来源')
         if 'name' in values and not values['name'].strip(): raise ValueError('线路名称不能为空')
         if 'construction_status' in values and values['construction_status'] not in {'operating','construction','planned','disused','unknown'}:

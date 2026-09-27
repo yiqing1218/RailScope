@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 import argparse
 import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -364,12 +365,13 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
                 query = self.request_query()
                 selection = {}
-                for query_name in ("sections", "ways", "groups"):
+                for query_name in ("sections", "ways", "groups", "states"):
                     if query_name in query:
                         value = json.loads(query[query_name][0])
                         if not isinstance(value, list):
                             raise ValueError("线路选择无效")
                         selection[query_name] = value
+                selection["exclude"] = query.get("exclude", ["false"])[0] == "true"
                 result = viewport(
                     active_rail_directory(ROOT),
                     query["kind"][0],
@@ -773,6 +775,17 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "高速公路样式未保存", str(error))
 
+    def set_line_names_visible(self, on):
+        value = deepcopy(self.config["railPointStyles"])
+        value["labels"]["show_line_names"] = bool(on)
+        path = ROOT / "data/user_settings/rail_point_styles.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+        self.config["railPointStyles"] = value
+        self.map.call("setRailPointStyles", value)
+
     def edit_rail_point_styles(self):
         path = ROOT / "data/user_settings/rail_point_styles.json"
         dialog = RailPointStyleDialog(load_rail_point_styles(path), self)
@@ -785,6 +798,9 @@ class Desk(QMainWindow):
                 temporary.replace(path)
                 self.config["railPointStyles"] = value
                 self.map.call("setRailPointStyles", value)
+                self.line_names_action.blockSignals(True)
+                self.line_names_action.setChecked(value["labels"]["show_line_names"])
+                self.line_names_action.blockSignals(False)
             except OSError as error:
                 QMessageBox.warning(self, "站点样式未保存", str(error))
 
@@ -1010,12 +1026,20 @@ class Desk(QMainWindow):
         self.add_action(file, "导入国铁运行通道…", self.rail_operations.import_corridors)
         self.add_action(file, "导出国铁运行通道…", self.rail_operations.export_corridors)
         self.add_action(file, "导出当前可见图层…", self.export_visible, "Ctrl+E")
+        self.add_action(file, "当前页面高质量导出…", self.export_high_quality_map)
+        self.add_action(file, "一键导出所选站场示意图…", self.export_station_schematic)
         shots = file.addMenu("导出截图")
         self.add_action(shots, "导出当前地图 PNG…", self.capture_map)
         self.add_action(shots, "导出完整运行图 PNG…", self.capture_diagram)
         file.addSeparator()
         self.add_action(file, "退出", self.close, "Alt+F4")
         edit = bar.addMenu("编辑")
+        self.line_names_action = edit.addAction("显示线路名称")
+        self.line_names_action.setCheckable(True)
+        self.line_names_action.setChecked(self.config["railPointStyles"]["labels"]["show_line_names"])
+        self.line_names_action.toggled.connect(self.set_line_names_visible)
+        self.add_action(edit, "站场股道命名 / 自动编号…", self.edit_station_tracks)
+
         self.add_action(edit, "撤销目录调整", lambda: self.rail_catalog_widget.undo_catalog(), "Ctrl+Z")
         self.add_action(edit, "重做目录调整", lambda: self.rail_catalog_widget.redo_catalog(), "Ctrl+Y")
         edit.addSeparator()
@@ -1398,14 +1422,134 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "无法导出", str(error))
 
+    def edit_service_area(self, feature):
+        from road_services import service_repository
+        props = feature['properties']
+        repo = service_repository(self.road_catalog_widget.database, self.rail_catalog_widget.overrides, [props['service_id']])
+        entity = repo.service_areas[props['service_id']]
+        dialog = QDialog(self); dialog.setWindowTitle("服务区实体 · 名称与行政属性")
+        layout = QFormLayout(dialog)
+        fields = {}
+        for key, label, value in [('display_name', '服务区名称', entity.name), *[(k, label, entity.attributes.get(k, '')) for k, label in [('province', '省'), ('city', '市'), ('county', '县 / 区')]]]:
+            fields[key] = QLineEdit(str(value)); layout.addRow(label, fields[key])
+        layout.addRow('实体编号', QLabel(entity.id))
+        layout.addRow('来源成员', QLabel('、'.join(entity.source_member_ids)))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); layout.addRow(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            values = {key: field.text().strip() for key, field in fields.items()}
+            if not values['display_name']:
+                QMessageBox.warning(self, '未保存', '服务区名称不能为空'); return
+            self.rail_catalog_widget._save_local_overrides({'object:service_id:' + entity.id: {**values, 'source': 'manual', 'verification_status': 'user_named'}})
+            self.rail_catalog_widget.metadata_changed.emit()
+            props.update(values); self.display_feature(feature)
+
+    def selected_station_tracks(self):
+        from station_tracks import load_station_tracks
+        from rail_station_directory import load_directory, station_key
+        props = dict(self.selected_data.get('properties', {}))
+        directory = self.rail_catalog_widget.directory
+        records = load_directory(directory / 'rail_lines.sqlite')
+        source = props.get('station_source') or station_key(props)
+        if source in records:
+            props = {**records[source]['feature']['properties'], 'infrastructure_id': source}
+        elif props.get('catalog_group_id', '').startswith('ST-'):
+            pass
+        else:
+            name, ok = QInputDialog.getText(self, '选择站场', '车站名称（也可以先在地图上选中车站或站场股道）')
+            if not ok or not name.strip(): return None
+            matches = [(key, item) for key, item in records.items() if item['name'].removesuffix('站') == name.strip().removesuffix('站')]
+            if len(matches) != 1:
+                raise ValueError('未找到唯一车站，请在地图上选中具体车站后再操作')
+            key, item = matches[0]; props = {**item['feature']['properties'], 'infrastructure_id': key}
+        return load_station_tracks(directory, self.rail_operations.workspace_identity_path, props, self.rail_catalog_widget.overrides)
+
+    def edit_station_tracks(self):
+        from station_track_ui import StationTrackDialog
+        from station_tracks import track_overrides
+        try:
+            selected = self.selected_station_tracks()
+            if selected is None: return
+            repo, rows, context = selected
+            dialog = StationTrackDialog(repo, self)
+            props = self.selected_data.get('properties', {})
+            chosen = props.get('station_track_id') or next((key for key, track in repo.station_tracks.items()
+                if props.get('section_id') in track.source_member_ids), None)
+            if chosen in dialog.keys:
+                row = dialog.keys.index(chosen)
+                dialog.table.selectRow(row)
+                dialog.table.scrollToItem(dialog.table.item(row, 0))
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.rail_catalog_widget._save_local_overrides(track_overrides(repo, rows))
+                self.rail_catalog_widget.metadata_changed.emit()
+        except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+            QMessageBox.warning(self, '站场股道无法载入', str(error))
+
+    def export_station_schematic(self):
+        from station_tracks import track_overrides, automatic_numbering
+        from station_schematic import station_svg, ensure_export_font
+        try:
+            selected = self.selected_station_tracks()
+            if selected is None: return
+            repo, rows, context = selected
+            name = next(iter(repo.stations.values())).name
+            path, kind = QFileDialog.getSaveFileName(self, '导出站场示意图', str(ROOT / 'data/logs' / (name + '-站场.svg')), '矢量 SVG (*.svg);;高清 PNG (*.png);;矢量 PDF (*.pdf)')
+            if not path: return
+            automatic_numbering(repo)
+            self.rail_catalog_widget._save_local_overrides(track_overrides(repo, rows))
+            self.rail_catalog_widget.metadata_changed.emit()
+            svg = station_svg(repo, context).encode('utf-8')
+            if Path(path).suffix.lower() == '.svg':
+                Path(path).write_bytes(svg)
+            else:
+                from PySide6.QtSvg import QSvgRenderer
+                from PySide6.QtGui import QImage, QPdfWriter
+                from PySide6.QtCore import QRectF
+                ensure_export_font()
+                renderer = QSvgRenderer(svg); size = renderer.defaultSize()
+                if Path(path).suffix.lower() == '.pdf':
+                    from PySide6.QtGui import QPageSize
+                    from PySide6.QtCore import QSizeF
+                    image = QPdfWriter(path); image.setResolution(300)
+                    image.setPageSize(QPageSize(QSizeF(size.width()/6, size.height()/6), QPageSize.Unit.Millimeter))
+                    painter = QPainter(image); renderer.render(painter, QRectF(0, 0, image.width(), image.height())); painter.end()
+                else:
+                    image = QImage(size*3, QImage.Format.Format_ARGB32); image.fill(QColor('white'))
+                    image.setDotsPerMeterX(11811); image.setDotsPerMeterY(11811)
+                    painter = QPainter(image); renderer.render(painter); painter.end()
+                    if not image.save(path): raise ValueError('示意图无法写入')
+            self.load_status.setText('  站场示意图已保存：' + path)
+        except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+            QMessageBox.warning(self, '站场示意图未导出', str(error))
+
+    def export_high_quality_map(self):
+        if not self.map.is_ready:
+            return
+        if getattr(self, '_capture_path', None):
+            self.load_status.setText('  正在导出地图，请等待当前导出完成')
+            return
+        width, ok = QInputDialog.getInt(self, "高质量地图导出", "输出宽度（像素，保持当前地图范围）", 6000, 1600, 12000, 400)
+        if not ok:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "高质量地图 PNG · 300 DPI", str(ROOT / "data/logs/map-print.png"), "PNG (*.png)")
+        if path:
+            self._capture_path = path
+            self._capture_dpi = 300
+            self.load_status.setText("  正在独立渲染高分辨率地图…")
+            self.map.call("exportHighQuality", width)
+
     def capture_map(self):
         if not self.map.is_ready:
+            return
+        if getattr(self, '_capture_path', None):
+            self.load_status.setText('  正在导出地图，请等待当前导出完成')
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "保存当前地图截图", str(ROOT / "data/logs/map.png"), "PNG (*.png)"
         )
         if path:
             self._capture_path = path
+            self._capture_dpi = 96
             self.map.call("captureMap")
 
     def save_map_capture(self, data):
@@ -1413,9 +1557,17 @@ class Desk(QMainWindow):
             return
         try:
             if not data.startswith("data:image/png;base64,"):
-                raise ValueError("地图截图未成功，请等待底图加载后重试")
+                raise ValueError(data if data.startswith("error:") else "地图导出未成功，请等待地图加载后重试")
             image = base64.b64decode(data.split(",", 1)[1], validate=True)
-            Path(self._capture_path).write_bytes(image)
+            from PySide6.QtGui import QImage
+            rendered = QImage.fromData(image)
+            if rendered.isNull():
+                raise ValueError("地图图像解码失败")
+            dots = round(getattr(self, "_capture_dpi", 96) / .0254)
+            rendered.setDotsPerMeterX(dots)
+            rendered.setDotsPerMeterY(dots)
+            if not rendered.save(self._capture_path):
+                raise ValueError("无法写入地图图像")
             self.load_status.setText("  地图截图已保存：" + self._capture_path)
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "截图失败", str(error))
@@ -1485,7 +1637,7 @@ class Desk(QMainWindow):
         layout.addStretch()
         self.search_type = QComboBox()
         self.search_type.addItems(
-            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所"]
+            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所", "站场股道", "服务区"]
         )
         self.search_type.setMinimumWidth(105)
         layout.addWidget(self.search_type)
@@ -2746,7 +2898,13 @@ class Desk(QMainWindow):
             feature = self.selected_features[0]
             props = feature.get('properties', {})
             layer = feature.get('layer', feature.get('__layer', ''))
+            if props.get('service_id'):
+                self.edit_service_area(feature)
+                return
             track_key = yard_track_key(props)
+            if track_key or props.get('station_track_id'):
+                self.edit_station_tracks()
+                return
             if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and (track_key or not props.get('catalog_group_id')):
                 key = track_key or object_key(props)
                 if key and props.get('kind') not in ('station', 'halt', 'signal_box'):
@@ -2991,6 +3149,8 @@ class Desk(QMainWindow):
     def refresh_map_names(self):
         """HTTP viewport responses and on-map labels use the same overrides."""
         self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        if hasattr(self, 'road_catalog_widget'):
+            self.road_catalog_widget.set_overrides(self.rail_catalog_widget.overrides)
         path = self.rail_operations.path.parent
         self.config['railLineNames'] = read_json(path / 'rail_line_names.json', {})
         self.config['railWayNames'] = read_json(path / 'rail_way_names.json', {})
@@ -3002,6 +3162,9 @@ class Desk(QMainWindow):
         self.map.call('reloadMetroViewport')
         self.map.call('reloadRoadViewport')
         self.rail_operations.push_corridors()
+        if self.rail_operations.rail_payload:
+            self.rail_operations.domain_repo, self.rail_operations.domain_bindings = self.rail_operations.canonical_repository(
+                self.rail_operations.workspace_identity_path)
         selected = getattr(self, 'selected_data', {})
         if selected:
             apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
@@ -3099,6 +3262,15 @@ class Desk(QMainWindow):
         apply_names({'features': [feature]}, config.get('railDisplayOverrides'),
                     config.get('railLineNames'), config.get('railWayNames'))
         props = dict(feature.get("properties", {}))
+        if props.get('service_id') and hasattr(self, 'road_catalog_widget'):
+            from road_services import service_repository
+            repo = service_repository(self.road_catalog_widget.database, config.get('railDisplayOverrides'), [props['service_id']])
+            entity = repo.service_areas.get(props['service_id'])
+            if entity:
+                props.update(entity.attributes)
+                props.update(display_name=entity.name, entity_id=entity.id,
+                             source_member_ids=list(entity.source_member_ids),
+                             representations=sorted({g.geometry_type for g in repo.service_area_geometries.values()}))
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             props["display_name"] = self.rail_catalog_widget.switch_name(props["osm_node_id"])
         if props.get("corridor_id"):
@@ -3144,12 +3316,6 @@ class Desk(QMainWindow):
                     props, "metro", custom.get("technical_attributes", {})
                 )
             )
-        for key, value in props.items():
-            if isinstance(value, str) and value[:1] in ("{", "["):
-                try:
-                    props[key] = json.loads(value)
-                except ValueError:
-                    pass
         rail_group = props.get("catalog_group_id")
         if rail_group in self.rail_catalog_widget.catalog:
             catalog_meta = self.rail_catalog_widget.meta(rail_group)
@@ -3256,6 +3422,7 @@ class Desk(QMainWindow):
             r"\s*·\s*(?:RS|RL|IL|ST|NE|NN|SA|MS)-[A-Za-z0-9_-]+\s*$", "", title
         )
         layers = {
+            **{key: '服务区（统一实体）' for key in ('road-service-poi','road-service-labels','road-service-outline-fill','road-service-outline','road-service-buildings')},
             "rail-points": "国铁车站 / 线路所 / 道岔",
             "rail-platform-fill": "国铁真实站台面",
             "rail-platform-outline": "国铁站台轮廓",
@@ -3279,6 +3446,8 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
+            'service_id': '服务区编号', 'entity_id': '实体编号', 'representations': '点位 / 边界 / 建筑',
+            'station_track_id': '股道编号（稳定 ID）', 'track_number': '股道编号', 'track_name': '股道名称',
             "corridor_id": "单向运行通道编号",
             "corridor_name": "运行通道",
             "shared_trains": "共用通道的车次",
@@ -3545,6 +3714,12 @@ class Desk(QMainWindow):
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout
 
         props = feature.get("properties", {})
+        if props.get("service_id"):
+            self.edit_service_area(feature)
+            return
+        if yard_track_key(props) or props.get('station_track_id'):
+            self.edit_station_tracks()
+            return
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             self.rail_catalog_widget.rename_switch(props["osm_node_id"])
             self.display_feature(feature)
@@ -3961,6 +4136,27 @@ class Desk(QMainWindow):
             self.load_status.setText("  已清除目录筛选")
             return
         kind = self.search_type.currentText()
+        if kind == "服务区":
+            self.open_sidebar(0)
+            self.road_catalog_widget.tabs.setCurrentIndex(1)
+            self.road_catalog_widget.search.setText(query)
+            return
+        if kind in ("全部", "站场股道"):
+            hits = [(key, value) for key, value in self.rail_catalog_widget.overrides.items()
+                    if value.get('station_track_id') and value.get('bounds')
+                    and query.casefold() in (' '.join(str(value.get(k, '')) for k in ('station_name', 'display_name', 'track_number', 'station_track_id'))).casefold()]
+            hits = list({value['station_track_id']: (key, value) for key, value in hits}.values())
+            if hits:
+                labels = [f"{v['display_name']} · {v['station_track_id']}" for _, v in hits]
+                label, ok = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(self, '选择股道', '匹配到的股道', labels, editable=False)
+                if ok:
+                    value = hits[labels.index(label)][1]
+                    self.map.call('fit', value['bounds'], value['display_name'])
+                    self.display_feature({'layer': 'rail', 'properties': value})
+                return
+            if kind == '站场股道':
+                self.edit_station_tracks()
+                return
         for city, province, lon, lat in REGIONS if kind in ("全部", "城市") else []:
             if query in (city, city + "市"):
                 self.map.call("focus", lon, lat, 11, city + " · 轨道交通")

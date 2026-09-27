@@ -2738,7 +2738,7 @@ class RailCatalog(QWidget):
                 self._send_catalog_filter(hidden, "setRailExclusions")
             if request_enable:
                 self.enabled_requested.emit()
-            self.map.call("setRailLineSelection", None)
+            self.map.call("setRailLineSelection", None, sorted({self.meta(key).get('line_id') for key in hidden if self.meta(key).get('line_id')}))
             return
         active_count = len(self.catalog) - len(archived)
         if active_count and len(self.visible) == active_count:

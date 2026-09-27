@@ -4,6 +4,7 @@ from copy import deepcopy
 import sqlite3
 from uuid import uuid4
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QCheckBox,
     QLabel,
+    QColorDialog,
 )
 
 try:
@@ -653,6 +655,15 @@ class CorridorPanel(QWidget):
             column.addWidget(control)
             identity.addLayout(column, stretch)
         form.addRow(identity)
+        color = QPushButton(route.get('color', '#466979') if route else '#466979')
+        color.setObjectName('corridorColor')
+        def choose_color():
+            selected = QColorDialog.getColor(QColor(color.text()), dialog, '通道颜色')
+            if selected.isValid():
+                color.setText(selected.name())
+                color.setStyleSheet('color: ' + selected.name())
+        color.clicked.connect(choose_color)
+        form.addRow('通道颜色', color)
         manual_name = [bool(route)]
         name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
         policy = QComboBox()
@@ -811,6 +822,7 @@ class CorridorPanel(QWidget):
                         {
                             "id": code.text().strip(),
                             "name": name.text().strip(),
+                            "color": color.text(),
                             "sequence": result,
                             "extensions": deepcopy(route["extensions"])
                             if route

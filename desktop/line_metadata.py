@@ -2,7 +2,7 @@
 
 RAIL_LINE_FIELDS = (
     ("operating_status", "运营状态", "如：运营中、在建、规划、停运"),
-    ("design_speed_kmh", "设计速度（km/h）", "线路设计速度"),
+    ("design_speed_kmh", "设计速度（km/h）", "如 350、250、200、160；独立于运营限速和建设状态"),
     ("max_speed_kmh", "最高运行速度（km/h）", "当前允许的最高运行速度"),
     ("construction_start_date", "开工时间", "可填写 YYYY、YYYY-MM 或完整日期"),
     ("opening_date", "开通时间", "可填写分期开通信息"),
@@ -44,9 +44,11 @@ def source_line_attributes(properties, kind, custom=None):
     """Prefer explicit source tags, then apply user-owned workspace values."""
     properties = properties or {}
     tags = {**properties.get("way_tags", {}), **properties.get("relation_tags", {})}
+    from railscope.presentation import source_design_speed
     result = {
         "operating_status": "在建" if properties.get("construction") else "运营中",
         "max_speed_kmh": tags.get("maxspeed", ""),
+        "design_speed_kmh": properties.get('design_speed_kmh') or source_design_speed(tags) or '',
         "construction_start_date": tags.get("construction:start_date", ""),
         "opening_date": tags.get("opening_date") or tags.get("start_date", ""),
         "length_km": tags.get("length") or tags.get("distance", ""),
@@ -91,5 +93,8 @@ def normalize_line_attributes(values, kind):
         if len(text) > limit or any(ord(character) < 32 and character not in "\n\t" for character in text):
             raise ValueError("线路概览属性内容过长或包含控制字符")
         if text:
+            if key == 'design_speed_kmh':
+                from railscope.presentation import design_speed
+                text = str(design_speed(text))
             result[key] = text
     return result

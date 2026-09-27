@@ -9,6 +9,7 @@ from collections import defaultdict
 from contextlib import closing
 from pathlib import Path
 import sqlite3
+import json
 
 from railscope.domain import (
     Corridor, DatasetSnapshot, InfrastructureLine, LineMembership, NetworkEdge, NetworkNode,
@@ -37,16 +38,38 @@ def _length(edge):
     return sum(distance_m(a, b) for a, b in zip(edge["coordinates"], edge["coordinates"][1:]))
 
 
-def build_repository(graph, payload, identity_path):
+def build_repository(graph, payload, identity_path, overrides=None, source_database=None):
     """Return `(RailRepository, bindings)` without mutating desktop DTOs."""
     registry = IdentityRegistry(Path(identity_path))
+    overrides = overrides or {}
+    selected = {edge['id'] for edge in graph['edges']}
+    named = {value['station_track']['id']: value for value in overrides.values()
+             if value.get('station_track') and selected.intersection(value.get('source_edge_ids', []))}
+    missing = set().union(*(set(value.get('source_edge_ids', [])) for value in named.values())) - selected if named else set()
+    if missing and source_database and Path(source_database).exists():
+        extra = []
+        with closing(sqlite3.connect(source_database)) as db:
+            for key in sorted(missing):
+                row = db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()
+                if row is None:
+                    raise ValueError('已命名股道的源轨道缺失，需要迁移工作区引用：' + key)
+                extra.append(json.loads(row[0]))
+        graph = {**graph, 'edges': [*graph['edges'], *extra]}
     with closing(sqlite3.connect(registry.path)) as identity_db, identity_db:
-        return _build_repository(graph, payload, registry, identity_db)
+        return _build_repository(graph, payload, registry, identity_db, overrides, named)
 
 
-def _build_repository(graph, payload, registry, identity_db):
+def _build_repository(graph, payload, registry, identity_db, overrides=None, named=None):
     document = migrate_legacy_train_paths(shared_document(payload), graph["edges"])
     repo, bindings = RailRepository(), defaultdict(dict)
+    from railscope.presentation import design_speed, source_design_speed
+    overrides = overrides or {}
+    named_by_edge = {}
+    from railscope.workspace import decode
+    for value in (named or {}).values():
+        track = decode(StationTrack, value['station_track'])
+        for source in value.get('source_edge_ids', []):
+            named_by_edge[source] = track
     node_coordinates = {}
     for edge in graph["edges"]:
         for source_node, coordinate in zip(edge.get("node_ids", (edge["from_node"], edge["to_node"])), edge["coordinates"]):
@@ -78,6 +101,8 @@ def _build_repository(graph, payload, registry, identity_db):
             edge.get("track_type"), source_id=proposed_line,
             construction_status=edge.get("construction_status", "construction" if edge.get("construction") else "operating"),
             verification_status=edge.get("verification_status", "OSM-derived"),
+            design_speed_kmh=design_speed(overrides.get(proposed_line, {}).get('technical_attributes', {}).get('design_speed_kmh')
+                                          or edge.get("design_speed_kmh")) or source_design_speed(edge.get("way_tags", {})),
         ))
         from_node = bindings["nodes"][str(edge["from_node"])]
         to_node = bindings["nodes"][str(edge["to_node"])]
@@ -170,6 +195,7 @@ def _build_repository(graph, payload, registry, identity_db):
             first.from_node_id if refs[0].forward else first.to_node_id,
             last.to_node_id if refs[-1].forward else last.from_node_id,
             snapshot_id=first.snapshot_id, source_id=source_id,
+            color=route.get("color", "#466979"),
             verification_status=(route.get("extensions", {}).get("railscope.org/line-resolution", {})
                                  .get("verification_status")
                                  or route.get("extensions", {}).get("verification_status", "user_verified")),
@@ -215,6 +241,13 @@ def _build_repository(graph, payload, registry, identity_db):
                 )
                 bindings["station_tracks"][source_track] = track_id
                 edge = repo.edges[edge_id]
+                named_track = named_by_edge.get(source_track)
+                if named_track and named_track.station_id == stop_station(stop):
+                    if any(ref.edge_id not in repo.edges for ref in named_track.edge_refs):
+                        raise ValueError('已命名股道引用的轨道未载入，请检查源快照')
+                    track_id = named_track.id
+                    bindings['station_tracks'][source_track] = track_id
+                    repo.station_tracks[track_id] = named_track
                 repo.station_tracks.setdefault(track_id, StationTrack(
                     track_id, stop_station(stop),
                     point_by_node.get(str(stop["node_id"]), {}).get("properties", {}).get("name", source_track),

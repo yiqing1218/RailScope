@@ -27,6 +27,7 @@ class InfrastructureLine:
     construction_status: str = "unknown"
     verification_status: str = "unverified"
     confidence: float | None = None
+    design_speed_kmh: int | None = None
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,7 @@ class Corridor:
     source_id: str | None = None
     verification_status: str = "unverified"
     confidence: float | None = None
+    color: str = "#466979"
 
 
 @dataclass(frozen=True)
@@ -256,6 +258,36 @@ class StationTrack:
     direction: str = "both"
     length_m: float = 0
     is_virtual: bool = True
+    edge_refs: tuple[DirectedEdgeRef, ...] = ()
+    role: str = "unknown"
+    source_member_ids: tuple[str, ...] = ()
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+
+
+@dataclass(frozen=True)
+class ServiceArea:
+    """One business entity; point/outline/buildings are representations of it."""
+    id: str
+    name: str
+    lon: float
+    lat: float
+    source_member_ids: tuple[str, ...] = ()
+    attributes: dict = field(default_factory=dict)
+    verification_status: str = "source_unverified"
+    source: str = "OpenStreetMap"
+    snapshot_id: str | None = None
+    association_version: int = 1
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class ServiceAreaGeometry:
+    id: str
+    service_area_id: str
+    geometry_type: str
+    geometry: dict
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)

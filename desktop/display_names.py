@@ -1,4 +1,6 @@
 """Workspace presentation names, independent of OSM facts and domain identity."""
+import json
+
 try:
     from .yard_track_names import yard_track_key
 except ImportError:
@@ -22,28 +24,57 @@ def rail_line_presentation(library):
     for line, kinds in roles.items():
         known = kinds - {'未确认类型'}
         style = next(iter(known)) if len(known) == 1 and known <= main_roles else None
-        custom = library.metadata.get(line, {}).get('track_type')
+        metadata = library.metadata.get(line, {})
+        custom = metadata.get('track_type')
+        speed = metadata.get('technical_attributes', {}).get('design_speed_kmh')
         members = library.workspace.members(line)
         # Most source lines are single unnamed tracks. Sending an identity
         # entry for every one would bloat the browser config by tens of MB.
-        if len(kinds) == 1 and not custom and members == [line]:
+        if len(kinds) == 1 and not custom and not speed and members == [line]:
             continue
         for source in members:
             result[source] = {'line_id': line, 'fallback_type': style,
-                              'override_type': custom, 'snapshot': snapshot}
+                              'override_type': custom, 'snapshot': snapshot, 'design_speed_kmh': speed}
         result.setdefault(line, {'line_id': line, 'fallback_type': style,
-                                'override_type': custom, 'snapshot': snapshot})
+                                'override_type': custom, 'snapshot': snapshot, 'design_speed_kmh': speed})
     library._line_presentation = result
     return result
+
+
+def decode_properties(collection):
+    """MapLibre picked features serialize nested GeoJSON properties as JSON."""
+    for feature in collection.get('features', []):
+        props = feature.get('properties', {})
+        for key, value in props.items():
+            if isinstance(value, str) and value.lstrip()[:1] in ('{', '['):
+                try:
+                    props[key] = json.loads(value)
+                except ValueError:
+                    pass
+    return collection
 
 
 def apply_rail_presentation(collection, presentation, overrides=None):
     """Keep physical IDs/facts; inherit only missing display styles on one line."""
     overrides = overrides or {}
+    decode_properties(collection)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
+        for field in ('line_ids', 'operating_line_ids', 'construction_line_ids'):
+            if field in props:
+                props[field] = sorted({presentation.get(key, {}).get('line_id', key) for key in props[field]})
         source = props.get('source_line_id') or props.get('line_id')
-        entry = presentation.get(source)
+        entry = presentation.get(source, {})
+        if props.get('network_edge_id'):
+            tags = props.get('way_tags', {})
+            from railscope.presentation import source_design_speed
+            speed = entry.get('design_speed_kmh') or source_design_speed(tags)
+            if speed:
+                from railscope.presentation import design_speed
+                try:
+                    props['design_speed_kmh'] = design_speed(speed)
+                except ValueError:
+                    pass
         if not entry or not props.get('network_edge_id'):
             continue
         props['source_line_id'] = source
@@ -65,8 +96,8 @@ def apply_rail_presentation(collection, presentation, overrides=None):
 
 
 def object_key(properties):
-    for field in ('network_edge_id', 'network_node_id', 'section_id', 'infrastructure_id',
-                  'catalog_id', 'station_id', 'route_key', 'service_id'):
+    for field in ('service_id', 'network_edge_id', 'network_node_id', 'section_id', 'infrastructure_id',
+                  'catalog_id', 'station_id', 'route_key'):
         value = properties.get(field)
         if value is not None and str(value) not in ('', 'node/None', 'way/None', 'relation/None'):
             return 'object:' + field + ':' + str(value)
@@ -78,6 +109,7 @@ def object_key(properties):
 
 def apply_names(collection, overrides=None, line_names=None, way_names=None, station_directory=None):
     overrides, line_names, way_names = overrides or {}, line_names or {}, way_names or {}
+    decode_properties(collection)
     if station_directory is not None:
         try:
             from .rail_station_directory import apply_station_names
@@ -86,8 +118,14 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
+        track = overrides.get(yard_track_key(props), {})
+        if track.get('station_track_id'):
+            props['station_track_id'] = track['station_track_id']
+            props['track_number'] = track.get('track_number')
+            props['track_name'] = track.get('display_name')
         node = props.get('osm_node_id')
         keys = [object_key(props), yard_track_key(props)]
+        keys += ['object:service_id:' + key for key in props.get('service_alias_ids', [])]
         if node is not None:
             keys += [f'switch:node/{node}', f'node:{node}', f'station:node/{node}']
         if props.get('infrastructure_id'):
@@ -109,6 +147,8 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
             if ident and name.endswith(' · ' + str(ident)):
                 name = name[:-(len(str(ident)) + 3)]
         props['display_name'] = name
+        if props.get('service_id'):
+            props.update({key: custom[key] for key in ('province', 'city', 'county') if key in custom})
         if props.get('line_id') or feature.get('geometry', {}).get('type') in ('LineString', 'MultiLineString'):
             props['line_display_name'] = name
         props['display_name_source'] = custom.get('source', 'workspace_override')

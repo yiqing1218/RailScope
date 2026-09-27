@@ -46,7 +46,7 @@ def expanded_document(payload):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes", "sequence"},
+            {"name", "track_changes", "sequence", "color"},
             "单向运行通道",
         )
         if (
@@ -285,6 +285,8 @@ def resolve_edge_aliases(payload, edges):
 def compile_rail_plan(payload, edges, points, platforms=()):
     payload = migrate_legacy_train_paths(payload, edges)
     validate_corridors(payload.get("routes", []), edges)
+    route_colors = {route['id']: route.get('color', '#466979') for route in payload.get('routes', [])}
+    train_colors = {train['id']: route_colors.get(train.get('route_id'), '#466979') for train in payload['trains']}
     payload = expanded_document(payload)
     strict_fields(
         payload,
@@ -536,7 +538,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 "name": train["id"] + " · 跨线径路",
                 "ref": train["id"],
                 "relation_id": 0,
-                "color": "#466979",
+                "color": train_colors.get(train["id"], "#466979"),
                 "variants": [],
                 "path": path,
                 "stations": stations,
@@ -580,7 +582,7 @@ def validate_corridors(routes, edges):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes", "sequence"},
+            {"name", "track_changes", "sequence", "color"},
             "单向运行通道",
         )
         if (
@@ -590,6 +592,8 @@ def validate_corridors(routes, edges):
         ):
             raise ValueError("通道编号为空或重复")
         seen.add(route["id"])
+        from railscope.presentation import valid_color
+        valid_color(route.get("color", "#466979"))
         if "name" in route and (
             not isinstance(route["name"], str) or not route["name"].strip()
         ):

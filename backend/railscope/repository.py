@@ -5,6 +5,8 @@ from .domain import *
 
 @dataclass
 class RailRepository:
+    service_areas: dict[str, ServiceArea] = field(default_factory=dict)
+    service_area_geometries: dict[str, ServiceAreaGeometry] = field(default_factory=dict)
     snapshots: dict[str, DatasetSnapshot] = field(default_factory=dict)
     memberships: list[LineMembership] = field(default_factory=list)
     sections: dict[str, RouteSection] = field(default_factory=dict)

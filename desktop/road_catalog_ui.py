@@ -23,6 +23,7 @@ class RoadCatalog(QWidget):
 
     def __init__(self, database, map_view, parent=None):
         super().__init__(parent)
+        self.overrides = {}
         self.database = Path(database)
         self.map = map_view
         layout = QVBoxLayout(self)
@@ -62,12 +63,20 @@ class RoadCatalog(QWidget):
         layout.addWidget(self.note)
         self.refresh()
 
+    def set_overrides(self, overrides):
+        self.overrides = overrides
+        if self.database.is_file():
+            sync_services(self.database, overrides)
+            if self.service_model:
+                self.service_model.reset_from_disk()
+                self.service_model.fetchMore()
+
     def refresh(self):
         if not self.database.is_file():
             self.note.setText("尚未建立全国高速目录。可使用本机已下载的全国 OSM 快照提取。")
             return
         sync_directory(self.database)
-        sync_services(self.database)
+        sync_services(self.database, self.overrides)
         records = routes(self.database, self.search.text().strip())
         if self.model is None:
             self.model = SqliteDirectoryModel(self.database)
@@ -133,7 +142,7 @@ class RoadCatalog(QWidget):
 
     def focus_service(self, index):
         key = self.service_model.data(index, Qt.ItemDataRole.UserRole)
-        item = next((item for item in services(self.database) if item['id'] == key), None)
+        item = next((item for item in services(self.database, self.overrides) if item['id'] == key), None)
         if item:
             self.map.call('fit', [[item['minx']-.002, item['miny']-.002], [item['maxx']+.002, item['maxy']+.002]], item['name'])
 

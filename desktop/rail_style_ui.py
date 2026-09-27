@@ -26,6 +26,10 @@ try:
 except ImportError:
     from rail_categories import TRACK_TYPES
 
+SPEED_STYLE_KEYS = tuple('高速铁路线 · ' + str(speed) + ' km/h' for speed in (350, 250, 200, 160))
+STYLE_TYPES = (TRACK_TYPES[0], *SPEED_STYLE_KEYS, *TRACK_TYPES[1:])
+PATTERNS = {'alternating': '彩白相间', 'solid': '实线', 'dashed': '短虚线', 'long_dash': '长虚线', 'dotted': '点线', 'dash_dot': '点划线'}
+
 ZOOM_CURVE_KEY = "_zoom_width_curve"
 RECOMMENDED_ZOOM_CURVE = (
     {"zoom": 3.0, "scale": 0.8},
@@ -59,6 +63,8 @@ def defaults():
         }
         for name in TRACK_TYPES
     }
+    for key in SPEED_STYLE_KEYS:
+        styles[key] = dict(styles['高速铁路线'])
     styles[ZOOM_CURVE_KEY] = recommended_zoom_curve()
     return styles
 
@@ -68,9 +74,11 @@ def validate_styles(value):
         raise ValueError("铁路样式必须完整包含所有轨道类型")
     value = dict(value)
     value.setdefault(ZOOM_CURVE_KEY, recommended_zoom_curve())
-    if set(value) != set(TRACK_TYPES) | {ZOOM_CURVE_KEY}:
+    for key in SPEED_STYLE_KEYS:
+        value.setdefault(key, dict(value.get('高速铁路线', defaults()['高速铁路线'])))
+    if set(value) != set(STYLE_TYPES) | {ZOOM_CURVE_KEY}:
         raise ValueError("铁路样式必须完整包含所有轨道类型和缩放线宽曲线")
-    for name in TRACK_TYPES:
+    for name in STYLE_TYPES:
         item = value[name]
         if (
             not isinstance(item, dict)
@@ -78,8 +86,8 @@ def validate_styles(value):
             or set(item) - {"color", "width", "pattern"}
         ):
             raise ValueError("样式只能包含 color、width 和 pattern")
-        if item.get("pattern", "alternating") not in ("alternating", "solid"):
-            raise ValueError("pattern 为 alternating 或 solid")
+        if item.get("pattern", "alternating") not in PATTERNS:
+            raise ValueError("未知线路线型")
         if not isinstance(item["color"], str) or not re.fullmatch(
             r"#[0-9a-fA-F]{6}", item["color"]
         ):
@@ -128,12 +136,12 @@ class RailStyleDialog(QDialog):
         self.resize(700, 760)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("先设置各轨道类型的基准线宽，再用下方曲线定义不同地图缩放级别的线宽倍率。"))
-        table = QTableWidget(len(TRACK_TYPES), 4)
+        table = QTableWidget(len(STYLE_TYPES), 4)
         table.setHorizontalHeaderLabels(["轨道类型", "颜色", "线宽 px", "轨道样式"])
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().hide()
         self.controls = {}
-        for row, name in enumerate(TRACK_TYPES):
+        for row, name in enumerate(STYLE_TYPES):
             label = QTableWidgetItem(name)
             label.setFlags(label.flags() & ~Qt.ItemFlag.ItemIsEditable)
             table.setItem(row, 0, label)
@@ -149,9 +157,9 @@ class RailStyleDialog(QDialog):
             table.setCellWidget(row, 2, width)
             table.setRowHeight(row, 40)
             pattern = QComboBox()
-            pattern.addItem("彩白相间", "alternating")
-            pattern.addItem("实线", "solid")
-            pattern.setCurrentIndex(1 if styles[name].get("pattern") == "solid" else 0)
+            for key, title in PATTERNS.items():
+                pattern.addItem(title, key)
+            pattern.setCurrentIndex(pattern.findData(styles[name].get('pattern', 'alternating')))
             table.setCellWidget(row, 3, pattern)
             self.controls[name] = color, width, pattern
         layout.addWidget(table)

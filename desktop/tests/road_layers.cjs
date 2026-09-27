@@ -8,6 +8,8 @@ const sandbox={console,URLSearchParams,AbortController,structuredClone,
   fetch:async(endpoint,options)=>{requests.push(JSON.parse(options.body));return {ok:true,json:async()=>({type:'FeatureCollection',features:[{id:requests.length}]})};}};
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync('desktop/assets/map.js','utf8'),sandbox);
+assert.equal(vm.runInContext(`normalizedFeature({properties:{line_ids:'["RL-one"]',name:'[普通名称]'}}).properties.line_ids[0]`,sandbox),'RL-one');
+assert.equal(vm.runInContext(`normalizedFeature({properties:{name:'[普通名称]'}}).properties.name`,sandbox),'[普通名称]');
 // Sprite-free pedestrian polygons must have an explicit light fallback.
 sandbox.baseStyle={version:8,sprite:'https://example.test/sprite',layers:[
   {id:'road_area_pattern',type:'fill','source-layer':'transportation',paint:{'fill-pattern':'pedestrian_polygon'}},
@@ -32,7 +34,7 @@ sandbox.testMap={getLayer:id=>layers.get(id),addLayer:l=>layers.set(l.id,l),
   getZoom:()=>zoom,getBounds:()=>({getWest:()=>120,getSouth:()=>30,getEast:()=>122,getNorth:()=>32})};
 vm.runInContext(`map=testMap;config={roadViewport:true,sources:Object.fromEntries(['metro','stations','areas','construction','rail','railPoints','railPlatforms','railStationAreas','railSignalBoxes','railVehicles','road','imported'].map(k=>[k,empty]))}; installLayers();`,sandbox);
 vm.runInContext(`config.railStyles={'普速铁路线':{color:'#283541',width:2.5,pattern:'solid'}};applyRailStyles();`,sandbox);
-assert.equal(JSON.stringify(layers.get('rail').paint['line-color'][1]),JSON.stringify(['coalesce',['get','display_track_type'],['get','track_type']]));
+assert.match(JSON.stringify(layers.get('rail').paint['line-color'][1]), /design_speed_kmh/);
 assert.match(JSON.stringify(layers.get('rail-stripes').paint['line-opacity']),/display_track_type/);
 const specPath='../../frontend/node_modules/@maplibre/maplibre-gl-style-spec';
 try{
@@ -42,6 +44,30 @@ try{
   for(const layer of style.layers)for(const [key,value] of Object.entries(layer.paint||{}))if(value===null)delete layer.paint[key];
   assert.deepEqual(validateStyleMin(style).map(e=>e.message),[]);
 }catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;}
+// Evaluate the actual filters, including the shared-station case.
+{
+  const {createExpression}=require(specPath);
+  const evaluate=(value,props)=>{
+    const compiled=createExpression(JSON.parse(JSON.stringify(value)),'filter');
+    assert.equal(compiled.result,'success',JSON.stringify(compiled.value));
+    return compiled.value.evaluate({zoom:15},{properties:props});
+  };
+  vm.runInContext("visibility.rail=true;visibility.railConstruction=true;railLineIds=null;railHiddenLineIds=['RL-build'];railPointIncludes=null;railControlPointIncludes=null;sharedRailStationFilter();",sandbox);
+  const exclusive={kind:'station',osm_node_id:1,line_ids:['RL-build'],operating_line_ids:[],construction_line_ids:['RL-build']};
+  const shared={...exclusive,line_ids:['RL-build','RL-open'],operating_line_ids:['RL-open']};
+  assert.equal(evaluate(layers.get('rail-points').filter,exclusive),false);
+  assert.equal(evaluate(layers.get('rail-points').filter,shared),true);
+  vm.runInContext("railHiddenLineIds=[];visibility.railConstruction=false;sharedRailStationFilter();",sandbox);
+  assert.equal(evaluate(layers.get('rail-station-labels').filter,exclusive),false);
+  assert.equal(evaluate(layers.get('rail-station-labels').filter,shared),true);
+  vm.runInContext("visibility.railConstruction=true;sharedRailStationFilter();railGroups=['RL-build'];railSections=[];railWays=[];railExclude=true;applyRailWays();",sandbox);
+  assert.equal(evaluate(layers.get('rail-line-labels').filter,{catalog_group_id:'RL-build',construction:true}),false);
+  assert.equal(evaluate(layers.get('rail-line-labels').filter,{catalog_group_id:'RL-open',construction:false}),true);
+  vm.runInContext("config.railPointStyles={labels:{show_line_names:false}};applyLineLabelVisibility();",sandbox);
+  assert.equal(layers.get('rail-line-labels').layout.visibility,'none');
+  assert.equal(vm.runInContext("selectionKey({__layer:'road-service-poi',properties:{service_id:'RSA-one',source_ref:'node/1'}})===selectionKey({__layer:'road-service-outline',properties:{service_id:'RSA-one',source_ref:'way/2'}})",sandbox),true);
+  vm.runInContext("config.railPointStyles={labels:{show_line_names:true}};visibility.rail=false;visibility.railConstruction=false;railGroups=null;railSections=null;railWays=null;railExclude=false;",sandbox);
+}
 (async()=>{
   vm.runInContext("visibility.roadConstruction=true;roadVisibleRoutes=['G/G2/construction'];applyVisibility();",sandbox);
   await vm.runInContext('updateRoadViewport()',sandbox);
