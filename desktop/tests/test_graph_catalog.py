@@ -317,5 +317,5 @@ def test_manual_station_connections_replace_detected_lines_and_bind_real_nearby_
     assert overridden.reachable_nodes(endpoint, "RL-B", "乙线终点")[0][0] == "station:node/4"
     assert overridden.reachable_nodes("station:node/4", "RL-B", "测试站")[0][0] == endpoint
 
-    with pytest.raises(ValueError, match="没有找到.*真实轨道节点"):
+    with pytest.raises(ValueError, match="未找到.*实际轨道段"):
         base.station_connection_override(endpoint, ["RL-FAR"])

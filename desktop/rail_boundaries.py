@@ -13,10 +13,12 @@ try:
     from .geometry import distance_m
     from .data_install import active_directory
     from .transport_modes import other_transport
+    from .rail_station_directory import compatible_area
 except ImportError:
     from geometry import distance_m
     from data_install import active_directory
     from transport_modes import other_transport
+    from rail_station_directory import compatible_area
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -79,6 +81,7 @@ def associate(features, stations):
             for a in range(x - 1, x + 2)
             for b in range(y - 1, y + 2)
             for s in grid[a, b]
+            if compatible_area(props, s['properties'])
         ]
         nearest = min(
             nearby,

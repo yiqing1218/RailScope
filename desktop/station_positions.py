@@ -7,8 +7,10 @@ import sqlite3
 from railscope.services.simulation.geometry import distance_m
 try:
     from .transport_modes import other_transport
+    from .rail_station_directory import compatible_area
 except ImportError:
     from transport_modes import other_transport
+    from rail_station_directory import compatible_area
 
 POSITION_KEY = 'railscope.org/station-track-positions'
 STOP_POSITION_KEY = 'railscope.org/track-position'
@@ -41,7 +43,11 @@ def station_center(library, endpoint):
             return None
         rows = db.execute(f"SELECT source_x,source_y,station_node_id FROM station_aliases WHERE source_id IN ({','.join('?' for _ in sources)}) AND source_x IS NOT NULL AND source_y IS NOT NULL", sources).fetchall()
     if not rows:
-        return None
+        record = getattr(library, 'station_directory', {}).get(str(endpoint).removeprefix('station:'))
+        if not record:
+            return None
+        p = record['feature']
+        rows = [(*p['geometry']['coordinates'], p['properties'].get('osm_node_id'))]
     x,y = rows[0][:2]
     nodes = {row[2] for row in rows if row[2] is not None}
     source = library.path.with_name('rail.sqlite')
@@ -52,7 +58,9 @@ def station_center(library, endpoint):
             if 'bounds' in tables:
                 for (raw,) in db.execute("SELECT f.data FROM features f JOIN bounds b ON f.id=b.id WHERE f.kind IN ('railPlatforms','railStationAreas') AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?", (x-.025,x+.025,y-.02,y+.02)):
                     feature=json.loads(raw);props=feature['properties']
+                    owner = getattr(library, 'station_directory', {}).get(str(endpoint).removeprefix('station:'), {})
                     if (not other_transport(props.get('way_tags', {})) and
+                        (not owner or compatible_area(props, owner['feature']['properties'])) and
                         nodes.intersection(props.get('associated_station_ids', [])) and feature['geometry']['type'] in ('Polygon','MultiPolygon')):
                         geometries.append(feature)
     platforms = [f for f in geometries if f['properties'].get('boundary_kind') == 'platform']
@@ -73,13 +81,20 @@ def station_center(library, endpoint):
 
 def terminal_tracks(library, endpoint):
     centre = station_center(library, endpoint)
-    if not centre or centre['source']=='station_poi_projection':
+    if not centre:
         return {}
     try:
         from .rail_store import load_edges
     except ImportError:
         from rail_store import load_edges
     nearby=library._station_transfer_edges(endpoint, 3000)
+    try:
+        from .rail_station_directory import nearby_tracks
+    except ImportError:
+        from rail_station_directory import nearby_tracks
+    with library.connect() as db:
+        projected = nearby_tracks(library.path.with_name('rail.sqlite'), db, centre['coordinate'], 180)
+    nearby.extend({'id': p['edge_id']} for p in projected if p['edge_id'] not in {e['id'] for e in nearby})
     if not nearby:
         return {}
     result={}
@@ -127,6 +142,67 @@ def route_positions(library, path, endpoints):
             'verification_status':'automatic_reference_not_dispatch_verified','confidence':None,
             'snapshot':edge.get('snapshot_id') or (snapshot[0] if snapshot else 'unknown')})
     return sorted(result,key=lambda v:v['distance_m'])
+
+
+def stations_on_path(library, path, edges):
+    """Find intermediate stations by edge geometry, not by endpoint proximity.
+
+    Keeps complete Corridor edges unchanged. A stop stores an edge offset in
+    the existing shared position contract, with automatic-reference provenance.
+    """
+    from math import floor, cos, radians
+    lookup = {e['id']: e for e in edges}
+    grid = getattr(library, '_station_position_grid', None)
+    if grid is None:
+        grid = {}
+        for source, record in getattr(library, 'station_directory', {}).items():
+            f = record['feature']
+            if f['properties'].get('kind') not in ('station', 'halt') or f.get('geometry', {}).get('type') != 'Point':
+                continue
+            coord = f['geometry']['coordinates']
+            grid.setdefault((floor(coord[0]*20), floor(coord[1]*20)), []).append((source, coord))
+        library._station_position_grid = grid
+    result, travelled = {}, 0.
+    for leg in path:
+        edge = lookup.get(leg['edge_id'])
+        if edge is None:
+            return []
+        coords = edge['coordinates']
+        length = sum(distance_m(a,b) for a,b in zip(coords, coords[1:]))
+        xs, ys = zip(*coords)
+        dy = 800/110000
+        dx = dy/max(.1, cos(radians(coords[0][1])))
+        candidates = [s for x in range(floor((min(xs)-dx)*20), floor((max(xs)+dx)*20)+1)
+                      for y in range(floor((min(ys)-dy)*20), floor((max(ys)+dy)*20)+1)
+                      for s in grid.get((x,y), ())]
+        for source, coord in candidates:
+            if edge.get('construction') or edge.get('construction_status', 'operating') != 'operating':
+                continue
+            gap, offset, point = project(coords, coord)
+            if gap > 800:
+                continue
+            endpoint = 'station:' + source
+            override = library.metadata.get(endpoint, {}).get('connected_lines')
+            if isinstance(override, list):
+                try:
+                    from .rail_lines import line_identity
+                except ImportError:
+                    from rail_lines import line_identity
+                line = library.workspace.canonical(line_identity(edge)[0])
+                if line not in {library.workspace.canonical(p.get('line_id')) for p in override if isinstance(p, dict)}:
+                    continue
+            node = min(zip(edge.get('node_ids', [edge['from_node'], edge['to_node']]), coords),
+                       key=lambda pair: distance_m(pair[1], point))[0]
+            position = {'station_id': endpoint, 'station_name': library.endpoint_label(endpoint),
+                'edge_id': edge['id'], 'offset_m': offset, 'coordinate': point, 'node_id': node,
+                'distance_m': travelled + (offset if leg['direction']=='forward' else length-offset),
+                'gap_m': gap, 'source': 'station_poi_track_projection', 'version': 1,
+                'verification_status': 'automatic_reference_not_dispatch_verified', 'confidence': None,
+                'snapshot': edge.get('snapshot_id') or str(library.path.stat().st_mtime_ns)}
+            if source not in result or gap < result[source]['gap_m']:
+                result[source] = position
+        travelled += length
+    return sorted(result.values(), key=lambda p: p['distance_m'])
 
 
 def position_distance(path, lookup, position):

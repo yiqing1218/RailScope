@@ -437,7 +437,10 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 if change["time"]:
                     parse_time(change["time"])
             try:
-                index = node_ids.index(stop["node_id"], offset)
+                # Several edge-offset stops may legitimately share one sparse
+                # topology anchor. Directed metre positions below govern order.
+                positioned = stop.get('extensions', {}).get('railscope.org/track-position')
+                index = node_ids.index(stop["node_id"], 0 if positioned else offset)
             except ValueError as error:
                 raise ValueError("经停/通过节点不在已声明的径路上或站序倒退") from error
             offset = index + 1

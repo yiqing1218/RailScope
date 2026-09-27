@@ -42,4 +42,4 @@ def test_station_search_accepts_optional_station_suffix(tmp_path):
         db.execute("CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,data TEXT)")
         db.execute("INSERT INTO features VALUES(1,'railPoints',?)", (json.dumps(feature),))
     records, total = rail_station_records(tmp_path, [], "济宁北站")
-    assert total == 1 and records[0]["name"] == "济宁北"
+    assert total == 1 and records[0]["name"] == "济宁北站"

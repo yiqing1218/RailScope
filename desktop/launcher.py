@@ -379,8 +379,10 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
                 )
+                from rail_station_directory import load_directory
                 apply_names(result, self.server.config.get('railDisplayOverrides'),
-                            self.server.config.get('railLineNames'), self.server.config.get('railWayNames'))
+                            self.server.config.get('railLineNames'), self.server.config.get('railWayNames'),
+                            load_directory(active_rail_directory(ROOT) / 'rail_lines.sqlite'))
                 if query["kind"][0] == "railPoints":
                     switch_names = self.server.config.get("railSwitchNames", {})
                     for feature in result["features"]:

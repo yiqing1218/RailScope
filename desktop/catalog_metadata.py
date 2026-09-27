@@ -448,6 +448,11 @@ def rail_switch_owner(directory, osm_node_id, regions, overrides=None):
 def rail_station_records(directory, regions, query="", limit=4000, overrides=None):
     """Read station/signal-box owners; raw switches are always owned children."""
     directory = Path(directory)
+    try:
+        from .rail_station_directory import load_directory, display_name
+    except ImportError:
+        from rail_station_directory import load_directory, display_name
+    station_directory = load_directory(directory / 'rail_lines.sqlite')
     source = directory / "rail.sqlite"
     if not source.exists():
         return [], 0
@@ -475,13 +480,36 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
     elif query:
         where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
         args.extend([f"%{normalized_query}%", f"%{query.strip()}%"])
-    with sqlite3.connect(source) as db:
-        total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
-        rows = db.execute(
-            f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
-            [*args, limit * 4 if region_match else limit],
-        ).fetchall()
-    features = [json.loads(row[0]) for row in rows]
+    if station_directory:
+        # The directory and corridor picker now read the same station owners.
+        # Search includes workspace names so a map rename remains discoverable.
+        features = []
+        for key, record in station_directory.items():
+            feature = record['feature']
+            coordinate = feature.get('geometry', {}).get('coordinates')
+            if not coordinate:
+                continue
+            if region_match:
+                if abs(coordinate[0]-lon)>2 or abs(coordinate[1]-lat)>2:
+                    continue
+            elif query:
+                custom = (overrides or {}).get('station:' + key, {}).get('display_name', '')
+                text = ' '.join((record['name'], key, custom)).casefold()
+                if normalized_query not in text:
+                    continue
+            features.append(feature)
+        features.sort(key=lambda f: (0 if f['properties'].get('kind')=='station' else 1,
+                                     f['properties'].get('name', '')))
+        total = len(features)
+        features = features[:limit*4 if region_match else limit]
+    else:
+        with sqlite3.connect(source) as db:
+            total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
+            rows = db.execute(
+                f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
+                [*args, limit * 4 if region_match else limit],
+            ).fetchall()
+        features = [json.loads(row[0]) for row in rows]
     node_ids = [f["properties"].get("osm_node_id") for f in features]
     line_map = defaultdict(set)
     line_names = {}
@@ -517,7 +545,8 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         result.append(
             {
                 "id": f"node/{node_id}",
-                "name": props.get("name") or f"节点 {node_id}",
+                "name": station_directory.get(f'node/{node_id}', {}).get('name') or display_name(props.get("name") or f"节点 {node_id}"),
+                "station_key": f"station:node/{node_id}",
                 "kind": props.get("kind", ""),
                 "station_type": station_type(tags, props.get("kind", "")),
                 "province": province,

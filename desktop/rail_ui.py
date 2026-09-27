@@ -36,6 +36,7 @@ try:
     from .operating import parse_time, format_time
     from .rail_lines import resolution_policy, RESOLUTION_KEY
     from .station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
+    from .rail_station_directory import refresh_plan_names
 except ImportError:
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -52,6 +53,7 @@ except ImportError:
     from operating import parse_time, format_time
     from rail_lines import resolution_policy, RESOLUTION_KEY
     from station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
+    from rail_station_directory import refresh_plan_names
 
 
 class RailMap:
@@ -185,6 +187,9 @@ class RailEditor(OperationsEditor):
 
     def apply_payload(self, payload, show_route=False):
         original_payload = shared_document(payload)
+        library = self.line_library(interactive=False)
+        if hasattr(library, 'station_directory'):
+            refresh_plan_names(original_payload, library)
         for train in original_payload["trains"]:
             for section in train.get("station_paths", []):
                 if "sequence" in section:
@@ -299,8 +304,21 @@ class RailEditor(OperationsEditor):
         for train in original_payload['trains']:
             for stop in train['stops']:
                 matched = stop.get('extensions', {}).get('railscope.org/stop-name', {})
-                if matched.get('display_name'):
+                anchor = stop.get('extensions', {}).get('railscope.org/station-anchor', {})
+                position = stop.get('extensions', {}).get(STOP_POSITION_KEY, {})
+                station_key = position.get('station_id') or matched.get('station_key')
+                source = str(station_key).removeprefix('station:node/') if str(station_key).startswith('station:node/') else anchor.get('source_station_node')
+                source = int(source) if str(source).isdigit() else source
+                source = source or labels.get(stop['node_id'], ('', None))[1]
+                if 'node/' + str(source) in getattr(library, 'station_directory', {}):
+                    labels[stop['node_id']] = (library.endpoint_label('station:node/' + str(source)), source)
+                    if matched:
+                        matched['display_name'] = labels[stop['node_id']][0]
+                elif matched.get('display_name'):
                     labels[stop['node_id']] = (matched['display_name'], labels.get(stop['node_id'], ('', stop['node_id']))[1])
+                if position and hasattr(library, 'station_directory') and str(station_key).removeprefix('station:') in library.station_directory:
+                    position['station_name'] = library.endpoint_label(station_key)
+                    stop.setdefault('extensions', {}).setdefault('railscope.org/stop-name', {})['display_name'] = position['station_name']
         for node, (label, source) in labels.items():
             if node not in coordinates:
                 continue
@@ -320,6 +338,7 @@ class RailEditor(OperationsEditor):
                     "source_station_node":int(source_node) if source_node.isdigit() else node},
                     "geometry":{"type":"Point", "coordinates":coordinates[node]}})
         validate_corridors(original_payload["routes"], edges)
+        payload = expanded_document(original_payload)
         plan, lines = compile_rail_plan(payload, edges, points, self.platforms)
         self.pause()
         self.set_enabled(False)
@@ -408,7 +427,37 @@ class RailEditor(OperationsEditor):
 
         QTimer.singleShot(0, self.updated.emit)
 
+    def refresh_station_names(self):
+        library = self.line_library(interactive=False)
+        if not hasattr(library, 'station_directory') or not getattr(self, 'rail_payload', None):
+            return
+        refresh_plan_names(self.rail_payload, library)
+        for p in self.graph['points']:
+            props = p['properties']
+            source = props.get('source_station_node', props.get('osm_node_id'))
+            if 'node/' + str(source) in library.station_directory:
+                props['name'] = library.endpoint_label('station:node/' + str(source))
+        for train in self.rail_payload['trains']:
+            profile = self.plan.lines.get('rail/' + train['id'], {})
+            for stop, station in zip(train['stops'], profile.get('stations', [])):
+                extensions = stop.get('extensions', {})
+                position = extensions.get(STOP_POSITION_KEY, {})
+                key = position.get('station_id') or extensions.get('railscope.org/stop-name', {}).get('station_key')
+                if not key:
+                    props = self.shared_station_features.get(stop['node_id'], {}).get('properties', {})
+                    key = 'station:node/' + str(props.get('source_station_node', props.get('osm_node_id')))
+                if str(key).removeprefix('station:') in library.station_directory:
+                    name = library.endpoint_label(key)
+                    station['name'] = name
+                    if position:
+                        position['station_name'] = name
+                    matched = extensions.get('railscope.org/stop-name')
+                    if matched:
+                        matched['display_name'] = name
+        self.refresh_table()
+
     def push_corridors(self):
+        self.refresh_station_names()
         features = []
         drawn_paths, drawn_stations = set(), set()
         lookup = {edge["id"]: edge for edge in self.graph["edges"]}
@@ -494,21 +543,21 @@ class RailEditor(OperationsEditor):
                     for item in profile.get("stations", [])
                     if str(item.get("id", "")).isdigit()
                 }
-            stop_ids = {
-                s["node_id"] for s in selected_train.get("stops", [])
-            } if selected_train else set()
-            for station in self.graph["points"]:
+            for stop_index, stop in enumerate(selected_train.get('stops', []) if selected_train else []):
+                station = self.shared_station_features.get(stop['node_id'], {
+                    'properties': {'osm_node_id': stop['node_id']}})
                 data = station["properties"]
-                if data["osm_node_id"] not in stop_ids:
-                    continue
+                position = stop.get('extensions', {}).get(STOP_POSITION_KEY, {})
+                key = position.get('station_id') or stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('station_key')
                 source_node = data.get("source_station_node", data["osm_node_id"])
                 shared = self.shared_station_features.get(source_node, station)
-                display_name = stop_names.get(data['osm_node_id']) or shared["properties"].get("display_name") or shared["properties"].get("name") or data.get("name")
+                station_profile = profile.get('stations', [])[stop_index]
+                display_name = position.get('station_name') or station_profile.get('name') or shared["properties"].get("name")
                 if not display_name or str(display_name).isdigit() or str(display_name).startswith('未命名'):
                     display_name = stop_names.get(data["osm_node_id"]) or stop_names.get(source_node)
                 if not display_name or str(display_name).isdigit():
                     display_name = "未命名铁路控制点"
-                station_key = "node/" + str(source_node)
+                station_key = str(key).removeprefix('station:') if key else "node/" + str(source_node)
                 if station_key in drawn_stations:
                     continue
                 drawn_stations.add(station_key)
@@ -521,11 +570,9 @@ class RailEditor(OperationsEditor):
                             "name": display_name,
                             "train_id": selected_train["id"],
                             "infrastructure_id": station_key,
+                            "station_key": 'station:' + station_key,
                         },
-                        "geometry": {"type":"Point", "coordinates": next(
-                            (s.get("extensions", {}).get(STOP_POSITION_KEY, {}).get("coordinate", node_coordinates[data["osm_node_id"]])
-                             for s in selected_train["stops"] if s["node_id"] == data["osm_node_id"]),
-                            node_coordinates[data["osm_node_id"]])},
+                        "geometry": {"type":"Point", "coordinates": position.get('coordinate', node_coordinates[stop['node_id']])},
                     }
                 )
         try:
@@ -533,8 +580,9 @@ class RailEditor(OperationsEditor):
         except ImportError:
             from display_names import apply_names
         collection = {'type': 'FeatureCollection', 'features': features}
-        if self.catalog_metadata_path.exists():
-            apply_names(collection, json.loads(self.catalog_metadata_path.read_text(encoding='utf-8')))
+        library = self.line_library(interactive=False)
+        apply_names(collection, getattr(library, 'metadata', {}),
+                    station_directory=getattr(library, 'station_directory', {}))
         self.map.call('setRailPlan', collection)
         self.map.call("setVisibility", "railPlan", bool(features))
 
@@ -1379,6 +1427,12 @@ class RailEditor(OperationsEditor):
                 display_name, recommended = self.stop_display_name(
                     node_id, index, len(train["stops"]), candidates
                 )
+                saved = stop.get('extensions', {}).get('railscope.org/rail-stop', {}).get('extensions', {})
+                key = saved.get(STOP_POSITION_KEY, {}).get('station_id') or saved.get('railscope.org/stop-name', {}).get('station_key')
+                if key and str(key).removeprefix('station:') in getattr(getattr(self, '_line_library', None), 'station_directory', {}):
+                    display_name, recommended = self._line_library.endpoint_label(key), False
+                elif saved.get('railscope.org/stop-name', {}).get('display_name'):
+                    display_name, recommended = saved['railscope.org/stop-name']['display_name'], False
                 station_item = self.table.item(row, 3)
                 station_item.setText(display_name)
                 station_item.setToolTip(

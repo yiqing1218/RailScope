@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QCompleter,
     QMenu,
     QCheckBox,
+    QLabel,
 )
 
 try:
@@ -149,6 +150,36 @@ class SearchChoice(QComboBox):
             super().wheelEvent(event)
 
 
+class ChoiceCell(QWidget):
+    """Keep secondary context outside the editable field."""
+    def __init__(self, choice):
+        super().__init__()
+        self.choice = choice
+        choice.setFixedHeight(38)
+        self.hint = QLabel()
+        self.hint.setStyleSheet('color:#587580; font-size:11px; background:transparent; border:0;')
+        self.hint.setMinimumWidth(0)
+        self.hint.setFixedHeight(20)
+        self._hint_text = ''
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 4)
+        layout.setSpacing(3)
+        layout.addWidget(choice)
+        layout.addWidget(self.hint)
+
+    def set_hint(self, text):
+        self._hint_text = text
+        self.hint.setToolTip(text)
+        self.hint.setAccessibleName(text)
+        self.resizeEvent(None)
+
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        self.hint.setText(self.hint.fontMetrics().elidedText(
+            self._hint_text, Qt.TextElideMode.ElideRight, max(0, self.width() - 16)))
+
+
 class CorridorSequenceTable(QTableWidget):
     """Point + outgoing line rows, with one final point and the v2 wire format."""
 
@@ -164,7 +195,22 @@ class CorridorSequenceTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.setShowGrid(False)
         self.setAlternatingRowColors(True)
-        self.verticalHeader().setDefaultSectionSize(58)
+        self.verticalHeader().setDefaultSectionSize(82)
+
+    def cellWidget(self, row, column):
+        cell = super().cellWidget(row, column)
+        return cell.choice if isinstance(cell, ChoiceCell) else cell
+
+    def update_hint(self, row):
+        cell = super().cellWidget(row, 0)
+        if not isinstance(cell, ChoiceCell):
+            return
+        point = cell.choice.currentData()
+        if point is None:
+            cell.set_hint('选择车站后显示接轨线路')
+            return
+        names = list(dict.fromkeys(record['name'] for record in self.library.connected_lines(point, **self.options())))
+        cell.set_hint('接轨线路：' + (' / '.join(names) if names else '待关联'))
 
     def options(self):
         return {"physical": self.physical} if hasattr(self.library, "workspace") else {}
@@ -218,12 +264,13 @@ class CorridorSequenceTable(QTableWidget):
             # Find the current row from the widget; row deletion/reordering must
             # not leave callbacks referring to old numerical positions.
             combo = SearchChoice(lambda q: [], "搜索车站 / 线路所" if column == 0 else "搜索线路（可先选线）", value, self.label(column, value))
-            self.setCellWidget(row, column, combo)
+            self.setCellWidget(row, column, ChoiceCell(combo))
             combo.search = lambda q, c=column, w=combo: (self.point_choices if c == 0 else self.line_choices)(self.widget_row(w), q)
             combo.selection_committed.connect(lambda c=column, w=combo: self.selection_changed(self.widget_row(w), c))
             combo._choices_dirty = True
         self.cellWidget(row, 1).setProperty("sectionId", section)
-        self.setRowHeight(row, 58)
+        self.setRowHeight(row, 82)
+        self.update_hint(row)
 
     def widget_row(self, widget):
         return next((r for r in range(self.rowCount()) if widget in [self.cellWidget(r, c) for c in (0, 1)]), -1)
@@ -239,6 +286,8 @@ class CorridorSequenceTable(QTableWidget):
         combo._choices_dirty = True
         combo.blockSignals(False)
         combo.reveal_name()
+        if column == 0:
+            self.update_hint(row)
         if notify:
             self.selection_changed(row, column)
 
@@ -288,6 +337,8 @@ class CorridorSequenceTable(QTableWidget):
                                 self.assign(r, 0, inferred, notify=False)
         finally:
             self._updating = False
+        for r in range(row, self.rowCount()):
+            self.update_hint(r)
         self.changed.emit()
 
     def set_sequence(self, sequence):
@@ -574,7 +625,7 @@ class CorridorPanel(QWidget):
             "QDialog#corridorDialog { background: #f3f6f8; } "
             "QTableWidget { background: white; alternate-background-color: #f5f9fa; border: 1px solid #cad8df; border-radius: 8px; } "
             "QHeaderView::section { background: #e4eeef; padding: 12px 10px; border: 0; color: #285760; } "
-            "QTableWidget QComboBox { margin: 6px; padding: 9px 12px; } "
+            "QTableWidget QComboBox { margin: 0; padding: 6px 12px; } "
             "QTableWidget QComboBox QLineEdit { border: none; padding: 0; background: transparent; }"
         )
         form = QFormLayout(dialog)

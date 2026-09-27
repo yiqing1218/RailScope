@@ -15,13 +15,15 @@ try:
     from .rail_categories import track_type
     from .geometry import distance_m
     from .rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
+    from .rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
 except ImportError:
     from rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from rail_categories import track_type
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
+    from rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
 
-INDEX_VERSION = 14
+INDEX_VERSION = 16
 
 
 def fingerprint(source, extras):
@@ -51,8 +53,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
     """Stream source rows; cancellation/failure leaves the previous complete index intact."""
     signature = fingerprint(source, extras)
     destination = Path(destination)
-    # Version 14 only adds endpoint lookup indexes. Upgrade existing compact
-    # indexes in place instead of decoding the national source again.
+    # Upgrade compact lookups without rebuilding national track geometry.
     if destination.exists():
         with closing(sqlite3.connect(destination)) as existing:
             try:
@@ -60,12 +61,13 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                 old_signature = json.loads(row[0]) if row else []
             except (sqlite3.Error, ValueError):
                 old_signature = []
-            if isinstance(old_signature, list) and old_signature and old_signature[0] == 13 and old_signature[1:] == json.loads(signature)[1:]:
+            if isinstance(old_signature, list) and old_signature and old_signature[0] in (13, 14, 15) and old_signature[1:] == json.loads(signature)[1:]:
                 progress("准备站内接轨查询索引…")
                 with existing:
                     existing.execute("BEGIN IMMEDIATE")
                     existing.execute("CREATE INDEX IF NOT EXISTS edge_from ON edges(a)")
                     existing.execute("CREATE INDEX IF NOT EXISTS edge_to ON edges(b)")
+                    build_station_directory(existing, source)
                     existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
                 return
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
@@ -313,6 +315,9 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     station_ids = props.get("associated_station_ids", [])
                     station_node = station_ids[0] if station_ids else None
                     station = station_points.get(station_node)
+                    if station and not compatible_area(props, station['properties']):
+                        # A named neighbouring station is a separate owner.
+                        station_node, station = None, None
                     coordinate = (
                         station["geometry"]["coordinates"]
                         if station
@@ -331,6 +336,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                         )
             db.execute("CREATE INDEX station_alias_name ON station_aliases(alias)")
             db.execute("CREATE INDEX station_alias_anchor ON station_aliases(anchor_node)")
+            build_station_directory(db, source)
         db.execute("INSERT INTO metadata VALUES(?,?)", ("source", signature))
         progress("保存铁路索引…")
         db.commit()
@@ -420,6 +426,8 @@ class DiskRailLineLibrary:
         self._reference_cache = OrderedDict()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
+            self.station_directory = read_directory(db)
+            self._has_station_directory = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone())
             self._node_display_names = {}
             for key, value in self.metadata.items():
                 if not value.get('display_name'):
@@ -574,9 +582,16 @@ class DiskRailLineLibrary:
                     if best is None or (gap, str(node)) < (best[0], str(best[1])):
                         best = (gap, node)
                 if best is None or best[0] > max_distance_m:
-                    raise ValueError(
-                        f"{effective_name} 在 {max_distance_m:.0f} 米内没有找到可关联的真实轨道节点"
-                    )
+                    projections = [p for coord in coordinates for p in nearby_tracks(
+                        self.path.with_name('rail.sqlite'), db, coord, min(max_distance_m, 800),
+                        self.workspace.members(line_id))]
+                    if not projections:
+                        raise ValueError(f"{effective_name} 附近未找到可关联的实际轨道段，请核对车站位置或线路")
+                    projected = min(projections, key=lambda p: p['gap_m'])
+                    result.append({**projected, 'line_id': line_id, 'distance_m': round(projected['gap_m'], 1),
+                        'source': 'manual', 'verification_status': 'user_verified',
+                        'anchor_policy': 'auto_reachable', 'anchor_verification_status': 'automatic_track_projection'})
+                    continue
                 result.append(
                     {
                         "line_id": line_id,
@@ -592,14 +607,7 @@ class DiskRailLineLibrary:
 
     @staticmethod
     def station_display_name(name):
-        value = (name or "").strip()
-        if (
-            value
-            and any("\u4e00" <= char <= "\u9fff" for char in value)
-            and not value.endswith(("站", "线路所", "信号所", "乘降所"))
-        ):
-            return value + "站"
-        return value
+        return display_name(name)
 
     @contextmanager
     def connect(self):
@@ -783,11 +791,13 @@ class DiskRailLineLibrary:
             custom = self.metadata.get(self._station_metadata_key(source_id), {})
             if custom.get("display_name"):
                 return str(custom["display_name"])
+            if source_id in self.station_directory:
+                return self.station_directory[source_id]['name']
             if source_id in self._station_group_labels:
                 return self._station_group_labels[source_id]
             with self.connect() as db:
                 row = db.execute(
-                    "SELECT alias FROM station_aliases WHERE source_id=? ORDER BY distance_m LIMIT 1",
+                    "SELECT alias FROM station_aliases WHERE source_id=? ORDER BY distance_m,length(alias),alias LIMIT 1",
                     (source_id,),
                 ).fetchone()
             return self.station_display_name(row[0]) if row else source_id
@@ -798,12 +808,12 @@ class DiskRailLineLibrary:
                 if custom != self.node_label(node):
                     return custom
             row = db.execute(
-                "SELECT alias FROM station_aliases WHERE anchor_node=? "
+                "SELECT source_id FROM station_aliases WHERE anchor_node=? "
                 "ORDER BY distance_m,source_id NOT LIKE 'node/%' LIMIT 1",
                 (endpoint,),
             ).fetchone()
         if row:
-            return self.station_display_name(row[0])
+            return self.endpoint_label('station:' + row[0])
         return self.nodes[endpoint] if endpoint in self.nodes else str(endpoint)
 
     def endpoint_choice_label(self, endpoint):
@@ -882,11 +892,12 @@ class DiskRailLineLibrary:
             # anchor, so choosing 合肥南站 does not lose any connected line.
             grouped = {}
             for source_id, alias, gap, x, y in rows:
-                station_name = "".join(alias.split()).removesuffix("站").casefold()
-                cell = (
-                    round(float(x), 2), round(float(y), 2)
-                ) if x is not None and y is not None else (source_id,)
-                grouped.setdefault((station_name, cell), []).append(
+                # Search wording must not change identity or merge two nearby
+                # station owners. Areas already refer to their owner at import.
+                key = source_id if self._has_station_directory else (
+                    ''.join(alias.split()).removesuffix('站').casefold(),
+                    (round(float(x), 2), round(float(y), 2)) if x is not None and y is not None else source_id)
+                grouped.setdefault(key, []).append(
                     (source_id, alias, gap)
                 )
 

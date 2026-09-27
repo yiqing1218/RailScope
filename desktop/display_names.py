@@ -13,8 +13,14 @@ def object_key(properties):
     return None
 
 
-def apply_names(collection, overrides=None, line_names=None, way_names=None):
+def apply_names(collection, overrides=None, line_names=None, way_names=None, station_directory=None):
     overrides, line_names, way_names = overrides or {}, line_names or {}, way_names or {}
+    if station_directory is not None:
+        try:
+            from .rail_station_directory import apply_station_names
+        except ImportError:
+            from rail_station_directory import apply_station_names
+        apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
         node = props.get('osm_node_id')

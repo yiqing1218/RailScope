@@ -3,10 +3,12 @@
 from copy import deepcopy
 
 try:
-    from .station_positions import POSITION_KEY, STOP_POSITION_KEY
+    from .station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path
+    from .rail_station_directory import source_names
     from .station_search import rail_name_key
 except ImportError:
-    from station_positions import POSITION_KEY, STOP_POSITION_KEY
+    from station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path
+    from rail_station_directory import source_names
     from station_search import rail_name_key
 
 STOP_NAME_KEY = 'railscope.org/stop-name'
@@ -26,18 +28,28 @@ def station_choices(payload, edges=(), points=(), library=None):
     result = {}
     for route in payload['routes']:
         ordered = []
+        distances, travelled = {}, 0.
         for leg in route['path']:
             edge = edge_map.get(leg['edge_id'])
             if edge:
                 nodes = edge.get('node_ids', [edge['from_node'], edge['to_node']])
                 if leg['direction'] == 'reverse':
                     nodes = nodes[::-1]
+                coords = edge['coordinates'][::-1] if leg['direction'] == 'reverse' else edge['coordinates']
+                from railscope.services.simulation.geometry import distance_m
+                for index, node in enumerate(nodes):
+                    if index:
+                        travelled += distance_m(coords[index-1], coords[index])
+                    distances.setdefault(node, travelled)
                 ordered.extend(nodes if not ordered else nodes[1:])
-        order = {node: i for i, node in enumerate(ordered)}
-        references = route.get('extensions', {}).get(POSITION_KEY, [])
+        order = distances or {node: i for i, node in enumerate(ordered)}
+        references = list(route.get('extensions', {}).get(POSITION_KEY, []))
+        if library is not None and hasattr(library, 'station_directory'):
+            saved = {p['station_id'] for p in references}
+            references.extend(p for p in stations_on_path(library, route['path'], edges) if p['station_id'] not in saved)
         preferred = {name_key(p['station_name']) for p in references}
         choices = [{'name': p['station_name'], 'node_id': p['node_id'], 'position': p,
-                    'order': order.get(p['node_id'], p['distance_m'])} for p in references]
+                    'order': p['distance_m']} for p in references]
         if library is not None:
             for position in references:
                 # The corridor may have been saved using an old name (绅坊).
@@ -49,15 +61,19 @@ def station_choices(payload, edges=(), points=(), library=None):
                         aliases = [row[0] for row in db.execute(
                             'SELECT DISTINCT alias FROM station_aliases WHERE source_id IN ('
                             + ','.join('?' for _ in sources) + ')', sources)]
-                    for alias in aliases:
+                    record = getattr(library, 'station_directory', {}).get(str(position['station_id']).removeprefix('station:'))
+                    if record:
+                        aliases += source_names(record['feature']['properties'])
+                    canonical = library.endpoint_label(position['station_id'])
+                    for alias in [canonical, *aliases]:
                         preferred.add(name_key(alias))
                         choices.append({'name': library.station_display_name(alias), 'node_id': position['node_id'],
-                                        'position': position, 'order': order.get(position['node_id'], position['distance_m'])})
+                                        'canonical_name': canonical, 'position': position, 'order': position['distance_m']})
                 renamed = library.metadata.get(position['station_id'], {}).get('display_name')
                 if renamed:
                     preferred.add(name_key(renamed))
                     choices.append({'name': renamed, 'node_id': position['node_id'], 'position': position,
-                                    'order': order.get(position['node_id'], position['distance_m'])})
+                                    'canonical_name': renamed, 'order': position['distance_m']})
         fallback = [(node, name, str(node), 0.) for node, name in names.items()
                     if name and (not order or node in order)]
         if library is not None and hasattr(library, 'connect') and ordered:
@@ -81,7 +97,7 @@ def station_choices(payload, edges=(), points=(), library=None):
                 grouped[key] = value
         # Duplicate aliases for one physical anchor are one choice; distinct
         # same-named stations remain ambiguous and require an explicit ID.
-        unique = {(name_key(c['name']), c['node_id']): c for c in [*grouped.values(), *choices]}
+        unique = {(name_key(c['name']), c.get('position', {}).get('station_id', c['node_id'])): c for c in [*grouped.values(), *choices]}
         result[route['id']] = sorted(unique.values(), key=lambda c: c['order'])
     return result
 
@@ -120,7 +136,8 @@ def resolve_stops(rows, choices):
         chosen = matching[0]
         previous = chosen['order']
         stop = {'node_id': chosen['node_id'], 'extensions': {STOP_NAME_KEY: {
-            'display_name': chosen['name'], 'input_name': row.get('stop_name', ''),
+            'display_name': chosen.get('canonical_name', chosen['name']), 'input_name': row.get('stop_name', ''),
+            'station_key': chosen.get('position', {}).get('station_id'),
             'node_id': chosen['node_id'], 'source': 'corridor_station_name_match',
             'version': 1, 'verification_status': 'matched_alias', 'confidence': None}}}
         if chosen.get('position'):

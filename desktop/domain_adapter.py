@@ -124,20 +124,37 @@ def _build_repository(graph, payload, registry, identity_db):
         repo.snapshots[snapshot_id] = DatasetSnapshot(
             snapshot_id, "national-rail", "osm", "unknown", "unknown", "unknown"
         )
-    station_nodes = {str(stop["node_id"]) for train in document["trains"] for stop in train["stops"]}
-    for source_node in station_nodes:
+    def station_source(stop):
+        extensions = stop.get('extensions', {})
+        key = (extensions.get('railscope.org/track-position', {}).get('station_id')
+               or extensions.get('railscope.org/stop-name', {}).get('station_key'))
+        if str(key).startswith('station:'):
+            return str(key).removeprefix('station:')
+        props = point_by_node.get(str(stop['node_id']), {}).get('properties', {})
+        source = extensions.get('railscope.org/station-anchor', {}).get('source_station_node')
+        return 'node/' + str(source or props.get('source_station_node', stop['node_id']))
+
+    def stop_station(stop):
+        return bindings['station_sources'][station_source(stop)]
+
+    for stop in (s for train in document['trains'] for s in train['stops']):
+        source_node = str(stop['node_id'])
         node_id = bindings["nodes"].get(source_node)
         if not node_id:
             raise ValueError(f"经停节点未在完整物理路径中：{source_node}")
         point = point_by_node.get(source_node, {})
         props = point.get("properties", {})
-        station_source = str(props.get("source_station_node", source_node))
-        station_id = registry.resolve_alias("station", "osm/node/" + station_source, "ST", identity_db)
-        bindings["stations"][source_node] = station_id
+        source = station_source(stop)
+        station_id = registry.resolve_alias("station", "osm/" + source, "ST", identity_db)
+        bindings['station_sources'][source] = station_id
+        bindings["stations"].setdefault(source_node, station_id)
         node = repo.nodes[node_id]
+        position = stop.get('extensions', {}).get('railscope.org/track-position', {})
+        name = (stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('display_name')
+                or position.get('station_name') or props.get('name', source_node))
         repo.stations.setdefault(station_id, Station(
-            station_id, props.get("name", source_node), node.lon, node.lat, node_id,
-            source_member_ids=("osm:node:" + station_source,), source_id="osm",
+            station_id, name, node.lon, node.lat, node_id,
+            source_member_ids=("osm:" + source.replace('/', ':'),), source_id="osm",
             verification_status="OSM-derived",
         ))
         repo.nodes[node_id] = NetworkNode(**{**node.__dict__, "station_id": station_id})
@@ -183,8 +200,8 @@ def _build_repository(graph, payload, registry, identity_db):
         stops = train["stops"]
         corridor_id = bindings["corridors"][train["route_id"]]
         repo.train_runs[run_id] = TrainRun(
-            run_id, service_date, train["id"], bindings["stations"][str(stops[0]["node_id"])],
-            bindings["stations"][str(stops[-1]["node_id"])], service_id=service_id,
+            run_id, service_date, train["id"], stop_station(stops[0]),
+            stop_station(stops[-1]), service_id=service_id,
             corridor_id=corridor_id, source_id=document["source"], verification_status="user_verified",
         )
         for sequence, stop in enumerate(stops, 1):
@@ -194,12 +211,12 @@ def _build_repository(graph, payload, registry, identity_db):
             if source_track:
                 edge_id = bindings["edges"][source_track]
                 track_id = registry.resolve_alias(
-                    "station_track", bindings["stations"][str(stop["node_id"])] + "/" + edge_id, "STTR", identity_db
+                    "station_track", stop_station(stop) + "/" + edge_id, "STTR", identity_db
                 )
                 bindings["station_tracks"][source_track] = track_id
                 edge = repo.edges[edge_id]
                 repo.station_tracks.setdefault(track_id, StationTrack(
-                    track_id, bindings["stations"][str(stop["node_id"])],
+                    track_id, stop_station(stop),
                     point_by_node.get(str(stop["node_id"]), {}).get("properties", {}).get("name", source_track),
                     track_number=str(source_track), length_m=edge.length_m, is_virtual=False,
                 ))
@@ -208,7 +225,7 @@ def _build_repository(graph, payload, registry, identity_db):
             if position and stop_edge is None:
                 raise ValueError("停靠轨道不在共享基础设施中")
             offset = position.get("offset_m")
-            station_id = bindings["stations"][str(stop["node_id"])]
+            station_id = stop_station(stop)
             stop_node = bindings["nodes"][str(stop["node_id"])]
             if not position and repo.stations[station_id].anchor_node_id != stop_node:
                 # A logical station can serve several tracks. Preserve this
@@ -224,7 +241,7 @@ def _build_repository(graph, payload, registry, identity_db):
                 offset = (distance - ref.start_distance_m if ref.forward
                           else ref.end_distance_m - distance)
             repo.stops.append(StopTime(
-                run_id, bindings["stations"][str(stop["node_id"])], sequence,
+                run_id, station_id, sequence,
                 stop["arrival_s"], stop["departure_s"], station_track_id=track_id,
                 station_route_id=station_route_id,
                 stop_edge_id=stop_edge, stop_offset_m=offset,
