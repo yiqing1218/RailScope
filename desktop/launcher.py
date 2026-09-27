@@ -86,6 +86,7 @@ from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
 from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation
+from yard_track_names import yard_track_key
 from road_store import database_path as road_database_path, viewport as road_viewport
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
@@ -2745,8 +2746,9 @@ class Desk(QMainWindow):
             feature = self.selected_features[0]
             props = feature.get('properties', {})
             layer = feature.get('layer', feature.get('__layer', ''))
-            if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and not props.get('catalog_group_id'):
-                key = object_key(props)
+            track_key = yard_track_key(props)
+            if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and (track_key or not props.get('catalog_group_id')):
+                key = track_key or object_key(props)
                 if key and props.get('kind') not in ('station', 'halt', 'signal_box'):
                     value, accepted = QInputDialog.getText(self, '重命名对象', '地图显示名称',
                         text=props.get('display_name') or props.get('name') or '')
@@ -3151,7 +3153,8 @@ class Desk(QMainWindow):
         rail_group = props.get("catalog_group_id")
         if rail_group in self.rail_catalog_widget.catalog:
             catalog_meta = self.rail_catalog_widget.meta(rail_group)
-            props["display_name"] = self.rail_catalog_widget.display_name(rail_group)
+            props["display_name"] = (props.get('display_name') if yard_track_key(props) and props.get('display_name')
+                                     else self.rail_catalog_widget.display_name(rail_group))
             props["track_type"] = catalog_meta.get(
                 "track_type", props.get("track_type", "未确认类型")
             )

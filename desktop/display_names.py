@@ -1,4 +1,8 @@
 """Workspace presentation names, independent of OSM facts and domain identity."""
+try:
+    from .yard_track_names import yard_track_key
+except ImportError:
+    from yard_track_names import yard_track_key
 
 
 def rail_line_presentation(library):
@@ -83,7 +87,7 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
         node = props.get('osm_node_id')
-        keys = [object_key(props)]
+        keys = [object_key(props), yard_track_key(props)]
         if node is not None:
             keys += [f'switch:node/{node}', f'node:{node}', f'station:node/{node}']
         if props.get('infrastructure_id'):

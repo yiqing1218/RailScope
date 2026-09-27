@@ -547,7 +547,7 @@ class RailCatalog(QWidget):
 
     def name_identified_yards(self):
         """Name already-associated yard groups in the workspace, never in OSM."""
-        groups = self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items()
+        groups = list(self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items())
         source = self.directory / 'rail.sqlite'
         snapshot = str(source.stat().st_mtime_ns) if source.exists() else 'unknown'
         changes = {}
@@ -561,6 +561,11 @@ class RailCatalog(QWidget):
                     'verification_status': 'automatic_reference',
                     'confidence': record.get('station_assignment_confidence'),
                 }
+        try:
+            from .yard_track_names import automatic_track_names
+        except ImportError:
+            from yard_track_names import automatic_track_names
+        changes.update(automatic_track_names(source, groups, self.overrides))
         if changes:
             self._save_local_overrides(changes)
         return len(changes)
