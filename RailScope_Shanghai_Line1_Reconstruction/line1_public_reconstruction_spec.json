@@ -1,0 +1,230 @@
+{
+  "title": "Shanghai Metro Line 1 public-data reconstruction specification for RailScope",
+  "target_schema": "railscope.operating-plan.v2",
+  "official": false,
+  "line_id": "sh-1",
+  "osm_relation_hint": 199200,
+  "stations_south_to_north": [
+    {
+      "name": "莘庄",
+      "sn_offset_min": 0,
+      "ns_offset_from_fujin_min": 64
+    },
+    {
+      "name": "外环路",
+      "sn_offset_min": 2,
+      "ns_offset_from_fujin_min": 62
+    },
+    {
+      "name": "莲花路",
+      "sn_offset_min": 4,
+      "ns_offset_from_fujin_min": 60
+    },
+    {
+      "name": "锦江乐园",
+      "sn_offset_min": 7,
+      "ns_offset_from_fujin_min": 57
+    },
+    {
+      "name": "上海南站",
+      "sn_offset_min": 10,
+      "ns_offset_from_fujin_min": 54
+    },
+    {
+      "name": "漕宝路",
+      "sn_offset_min": 13,
+      "ns_offset_from_fujin_min": 51
+    },
+    {
+      "name": "上海体育馆",
+      "sn_offset_min": 16,
+      "ns_offset_from_fujin_min": 49
+    },
+    {
+      "name": "徐家汇",
+      "sn_offset_min": 18,
+      "ns_offset_from_fujin_min": 46
+    },
+    {
+      "name": "衡山路",
+      "sn_offset_min": 20,
+      "ns_offset_from_fujin_min": 44
+    },
+    {
+      "name": "常熟路",
+      "sn_offset_min": 22,
+      "ns_offset_from_fujin_min": 42
+    },
+    {
+      "name": "陕西南路",
+      "sn_offset_min": 24,
+      "ns_offset_from_fujin_min": 40
+    },
+    {
+      "name": "一大会址·黄陂南路",
+      "sn_offset_min": 26,
+      "ns_offset_from_fujin_min": 38
+    },
+    {
+      "name": "人民广场",
+      "sn_offset_min": 29,
+      "ns_offset_from_fujin_min": 35
+    },
+    {
+      "name": "新闸路",
+      "sn_offset_min": 31,
+      "ns_offset_from_fujin_min": 33
+    },
+    {
+      "name": "汉中路",
+      "sn_offset_min": 33,
+      "ns_offset_from_fujin_min": 31
+    },
+    {
+      "name": "上海火车站",
+      "sn_offset_min": 36,
+      "ns_offset_from_fujin_min": 30
+    },
+    {
+      "name": "中山北路",
+      "sn_offset_min": 38,
+      "ns_offset_from_fujin_min": 27
+    },
+    {
+      "name": "延长路",
+      "sn_offset_min": 41,
+      "ns_offset_from_fujin_min": 25
+    },
+    {
+      "name": "上海马戏城",
+      "sn_offset_min": 43,
+      "ns_offset_from_fujin_min": 23
+    },
+    {
+      "name": "汶水路",
+      "sn_offset_min": 45,
+      "ns_offset_from_fujin_min": 20
+    },
+    {
+      "name": "彭浦新村",
+      "sn_offset_min": 48,
+      "ns_offset_from_fujin_min": 17
+    },
+    {
+      "name": "共康路",
+      "sn_offset_min": 51,
+      "ns_offset_from_fujin_min": 15
+    },
+    {
+      "name": "通河新村",
+      "sn_offset_min": 53,
+      "ns_offset_from_fujin_min": 12
+    },
+    {
+      "name": "呼兰路",
+      "sn_offset_min": 55,
+      "ns_offset_from_fujin_min": 10
+    },
+    {
+      "name": "共富新村",
+      "sn_offset_min": 58,
+      "ns_offset_from_fujin_min": 7
+    },
+    {
+      "name": "宝安公路",
+      "sn_offset_min": 61,
+      "ns_offset_from_fujin_min": 4
+    },
+    {
+      "name": "友谊西路",
+      "sn_offset_min": 63,
+      "ns_offset_from_fujin_min": 2
+    },
+    {
+      "name": "富锦路",
+      "sn_offset_min": 65,
+      "ns_offset_from_fujin_min": 0
+    }
+  ],
+  "special_first_trains": [
+    {
+      "origin": "上海南站",
+      "departure": "04:55:00",
+      "destination": "上海火车站",
+      "arrival": "05:19:00",
+      "confidence": "endpoints public; intermediate reconstructed"
+    },
+    {
+      "origin": "上海南站",
+      "departure": "05:18:00",
+      "destination": "富锦路",
+      "arrival": "06:12:00",
+      "confidence": "endpoints public; intermediate reconstructed"
+    },
+    {
+      "origin": "上海火车站",
+      "departure": "05:30:00",
+      "destination": "莘庄",
+      "arrival": "06:04:00",
+      "confidence": "endpoints public; intermediate reconstructed"
+    }
+  ],
+  "headways": {
+    "mon-thu": [
+      {
+        "period": "07:00-09:00",
+        "headway_s": 150,
+        "status": "published average"
+      },
+      {
+        "period": "09:00-17:00",
+        "headway_s": 300,
+        "status": "published average"
+      },
+      {
+        "period": "17:00-19:00",
+        "headway_s": 180,
+        "status": "published average"
+      },
+      {
+        "period": "other",
+        "headway_s": 360,
+        "status": "representative value chosen within published 4-9 min range"
+      }
+    ],
+    "friday": [
+      {
+        "period": "07:00-09:00",
+        "headway_s": 150,
+        "status": "published average"
+      },
+      {
+        "period": "09:00-15:00",
+        "headway_s": 300,
+        "status": "published average"
+      },
+      {
+        "period": "15:00-19:00",
+        "headway_s": 180,
+        "status": "published average"
+      },
+      {
+        "period": "22:30-end",
+        "headway_s": 720,
+        "status": "representative value chosen within published 10-15 min range"
+      }
+    ],
+    "weekend": [
+      {
+        "period": "09:00-20:00",
+        "headway_s": 240,
+        "status": "published average"
+      },
+      {
+        "period": "other",
+        "headway_s": 480,
+        "status": "representative value chosen within published 6-12 min range"
+      }
+    ]
+  }
+}

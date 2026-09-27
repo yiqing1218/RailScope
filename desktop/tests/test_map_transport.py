@@ -8,6 +8,21 @@ from urllib.error import HTTPError
 import pytest
 
 
+def test_map_module_dependencies_are_served_as_javascript():
+    import launcher
+    server = ThreadingHTTPServer(('127.0.0.1', 0), launcher.LocalHandler)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        for module in ('display-names.mjs', 'vehicle-motion.mjs'):
+            with urlopen(f'http://127.0.0.1:{server.server_port}/desktop/assets/{module}', timeout=3) as response:
+                assert response.status == 200
+                assert response.headers.get_content_type() == 'text/javascript'
+                assert b'export ' in response.read()
+    finally:
+        server.shutdown(); server.server_close(); worker.join()
+
+
 def test_ready_bridge_dispatches_visibility_and_focus():
     from launcher import MapView
     from map_commands import MapCommands

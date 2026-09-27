@@ -330,6 +330,7 @@ class RailCatalog(QWidget):
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
     switch_names_changed = Signal()
+    display_names_changed = Signal()
     feature_activated = Signal(dict)
 
     def __init__(self, directory, settings, map_view, parent=None, regions=None, shared_path=None):
@@ -535,6 +536,7 @@ class RailCatalog(QWidget):
         self.note.setText(
             self.catalog_note("目录已按轨道类型和物理线路/车站重建。")
         )
+        self.display_names_changed.emit()
 
     def _merge_catalog_overrides(self):
         keys = self.shared_overrides.keys() | self.local_overrides.keys()
@@ -542,6 +544,7 @@ class RailCatalog(QWidget):
             key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
             for key in keys
         }
+        self.display_names_changed.emit()
 
     def _save_local_overrides(self, changes):
         before = deepcopy(self.local_overrides)
@@ -1053,6 +1056,18 @@ class RailCatalog(QWidget):
         self._save_local_overrides({f"switch:node/{int(node_id)}": {"display_name": name}})
         self._refresh_switch_labels()
         self.switch_names_changed.emit()
+
+    def save_feature_name(self, properties, name):
+        try:
+            from .rail_display import feature_name_key
+        except ImportError:
+            from rail_display import feature_name_key
+        key = feature_name_key(properties)
+        name = str(name).strip()
+        if not key or not name:
+            raise ValueError("请选择有稳定来源编号的对象并填写名称")
+        self._save_local_overrides({"feature:" + key: {"display_name": name}})
+        self.metadata_changed.emit()
 
     def _load_station_switches(self, item):
         station_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -2578,6 +2593,7 @@ class RailCatalog(QWidget):
         self.way_names = (
             json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         )
+        self.display_names_changed.emit()
         self.populate()
 
     def toggle_group(self, keys, on):

@@ -756,6 +756,11 @@ class DiskRailLineLibrary:
         return [row[0] if row else endpoint] if endpoint in self.nodes or row else []
 
     def endpoint_label(self, endpoint):
+        if not str(endpoint).startswith("station:"):
+            for key in (f"feature:node/{endpoint}", f"switch:node/{endpoint}"):
+                name = self.metadata.get(key, {}).get("display_name")
+                if name:
+                    return str(name)
         if isinstance(endpoint, str) and endpoint.startswith("station:"):
             source_id = endpoint.removeprefix("station:")
             custom = self.metadata.get(self._station_metadata_key(source_id), {})
@@ -949,13 +954,23 @@ class DiskRailLineLibrary:
                 )
                 if reachable is not None:
                     control_clause += " AND n.id IN (SELECT id FROM reachable_nodes)"
+                renamed = {
+                    int(key.rsplit('/', 1)[-1]): value['display_name']
+                    for key, value in self.metadata.items()
+                    if key.startswith(('feature:node/', 'switch:node/'))
+                    and key.rsplit('/', 1)[-1].isdigit() and value.get('display_name')
+                }
+                matching_ids = [node for node, name in renamed.items() if query.casefold() in name.casefold()]
+                name_clause = "coalesce(n.label,'') LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!'"
+                if matching_ids:
+                    name_clause += " OR n.id IN (" + ",".join("?" for _ in matching_ids) + ")"
                 controls = db.execute(
                     "SELECT n.id,n.label,n.kind FROM nodes n WHERE "
                     + control_kind + " AND "
-                    "(coalesce(n.label,'') LIKE ? ESCAPE '!' OR CAST(n.id AS TEXT) LIKE ? ESCAPE '!')"
+                    + "(" + name_clause + ")"
                     + control_clause
                     + " ORDER BY n.label,n.id LIMIT ?",
-                    (term, term, *control_args, limit - len(result)),
+                    (term, term, *matching_ids, *control_args, limit - len(result)),
                 ).fetchall()
                 for node, label, kind in controls:
                     connected_lines = self.connected_lines(node, physical=physical)
@@ -966,7 +981,7 @@ class DiskRailLineLibrary:
                     connected = [value["name"] for value in connected_lines]
                     result.append((
                         node,
-                        self.node_label((node, label, kind))
+                        (renamed.get(node) or self.node_label((node, label, kind)))
                         + " · 接轨："
                         + (" / ".join(connected) if connected else "待关联"),
                     ))

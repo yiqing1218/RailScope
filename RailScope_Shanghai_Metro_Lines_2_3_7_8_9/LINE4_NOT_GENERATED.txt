@@ -1,0 +1,1 @@
+4号线已检索到2026官方首末班车表和公开运行间隔，但当前yiqing1218/RailScope地铁v2的线性stops校验不适合无损表达闭环一圈后回到同一站。本包不通过切断闭环来伪造4号线。建议先扩展RailScope支持circular/wrap-around station sequence，再导入4号线。

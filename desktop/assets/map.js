@@ -1,4 +1,6 @@
 'use strict';
+import {namedFeature, namedCollection} from './display-names.mjs';
+import {VehicleMotion} from './vehicle-motion.mjs';
 const maplibregl = window.maplibregl;
 let bridge, map, config, standardStyle, currentBase = 'standard', pendingBase=null, selectedFeature = null, selectedLayer = null;
 let selectedFeatures=[],selectionMode='click',boxSelecting=false,suppressMapClick=false;
@@ -131,6 +133,39 @@ let minZooms={};
 const metroSourceKeys=new Map();
 let graphicsPaused=false;
 const populatedRailSources=new Set();
+const railSourceData=new Map();
+const vehicleMotion={vehicles:new VehicleMotion(),railVehicles:new VehicleMotion()};
+let motionFrame=null,lastMotionDraw=0;
+function drawVehicleFrame(now){
+  motionFrame=null;
+  if(graphicsPaused||document.hidden)return;
+  let active=false;
+  for(const [id,motion] of Object.entries(vehicleMotion)){
+    if(!visibility[id])continue;
+    if(motion.active(now)||motion.active(lastMotionDraw)){
+      active=motion.active(now)||active;
+      if(now-lastMotionDraw>=30)map.getSource(id)?.setData(motion.sample(now));
+    }
+  }
+  if(now-lastMotionDraw>=30)lastMotionDraw=now;
+  if(active)motionFrame=requestAnimationFrame(drawVehicleFrame);
+}
+function receiveVehicles(id,data,clock,playing,options){
+  const motion=vehicleMotion[id],now=performance.now();
+  const frame=motion.accept(data,clock,playing,options,now);
+  if(!graphicsPaused)map.getSource(id)?.setData(visibility[id]?frame:empty);
+  if(motion.active(now)&&motionFrame===null)motionFrame=requestAnimationFrame(drawVehicleFrame);
+}
+function setRailDisplayNames(names){
+  config.railDisplayNames=names||{};
+  for(const [kind,data] of railSourceData){
+    if(populatedRailSources.has(kind))map.getSource(kind)?.setData(namedCollection(data,config.railDisplayNames));
+  }
+  selectedFeatures=selectedFeatures.map(feature=>namedFeature(feature,config.railDisplayNames));
+  if(selectedFeature)selectedFeature=namedFeature(selectedFeature,config.railDisplayNames);
+  refreshSelection();
+  if(selectedFeatures.length)publishSelection();
+}
 const staticSourceState=new Map();
 function updateStaticSources(){
   if(!config||graphicsPaused)return;
@@ -300,7 +335,8 @@ async function updateRailViewport(){
       const data=await queryViewport('/api/rail',params,controller.signal);
       if(request!==railRequest||!railSourceVisible(kind))return;
       if(data.busy){railTimer=setTimeout(updateRailViewport,350);return;}
-      map.getSource(kind)?.setData(data);populatedRailSources.add(kind);railSourceKeys.set(kind,key);
+      railSourceData.set(kind,data);
+      map.getSource(kind)?.setData(namedCollection(data,config.railDisplayNames));populatedRailSources.add(kind);railSourceKeys.set(kind,key);
       if(data.truncated)document.getElementById('camera-status').textContent='已限制地图细节量，请放大查看';
       if(kind==='rail')document.getElementById('map-status').title=data.truncated?'已达到视窗数据预算，放大查看完整股道':'国铁按当前地图范围加载';
     }
@@ -448,6 +484,10 @@ function installLayers() {
   addLayer({id:'vehicle-label',type:'symbol',source:'vehicles',minzoom:11,layout:{'text-field':['get','vehicle_id'],'text-font':vectorAvailable?['Noto Sans Bold']:['Open Sans Bold'],'text-size':10,'text-offset':[0,-2]},paint:{'text-color':'#0b6058','text-halo-color':'#ffffff','text-halo-width':2}});
   applyVisibility(); applyLineFilter(); applyConstructionFilter();applyBaseDetails();
   map.getSource('vehicles').setData(visibility.vehicles?operatingVehicles:empty);
+  for(const [id,source] of [['rail-platform-labels','railPlatforms'],['rail-area-labels','railStationAreas']]){
+    addLayer({id,type:'symbol',source,minzoom:14,filter:['has','display_name'],layout:{'text-field':['get','display_name'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':11,'text-optional':true},paint:{'text-color':'#31515e','text-halo-color':'#ffffff','text-halo-width':1.5}});
+    map.setLayoutProperty(id,'visibility',visibility.railStations?'visible':'none');
+  }
   for(const [key,on] of Object.entries(overlays))setOverlay(key,on);
   refreshSelection();
   applyRailWays();
@@ -477,15 +517,16 @@ function sharedRailStationFilter(){
   const stationAllowed=directlySelected;
   map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]],allowed,stationAllowed]);
   if(map.getLayer('rail-detail-points'))map.setFilter('rail-detail-points',['all',['!', ['in',['get','kind'],['literal',['station','halt']]]],allowed,directlySelectedControl]);
-  if(map.getLayer('rail-station-labels'))map.setFilter('rail-station-labels',['all',['in',['get','kind'],['literal',['station','halt','signal_box','junction','crossing']]],allowed,['any',stationAllowed,directlySelectedControl]]);
+  if(map.getLayer('rail-station-labels'))map.setFilter('rail-station-labels',['all',['any',['in',['get','kind'],['literal',['station','halt','signal_box','junction','crossing']]],['has','display_name']],allowed,['any',stationAllowed,directlySelectedControl]]);
   const areasAllowed=(railPointExclusions||[]).length?['!', ['any',...(railPointExclusions||[]).map(id=>['in',id,['coalesce',['get','associated_station_ids'],['literal',[]]]])]]:['==',['literal',1],1];
-  for(const id of ['rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'])if(map.getLayer(id)){
+  for(const id of ['rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-platform-labels','rail-area-labels'])if(map.getLayer(id)){
     const geometry=id.endsWith('-fill')?['==',['geometry-type'],'Polygon']:['==',['literal',1],1];
     const platform=id.startsWith('rail-platform');
     const assetAllowed=platform?['all',
       ['!', ['in',['get','osm_way_id'],['literal',railAssetSelection.hiddenPlatforms]]],
       ['any',directlySelectedArea,['in',['get','osm_way_id'],['literal',railAssetSelection.platforms]]]]:directlySelectedArea;
-    map.setFilter(id,['all',geometry,areasAllowed,assetAllowed]);
+    map.setFilter(id,['all',geometry,areasAllowed,assetAllowed,...(id.endsWith('-labels')?[['has','display_name']]:[])]);
+    if(id.endsWith('-labels'))map.setLayoutProperty(id,'visibility',visibility.railStations?'visible':'none');
   }
 }
 function refreshSelection(){
@@ -586,7 +627,7 @@ async function init() {
   } catch(error) { vectorAvailable=false; }
   maplibregl.setWorkerCount(2);
   map=new maplibregl.Map({container:'map',center:[105,35],zoom:4,style:standardStyle||rasterStyle('standard'),attributionControl:true,renderWorldCopies:false,
-    pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0});
+    pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0,crossSourceCollisions:false});
   map.on('webglcontextlost',()=>{
     graphicsPaused=true;railController?.abort();clearTimeout(railTimer);++railRequest;roadController?.abort();clearTimeout(roadTimer);++roadRequest;
     document.getElementById('loading').style.display='none';
@@ -598,7 +639,13 @@ async function init() {
   map.on('moveend',updateStaticSources);
   // Keep a selected corridor fully visible when the editor changes map size.
   // User navigation releases this framing instead of snapping back later.
-  map.on('resize',()=>fitFocusedBounds());
+  let lastFrameSize=[map.getCanvas().clientWidth,map.getCanvas().clientHeight],frameResizeTimer;
+  map.on('resize',()=>{
+    const canvas=map.getCanvas(),size=[canvas.clientWidth,canvas.clientHeight];
+    if(Math.abs(size[0]-lastFrameSize[0])<8&&Math.abs(size[1]-lastFrameSize[1])<8)return;
+    lastFrameSize=size;clearTimeout(frameResizeTimer);
+    frameResizeTimer=setTimeout(()=>fitFocusedBounds(),160);
+  });
   map.on('movestart',event=>{if(event.originalEvent)focusedBounds=null;});
   for(const id of ['map-tools','location-panel']){
     const element=document.getElementById(id);
@@ -725,7 +772,8 @@ async function init() {
     setSelectionMode(value){selectionMode=['box','box_switch','box_line','box_station'].includes(value)?value:'click';if(selectionMode.startsWith('box'))map.dragPan.disable();else map.dragPan.enable();map.getCanvas().style.cursor=selectionMode.startsWith('box')?'crosshair':'grab';document.getElementById('selection-box').dataset.mode=selectionMode;},
     clearSelection(){selectedFeatures=[];selectedFeature=null;selectedLayer=null;refreshSelection();publishSelection();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
-    setRailOperatingVehicles(data){const signature=JSON.stringify(data);if(signature===lastRailVehicleSignature)return;lastRailVehicleSignature=signature;config.sources.railVehicles=data;if(!graphicsPaused)map.getSource('railVehicles')?.setData(visibility.railVehicles?data:empty);},
+    setRailDisplayNames,
+    setRailOperatingVehicles(data,clock,playing,options){config.sources.railVehicles=data;receiveVehicles('railVehicles',data,clock,playing,options);},
     setRailVehicleAppearance(value){if(map.getLayer('rail-vehicles')){const size=Math.max(8,Math.min(40,Number(value.size)||14));map.setPaintProperty('rail-vehicles','circle-radius',['/', ['coalesce',['get','display_size'],size],2]);}},
     captureMap(){
       map.once('render',()=>{
@@ -738,7 +786,7 @@ async function init() {
         }catch(error){report('imageCaptured','error');}
       });map.triggerRepaint();
     },
-    setVisibility(key,on){visibility[key]=on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();},
+    setVisibility(key,on){if(visibility[key]===!!on)return;visibility[key]=!!on;applyVisibility();updateStaticSources();if(key==='vehicles')map.getSource('vehicles')?.setData(on?operatingVehicles:empty);if(key==='railVehicles')map.getSource('railVehicles')?.setData(on?config.sources.railVehicles:empty);if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVehicleAppearance();},
     setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();scheduleMetroViewport();},
@@ -753,10 +801,10 @@ async function init() {
     focusChina(){document.getElementById('focus-china').click();},
     focus(lon,lat,zoom=13,title=''){focusedBounds=null;map.flyTo({center:[lon,lat],zoom,duration:700});if(title)document.getElementById('scene-title').textContent=title;},
     fit(bounds,title=''){focusedBounds=bounds;map.resize();fitFocusedBounds(600);if(title)document.getElementById('scene-title').textContent=title;},
-    setOperatingVehicles(data,clock,playing){
+    setOperatingVehicles(data,clock,playing,options){
       operatingMode=true;operatingVehicles=data;operatingClock=clock;running=playing;
       travelled=data.features[0]?.properties.distance_m||0;
-      if(!graphicsPaused)map.getSource('vehicles')?.setData(visibility.vehicles?data:empty);
+      receiveVehicles('vehicles',data,clock,playing,options);
       if(['vehicles','vehicles-symbol'].includes(selectedLayer)&&selectedFeature){selectedFeature=data.features.find(f=>f.properties.vehicle_id===selectedFeature.properties.vehicle_id)||null;refreshSelection();}
       if(followTrain){const vehicle=data.features.find(f=>visibleIds.includes(f.properties.route_relation_id));if(vehicle){trainFollowMoving=true;clearTimeout(trainFollowTimer);map.easeTo({center:vehicle.geometry.coordinates,zoom:Math.max(map.getZoom(),13),duration:240,easing:t=>t});trainFollowTimer=setTimeout(()=>{trainFollowMoving=false;scheduleRailViewport();},500);}}
     },

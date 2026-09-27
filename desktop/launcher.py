@@ -214,6 +214,8 @@ def logo_pixmap():
 class LocalHandler(SimpleHTTPRequestHandler):
     """Serve only the map assets and local GIS files needed by this app."""
 
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -236,7 +238,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
         allowed = (
             (
                 path.startswith("/desktop/assets/")
-                and Path(path).suffix in {".html", ".css", ".js"}
+                and Path(path).suffix in {".html", ".css", ".js", ".mjs"}
             )
             or path
             in {
@@ -376,14 +378,6 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
                 )
-                if query["kind"][0] == "railPoints":
-                    switch_names = self.server.config.get("railSwitchNames", {})
-                    for feature in result["features"]:
-                        props = feature["properties"]
-                        if props.get("kind") == "switch":
-                            renamed = switch_names.get(str(props.get("osm_node_id")))
-                            if renamed:
-                                props["display_name"] = renamed
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2376,6 +2370,8 @@ class Desk(QMainWindow):
         )
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
+        self.rail_catalog_widget.display_names_changed.connect(self.refresh_rail_display_names)
+        self.refresh_rail_display_names()
         self.refresh_switch_names()
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
@@ -2729,6 +2725,17 @@ class Desk(QMainWindow):
             self.archive_metro_lines(_metro_lines, True)
 
     def rename_map_selection(self):
+        if len(self.selected_features) == 1:
+            feature = self.selected_features[0]
+            props = feature.get("properties", {})
+            if (props.get("osm_node_id") is not None and props.get("kind") not in {"station", "halt"}) or feature.get("layer") in {"rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"}:
+                name, ok = QInputDialog.getText(self, "重命名地图对象", "显示名称", text=str(props.get("display_name") or props.get("name") or ""))
+                if ok and name.strip():
+                    if props.get("kind") == "switch":
+                        self.rail_catalog_widget.save_switch_name(props["osm_node_id"], name)
+                    else:
+                        self.rail_catalog_widget.save_feature_name(props, name)
+                return
         if len(self.selected_switch_ids()) == 1 and len(self.selected_features) == 1:
             self.rail_catalog_widget.rename_switch(self.selected_switch_ids()[0])
             return
@@ -2957,13 +2964,21 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.update_count()
 
+    def refresh_rail_display_names(self):
+        from rail_display import display_manifest
+        catalog = self.rail_catalog_widget
+        names = display_manifest(catalog.catalog, catalog.overrides, catalog.way_names)
+        if self.config.get("railDisplayNames") != names:
+            self.config["railDisplayNames"] = names
+            self.map.call("setRailDisplayNames", names)
+
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
             key.removeprefix("switch:node/"): value["display_name"]
             for key, value in self.rail_catalog_widget.overrides.items()
             if key.startswith("switch:node/") and value.get("display_name")
         }
-        self.map.call("reloadRailViewport")
+        self.refresh_rail_display_names()
         selected = getattr(self, "selected_data", {})
         if (hasattr(self, "properties") and selected.get("properties", {}).get("kind") == "switch"):
             self.display_feature(selected)

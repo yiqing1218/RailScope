@@ -31,6 +31,47 @@ def test_search_choice_keeps_station_name_visible(qtbot):
     assert choice.lineEdit().cursorPosition() == 0
 
 
+def test_editing_choice_does_not_reuse_previous_object_id(qtbot):
+    from desktop.corridor_ui import SearchChoice
+    from PySide6.QtCore import Qt
+    choice = SearchChoice(lambda q: [('new', '新站 · 接轨：甲线 / 乙线')], '站点', 'old', '旧站')
+    qtbot.addWidget(choice)
+    choice.show()
+    choice.lineEdit().selectAll()
+    qtbot.keyClick(choice.lineEdit(), Qt.Key.Key_Backspace)
+    assert choice.currentData() is None
+    choice.find_results()
+    choice.select_result('新站')
+    assert choice.currentData() == 'new'
+    assert choice.currentText() == '新站'
+    assert '甲线 / 乙线' in choice.toolTip()
+
+
+def test_point_first_and_line_first_constrain_popup_and_wheel_candidates(qtbot, tmp_path):
+    from desktop.corridor_ui import CorridorSequenceTable
+    tracks = [edge('a', 1, 2, '甲线'), edge('a2', 2, 3, '甲线'),
+              edge('b', 2, 4, '乙线'), edge('c', 3, 5, '丙线')]
+    lib = DiskRailLineLibrary(install(tmp_path, tracks))
+    aliases(lib.path, [('node/mid', '换线站', 100, 2, 1, 'source', 1, 118, 32)])
+    a, b, c = [lib.search_lines(name)[0]['id'] for name in ('甲线', '乙线', '丙线')]
+    table = CorridorSequenceTable(lib)
+    qtbot.addWidget(table)
+    table.set_sequence([])
+    table.assign(0, 0, 1)
+    table.assign(0, 1, a)
+    table.assign(1, 0, 'station:node/mid')
+    right = table.cellWidget(1, 1)
+    right.load_choices()
+    assert {right.itemData(i) for i in range(right.count())} == {a, b}
+    table.assign(1, 0, None)
+    table.assign(1, 1, c)
+    left = table.cellWidget(1, 0)
+    left.load_choices()
+    assert 2 not in {left.itemData(i) for i in range(left.count())}
+    assert all(c in {r['id'] for r in lib.connected_lines(left.itemData(i))}
+               for i in range(left.count()))
+
+
 def test_two_column_rows_line_first_transfer_and_legacy_roundtrip(qtbot, tmp_path):
     from desktop.corridor_ui import CorridorSequenceTable
     tracks = [edge('a', 1, 2, '甲线'), edge('b', 2, 3, '乙线'), edge('c', 2, 4, '丙线')]

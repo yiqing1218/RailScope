@@ -298,6 +298,7 @@ class OperationsEditor(QFrame):
         map_view.bridge.initialized.connect(self.map_ready)
 
     def map_ready(self):
+        self._motion_paths_signature = None
         self.map.call("setVehicleAppearance", self.appearance)
         self.push_positions()
 
@@ -326,6 +327,7 @@ class OperationsEditor(QFrame):
         self.session_label = text_label("已关闭 · 地图浏览模式", "muted", True)
         cl.addWidget(self.session_label)
         self.clock_label = text_label(format_time(self.clock), "metricValue")
+        self.clock_label.setMinimumWidth(145)
         cl.addWidget(self.clock_label)
         self.count_label = text_label("", wrap=True)
         cl.addWidget(self.count_label)
@@ -869,6 +871,15 @@ class OperationsEditor(QFrame):
         if throttled and now - self._last_vehicle_push < 0.25:
             return
         self._last_vehicle_push = now
+        # Route geometry is shared and sent only when the plan changes. The web
+        # map draws intermediate frames without querying/reloading infrastructure.
+        paths = {line.get("corridor_id", key): line["path"] for key, line in self.plan.lines.items() if line.get("path")}
+        path_signature = tuple((key, id(path)) for key, path in paths.items())
+        motion = {"speed": self.speed}
+        if path_signature != getattr(self, "_motion_paths_signature", None):
+            motion["paths"] = {key: {"coordinates": path["coordinates"], "cumulative": path["cumulative"]}
+                               for key, path in paths.items()}
+            self._motion_paths_signature = path_signature
         features = []
         for train, position in (
             self.plan.vehicle_positions(self.clock) if self.enabled else []
@@ -881,6 +892,7 @@ class OperationsEditor(QFrame):
                         "type": "Feature",
                         "properties": {
                             "vehicle_id": train.get("vehicle_id", train["id"]),
+                            "motion_path": line.get("corridor_id", train["line_id"]),
                             "trip_id": train["id"],
                             "name": train["id"] + " · " + line["name"],
                             "line_ref": line["ref"],
@@ -913,6 +925,7 @@ class OperationsEditor(QFrame):
             {"type": "FeatureCollection", "features": features},
             self.clock,
             self.playing,
+            motion,
         )
         self.update_sidebar(len(features))
 
@@ -941,10 +954,9 @@ class OperationsEditor(QFrame):
             if state == self._sidebar_state:
                 return
             self._sidebar_state = state
-            self.clock_label.setText(state[0])
-            self.count_label.setText(state[1])
-            self.play_button.setText(state[2])
-            self.session_label.setText(state[3])
+            for widget, value in zip((self.clock_label, self.count_label, self.play_button, self.session_label), state):
+                if widget.text() != value:
+                    widget.setText(value)
 
     def refresh_diagram(self):
         if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
