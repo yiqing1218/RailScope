@@ -442,7 +442,9 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 positioned = stop.get('extensions', {}).get('railscope.org/track-position')
                 index = node_ids.index(stop["node_id"], 0 if positioned else offset)
             except ValueError as error:
-                raise ValueError("经停/通过节点不在已声明的径路上或站序倒退") from error
+                label = stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('display_name', str(stop['node_id']))
+                reason = '站序倒退：完整通道未包含下一次经过该站的路径' if stop['node_id'] in node_ids else '轨道节点不在完整通道中'
+                raise ValueError(f"车次 {train['id']} 第 {len(stops)+1} 站 {label}：{reason}") from error
             offset = index + 1
             if "station_track_id" in stop:
                 if not isinstance(stop["station_track_id"], str):
@@ -498,7 +500,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             except ImportError:
                 from station_positions import STOP_POSITION_KEY, position_distance
             position = stop.get("extensions", {}).get(STOP_POSITION_KEY)
-            stop_distance = position_distance(train["path"], edge_lookup, position) if position else cumulative[index]
+            stop_distance = position_distance(train["path"], edge_lookup, position, stops[-1]['distance_m'] if stops else -1) if position else cumulative[index]
             if stops and stop_distance <= stops[-1]["distance_m"]:
                 raise ValueError("站内停靠位置不按通道方向排列")
             stations.append(
@@ -638,8 +640,9 @@ def validate_corridors(routes, edges):
             if nodes and nodes[-1] != ids[0]:
                 raise ValueError("通道区间不连续，必须共享真实 OSM 节点")
             nodes.extend(ids if not nodes else ids[1:])
-        if nodes[0] == nodes[-1]:
-            raise ValueError("当前仅支持非循环的单向运行通道")
+        # A complete directed itinerary may return to an earlier node after a
+        # station turnback. Connectivity and per-edge direction above still
+        # apply; cumulative journey distance distinguishes repeated visits.
         try:
             from .station_positions import POSITION_KEY, position_distance
         except ImportError:

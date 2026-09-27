@@ -1474,7 +1474,16 @@ class DiskRailLineLibrary:
                 return self.resolve_station_transfers(sequence, selected, terminal_targets)
         try:
             normalized = self.normalize_sequence(sequence, selected, policy)
-            return normalized, selected.resolve(normalized, policy, selection=selection)
+            path = selected.resolve(normalized, policy, selection=selection)
+            if policy == "auto" and not replay:
+                nodes = [normalized[0]["node_id"]] + [
+                    selected.edges[leg["edge_id"]]["to_node" if leg["direction"] == "forward" else "from_node"]
+                    for leg in path]
+                if len(set(nodes)) < len(nodes):
+                    # Jointly consider other station anchors before choosing a
+                    # turnback. Saved or explicitly directed paths stay intact.
+                    return self.resolve_station_transfers(sequence, selected)
+            return normalized, path
         except ValueError:
             if replay or policy != "auto":
                 raise
@@ -1709,7 +1718,7 @@ class DiskRailLineLibrary:
 
     def describe(self, path):
         sequence, previous = [], None
-        for leg in path:
+        for index, leg in enumerate(path):
             edge = self.edges[leg["edge_id"]]
             key = edge["line_id"]
             a, b = (
@@ -1719,7 +1728,8 @@ class DiskRailLineLibrary:
             )
             if not sequence:
                 sequence.append({"kind": "endpoint", "node_id": a})
-            if previous != key:
+            turnback = index > 0 and path[index-1]['edge_id'] == leg['edge_id'] and path[index-1]['direction'] != leg['direction']
+            if previous != key or turnback:
                 if previous:
                     sequence.append({"kind": "endpoint", "node_id": a})
                 sequence.append({"kind": "line", "line_id": key})

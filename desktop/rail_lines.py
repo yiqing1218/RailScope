@@ -411,10 +411,11 @@ class RailLineLibrary:
         """Replay a saved reference choice without choosing another branch."""
         if not isinstance(path, list) or not path:
             raise ValueError("已保存的参考路径为空，请重新选择端点或线路")
-        cursor, visited = 0, {sequence[0]["node_id"]}
+        cursor = 0
         for index in range(1, len(sequence), 2):
             line = sequence[index]
             start, end = sequence[index - 1]["node_id"], sequence[index + 1]["node_id"]
+            visited = {start}
             node, first = start, cursor
             while cursor < len(path) and node != end:
                 leg = path[cursor]
@@ -433,7 +434,7 @@ class RailLineLibrary:
                         or not traversal_allowed(edge, leg["direction"])):
                     raise ValueError("已保存的参考路径不连续、非运营状态或方向不允许")
                 if b in visited:
-                    raise ValueError("通道组合重复经过端点，当前不支持循环通道")
+                    raise ValueError("本行路径包含回环，请把折返点作为单独一行")
                 visited.add(b)
                 node, cursor = b, cursor + 1
             if node != end or cursor == first:
@@ -537,16 +538,8 @@ class RailLineLibrary:
                     "两个端点之间存在分支 / 多条合法径路；请增加车站、线路所或道岔端点消歧，不自动采用几何最短路"
                 )
             path.extend(reversed(legs))
-        if sequence[0]["node_id"] == sequence[-1]["node_id"]:
-            raise ValueError("当前通道为单向非循环，反向请另建通道")
-        visited = {sequence[0]["node_id"]}
-        for leg in path:
-            edge = self.edges[leg["edge_id"]]
-            a, b = edge_endpoints(edge)
-            end = b if leg["direction"] == "forward" else a
-            if end in visited:
-                raise ValueError("通道组合重复经过端点，当前不支持循环通道")
-            visited.add(end)
+        # Each requested leg is already connected and direction-checked.
+        # Explicit intermediate rows may describe a station turnback.
         return path
 
     def describe(self, path):
@@ -564,7 +557,8 @@ class RailLineLibrary:
             ident = self.edge_lines[edge["id"]]
             if index == 0:
                 sequence.append({"kind": "endpoint", "node_id": a})
-            if ident != previous_line:
+            turnback = index > 0 and path[index-1]['edge_id'] == leg['edge_id'] and path[index-1]['direction'] != leg['direction']
+            if ident != previous_line or turnback:
                 if previous_line is not None:
                     sequence.append({"kind": "endpoint", "node_id": a})
                 sequence.append({"kind": "line", "line_id": ident})

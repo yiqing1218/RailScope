@@ -126,21 +126,30 @@ def route_positions(library, path, endpoints):
         centre=station_center(library,endpoint)
         if not centre: continue
         candidates=[];travelled=0.
-        for leg in path:
+        for path_index, leg in enumerate(path):
             edge=lookup[leg['edge_id']];coords=edge['coordinates']
             length=sum(distance_m(a,b) for a,b in zip(coords,coords[1:]))
             gap,offset,coordinate=project(coords,centre['coordinate'])
             along=offset if leg['direction']=='forward' else length-offset
-            candidates.append((gap,travelled+along,edge,offset,coordinate))
+            candidates.append((gap,travelled+along,edge,offset,coordinate,path_index))
             travelled+=length
-        gap,along,edge,offset,coordinate=min(candidates,key=lambda v:v[:2])
-        if gap>800: continue
-        ids=edge.get('node_ids',[edge['from_node'],edge['to_node']])
-        nearest=min(zip(ids,edge['coordinates']), key=lambda item:distance_m(item[1],coordinate))[0]
-        result.append({**centre,'edge_id':edge['id'],'offset_m':offset,'distance_m':along,
-            'coordinate':coordinate,'node_id':nearest,'gap_m':gap,'version':1,
-            'verification_status':'automatic_reference_not_dispatch_verified','confidence':None,
-            'snapshot':edge.get('snapshot_id') or (snapshot[0] if snapshot else 'unknown')})
+        visits, seen, previous = [], set(), -2
+        for candidate in (c for c in candidates if c[0] <= 800):
+            edge, path_index = candidate[2], candidate[5]
+            if path_index != previous+1 or edge['id'] in seen:
+                visits.append([])
+                seen = set()
+            visits[-1].append(candidate)
+            seen.add(edge['id'])
+            previous = path_index
+        for visit in visits:
+            gap,along,edge,offset,coordinate,path_index=min(visit,key=lambda v:v[:2])
+            ids=edge.get('node_ids',[edge['from_node'],edge['to_node']])
+            nearest=min(zip(ids,edge['coordinates']), key=lambda item:distance_m(item[1],coordinate))[0]
+            result.append({**centre,'edge_id':edge['id'],'offset_m':offset,'distance_m':along,'path_index':path_index,
+                'coordinate':coordinate,'node_id':nearest,'gap_m':gap,'version':1,
+                'verification_status':'automatic_reference_not_dispatch_verified','confidence':None,
+                'snapshot':edge.get('snapshot_id') or (snapshot[0] if snapshot else 'unknown')})
     return sorted(result,key=lambda v:v['distance_m'])
 
 
@@ -162,8 +171,8 @@ def stations_on_path(library, path, edges):
             coord = f['geometry']['coordinates']
             grid.setdefault((floor(coord[0]*20), floor(coord[1]*20)), []).append((source, coord))
         library._station_position_grid = grid
-    result, travelled = {}, 0.
-    for leg in path:
+    result, active, travelled = {}, {}, 0.
+    for path_index, leg in enumerate(path):
         edge = lookup.get(leg['edge_id'])
         if edge is None:
             return []
@@ -194,30 +203,43 @@ def stations_on_path(library, path, edges):
             node = min(zip(edge.get('node_ids', [edge['from_node'], edge['to_node']]), coords),
                        key=lambda pair: distance_m(pair[1], point))[0]
             position = {'station_id': endpoint, 'station_name': library.endpoint_label(endpoint),
+                'path_index': path_index,
                 'edge_id': edge['id'], 'offset_m': offset, 'coordinate': point, 'node_id': node,
                 'distance_m': travelled + (offset if leg['direction']=='forward' else length-offset),
                 'gap_m': gap, 'source': 'station_poi_track_projection', 'version': 1,
                 'verification_status': 'automatic_reference_not_dispatch_verified', 'confidence': None,
                 'snapshot': edge.get('snapshot_id') or str(library.path.stat().st_mtime_ns)}
-            if source not in result or gap < result[source]['gap_m']:
-                result[source] = position
+            previous = active.get(source)
+            if previous and previous[0] == path_index-1 and edge['id'] not in previous[2]:
+                key, seen = previous[1], previous[2]
+            else:
+                key, seen = (source, path_index), set()
+            seen.add(edge['id'])
+            active[source] = (path_index, key, seen)
+            if key not in result or gap < result[key]['gap_m']:
+                result[key] = position
         travelled += length
     return sorted(result.values(), key=lambda p: p['distance_m'])
 
 
-def position_distance(path, lookup, position):
+def position_distance(path, lookup, position, after=-1.):
     """Validate a stable edge offset against this complete directed corridor."""
     from math import isfinite
     offset=position.get('offset_m')
     if type(offset) not in (int,float) or not isfinite(offset):
         raise ValueError('站内轨道偏移无效')
+    occurrence = position.get('path_index')
+    if occurrence is not None and (type(occurrence) is not int or not 0 <= occurrence < len(path)):
+        raise ValueError('停站所引用的通道区间序号无效')
     travelled=0.
-    for leg in path:
+    for index, leg in enumerate(path):
         edge=lookup[leg['edge_id']]
         length=sum(distance_m(a,b) for a,b in zip(edge['coordinates'],edge['coordinates'][1:]))
-        if leg['edge_id']==position.get('edge_id'):
+        if leg['edge_id']==position.get('edge_id') and (occurrence is None or occurrence == index):
             if not 0<=offset<=length:
                 raise ValueError('站内轨道偏移超出物理区间')
-            return travelled+(offset if leg['direction']=='forward' else length-offset)
+            distance = travelled+(offset if leg['direction']=='forward' else length-offset)
+            if distance > after:
+                return distance
         travelled+=length
     raise ValueError('停靠轨道不在完整通道中')

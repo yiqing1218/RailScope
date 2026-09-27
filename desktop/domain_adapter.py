@@ -245,6 +245,7 @@ def _build_repository(graph, payload, registry, identity_db):
                 stop["arrival_s"], stop["departure_s"], station_track_id=track_id,
                 station_route_id=station_route_id,
                 stop_edge_id=stop_edge, stop_offset_m=offset,
+                stop_edge_sequence=position['path_index'] + 1 if 'path_index' in position else None,
             ))
     validate_repository(repo)
     return repo, {key: dict(value) for key, value in bindings.items()}

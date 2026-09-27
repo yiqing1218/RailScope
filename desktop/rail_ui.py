@@ -493,8 +493,9 @@ class RailEditor(OperationsEditor):
                 coords.extend(part if not coords else part[1:])
             positions = route.get("extensions", {}).get(POSITION_KEY, [])
             requested = route.get("extensions", {}).get(RESOLUTION_KEY, {}).get("selection", {}).get("requested_sequence", [])
-            boundaries = [next((p for p in positions if p["station_id"] == entry.get("node_id")), None)
-                          for entry in ([requested[0], requested[-1]] if requested else [])]
+            boundaries = [next((p for p in (positions if i == 0 else positions[::-1])
+                                if p["station_id"] == entry.get("node_id")), None)
+                          for i, entry in enumerate([requested[0], requested[-1]] if requested else [])]
             if len(boundaries) == 2 and any(boundaries):
                 try:
                     from .geometry import distance_m, interpolate

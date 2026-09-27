@@ -112,6 +112,7 @@ class StopTime:
     station_route_id: str | None = None
     stop_edge_id: str | None = None
     stop_offset_m: float | None = None
+    stop_edge_sequence: int | None = None
 
 
 @dataclass(frozen=True)

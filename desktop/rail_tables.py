@@ -82,11 +82,35 @@ def merge_csv(text, payload, choices=None):
         if len(matches) > 1:
             raise ValueError(f'{ident} 匹配多条通道，请填写 route_name（通道名称）：' + '、'.join(r.get('name', r['id']) for r, _ in matches))
         route, stops = matches[0]
+        day, previous_departure = 0, None
         for (line, row), stop in zip(rows, stops):
             arrival, departure = row['arrival'], row['departure']
             arrival = '' if arrival in ('始发','--','-') else arrival
             departure = '' if departure in ('终到','--','-') else departure
-            stop.update(arrival_s=parse_time(arrival or departure), departure_s=parse_time(departure or arrival),
+            a, d = parse_time(arrival or departure), parse_time(departure or arrival)
+            # Ordinary clock times are common in public timetables. A large
+            # overnight rollback advances the service day; small errors stay
+            # errors instead of silently adding a 24-hour stop/run.
+            raw_a, raw_d = a, d
+            if a < 86400:
+                a += day * 86400
+                if previous_departure is not None and a < previous_departure and previous_departure-a > 12*3600:
+                    day += 1
+                    a += 86400
+            else:
+                day = a // 86400
+            if d < 86400:
+                d += day * 86400
+                if d < a and a-d > 12*3600:
+                    day += 1
+                    d += 86400
+            if (a, d) != (raw_a, raw_d):
+                stop.setdefault('extensions', {})['railscope.org/time-normalization'] = {
+                    'source': 'csv_clock_rollover', 'arrival': arrival, 'departure': departure,
+                    'arrival_day': a//86400, 'departure_day': d//86400, 'version': 1,
+                    'verification_status': 'inferred_from_stop_sequence', 'confidence': None}
+            previous_departure = d
+            stop.update(arrival_s=a, departure_s=d,
                         track_change={**{k: row[k] for k in ('from_track','to_track','via_node')}, 'time': row['change_time']})
             if row['platform_id']:
                 if not row['platform_id'].isdigit():
@@ -136,8 +160,10 @@ def export_csv(payload):
                     "train_id": train["id"],
                     "route_id": train["route_id"],
                     "sequence": sequence,
-                    "stop_name": next((c['name'] for c in named_choices.get(train['route_id'], [])
-                                       if c['node_id'] == stop['node_id']), assembly_names.get(stop['node_id'], '')),
+                    "stop_name": (stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('display_name')
+                                  or stop.get('extensions', {}).get('railscope.org/track-position', {}).get('station_name')
+                                  or next((c['name'] for c in named_choices.get(train['route_id'], [])
+                                           if c['node_id'] == stop['node_id']), assembly_names.get(stop['node_id'], ''))),
                     "node_id": stop["node_id"],
                     "arrival": format_time(stop["arrival_s"]),
                     "departure": format_time(stop["departure_s"]),

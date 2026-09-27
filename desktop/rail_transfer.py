@@ -48,7 +48,8 @@ def _paths_from(library, graph, origin, line_id, targets, forbidden, first_edges
             yield node, scores[key], list(reversed(legs))
 
 
-def station_transfer_path(library, sequence, candidates, local_edges, gaps, terminal_targets=None, reference_edges=None):
+def station_transfer_path(library, sequence, candidates, local_edges, gaps, terminal_targets=None, reference_edges=None,
+                          _allow_turnback=False):
     """Route rows jointly using station tracks and bounded real line connectors.
 
     Each row must traverse its requested line or a verified-topology connection
@@ -80,11 +81,12 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps, term
         next_states = {}
         for origin, (score, previous_chunks) in sorted(states.items(), key=lambda value: str(value[0])):
             visited = {origin}
-            for notation, part in previous_chunks:
-                visited.add(notation[0]["node_id"])
-                for leg in part:
-                    edge = library.edges[leg["edge_id"]]
-                    visited.add(edge["to_node"] if leg["direction"] == "forward" else edge["from_node"])
+            if not _allow_turnback:
+                for notation, part in previous_chunks:
+                    visited.add(notation[0]["node_id"])
+                    for leg in part:
+                        edge = library.edges[leg["edge_id"]]
+                        visited.add(edge["to_node"] if leg["direction"] == "forward" else edge["from_node"])
             first_edges = terminal_targets.get(0) if row == 0 else None
             last_edges = terminal_targets.get(row + 1) if row == len(sequence[1::2])-1 else None
             for node, length, row_path in _paths_from(library, graph, origin, line_id, candidates[row + 1], visited, first_edges, last_edges,
@@ -99,6 +101,11 @@ def station_transfer_path(library, sequence, candidates, local_edges, gaps, term
                 next_states[node] = (rank, previous_chunks + [(notation, row_path)])
         states = next_states
         if not states:
+            if not _allow_turnback:
+                # Prefer a through route; only revisit earlier tracks when the
+                # requested waypoint rows cannot otherwise form a full route.
+                return station_transfer_path(library, sequence, candidates, local_edges, gaps,
+                                             terminal_targets, reference_edges, _allow_turnback=True)
             raise ValueError(f"第 {row + 1} 行起终点不连通，未找到经过所选线路的连续换线路径")
     _, chunks = min(states.values(), key=lambda value: value[0])
     normalized, path = [], []

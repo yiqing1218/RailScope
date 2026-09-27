@@ -3,11 +3,11 @@
 from copy import deepcopy
 
 try:
-    from .station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path
+    from .station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path, position_distance
     from .rail_station_directory import source_names
     from .station_search import rail_name_key
 except ImportError:
-    from station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path
+    from station_positions import POSITION_KEY, STOP_POSITION_KEY, stations_on_path, position_distance
     from rail_station_directory import source_names
     from station_search import rail_name_key
 
@@ -28,7 +28,7 @@ def station_choices(payload, edges=(), points=(), library=None):
     result = {}
     for route in payload['routes']:
         ordered = []
-        distances, travelled = {}, 0.
+        distances, node_visits, travelled = {}, {}, 0.
         for leg in route['path']:
             edge = edge_map.get(leg['edge_id'])
             if edge:
@@ -41,12 +41,28 @@ def station_choices(payload, edges=(), points=(), library=None):
                     if index:
                         travelled += distance_m(coords[index-1], coords[index])
                     distances.setdefault(node, travelled)
+                    visits = node_visits.setdefault(node, [])
+                    if not visits or travelled != visits[-1]:
+                        visits.append(travelled)
                 ordered.extend(nodes if not ordered else nodes[1:])
         order = distances or {node: i for i, node in enumerate(ordered)}
-        references = list(route.get('extensions', {}).get(POSITION_KEY, []))
+        references = deepcopy(route.get('extensions', {}).get(POSITION_KEY, []))
         if library is not None and hasattr(library, 'station_directory'):
-            saved = {p['station_id'] for p in references}
-            references.extend(p for p in stations_on_path(library, route['path'], edges) if p['station_id'] not in saved)
+            fresh = stations_on_path(library, route['path'], edges)
+            # Keep saved platform positions, but never discard a later visit
+            # to that same station after a turnback.
+            for saved in references:
+                same = [p for p in fresh if p['station_id'] == saved['station_id'] and abs(p['distance_m']-saved['distance_m']) < 1000]
+                if same:
+                    fresh.remove(min(same, key=lambda p: abs(p['distance_m']-saved['distance_m'])))
+            references.extend(fresh)
+        if all(leg['edge_id'] in edge_map for leg in route['path']):
+            for p in references:
+                occurrences = [i for i, leg in enumerate(route['path']) if leg['edge_id'] == p['edge_id']]
+                if occurrences:
+                    p['path_index'] = min(occurrences, key=lambda i: abs(
+                        position_distance(route['path'], edge_map, {**p, 'path_index': i}) - p['distance_m']))
+                    p['distance_m'] = position_distance(route['path'], edge_map, p)
         preferred = {name_key(p['station_name']) for p in references}
         choices = [{'name': p['station_name'], 'node_id': p['node_id'], 'position': p,
                     'order': p['distance_m']} for p in references]
@@ -95,26 +111,32 @@ def station_choices(payload, edges=(), points=(), library=None):
             value = {'name': name, 'node_id': node, 'order': order.get(node, len(grouped)), 'gap': gap}
             if key not in grouped or gap < grouped[key]['gap']:
                 grouped[key] = value
-        # Duplicate aliases for one physical anchor are one choice; distinct
-        # same-named stations remain ambiguous and require an explicit ID.
-        unique = {(name_key(c['name']), c.get('position', {}).get('station_id', c['node_id'])): c for c in [*grouped.values(), *choices]}
+        # Legacy node-only references also need a choice for every visit.
+        fallback_choices = [{**c, 'order': distance} for c in grouped.values()
+                            for distance in node_visits.get(c['node_id'], [c['order']])]
+        unique = {(name_key(c['name']), c.get('position', {}).get('station_id', c['node_id']), c['order']): c
+                  for c in [*fallback_choices, *choices]}
         result[route['id']] = sorted(unique.values(), key=lambda c: c['order'])
     return result
 
 
 def resolve_stops(rows, choices):
-    result, previous = [], -1
+    # Resolve the whole sequence: later stops can disambiguate an earlier name.
+    candidates = []
     for number, row in rows:
         node = row.get('node_id', '')
         if node and not node.isdigit():
             raise ValueError(f'第 {number} 行节点编号无效')
-        matching = [c for c in choices if (c['node_id'] == int(node) if node else
-                    name_key(c['name']) == name_key(row.get('stop_name', '')))]
-        if node and not matching:
-            # Legacy explicit IDs are verified by compile_rail_plan, including
-            # manually selected control points with no station alias.
-            result.append({'node_id': int(node)})
-            continue
+        name = row.get('stop_name', '')
+        matching = [c for c in choices if name_key(c['name']) == name_key(name)] if name else list(choices)
+        if node:
+            exact = [c for c in matching if str(c['node_id']) == node or
+                     c.get('position', {}).get('station_id') in ('station:node/' + node, 'station:' + node)]
+            if exact:
+                matching = exact
+            elif not name:
+                # Preserve legacy node-only imports; compilation verifies them.
+                matching = [{'node_id': int(node), 'name': node, 'order': None, 'explicit_only': True}]
         label = row.get('stop_name') or node
         if not matching:
             from difflib import get_close_matches
@@ -122,22 +144,56 @@ def resolve_stops(rows, choices):
             nearby = get_close_matches(name_key(label), names, n=3, cutoff=.5)
             hint = ('；可核对：' + '、'.join(names[k] for k in nearby)) if nearby else ''
             raise ValueError(f'第 {number} 行：通道中找不到车站“{label}”' + hint)
-        if node and row.get('stop_name'):
-            matching = [c for c in matching if name_key(c['name']) == name_key(row['stop_name'])]
-            if not matching:
-                raise ValueError(f'第 {number} 行车站名称与节点编号不一致：{label}')
-        if node and matching:
-            matching = [next((c for c in matching if c.get('position')), matching[0])]
-        matching = [c for c in matching if c['order'] > previous]
-        if not matching:
-            raise ValueError(f'第 {number} 行：站序倒退或重复：{label}')
-        if len(matching) != 1:
-            raise ValueError(f'第 {number} 行：通道内有多个同名站“{label}”，请在软件中核对后填写 node_id')
-        chosen = matching[0]
-        previous = chosen['order']
+        unique = {}
+        for choice in matching:
+            identity = choice.get('position', {}).get('station_id', choice['node_id'])
+            key = (identity, choice['order'])
+            canonical = choice.get('canonical_name', choice['name'])
+            score = (int(bool(name) and name_key(canonical) != name_key(name)),
+                     int(not bool(choice.get('position'))))
+            if key not in unique or score < unique[key][0]:
+                unique[key] = (score, choice)
+        candidates.append(list(unique.values()))
+
+    # Keep the best two equal-cost histories per endpoint to detect true
+    # ambiguity without exponential enumeration of repeated visits.
+    states = [((0, 0), [], -1.)]
+    for (number, row), options in zip(rows, candidates):
+        following = []
+        for score, choice in options:
+            histories = []
+            for cost, history, previous in states:
+                distance = choice['order']
+                if distance is None or distance > previous:
+                    histories.append((tuple(a+b for a,b in zip(cost, score)), [*history, choice],
+                                      previous if distance is None else distance))
+            if histories:
+                best = min(h[0] for h in histories)
+                distinct = {}
+                for h in histories:
+                    if h[0] == best:
+                        identity = tuple(c.get('position', {}).get('station_id', c['node_id']) for c in h[1])
+                        distinct.setdefault(identity, h)
+                following.extend(list(distinct.values())[:2])
+        if not following:
+            raise ValueError(f"第 {number} 行：{row.get('stop_name') or row.get('node_id')} 的站序与完整通道不符；折返须包含在通道路径中")
+        states = following
+    best = min(s[0] for s in states)
+    winners = [s for s in states if s[0] == best]
+    def identities(state):
+        return tuple(c.get('position', {}).get('station_id', c['node_id']) for c in state[1])
+    if len({identities(s) for s in winners}) > 1:
+        raise ValueError('仍有多个同名站符合前后站序，请使用当前完整站名或 node_id 指定车站')
+    selected = min(winners, key=lambda s: tuple(c['order'] or 0 for c in s[1]))[1]
+    result = []
+    for (_, row), chosen in zip(rows, selected):
+        if chosen.get('explicit_only'):
+            result.append({'node_id': chosen['node_id']})
+            continue
         stop = {'node_id': chosen['node_id'], 'extensions': {STOP_NAME_KEY: {
             'display_name': chosen.get('canonical_name', chosen['name']), 'input_name': row.get('stop_name', ''),
             'station_key': chosen.get('position', {}).get('station_id'),
+            'input_node_id': row.get('node_id', ''),
             'node_id': chosen['node_id'], 'source': 'corridor_station_name_match',
             'version': 1, 'verification_status': 'matched_alias', 'confidence': None}}}
         if chosen.get('position'):
