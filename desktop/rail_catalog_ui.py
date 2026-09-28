@@ -419,6 +419,9 @@ class RailCatalog(QWidget):
         self.line_masters = {"operating": False, "construction": False}
         self.regions = regions or []
         self.station_records = []
+        # The national directory is paged, so map detail can arrive before a
+        # station row has ever been materialised in the old widget tree.
+        self.station_record_by_id = {}
         self.station_total = 0
         self.station_query = ""
         self.station_masters = {"station": False, "control": False}
@@ -920,7 +923,26 @@ class RailCatalog(QWidget):
 
     def _station_paged_context_menu(self, point):
         index = self.station_browser.indexAt(point)
-        if not index.isValid() or self.station_model._node(index).kind != "facility":
+        if not index.isValid():
+            return
+        node = self.station_model._node(index)
+        if not self.station_browser.selectionModel().isSelected(index):
+            self.station_browser.setCurrentIndex(index)
+        if node.kind == "station":
+            menu = QMenu(self)
+            menu.addAction("编辑名称、目录、类型和接轨线路…",
+                           lambda: self.station_edit_requested.emit(node.object_id))
+            menu.addAction("在地图中定位",
+                           lambda: self._focus_paged_station_item(index))
+            archived = self.overrides.get("station:" + node.object_id, {}).get("archived", False)
+            menu.addAction("取消归档 / 恢复" if archived else "归档",
+                           lambda: self.save_station_changes({node.object_id}, archived=not archived))
+            try:
+                menu.exec(self.station_browser.viewport().mapToGlobal(point))
+            finally:
+                menu.deleteLater()
+            return
+        if node.kind != "facility":
             return
         selected = self.station_browser.selectionModel().selectedRows()
         facilities = {self.station_model._node(row).object_id for row in selected

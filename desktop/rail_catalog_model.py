@@ -265,6 +265,15 @@ class RailDirectoryView(QTreeView):
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
 
+    def mousePressEvent(self, event):
+        # QTreeView does not select a row on a right click on every platform.
+        # Keep the menu target and the selected directory items consistent.
+        if event.button() == Qt.MouseButton.RightButton:
+            index = self.indexAt(event.position().toPoint())
+            if index.isValid() and self.selectionModel() is not None:
+                self.setCurrentIndex(index)
+        super().mousePressEvent(event)
+
     def startDrag(self,actions):
         from PySide6.QtCore import QMimeData
         from PySide6.QtGui import QDrag
