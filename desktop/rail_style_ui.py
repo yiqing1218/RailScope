@@ -30,7 +30,7 @@ except ImportError:
 
 SPEED_STYLE_KEYS = tuple('高速铁路线 · ' + str(speed) + ' km/h' for speed in (350, 250, 200, 160))
 LEGACY_STYLE_TYPES = (TRACK_TYPES[0], *SPEED_STYLE_KEYS, *TRACK_TYPES[1:])
-STYLE_TYPES = tuple(STYLE_SOURCES)
+STYLE_TYPES = tuple(key for key in STYLE_SOURCES if key != 'class.high_speed')
 PATTERNS = {'alternating': '彩白相间', 'solid': '实线', 'dashed': '短虚线', 'long_dash': '长虚线', 'dotted': '点线', 'dash_dot': '点划线'}
 
 ZOOM_CURVE_KEY = "_zoom_width_curve"
@@ -83,9 +83,9 @@ def validate_styles(value):
         value.setdefault(key, dict(value.get('高速铁路线', defaults()['高速铁路线'])))
     for key, legacy in STYLE_SOURCES.items():
         value.setdefault(key, dict(value.get(legacy, defaults()[legacy])))
-    if set(value) != set(STYLE_TYPES) | set(LEGACY_STYLE_TYPES) | {ZOOM_CURVE_KEY}:
+    if set(value) != set(STYLE_SOURCES) | set(LEGACY_STYLE_TYPES) | {ZOOM_CURVE_KEY}:
         raise ValueError("铁路样式必须完整包含所有轨道类型和缩放线宽曲线")
-    for name in (*STYLE_TYPES, *LEGACY_STYLE_TYPES):
+    for name in (*STYLE_SOURCES, *LEGACY_STYLE_TYPES):
         item = value[name]
         if (
             not isinstance(item, dict)
@@ -140,7 +140,7 @@ class RailStyleDialog(QDialog):
     def __init__(self, styles, parent=None):
         super().__init__(parent)
         styles = validate_styles(styles)
-        self._legacy_styles = {key: dict(styles[key]) for key in LEGACY_STYLE_TYPES}
+        self._legacy_styles = {key: dict(styles[key]) for key in (*LEGACY_STYLE_TYPES, 'class.high_speed')}
         self.setWindowTitle("铁路样式 · 轨道类型与视角线宽")
         self.resize(700, 760)
         layout = QVBoxLayout(self)

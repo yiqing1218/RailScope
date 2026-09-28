@@ -74,7 +74,10 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         if props.get('network_edge_id'):
             tags = props.get('way_tags', {})
             from railscope.presentation import source_design_speed
-            speed = entry.get('design_speed_kmh') or source_design_speed(tags)
+            speed = next((overrides[key]['technical_attributes']['design_speed_kmh']
+                          for key in (object_key(props), props.get('catalog_group_id'), entry.get('line_id'), source)
+                          if key in overrides and overrides[key].get('technical_attributes', {}).get('design_speed_kmh')),
+                         None) or entry.get('design_speed_kmh') or source_design_speed(tags)
             if speed:
                 from railscope.presentation import design_speed
                 try:
@@ -112,7 +115,9 @@ def apply_rail_presentation(collection, presentation, overrides=None):
             (object_key(props), props.get('catalog_group_id'), props.get('line_id'))
             if key in overrides and overrides[key].get('track_type')), None)
         if legacy:
-            props['rail_style_key'] = style_key(semantic_record({'track_type': legacy}))
+            props['rail_style_key'] = style_key({
+                **semantic_record({'track_type': legacy}),
+                'design_speed_kmh': props.get('design_speed_kmh')})
     return collection
 
 

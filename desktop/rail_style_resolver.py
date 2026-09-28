@@ -47,8 +47,12 @@ def style_key(facts):
         return 'class.' + category + '.station'
     if facts.get('line_role') in ('connecting_line', 'branch_line'):
         return 'line.' + facts['line_role']
-    if category == 'high_speed' and role == 'main_track':
+    if category == 'high_speed':
         speed = facts.get('design_speed_kmh')
+        if speed in (None, ''):
+            speed = 350
+        elif isinstance(speed, str) and speed.isdigit():
+            speed = int(speed)
         if speed in (350,250,200,160):
             return 'class.high_speed.' + str(speed)
     return 'class.' + category
