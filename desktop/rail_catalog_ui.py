@@ -2739,7 +2739,7 @@ class RailCatalog(QWidget):
         self._refresh_station_items(station_ids)
         self.send_station_visibility()
 
-    def save_overrides(self, changes):
+    def save_overrides(self, changes, object_changes=None):
         """Persist presentation metadata atomically; never write the GIS source."""
         effective = {}
         for key, change in changes.items():
@@ -2762,23 +2762,29 @@ class RailCatalog(QWidget):
                     values[field] = value
             if values:
                 effective[key] = values
-        if not effective:
+        object_changes = object_changes or {}
+        if not effective and not object_changes:
             return
 
         reclassifying = any({"rail_semantics", "station_id", "station_source"} & set(change)
                            for change in effective.values())
         old_facilities = self.station_track_keys() if reclassifying else None
-        self._save_local_overrides(effective)
+        self._save_local_overrides({**effective, **object_changes})
         name_only = all(set(change) <= {"display_name"} for change in effective.values())
-        if name_only and len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and update_directory_labels(
-                self.catalog, effective, self._resolve_directory_record):
-            self.line_model.reset_from_disk()
-            self.line_model.fetchMore()
-            self.facility_model.reset_from_disk()
-            self.facility_model.fetchMore()
-            if hasattr(self, "station_model"):
-                self.station_model.reset_from_disk()
-                self.station_model.fetchMore()
+        presentation_only = name_only and all(
+            set(change) <= {"line_name", "track_type", "source", "verification_status"}
+            for change in object_changes.values())
+        if presentation_only and len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (
+                not effective or update_directory_labels(
+                    self.catalog, effective, self._resolve_directory_record)):
+            if effective:
+                self.line_model.reset_from_disk()
+                self.line_model.fetchMore()
+                self.facility_model.reset_from_disk()
+                self.facility_model.fetchMore()
+                if hasattr(self, "station_model"):
+                    self.station_model.reset_from_disk()
+                    self.station_model.fetchMore()
             self.presentation_changed.emit()
             return
         self.visible = {

@@ -139,12 +139,27 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
-        track = migrate_track_override(overrides.get(yard_track_key(props), {}),
+        yard_key = yard_track_key(props)
+        track = migrate_track_override(overrides.get(yard_key, {}),
             station_name=props.get('station_name', ''), track_role=props.get('track_role', 'unknown'))
         if track.get('station_track_id'):
             props['station_track_id'] = track['station_track_id']
             props['track_number'] = track.get('track_number')
             props['track_name'] = track.get('display_name')
+        if yard_key:
+            object_edit = overrides.get(object_key(props), {})
+            if 'line_name' in object_edit:
+                props['line_name'] = object_edit['line_name']
+            line_name = str(props.get('line_name') or '').strip()
+            if line_name.startswith('未命名'):
+                line_name = ''
+            group_edit = overrides.get(props.get('catalog_group_id'), {})
+            label = (line_name or group_edit.get('display_name') or
+                     props.get('display_name') or track.get('display_name'))
+            if label:
+                props['display_name'] = label
+                props['line_display_name'] = label
+            continue
         node = props.get('osm_node_id')
         keys = [object_key(props), yard_track_key(props)]
         keys += ['object:service_id:' + key for key in props.get('service_alias_ids', [])]

@@ -24,7 +24,7 @@ except ImportError:
 
 class LineMetadataDialog(QDialog):
     def __init__(self, kind, name, path, attributes, track_types=None, track_type="", parent=None,
-                 rail_semantics=None, directory_location=None):
+                 rail_semantics=None, directory_location=None, line_name=""):
         super().__init__(parent)
         self.kind = kind
         self.setWindowTitle(("地铁" if kind == "metro" else "国铁") + "线路信息")
@@ -48,6 +48,14 @@ class LineMetadataDialog(QDialog):
             location.setReadOnly(True)
             general_form.addRow("当前目录", location)
         self.track_type = None
+        self.line_name = None
+        if directory_location is not None:
+            self.line_name = QLineEdit(line_name)
+            general_form.addRow("线路名称", self.line_name)
+            self.track_type = QComboBox()
+            self.track_type.addItems(track_types or ())
+            self.track_type.setCurrentText(track_type)
+            general_form.addRow("轨道类型", self.track_type)
         self.rail_semantics = {}
         self._original_semantics = dict(rail_semantics or {})
         if kind == 'rail':
@@ -116,6 +124,7 @@ class LineMetadataDialog(QDialog):
                 if value.strip()
             ],
             "track_type": self.track_type.currentText() if self.track_type else None,
+            "line_name": self.line_name.text().strip() if self.line_name else None,
             "technical_attributes": normalize_line_attributes(attributes, self.kind),
             "rail_semantics": {key: control.currentData() for key, control in self.rail_semantics.items()
                                if control.currentData() != self._original_semantics.get(key, 'unknown')},

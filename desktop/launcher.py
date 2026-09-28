@@ -3366,9 +3366,10 @@ class Desk(QMainWindow):
         rail_group = props.get("catalog_group_id")
         if rail_group in self.rail_catalog_widget.catalog:
             catalog_meta = self.rail_catalog_widget.meta(rail_group)
+            object_edit = self.rail_catalog_widget.overrides.get(object_key(props), {})
             props["display_name"] = (props.get('display_name') if yard_track_key(props) and props.get('display_name')
                                      else self.rail_catalog_widget.display_name(rail_group))
-            props["track_type"] = catalog_meta.get(
+            props["track_type"] = object_edit.get("track_type") or catalog_meta.get(
                 "track_type", props.get("track_type", "未确认类型")
             )
             props["folder_path"] = list(self.rail_catalog_widget.effective_directory_path(rail_group))
@@ -3681,6 +3682,11 @@ class Desk(QMainWindow):
             if not rail_groups:
                 return
             primary = self.rail_catalog_widget.meta(rail_groups[0])
+            facility_edit = rail_groups[0] in self.rail_catalog_widget.station_track_keys()
+            selected_object = object_key(props) if facility_edit else None
+            object_edit = self.rail_catalog_widget.overrides.get(selected_object, {})
+            current_line_name = str(object_edit.get("line_name", props.get("line_name")) or "")
+            current_track_type = object_edit.get("track_type") or props.get("track_type") or primary.get("track_type", "未确认类型")
             current_path = list(self.rail_catalog_widget.parents(rail_groups[0]))
             display_name = self.rail_catalog_widget.display_name(rail_groups[0])
             attributes = source_line_attributes(
@@ -3694,11 +3700,12 @@ class Desk(QMainWindow):
                 current_path,
                 attributes,
                 TRACK_TYPES,
-                primary.get("track_type", "未确认类型"),
+                current_track_type,
                 self,
                 rail_semantics=primary,
                 directory_location=(self.rail_catalog_widget.effective_directory_path(rail_groups[0])
-                                    if rail_groups[0] in self.rail_catalog_widget.station_track_keys() else None),
+                                    if facility_edit else None),
+                line_name=current_line_name,
             )
             from rail_relationship_ui import RelationshipSelector
             from rail_relationships import line_relationships, relationship_changes
@@ -3793,7 +3800,7 @@ class Desk(QMainWindow):
                                                  'verification_status': 'user_verified'}
                 if value["display_name"] != display_name:
                     changed["display_name"] = value["display_name"]
-                if rail_groups[0] not in self.rail_catalog_widget.station_track_keys() and value["folder_path"] != list(current_path):
+                if not facility_edit and value["folder_path"] != list(current_path):
                     changed["folder_path"] = value["folder_path"]
                 if value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
@@ -3807,6 +3814,17 @@ class Desk(QMainWindow):
                     key: {**changed, **(station_track_sources if key.startswith('ST-') else {})}
                     for key in rail_groups
                 }
+                object_changes = {}
+                if facility_edit and selected_object:
+                    object_values = {}
+                    if value["line_name"] != current_line_name:
+                        object_values["line_name"] = value["line_name"]
+                    if value["track_type"] != current_track_type:
+                        object_values["track_type"] = value["track_type"]
+                    if object_values:
+                        object_changes[selected_object] = {
+                            **object_values, "source": "manual",
+                            "verification_status": "user_verified"}
                 line_semantics_changes = {}
                 if value.get('rail_semantics'):
                     for key in rail_groups:
@@ -3816,17 +3834,18 @@ class Desk(QMainWindow):
                 if relationship_updates:
                     for key, values in changes.items():
                         relationship_updates.setdefault(key, {}).update(values)
-                    self.rail_catalog_widget._save_local_overrides({**relationship_updates, **line_semantics_changes})
+                    self.rail_catalog_widget._save_local_overrides({**relationship_updates, **line_semantics_changes,
+                                                                    **object_changes})
                     self.rail_catalog_widget.metadata_changed.emit()
                     self.rail_catalog_widget._refresh_station_items({key.removeprefix('station:') for key in relationship_updates if key.startswith('station:')})
                     self.rail_catalog_widget.populate()
                     self.rail_catalog_widget.send_visibility(False)
-                elif changed or station_track_sources:
-                    self.rail_catalog_widget.save_overrides(changes)
+                elif changed or station_track_sources or object_changes:
+                    self.rail_catalog_widget.save_overrides(changes, object_changes)
                     if line_semantics_changes:
                         self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
                         self.rail_catalog_widget.metadata_changed.emit()
-                if "display_name" in changed:
+                if "display_name" in changed and not facility_edit:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
                             "display_name"
