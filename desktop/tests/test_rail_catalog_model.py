@@ -268,3 +268,22 @@ def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_pat
     index = widget.line_model.reveal_catalog_id("RL-699")
     assert not (widget.line_model.flags(index) & Qt.ItemFlag.ItemIsUserCheckable)
     assert source.read_bytes() == original
+
+
+def test_national_master_uses_compact_facility_filter(qtbot, tmp_path):
+    records = {f"RL-{i}": _record(i, facility_only=i % 2 == 0) for i in range(700)}
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    map_view = MapStub()
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", map_view)
+    qtbot.addWidget(widget)
+
+    widget.set_line_master("operating", True)
+    assert ("setRailFacilityMode", "lines", []) in map_view.calls
+    assert ("setRailSelection", None, None) in map_view.calls
+    assert widget.line_model.all_visible
+    assert not widget.facility_model.all_visible
+
+    widget.set_station_track_master(True)
+    assert ("setRailFacilityMode", "all", []) in map_view.calls
+    assert widget.facility_model.all_visible

@@ -6,10 +6,9 @@ from pathlib import Path
 
 DEFAULT = {"features": 6000, "bytes": 8 * 1024 * 1024,
            "vertices": 100000, "feature_bytes": 1024 * 1024}
-HIGH = {"features": 30000, "bytes": 64 * 1024 * 1024,
-        "vertices": 1000000, "feature_bytes": 8 * 1024 * 1024}
-UNLIMITED = dict.fromkeys(DEFAULT)
-PRESETS = {"default": DEFAULT, "high": HIGH, "unlimited": UNLIMITED}
+HIGH = {"features": 12000, "bytes": 16 * 1024 * 1024,
+        "vertices": 250000, "feature_bytes": 2 * 1024 * 1024}
+PRESETS = {"default": DEFAULT, "high": HIGH}
 
 
 def normalize(value):
@@ -19,9 +18,13 @@ def normalize(value):
     result = {}
     for key, default in DEFAULT.items():
         item = value.get(key, default)
-        if item is not None and (type(item) is not int or item < 1):
+        # Old workspaces could save null for every limit. Never pass an
+        # unbounded national query into the WebView process.
+        if item is None:
+            item = HIGH[key]
+        if type(item) is not int or item < 1:
             return DEFAULT.copy()
-        result[key] = item
+        result[key] = min(item, HIGH[key])
     return result
 
 

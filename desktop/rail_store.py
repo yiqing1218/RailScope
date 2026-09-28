@@ -9,9 +9,9 @@ from uuid import uuid4
 from threading import BoundedSemaphore
 from railscope.rail_semantics import edge_semantics
 try:
-    from .viewport_settings import DEFAULT, normalize
+    from .viewport_settings import DEFAULT, HIGH, normalize
 except ImportError:
-    from viewport_settings import DEFAULT, normalize
+    from viewport_settings import DEFAULT, HIGH, normalize
 
 try:
     from .rail_categories import track_type as classify_track_type
@@ -329,7 +329,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     selection = selection if kind == "rail" and isinstance(selection, dict) else {}
     selected_values = {}
-    for name in ("sections", "ways", "groups"):
+    for name in ("sections", "ways", "groups", "facility_groups"):
         values = selection.get(name, [])
         if not isinstance(values, list) or len(values) > 100000:
             raise ValueError("线路选择无效")
@@ -339,16 +339,20 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     excluded = selection.get("exclude", False)
     if type(excluded) is not bool:
         raise ValueError("线路排除选项无效")
-    selected = any(selected_values.values())
+    selected = any(selected_values[name] for name in ("sections", "ways", "groups"))
+    explicit = selected or bool(selected_values["facility_groups"])
+    facility_mode = selection.get("facility", "all")
+    if kind == "rail" and facility_mode not in ("all", "lines", "facilities"):
+        raise ValueError("站场轨道选择无效")
     budget = normalize(limits) if limits is not None else DEFAULT
     feature_limit = budget["features"]
     byte_limit = budget["bytes"]
     vertex_limit = budget["vertices"]
     feature_byte_limit = budget["feature_bytes"]
-    if selected:
-        feature_limit = feature_limit * 2 if feature_limit is not None else None
-        byte_limit = byte_limit * 4 if byte_limit is not None else None
-        vertex_limit = vertex_limit * 10 if vertex_limit is not None else None
+    if explicit:
+        feature_limit = min(feature_limit * 2, HIGH["features"])
+        byte_limit = min(byte_limit * 4, HIGH["bytes"])
+        vertex_limit = min(vertex_limit * 10, HIGH["vertices"])
     # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
     if not _viewport_gate.acquire(blocking=False):
         return {"type": "FeatureCollection", "features": [], "busy": True}
@@ -361,6 +365,26 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            if kind == "rail" and facility_mode != "all":
+                catalog_path = Path(directory) / "rail_catalog.sqlite"
+                if not catalog_path.exists():
+                    raise ValueError("铁路目录索引未就绪")
+                db.execute("ATTACH DATABASE ? AS catalog_visibility",
+                           (catalog_path.resolve().as_uri() + "?mode=ro",))
+                member = ("EXISTS (SELECT 1 FROM catalog_visibility.rail_directory_members m "
+                          "JOIN catalog_visibility.rail_directory_nodes d ON d.id=m.node_id "
+                          "WHERE m.catalog_id=json_extract(f.data,'$.properties.catalog_group_id') "
+                          "AND d.view='facilities')")
+                exceptions = selected_values["facility_groups"]
+                extra = ""
+                if exceptions:
+                    db.execute("CREATE TEMP TABLE facility_exceptions(group_id TEXT PRIMARY KEY)")
+                    db.executemany("INSERT OR IGNORE INTO facility_exceptions VALUES(?)",
+                                   ((str(group),) for group in exceptions))
+                    extra = (" OR json_extract(f.data,'$.properties.catalog_group_id') "
+                             "IN (SELECT group_id FROM facility_exceptions)")
+                clauses.append("(NOT " + member + extra + ")" if facility_mode == "lines"
+                               else "(" + member + extra + ")")
             group_index = bool(selected_values["groups"]) and db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rail_feature_groups'"
             ).fetchone() is not None
@@ -407,7 +431,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                         parameters.extend(values)
                 predicate = "(" + " OR ".join(selectors) + ")"
                 clauses.append("NOT coalesce(" + predicate + ",0)" if excluded else predicate)
-            else:
+            elif not explicit:
                 clauses.append('(? >= 10 OR f.service="main")')
                 parameters.append(zoom)
             parameters.append(feature_limit + 1 if feature_limit is not None else -1)

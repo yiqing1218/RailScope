@@ -862,17 +862,31 @@ class RailCatalog(QWidget):
         self._sync_paged_visibility()
 
     def _sync_paged_visibility(self):
-        for name in ("line_model", "facility_model"):
-            model = getattr(self, name, None)
-            if model is not None:
-                model.set_visibility(self.visible, self.all_visible, self.excluded)
+        facilities = self.station_track_keys()
+        line_model = getattr(self, "line_model", None)
+        if line_model is not None:
+            line_model.set_visibility(self.visible - facilities, self.all_visible,
+                                      self.excluded - facilities)
+        facility_model = getattr(self, "facility_model", None)
+        if facility_model is not None:
+            shown, hidden, master = self._facility_visibility_state(facilities)
+            facility_model.set_visibility(shown, master, hidden)
         self._sync_paged_station_visibility()
+
+    def _facility_visibility_state(self, facilities=None):
+        facilities = self.station_track_keys() if facilities is None else facilities
+        if self.all_visible:
+            return (set(), self.excluded & facilities, True) if self.station_track_master else (
+                facilities - self.excluded, set(), False)
+        return (set(), facilities - self.visible, True) if self.station_track_master else (
+            self.visible & facilities, set(), False)
 
     def _sync_paged_station_visibility(self):
         model = getattr(self, "station_model", None)
         if model is not None:
+            shown, hidden, master = self._facility_visibility_state()
             model.visible_state(self.station_masters["station"], self.station_direct_visible,
-                                self.station_excluded, self.all_visible, self.visible, self.excluded)
+                                self.station_excluded, master, shown, hidden)
 
     def _toggle_paged_station_node(self, node, on):
         station_ids, facilities = self.station_model.ids_below(node)
@@ -1318,7 +1332,9 @@ class RailCatalog(QWidget):
         self.toggle_group(keys, on)
 
     def _sync_folder_switches(self):
-        if not isinstance(self.catalog, RailCatalogIndex):
+        # The national view uses RailDirectoryModel, not the retired
+        # directory_paths table. Its widget tree has no folder controls.
+        if not getattr(self, "groups", None) or not isinstance(self.catalog, RailCatalogIndex):
             return
         selected = self.catalog.selected_folder_counts(self.excluded if self.all_visible else self.visible)
         for path, item in getattr(self, "groups", {}).items():
@@ -3259,8 +3275,9 @@ class RailCatalog(QWidget):
         if not hasattr(self, "_source_construction_keys"):
             self._source_construction_keys = {key for key, record in self.catalog.items() if record.get("construction")}
         construction = set(self._source_construction_keys)
+        catalog_keys = set(self.catalog)
         for key, custom in self.overrides.items():
-            if key in self.catalog:
+            if key in catalog_keys:
                 if custom.get("archived") or custom.get("construction") is False:
                     construction.discard(key)
                 elif custom.get("construction"):
@@ -3353,6 +3370,16 @@ class RailCatalog(QWidget):
         }
         if self.all_visible:
             hidden = self.excluded | archived
+            facilities = self.station_track_keys()
+            if not self.station_track_master:
+                shown_facilities = facilities - hidden
+                self.map.call("setRailFacilityMode", "lines", sorted(
+                    self.catalog[key].get("catalog_group_id", key)
+                    for key in shown_facilities
+                ))
+                hidden -= facilities
+            else:
+                self.map.call("setRailFacilityMode", "all", [])
             if not hidden:
                 self.map.call("setRailSelection", None, None)
             else:
@@ -3361,6 +3388,23 @@ class RailCatalog(QWidget):
                 self.enabled_requested.emit()
             self.map.call("setRailLineSelection", None, sorted({self.meta(key).get('line_id') for key in hidden if self.meta(key).get('line_id')}))
             return
+        if self.station_track_master:
+            facilities = self.station_track_keys()
+            shown_lines = self.visible - facilities
+            hidden_facilities = facilities - self.visible
+            self.map.call("setRailFacilityMode", "facilities", sorted(
+                self.catalog[key].get("catalog_group_id", key)
+                for key in shown_lines
+            ))
+            if hidden_facilities:
+                self._send_catalog_filter(hidden_facilities, "setRailExclusions")
+            else:
+                self.map.call("setRailSelection", None, None)
+            self.map.call("setRailLineSelection", None)
+            if request_enable:
+                self.enabled_requested.emit()
+            return
+        self.map.call("setRailFacilityMode", "all", [])
         active_count = len(self.catalog) - len(archived)
         if active_count and len(self.visible) == active_count:
             # Null removes the MapLibre filter. Sending hundreds of thousands

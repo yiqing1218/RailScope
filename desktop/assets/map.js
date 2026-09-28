@@ -210,6 +210,7 @@ async function updateMetroViewport(){
   }
 }
 let railWays=null,railSections=null,railGroups=null,railExclude=false,railPointExclusions=null,railPointIncludes=null,railControlPointIncludes=null,railLineIds=null;
+let railFacilityMode='all',railFacilityGroups=[];
 let railAssetSelection={platforms:[],hiddenPlatforms:[],switches:[],hiddenSwitches:[]};
 function railSourceVisible(kind){
   const zoom=map.getZoom();
@@ -302,6 +303,8 @@ async function updateRailViewport(){
       const params=new URLSearchParams({kind,bbox,zoom:String(map.getZoom())});
       if(kind==='rail'){
         params.set('exclude',String(railExclude));
+        params.set('facility',railFacilityMode);
+        if(railFacilityGroups.length)params.set('facility_groups',JSON.stringify(railFacilityGroups));
         params.set('states',JSON.stringify([...(visibility.rail||visibility.railStationTracks?['operating','unknown']:[]),...(visibility.railConstruction?['construction','planned','disused']:[])]));
         if((railSections||[]).length)params.set('sections',JSON.stringify(railSections));
         if((railWays||[]).length)params.set('ways',JSON.stringify(railWays));
@@ -788,6 +791,7 @@ async function init() {
     setRoadRoutes(keys){roadVisibleRoutes=Array.isArray(keys)?keys:null;scheduleRoadViewport();},
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();refreshSelection();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();refreshSelection();scheduleRailViewport();},
+    setRailFacilityMode(mode,groups=[]){railFacilityMode=['all','lines','facilities'].includes(mode)?mode:'all';railFacilityGroups=Array.isArray(groups)?groups:[];scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRoadStyles(value){config.roadStyles=value;applyRoadStyles();},
     setRailPointStyles(value){config.railPointStyles=value;applyRailPointStyles();applyLineLabelVisibility();},

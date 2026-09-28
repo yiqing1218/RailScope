@@ -215,13 +215,13 @@ python -m desktop.audit_corridor --start 仙林 --line 仙宁线 --end 南京南
 python -m pip install -e "./backend[dev]" -r desktop/requirements.txt pytest-qt
 $env:PYTHONPATH = "$PWD\desktop;$PWD\backend;$PWD"
 $env:QT_QPA_PLATFORM = "offscreen"
-python -m pytest backend/tests desktop/tests -q --basetemp .pytest-work/full
+python -m pytest backend/tests desktop/tests -q --basetemp .pytest-work/core
 ```
 
-日常修改铁路目录或地图显示时，先运行针对性的快速测试（约 45 项）；跨领域改动再运行上面的全量回归：
+测试集精简为 100 项。日常修改铁路地图时先运行相关测试；跨领域改动再运行上面的完整精简集：
 
 ```powershell
-python -m pytest -q --basetemp .pytest-work/rail-quick desktop/tests/test_rail_catalog_model.py desktop/tests/test_rail_categories.py desktop/tests/test_entity_presentation.py desktop/tests/test_rail_catalog_focus.py desktop/tests/test_station_identity.py desktop/tests/test_station_track_positions.py
+python -m pytest -q --basetemp .pytest-work/rail-quick desktop/tests/test_rail.py desktop/tests/test_rail_catalog_model.py desktop/tests/test_map_transport.py
 ```
 
 地图脚本语法检查（需要 Node.js）：

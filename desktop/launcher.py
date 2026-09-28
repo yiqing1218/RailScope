@@ -365,13 +365,14 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
                 query = self.request_query()
                 selection = {}
-                for query_name in ("sections", "ways", "groups", "states"):
+                for query_name in ("sections", "ways", "groups", "states", "facility_groups"):
                     if query_name in query:
                         value = json.loads(query[query_name][0])
                         if not isinstance(value, list):
                             raise ValueError("线路选择无效")
                         selection[query_name] = value
                 selection["exclude"] = query.get("exclude", ["false"])[0] == "true"
+                selection["facility"] = query.get("facility", ["all"])[0]
                 result = viewport(
                     active_rail_directory(ROOT),
                     query["kind"][0],
@@ -1239,12 +1240,11 @@ class Desk(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("地图元素加载上限")
         form = QFormLayout(dialog)
-        form.addRow(text_label("按当前地图范围加载。无上限模式会使用更多内存。", wrap=True))
+        form.addRow(text_label("按当前地图范围加载；为避免卡顿和崩溃，所有配置均受安全上限约束。", wrap=True))
         preset = QComboBox()
         preset.addItem("默认", "default")
         preset.addItem("高内存电脑", "high")
         preset.addItem("自定义", "custom")
-        preset.addItem("无上限", "unlimited")
         fields = {}
         for key, label, divisor in (
             ("features", "元素数 / 图层", 1),
@@ -3119,7 +3119,11 @@ class Desk(QMainWindow):
             control.blockSignals(True)
             control.setChecked(on)
             control.blockSignals(False)
-        self.map.call("setVisibility", key, on)
+        # Install the compact catalog filter before enabling a national rail
+        # layer, so the WebView never requests an unfiltered first frame.
+        defer_visibility = bool(on) and key in ("rail", "railConstruction", "railStationTracks")
+        if not defer_visibility:
+            self.map.call("setVisibility", key, on)
         if key == "metro":
             operating = {route["osm_relation_id"] for route in self.catalog}
             if on and not (self.visible_lines & operating):
@@ -3155,6 +3159,8 @@ class Desk(QMainWindow):
             self.road_catalog_widget.set_all(on, construction=key == 'roadConstruction')
         elif key == 'roadServices':
             self.road_catalog_widget.set_services_all(on)
+        if defer_visibility:
+            self.map.call("setVisibility", key, on)
 
     def set_all_lines(self, on):
         self.visible_lines = (
