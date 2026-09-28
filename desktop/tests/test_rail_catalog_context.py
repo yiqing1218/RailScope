@@ -627,8 +627,9 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     observed = []
 
     def exec_dialog(dialog):
-        observed.append((dialog.name.text(), dialog.rail_semantics["railway_class"].currentData(),
-                         dialog.rail_semantics["line_role"].currentData(),
+        observed.append((dialog.name.text(),
+                         dialog.rail_semantics.get("railway_class"),
+                         dialog.rail_semantics.get("line_role"),
                          dialog.rail_semantics["track_role"].currentData()))
         if len(observed) == 2:
             return QDialog.DialogCode.Rejected
@@ -643,7 +644,9 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     feature = {"layer": "rail", "properties": {"catalog_group_id": "RL-main"}}
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
-    assert observed[1] == ("甲线新名", "freight", "branch_line", "arrival_departure_track")
+    assert observed[1] == ("甲线新名", None, None, "arrival_departure_track")
+    assert widget.meta("RL-main")["railway_class"] == "freight"
+    assert widget.meta("RL-main")["line_role"] == "branch_line"
 
 
 def test_station_tracks_have_separate_master_and_follow_station(qtbot, tmp_path, monkeypatch):

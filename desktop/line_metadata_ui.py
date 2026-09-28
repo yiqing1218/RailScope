@@ -24,7 +24,7 @@ except ImportError:
 
 class LineMetadataDialog(QDialog):
     def __init__(self, kind, name, path, attributes, track_types=None, track_type="", parent=None,
-                 rail_semantics=None):
+                 rail_semantics=None, directory_location=None):
         super().__init__(parent)
         self.kind = kind
         self.setWindowTitle(("地铁" if kind == "metro" else "国铁") + "线路信息")
@@ -39,9 +39,14 @@ class LineMetadataDialog(QDialog):
         self.city = QLineEdit(path[1] if len(path) > 1 else "")
         self.folder = QLineEdit(path[2] if len(path) > 2 else "")
         general_form.addRow("显示名称", self.name)
-        general_form.addRow("一级目录", self.province)
-        general_form.addRow("二级目录", self.city)
-        general_form.addRow("线路 / 分类目录", self.folder)
+        if directory_location is None:
+            general_form.addRow("一级目录", self.province)
+            general_form.addRow("二级目录", self.city)
+            general_form.addRow("线路 / 分类目录", self.folder)
+        else:
+            location = QLineEdit(" / ".join(directory_location))
+            location.setReadOnly(True)
+            general_form.addRow("当前目录", location)
         self.track_type = None
         self.rail_semantics = {}
         self._original_semantics = dict(rail_semantics or {})
@@ -49,6 +54,8 @@ class LineMetadataDialog(QDialog):
             for key, title, labels in (('railway_class','铁路类别',CLASS_LABELS),
                                        ('line_role','线路网络角色',LINE_ROLE_LABELS),
                                        ('track_role','物理轨道用途',ROLE_LABELS)):
+                if directory_location is not None and key != 'track_role':
+                    continue
                 control = QComboBox()
                 for ident, label in labels.items():
                     control.addItem(label, ident)

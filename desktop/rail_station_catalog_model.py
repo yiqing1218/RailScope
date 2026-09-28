@@ -28,8 +28,9 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
     source = directory / "rail_lines.sqlite"
     if not source.exists():
         return
-    station_edits = {k: v for k, v in overrides.items()
-                     if k.startswith("station:") and any(field in v for field in ("display_name", "folder_path", "archived"))}
+    station_edits = {k: {field: v[field] for field in ("folder_path", "archived") if field in v}
+                     for k, v in overrides.items()
+                     if k.startswith("station:") and any(field in v for field in ("folder_path", "archived"))}
     facility_edits = {k: {field: v[field] for field in ("station_id", "station_assignment") if field in v}
                       for k, v in overrides.items() if "station_id" in v or "station_assignment" in v}
     with closing(sqlite3.connect(catalog_path)) as db:
@@ -151,6 +152,20 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
         db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)", (signature,))
         db.commit()
         return True
+
+
+def update_station_label(catalog_path, station_id, label):
+    with closing(sqlite3.connect(catalog_path)) as db:
+        row = db.execute("SELECT path FROM rail_station_nodes WHERE id=?",
+                         ("station:" + station_id,)).fetchone()
+        if row is None:
+            return False
+        path = json.loads(row[0])
+        db.execute("UPDATE rail_station_nodes SET label=?,searchable=? WHERE id=?",
+                   (label, (label + " " + station_id + " " + " ".join(path[1:-1])).casefold(),
+                    "station:" + station_id))
+        db.commit()
+    return True
 
 
 class StationCatalogModel(SqliteDirectoryModel):

@@ -2561,6 +2561,8 @@ class Desk(QMainWindow):
         )
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_map_names)
+        self.rail_catalog_widget.presentation_changed.connect(self.refresh_catalog_presentation)
+        self.rail_catalog_widget.station_presentation_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
         self.refresh_switch_names()
         self.refresh_map_names()
@@ -3208,6 +3210,15 @@ class Desk(QMainWindow):
             apply_rail_presentation({'features': [selected]}, self.config['railLinePresentation'],
                                     self.config['railDisplayOverrides'])
 
+    def refresh_catalog_presentation(self):
+        """Refresh map labels after an override edit without rebuilding line topology."""
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        self.map.call('reloadRailViewport')
+        selected = getattr(self, 'selected_data', {})
+        if selected:
+            apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
+                        self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
+
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
             key.removeprefix("switch:node/"): value["display_name"]
@@ -3360,7 +3371,7 @@ class Desk(QMainWindow):
             props["track_type"] = catalog_meta.get(
                 "track_type", props.get("track_type", "未确认类型")
             )
-            props["folder_path"] = list(self.rail_catalog_widget.parents(rail_group))
+            props["folder_path"] = list(self.rail_catalog_widget.effective_directory_path(rail_group))
             props.update(
                 source_line_attributes(
                     props,
@@ -3686,6 +3697,8 @@ class Desk(QMainWindow):
                 primary.get("track_type", "未确认类型"),
                 self,
                 rail_semantics=primary,
+                directory_location=(self.rail_catalog_widget.effective_directory_path(rail_groups[0])
+                                    if rail_groups[0] in self.rail_catalog_widget.station_track_keys() else None),
             )
             from rail_relationship_ui import RelationshipSelector
             from rail_relationships import line_relationships, relationship_changes
@@ -3780,7 +3793,7 @@ class Desk(QMainWindow):
                                                  'verification_status': 'user_verified'}
                 if value["display_name"] != display_name:
                     changed["display_name"] = value["display_name"]
-                if value["folder_path"] != list(current_path):
+                if rail_groups[0] not in self.rail_catalog_widget.station_track_keys() and value["folder_path"] != list(current_path):
                     changed["folder_path"] = value["folder_path"]
                 if value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
@@ -3969,10 +3982,15 @@ class Desk(QMainWindow):
                     city.setText(current[1])
                     folder.setText(current[2])
         elif rail_group in self.rail_catalog_widget.catalog:
-            current = self.rail_catalog_widget.parents(rail_group)
+            facility = rail_group in self.rail_catalog_widget.station_track_keys()
+            current = self.rail_catalog_widget.effective_directory_path(rail_group)
             province.setText(current[0] if current else "全国铁路线")
             city.setText(current[1] if len(current) > 1 else "")
-            folder.setText(current[2] if len(current) > 2 else "")
+            folder.setText(" / ".join(current[2:]) if facility else
+                           current[2] if len(current) > 2 else "")
+            if facility:
+                for control in (province, city, folder):
+                    control.setReadOnly(True)
             from railscope.rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
             from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
             current_facts = self.rail_catalog_widget.meta(rail_group)
@@ -3982,6 +4000,8 @@ class Desk(QMainWindow):
                 ('line_role', '线路网络角色', LINE_ROLE_LABELS, LINE_ROLES),
                 ('track_role', '此物理轨道用途', ROLE_LABELS, TRACK_ROLES),
             ):
+                if facility and key != 'track_role':
+                    continue
                 if key == 'track_role' and not props.get('network_edge_id'):
                     continue
                 control = QComboBox()
@@ -4088,7 +4108,9 @@ class Desk(QMainWindow):
                         if control.currentData() != current_facts.get(key, 'unknown')}
                     current_override = self.rail_catalog_widget.overrides.get(rail_group, {}).get('rail_semantics', {})
                     group_facts = {key: value for key, value in semantic_change.items() if key != 'track_role'}
-                    changes = {rail_group: {'display_name': display_name, 'folder_path': path}}
+                    changes = {rail_group: {'display_name': display_name}}
+                    if rail_group not in self.rail_catalog_widget.station_track_keys():
+                        changes[rail_group]['folder_path'] = path
                     if group_facts:
                         changes[rail_group]['rail_semantics'] = {**current_override, **group_facts,
                             'verification_status': 'user_verified', 'source': 'workspace_override'}
@@ -4133,7 +4155,9 @@ class Desk(QMainWindow):
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")
-                self.refresh_map_names()
+                if not (rail_station_record or rail_group in self.rail_catalog_widget.catalog
+                        or ((rail_node is not None or rail_station_id is not None) and record)):
+                    self.refresh_map_names()
                 self.display_feature(feature)
             except (ValueError, OSError) as error:
                 QMessageBox.warning(dialog, "目录修改未保存", str(error))

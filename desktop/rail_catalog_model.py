@@ -21,7 +21,8 @@ except ImportError:
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 6
+PRESENTATION_VERSION = 8
+LABEL_ONLY_FIELDS = {"display_name"}
 
 
 def _json(value):
@@ -63,7 +64,12 @@ def facility_path(record):
 
 def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
     """Stream records into a rebuildable SQLite cache, without Qt row objects."""
-    signature = hashlib.sha256(_json([PRESENTATION_VERSION, mode, overrides, aliases or {}]).encode()).hexdigest()
+    # Names and overview text do not change directory membership. They are
+    # updated in place so editing one track does not rebuild the national tree.
+    placement = {key: fields for key, edit in overrides.items()
+                 if (fields := {field: value for field, value in edit.items()
+                                if field not in LABEL_ONLY_FIELDS})}
+    signature = hashlib.sha256(_json([PRESENTATION_VERSION, mode, placement]).encode()).hexdigest()
     with closing(sqlite3.connect(catalog.path)) as db:
         old = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
         if old and old[0] == signature:
@@ -128,6 +134,39 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
         db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)", (signature,))
         db.commit()
         return True
+
+
+def update_directory_labels(catalog, keys, resolve):
+    """Update isolated object labels in both cached directories atomically.
+
+    A shared display node needs regrouping, so its caller must rebuild instead.
+    """
+    updates = []
+    with closing(sqlite3.connect(catalog.path)) as db:
+        for key in keys:
+            rows = db.execute(
+                "SELECT d.id FROM rail_directory_nodes d JOIN rail_directory_members m "
+                "ON m.node_id=d.id WHERE m.catalog_id=?", (key,)
+            ).fetchall()
+            if not rows or any(db.execute(
+                "SELECT count(*) FROM rail_directory_members WHERE node_id=?", (node_id,)
+            ).fetchone()[0] != 1 for (node_id,) in rows):
+                return False
+            record, _, label = resolve(key, catalog[key])
+            search = " ".join(str(record.get(field) or "") for field in
+                              ("name", "line_name", "station_name", "line_id",
+                               "railway_class", "line_role", "track_role"))
+            updates.extend((label, (search + " " + key + " " + label).casefold(), node_id)
+                           for (node_id,) in rows)
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
+                db.execute("UPDATE rail_station_nodes SET label=?, searchable=? "
+                           "WHERE id=? AND kind='facility'",
+                           (label, (label + " " + key + " " +
+                                    str(record.get("station_name") or "")).casefold(),
+                            "facility:" + key))
+        db.executemany("UPDATE rail_directory_nodes SET label=?, searchable=? WHERE id=?", updates)
+        db.commit()
+    return True
 
 
 class RailDirectoryModel(SqliteDirectoryModel):

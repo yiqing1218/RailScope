@@ -157,6 +157,8 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
 
 def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qtbot, tmp_path, monkeypatch):
     import desktop.rail_station_catalog_model as station_module
+    from types import SimpleNamespace
+    from desktop.rail_catalog_model import update_directory_labels
 
     stations = [
         {"id": "node/1", "name": "甲站", "province": "甲省", "city": "甲市"},
@@ -171,7 +173,7 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
         "ambiguous": _record(3, station_name="同名", provinces=["乙省"], track_role="shunting_track"),
         "unknown": _record(4, track_role="shunting_track"),
     }
-    catalog, _ = _index(tmp_path, records)
+    catalog, resolve = _index(tmp_path, records)
     assert sync_station_catalog(tmp_path, catalog.path, [], {}) is True
     model = StationCatalogModel(catalog.path)
     assert model.ids_below("station:node/1") == ({"node/1"}, {"explicit", "inferred"})
@@ -182,6 +184,20 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
         assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:explicit'").fetchone()[0] == "站内轨道"
         assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:inferred'").fetchone()[0] == "名称匹配，待核对"
     assert sync_station_catalog(tmp_path, catalog.path, [], {}) is False
+    location = RailCatalog.effective_directory_path(
+        SimpleNamespace(catalog=catalog, station_model=model), "explicit")
+    assert location == ("车站目录", "甲省", "甲市", "甲站", "站内轨道")
+    assert RailCatalog.effective_directory_path(
+        SimpleNamespace(catalog=catalog, station_model=model), "unknown") == (
+            "车站目录", "待核对", "调车线")
+    edits = {"explicit": {"display_name": "新股道名"}}
+    def renamed(key, raw):
+        record = {**raw, **edits.get(key, {})}
+        return record, ("普速铁路",), record.get("display_name", record["name"])
+    assert update_directory_labels(catalog, edits, renamed)
+    assert sync_catalog_directory(catalog, edits, renamed) is False
+    with sqlite3.connect(catalog.path) as db:
+        assert db.execute("SELECT label FROM rail_station_nodes WHERE id='facility:explicit'").fetchone()[0] == "新股道名"
     model.set_search("甲站")
     model.fetchMore()
     assert model.rowCount() > 0
@@ -229,12 +245,12 @@ def test_failed_cache_rebuild_keeps_previous_directory(tmp_path):
         raise ValueError("resolver failed")
 
     with pytest.raises(ValueError, match="resolver failed"):
-        sync_catalog_directory(catalog, {"a": {"display_name": "新名称"}}, fail)
+        sync_catalog_directory(catalog, {"a": {"folder_path": ["新目录"]}}, fail)
     with sqlite3.connect(catalog.path) as db:
         assert db.execute("SELECT count(*) FROM rail_directory_members").fetchone()[0] == 1
 
 
-def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_path):
+def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_path, monkeypatch):
     records = {f"RL-{i}": _record(i) for i in range(700)}
     source = tmp_path / "rail_catalog.json"
     source.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
@@ -261,9 +277,17 @@ def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_pat
     widget.feature_activated.connect(opened.append)
     widget.line_browser.doubleClicked.emit(index)
     assert opened[-1]["properties"]["name"] == records["RL-699"]["name"]
-    widget.rename_item("RL-699", "新显示名")
+    widget.reload_names(tmp_path / "missing-way-names.json")
+    with monkeypatch.context() as patch:
+        patch.setattr("desktop.rail_catalog_ui.sync_catalog_directory",
+                      lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("改名不应重建全国目录")))
+        widget.rename_item("RL-699", "新显示名")
+        names = tmp_path / "rail_way_names.json"
+        names.write_text(json.dumps({"698": "线路新别名"}, ensure_ascii=False), encoding="utf-8")
+        widget.reload_names(names)
     index = widget.line_model.reveal_catalog_id("RL-699")
     assert widget.line_model.data(index).endswith("新显示名")
+    assert widget.line_model.data(widget.line_model.reveal_catalog_id("RL-698")).endswith("线路新别名")
     widget.archive_items({"RL-699"})
     index = widget.line_model.reveal_catalog_id("RL-699")
     assert not (widget.line_model.flags(index) & Qt.ItemFlag.ItemIsUserCheckable)
