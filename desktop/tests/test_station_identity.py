@@ -20,6 +20,7 @@ def station(node, name, x):
 def fixture(tmp_path, points=None):
     points = points or [station(100, '霍邱', 118.04)]
     edge = {'id': 'NE-long', 'from_node': 1, 'to_node': 2, 'node_ids': [1, 2],
+        'construction_status': 'operating',
         'coordinates': [[118, 32], [118.1, 32]], 'way_tags': {'name': '阜六线'}}
     line = line_identity(edge)[0]
     track = {'type': 'Feature', 'properties': {'network_edge_id': edge['id']},

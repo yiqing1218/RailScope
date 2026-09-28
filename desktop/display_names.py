@@ -3,8 +3,14 @@ import json
 
 try:
     from .yard_track_names import yard_track_key
+    from .rail_semantics import semantic_record
+    from .rail_style_resolver import style_key
+    from .station_track_semantics import migrate_track_override
 except ImportError:
     from yard_track_names import yard_track_key
+    from rail_semantics import semantic_record
+    from rail_style_resolver import style_key
+    from station_track_semantics import migrate_track_override
 
 
 def rail_line_presentation(library):
@@ -92,6 +98,21 @@ def apply_rail_presentation(collection, presentation, overrides=None):
                 'snapshot': entry['snapshot'], 'version': 1,
                 'verification_status': 'user_classified' if custom else 'display_only_inference',
                 'confidence': None}
+    for feature in collection.get('features', []):
+        props = feature.get('properties', {})
+        if not props.get('network_edge_id'):
+            continue
+        props.update(semantic_record(props))
+        for key in (props.get('line_id'), props.get('catalog_group_id'), object_key(props)):
+            if key in overrides:
+                props.update(semantic_record(props, overrides[key]))
+        props['rail_style_key'] = style_key(props)
+        # Historical user style classifications remain presentation only.
+        legacy = next((overrides[key].get('track_type') for key in
+            (object_key(props), props.get('catalog_group_id'), props.get('line_id'))
+            if key in overrides and overrides[key].get('track_type')), None)
+        if legacy:
+            props['rail_style_key'] = style_key(semantic_record({'track_type': legacy}))
     return collection
 
 
@@ -118,7 +139,8 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
-        track = overrides.get(yard_track_key(props), {})
+        track = migrate_track_override(overrides.get(yard_track_key(props), {}),
+            station_name=props.get('station_name', ''), track_role=props.get('track_role', 'unknown'))
         if track.get('station_track_id'):
             props['station_track_id'] = track['station_track_id']
             props['track_number'] = track.get('track_number')
@@ -133,6 +155,8 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         keys += [props.get('catalog_group_id'), props.get('line_id'), props.get('catalog_id'),
                  props.get('station_id'), str(props.get('route_relation_id')), str(props.get('osm_relation_id'))]
         custom = next((overrides[key] for key in keys if key in overrides and overrides[key].get('display_name')), {})
+        custom = migrate_track_override(custom, station_name=props.get('station_name', ''),
+                                        track_role=props.get('track_role', 'unknown'))
         name = custom.get('display_name')
         if custom.get('source') == 'automatic_station_group' and not str(props.get('line_name', '')).startswith('未命名轨道'):
             name = None

@@ -265,6 +265,8 @@ def extract(pbf, output, identity_path=None):
     except ImportError:
         from rail_categories import track_type
     for edge in edges:
+        from railscope.rail_semantics import edge_semantics
+        edge.update(edge_semantics(edge))
         edge["track_type"], edge["track_type_evidence"] = track_type(
             edge.get("way_tags", {})
         )

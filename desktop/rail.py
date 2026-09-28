@@ -11,17 +11,21 @@ try:
     from .geometry import distance_m
     from .operating import parse_time
     from .rail_lines import traversal_allowed
+    from .route_intent import promote_route, validate_route_intent
 except ImportError:
     from operating import Plan, strict_fields
     from geometry import distance_m
     from operating import parse_time
     from rail_lines import traversal_allowed
+    from route_intent import promote_route, validate_route_intent
 
 
 def expanded_document(payload):
     """Read v1 compatibility plans or strict v2 shared-route references."""
     if payload.get("schema") != "railscope.rail-plan.v2":
         return deepcopy(payload)
+    if payload.get('domain_schema_version', 2) != 2:
+        raise ValueError('不支持的铁路领域数据版本')
     strict_fields(
         payload,
         {
@@ -34,7 +38,7 @@ def expanded_document(payload):
             "routes",
             "trains",
         },
-        {"station_routes"},
+        {"station_routes", "domain_schema_version"},
         "国铁共享径路计划",
     )
     if not isinstance(payload["routes"], list) or not isinstance(
@@ -46,7 +50,7 @@ def expanded_document(payload):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes", "sequence", "color"},
+            {"name", "track_changes", "sequence", "color", "route_intent", "resolved_corridor"},
             "单向运行通道",
         )
         if (
@@ -60,6 +64,7 @@ def expanded_document(payload):
         routes[route["id"]] = route
     result = deepcopy(payload)
     result.pop("routes")
+    result.pop('domain_schema_version', None)
     result["schema"] = "railscope.rail-plan.v1"
     for train in result["trains"]:
         strict_fields(
@@ -166,7 +171,10 @@ def shared_document(payload):
         expanded_document(
             payload
         )  # Validate references without discarding route extensions.
-        return deepcopy(payload)
+        result = deepcopy(payload)
+        result['routes'] = [promote_route(route) for route in result['routes']]
+        result['domain_schema_version'] = 2
+        return result
     result = expanded_document(payload)
     result["schema"] = "railscope.rail-plan.v2"
     result["routes"] = []
@@ -179,6 +187,8 @@ def shared_document(payload):
             routes[ident] = path
             result["routes"].append({"id": ident, "path": path, "extensions": {}})
         train["route_id"] = ident
+    result['routes'] = [promote_route(route) for route in result['routes']]
+    result['domain_schema_version'] = 2
     return result
 
 
@@ -238,6 +248,7 @@ def migrate_legacy_train_paths(payload, edges):
             "original_route_id": route["id"],
             "station_paths": sections,
         }
+    result['routes'] = [promote_route(route) for route in result['routes']]
     return result
 
 
@@ -266,6 +277,7 @@ def resolve_edge_aliases(payload, edges):
 
     for route in result.get("routes", []):
         update(route.get("path", []))
+        update(route.get('resolved_corridor', {}).get('path', []))
         update(route.get("extensions", {}).get("railscope.org/station-track-positions", []))
         update(route.get("extensions", {}).get("railscope.org/line-resolution", {}).get("selection", {}).get("path", []))
     for train in result.get("trains", []):
@@ -582,7 +594,7 @@ def validate_corridors(routes, edges):
         strict_fields(
             route,
             {"id", "path", "extensions"},
-            {"name", "track_changes", "sequence", "color"},
+            {"name", "track_changes", "sequence", "color", "route_intent", "resolved_corridor"},
             "单向运行通道",
         )
         if (
@@ -592,6 +604,7 @@ def validate_corridors(routes, edges):
         ):
             raise ValueError("通道编号为空或重复")
         seen.add(route["id"])
+        validate_route_intent(route)
         from railscope.presentation import valid_color
         valid_color(route.get("color", "#466979"))
         if "name" in route and (

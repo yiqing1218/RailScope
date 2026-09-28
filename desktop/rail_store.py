@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import closing
 from uuid import uuid4
 from threading import BoundedSemaphore
+from railscope.rail_semantics import edge_semantics
 try:
     from .viewport_settings import DEFAULT, normalize
 except ImportError:
@@ -64,6 +65,7 @@ def _rail_feature(edge, section_props=None):
             "license": "ODbL 1.0",
             "attribution": "© OpenStreetMap contributors",
             **(section_props or {}),
+            **edge_semantics(edge),
         },
         "geometry": {"type": "LineString", "coordinates": edge["coordinates"]},
     }
@@ -121,6 +123,7 @@ def build_index(directory, tracks, points, platforms, edges):
     # The map uses the same endpoint-delimited physical units as Corridors and
     # the RS directory. Whole OSM ways remain source metadata, not render units.
     for edge in edges:
+        edge = {**edge, **edge_semantics(edge)}
         section = edge_sections.get(edge["id"])
         section_props = (
             {
@@ -435,6 +438,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
             props["track_type"] = classify_track_type(
                 props.get("way_tags", props)
             )[0]
+            props.update(edge_semantics(props))
     elif kind in ("railPoints", "railPlatforms", "railStationAreas") and features:
         if kind == "railPoints":
             node_ids = [

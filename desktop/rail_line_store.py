@@ -16,14 +16,18 @@ try:
     from .geometry import distance_m
     from .rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
     from .rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
+    from . import rail_semantic_index
+    from .rail_semantics import semantic_record, is_business_line
 except ImportError:
     from rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from rail_categories import track_type
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
     from rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
+    import rail_semantic_index
+    from rail_semantics import semantic_record, is_business_line
 
-INDEX_VERSION = 16
+INDEX_VERSION = 17
 
 
 def fingerprint(source, extras):
@@ -42,9 +46,16 @@ def index_ready(path, signature):
         with closing(
             sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
         ) as db:
-            return db.execute(
+            if db.execute(
                 "SELECT value FROM metadata WHERE key=?", ("source",)
-            ).fetchone() == (signature,)
+            ).fetchone() != (signature,):
+                return False
+            required = {'edges', 'lines', 'edge_semantics', 'line_semantics',
+                        'station_directory', 'station_track_positions'}
+            present = {name for (name,) in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN (?,?,?,?,?,?)",
+                tuple(required))}
+            return present == required
     except sqlite3.Error:
         return False
 
@@ -53,7 +64,8 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
     """Stream source rows; cancellation/failure leaves the previous complete index intact."""
     signature = fingerprint(source, extras)
     destination = Path(destination)
-    # Upgrade compact lookups without rebuilding national track geometry.
+    # Preserve the existing topology/geometry index when only its derived
+    # semantic projection is old. The source snapshot must still match.
     if destination.exists():
         with closing(sqlite3.connect(destination)) as existing:
             try:
@@ -61,15 +73,31 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                 old_signature = json.loads(row[0]) if row else []
             except (sqlite3.Error, ValueError):
                 old_signature = []
-            if isinstance(old_signature, list) and old_signature and old_signature[0] in (13, 14, 15) and old_signature[1:] == json.loads(signature)[1:]:
-                progress("准备站内接轨查询索引…")
+            base_tables = {name for (name,) in existing.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('edges','lines','nodes','station_aliases')")}
+            if (isinstance(old_signature, list) and old_signature and
+                    old_signature[0] in (13, 14, 15, 16) and
+                    old_signature[1:] == json.loads(signature)[1:] and
+                    base_tables == {'edges', 'lines', 'nodes', 'station_aliases'}):
+                progress("升级铁路语义索引…")
+                rail_semantic_index.create_schema(existing)
                 with existing:
-                    existing.execute("BEGIN IMMEDIATE")
+                    existing.execute("DELETE FROM edge_semantics")
+                    existing.execute("DELETE FROM line_semantics")
                     existing.execute("CREATE INDEX IF NOT EXISTS edge_from ON edges(a)")
                     existing.execute("CREATE INDEX IF NOT EXISTS edge_to ON edges(b)")
+                    with closing(sqlite3.connect(Path(source).resolve().as_uri() + "?mode=ro", uri=True)) as src:
+                        count = src.execute("SELECT count(*) FROM edges").fetchone()[0]
+                        for index, (raw,) in enumerate(src.execute("SELECT data FROM edges")):
+                            rail_semantic_index.insert_edge(existing, json.loads(raw))
+                            if index % 4000 == 0:
+                                progress(f"升级铁路语义：{index:,} / {count:,}")
+                    for edge in extras:
+                        rail_semantic_index.insert_edge(existing, edge, replace=False)
+                    rail_semantic_index.finalize(existing)
                     build_station_directory(existing, source)
                     existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
-                return
+                return destination
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     db = sqlite3.connect(temporary)
     try:
@@ -86,6 +114,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             CREATE INDEX grouping_key_lookup ON grouping_keys(group_key);
             CREATE TABLE station_aliases(source_id TEXT,alias TEXT,station_node_id,anchor_node,distance_m REAL,verification_status TEXT,confidence REAL,source_x REAL,source_y REAL,PRIMARY KEY(source_id,alias,anchor_node));
         """)
+        rail_semantic_index.create_schema(db)
 
         def add(edge, replace=True):
             ident, name = line_identity(edge)
@@ -124,6 +153,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     edge.get("direction", "both"),
                 ),
             )
+            rail_semantic_index.insert_edge(db, edge, replace=replace)
             coordinates = edge.get("coordinates", [])
             if coordinates:
                 for node, coordinate in (
@@ -160,6 +190,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                 DELETE FROM lines WHERE edge_count=0;
             """)
             build_groups(db)
+            rail_semantic_index.finalize(db)
 
             def label(point):
                 prop = point.get("properties", {})
@@ -392,6 +423,7 @@ class _DirectoryMapping(Mapping):
                     if metadata.get("track_type") and metadata.get("track_type") != kind
                     else evidence
                 ),
+                **self.store.line_semantics(ident),
             }
         if self.kind == "nodes":
             return self.store.node_display_label(row)
@@ -407,6 +439,7 @@ class _DirectoryMapping(Mapping):
             "type_evidence": evidence,
             "osm_way_id": int(source_way) if str(source_way).isdigit() else source_way,
             "direction": direction,
+            **self.store.edge_semantics([ident]).get(ident, {}),
         }
 
 
@@ -428,6 +461,8 @@ class DiskRailLineLibrary:
             self.workspace = LineWorkspace(db, self.metadata)
             self.station_directory = read_directory(db)
             self._has_station_directory = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone())
+            self._has_semantics = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='edge_semantics'").fetchone())
+            self._semantic_cache = OrderedDict()
             self._node_display_names = {}
             for key, value in self.metadata.items():
                 if not value.get('display_name'):
@@ -443,6 +478,31 @@ class DiskRailLineLibrary:
         self.lines = _DirectoryMapping(self, "lines")
         self.nodes = _DirectoryMapping(self, "nodes")
         self.edges = _DirectoryMapping(self, "edges")
+
+    def line_semantics(self, ident):
+        """Bounded, lazy semantic projection of effective shared memberships."""
+        if ident in self._semantic_cache:
+            self._semantic_cache.move_to_end(ident)
+            return dict(self._semantic_cache[ident])
+        with self.connect() as db:
+            if self._has_semantics:
+                facts = rail_semantic_index.line_record(db, self.workspace.members(ident))
+            else:
+                row = db.execute('SELECT track_type FROM lines WHERE id=?', (ident,)).fetchone()
+                facts = semantic_record({'track_type': row[0] if row else ''})
+        result = {**facts, **semantic_record(facts, self.metadata.get(ident))}
+        self._semantic_cache[ident] = result
+        if len(self._semantic_cache) > 512:
+            self._semantic_cache.popitem(last=False)
+        return dict(result)
+
+    def edge_semantics(self, ids):
+        if not self._has_semantics:
+            return {}
+        with self.connect() as db:
+            rows = rail_semantic_index.edge_records(db, ids)
+        return {ident: semantic_record(facts,
+            self.metadata.get('object:network_edge_id:' + ident)) for ident, facts in rows.items()}
 
     def membership_provenance(self, sequence):
         with self.connect() as db:
@@ -510,13 +570,9 @@ class DiskRailLineLibrary:
                         for item in value if isinstance(item, dict)] if isinstance(value, list) else []
         return None
 
-    @staticmethod
-    def _business_line(name, kind):
-        return not (
-            str(name).startswith("未命名轨道")
-            or "站场股道" in str(kind)
-            or kind in {"渡线 / 道岔连接轨", "车辆段 / 检修线", "折返线"}
-        )
+    def _business_line(self, name, kind, ident=None):
+        facts = self.line_semantics(ident) if ident is not None else semantic_record({'track_type': kind})
+        return is_business_line({'source_name': name, **facts})
 
     def station_connection_override(self, endpoint, line_ids, max_distance_m=2500):
         """Build a user-verified station-to-line override on real graph nodes."""
@@ -561,7 +617,7 @@ class DiskRailLineLibrary:
                 effective_kind = self.metadata.get(line_id, {}).get(
                     "track_type", line[1]
                 )
-                if not self._business_line(effective_name, effective_kind):
+                if not self._business_line(effective_name, effective_kind, line_id):
                     raise ValueError(f"{effective_name} 不是可用于通道的业务线路")
                 min_x = min(value[0] for value in coordinates) - 0.04
                 max_x = max(value[0] for value in coordinates) + 0.04
@@ -723,7 +779,7 @@ class DiskRailLineLibrary:
         for key, name, count, kind in rows:
             effective = self.line_name(key, name)
             effective_kind = self.metadata.get(key, {}).get("track_type", kind)
-            if not physical and not self._business_line(effective, effective_kind):
+            if not physical and not self._business_line(effective, effective_kind, key):
                 continue
             if query.casefold() not in (effective + " " + key + " " + name).casefold():
                 continue
@@ -1374,6 +1430,11 @@ class DiskRailLineLibrary:
                 "GROUP BY node_id HAVING count(DISTINCT line_id)>1"
             ):
                 library.split_nodes.add(node)
+            if self._has_semantics:
+                for ident, facts in rail_semantic_index.edge_records(db, library.edges).items():
+                    effective = semantic_record(facts, self.metadata.get('object:network_edge_id:' + ident))
+                    library.edges[ident].update(effective)
+                    library.edges[ident]['construction'] = effective['construction_status'] != 'operating'
         return library
 
     def search_sections(self, query="", line_id=None, limit=100):
@@ -1519,10 +1580,17 @@ class DiskRailLineLibrary:
                 "FROM main.edges e JOIN main.lines l ON l.id=e.line_id "
                 "WHERE e.a IN (SELECT id FROM transfer_nodes) AND e.b IN (SELECT id FROM transfer_nodes) "
                 "AND e.construction=0 ORDER BY e.id")
-            return [{"id": ident, "line_id": self.workspace.canonical(line), "line_name": name,
+            records = [{"id": ident, "line_id": self.workspace.canonical(line), "line_name": name,
                      "from_node": a, "to_node": b, "construction": bool(construction),
                      "length_m": length, "track_type": kind, "direction": direction}
                     for ident, line, a, b, construction, length, kind, direction, name in rows]
+            if self._has_semantics:
+                for edge in records:
+                    facts = rail_semantic_index.edge_records(db, [edge['id']]).get(edge['id'], {})
+                    effective = semantic_record(facts, self.metadata.get('object:network_edge_id:' + edge['id']))
+                    edge.update(effective)
+                    edge['construction'] = effective['construction_status'] != 'operating'
+            return records
 
     def resolve_station_transfers(self, sequence, selected, terminal_targets=None):
         try:
@@ -1803,6 +1871,9 @@ class DiskRailLineLibrary:
                     node_rows[b] = (b, b_label, b_kind)
                     node_coordinates[a] = [ax, ay] if ax is not None else None
                     node_coordinates[b] = [bx, by] if bx is not None else None
+                semantics = rail_semantic_index.edge_records(db, [edge['id'] for edge in edges]) if self._has_semantics else {}
+                for edge in edges:
+                    edge.update(semantic_record(semantics[edge['id']], self.metadata.get('object:network_edge_id:' + edge['id'])) if edge['id'] in semantics else {})
                 library = RailLineLibrary(edges, [])
                 library.nodes.update(
                     {
@@ -1840,7 +1911,7 @@ class DiskRailLineLibrary:
         tmp = path.with_name(path.name + "." + uuid4().hex + ".tmp")
         try:
             with tmp.open("w", encoding="utf-8") as stream, self.connect() as db:
-                stream.write('{"schema":"railscope.rail-graph.v1",')
+                stream.write('{"schema":"railscope.rail-graph.v2",')
                 generators = [
                     (
                         "lines",
@@ -1850,6 +1921,7 @@ class DiskRailLineLibrary:
                                 "name": self.line_name(key, name),
                                 "source_name": name,
                                 "edge_count": count,
+                                **self.line_semantics(key),
                                 "track_type": self.metadata.get(key, {}).get("track_type", kind),
                                 "type_evidence": (
                                     "用户工作区分类覆盖；原始依据：" + evidence

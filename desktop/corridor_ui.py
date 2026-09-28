@@ -558,10 +558,18 @@ class CorridorPanel(QWidget):
         train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
         menu = QMenu(self)
         menu.addAction('编辑通道…', lambda: self.edit_table(route_id))
+        menu.addAction('按业务径路意图在当前数据中重新解析…', lambda: self.reresolve(route_id))
         menu.addAction('删除通道', lambda: self.delete_selected(route_id))
         menu.addAction("查看引用关系…", lambda: self.show_references(route_id, train_id))
         menu.exec(self.tree.viewport().mapToGlobal(position))
         menu.deleteLater()
+
+    def reresolve(self, route_id):
+        try:
+            self.editor.reresolve_corridor(route_id)
+            self.refresh()
+        except (ValueError, KeyError, OSError) as error:
+            QMessageBox.warning(self, '重新解析未保存，原通道保留', str(error))
 
     def show_references(self, route_id, selected_train=""):
         route = next(r for r in self.editor.rail_payload["routes"] if r["id"] == route_id)
@@ -690,6 +698,8 @@ class CorridorPanel(QWidget):
         saved_selection = saved_resolution.get("selection", {})
         if saved_resolution.get("policy") == "auto" and sequence == saved_selection.get("resolved_sequence"):
             sequence = saved_selection.get("requested_sequence", sequence)
+        if route and route.get('route_intent', {}).get('sequence'):
+            sequence = route['route_intent']['sequence']
         table = CorridorSequenceTable(library)
         table.setObjectName("corridorSequence")
         physical = QCheckBox("手工调整 · 显示道岔与轨道节点")

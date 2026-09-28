@@ -32,6 +32,11 @@ class RailRepository:
     events: list[DispatchEvent] = field(default_factory=list)
     occupancies: list[TrackOccupancy] = field(default_factory=list)
     conflicts: list[Conflict] = field(default_factory=list)
+    operational_points: dict[str, OperationalPoint] = field(default_factory=dict)
+    yards: dict[str, Yard] = field(default_factory=dict)
+    station_zones: dict[str, StationZone] = field(default_factory=dict)
+    station_track_edges: list[StationTrackEdge] = field(default_factory=list)
+    route_intents: dict[str, RouteIntent] = field(default_factory=dict)
 
     def stops_for(self, train_id: str) -> tuple[StopTime, ...]:
         return tuple(sorted((s for s in self.stops if s.train_run_id == train_id), key=lambda s: s.sequence))

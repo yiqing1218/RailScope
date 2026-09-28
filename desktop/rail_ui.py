@@ -37,6 +37,7 @@ try:
     from .rail_lines import resolution_policy, RESOLUTION_KEY
     from .station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
     from .rail_station_directory import refresh_plan_names
+    from .route_intent import promote_route, reresolve_route
 except ImportError:
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -54,6 +55,7 @@ except ImportError:
     from rail_lines import resolution_policy, RESOLUTION_KEY
     from station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
     from rail_station_directory import refresh_plan_names
+    from route_intent import promote_route, reresolve_route
 
 
 class RailMap:
@@ -792,7 +794,20 @@ class RailEditor(OperationsEditor):
         compile_rail_plan(
             payload, self.graph["edges"], self.graph["points"], self.platforms
         )
-        return payload
+        return shared_document(payload)
+
+    def reresolve_corridor(self, route_id):
+        """Explicit re-resolution; dependent runs validate before atomic apply."""
+        before = self.document()
+        candidate = deepcopy(before)
+        library = self.line_library(interactive=True)
+        for index, route in enumerate(candidate['routes']):
+            if route['id'] == route_id:
+                snapshot = str(library.path.stat().st_mtime_ns) if hasattr(library, 'path') else 'portable_reference'
+                candidate['routes'][index] = reresolve_route(route, library, snapshot)
+                self.accept_batch(candidate, before)
+                return
+        raise ValueError('通道不存在')
 
     def variant_changed(self):
         super().variant_changed()
@@ -846,6 +861,7 @@ class RailEditor(OperationsEditor):
                     "color": route.get("color", "#466979"),
                     "sequence": sequence,
                     "extensions": extensions,
+                    **{key: deepcopy(route[key]) for key in ('route_intent','resolved_corridor') if key in route},
                 }
             )
         return {
@@ -1012,7 +1028,7 @@ class RailEditor(OperationsEditor):
                 strict_fields(
                     route,
                     {"id", "name", "sequence", "extensions"},
-                    {"color"},
+                    {"color", "route_intent", "resolved_corridor"},
                     "端点—线路通道",
                 )
                 # Resolve from the infrastructure every time, including G1 notation.
@@ -1107,11 +1123,13 @@ class RailEditor(OperationsEditor):
                 legacy = route["extensions"].get("railscope.org/legacy-track-changes")
                 if legacy is not None:
                     route["track_changes"] = deepcopy(legacy)
+                promoted = promote_route(route, refresh=True)
+                route.update(promoted)
         for route in incoming:
             strict_fields(
                 route,
                 {"id", "path", "extensions"},
-                {"name", "track_changes", "sequence", "color"},
+                {"name", "track_changes", "sequence", "color", "route_intent", "resolved_corridor"},
                 "单向运行通道",
             )
             routes[route["id"]] = {**routes.get(route["id"], {}), **deepcopy(route)}

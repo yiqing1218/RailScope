@@ -3,6 +3,7 @@
 import json
 import hashlib
 from copy import deepcopy
+from contextlib import closing
 from pathlib import Path
 import threading
 import sqlite3
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
 try:
     from .components import text_label, GrowingTree, CurrentPageTabs
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
+    from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
@@ -42,6 +44,7 @@ try:
 except ImportError:
     from components import text_label, GrowingTree, CurrentPageTabs
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
+    from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
     from catalog_metadata import (
@@ -53,6 +56,8 @@ except ImportError:
     )
 
 MAX_CATALOG_TREE_ITEMS = 4000
+# Small legacy editors remain available as bounded compatibility adapters.
+MAX_LEGACY_EDITOR_ITEMS = 512
 MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
 
@@ -415,7 +420,10 @@ class RailCatalog(QWidget):
         self.tree.itemDoubleClicked.connect(self.focus_item)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
-        line_layout.addWidget(self.tree)
+        self.tree.setParent(self.line_page)
+        self.tree.hide()
+        self.line_browser = RailDirectoryView()
+        line_layout.addWidget(self.line_browser)
         self.tabs.addTab(self.line_page, "线路目录")
         self.station_page = QWidget()
         station_layout = QVBoxLayout(self.station_page)
@@ -454,8 +462,11 @@ class RailCatalog(QWidget):
         self.yard_tree.setColumnCount(2)
         self.yard_tree.setHeaderHidden(True)
         self.yard_tree.itemDoubleClicked.connect(self.focus_yard_item)
-        yard_layout.addWidget(self.yard_tree)
-        self.tabs.addTab(self.yard_page, "站场股道")
+        self.yard_tree.setParent(self.yard_page)
+        self.yard_tree.hide()
+        self.facility_browser = RailDirectoryView()
+        yard_layout.addWidget(self.facility_browser)
+        self.tabs.addTab(self.yard_page, "车站设施")
         self.platform_page = QWidget()
         platform_layout = QVBoxLayout(self.platform_page)
         platform_layout.setContentsMargins(0, 0, 0, 0)
@@ -657,7 +668,7 @@ class RailCatalog(QWidget):
             return (
                 base
                 + f" 当前快照含 {named:,} 条有名称业务线路。"
-                + f"搜索结果过多时每次显示前 {MAX_CATALOG_TREE_ITEMS:,} 项。"
+                + "目录按需分页载入；展开文件夹可继续浏览全部结果。"
             )
         return base
 
@@ -681,8 +692,154 @@ class RailCatalog(QWidget):
             ),
         }
 
+    def _populate_paged_directory(self):
+        """Build only disk memberships; the visible views fetch individual pages."""
+        if not isinstance(self.catalog, RailCatalogIndex):
+            # Old plugins may supply a mapping. Adapt it once to the same SQLite contract.
+            old = getattr(self, "_paged_catalog", None)
+            if old is not None:
+                old.close()
+            self.catalog = RailCatalogIndex(build_catalog_index(self.directory, self.catalog))
+        self._paged_catalog = self.catalog
+
+        def resolve(key, raw):
+            record = self._effective_record(key, raw)
+            aliases = [self.way_names[str(way)] for way in record.get("way_ids", [])
+                       if str(way) in self.way_names]
+            label = record.get("assembly_name") or record.get("display_name") or (
+                aliases[0] if aliases else record.get("name", key))
+            return record, self._record_parents(record), label
+
+        sync_catalog_directory(self.catalog, self.overrides, resolve,
+                               self.mode.currentIndex(), self.way_names)
+        if not hasattr(self, "line_model"):
+            for browser, view in ((self.line_browser, "lines"), (self.facility_browser, "facilities")):
+                model = RailDirectoryModel(self.catalog.path, view, browser)
+                browser.setModel(model)
+                browser.collapsed.connect(model.release_branch)
+                model.toggled.connect(lambda node, on, m=model: self.toggle_group(m.ids_below(node), on))
+                browser.doubleClicked.connect(lambda index, b=browser: self._focus_paged_item(b, index))
+                browser.customContextMenuRequested.connect(lambda point, b=browser: self._paged_context_menu(b, point))
+                browser.move_requested.connect(lambda keys, target, m=model: self._move_paged_items(m, keys, target))
+                if view == "lines":
+                    self.line_model = model
+                else:
+                    self.facility_model = model
+        for model in (self.line_model, self.facility_model):
+            model.set_search(self.search.text())
+            model.fetchMore()
+        # Destination paths live on disk, including currently unloaded branches.
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            self.line_folder_paths = {
+                tuple(json.loads(raw)[1:]) for (raw,) in db.execute(
+                    "SELECT path FROM rail_directory_nodes WHERE kind='folder' AND view='lines' AND archived=0")
+            }
+        self._sync_paged_visibility()
+
+    def _sync_paged_visibility(self):
+        for name in ("line_model", "facility_model"):
+            model = getattr(self, name, None)
+            if model is not None:
+                model.set_visibility(self.visible, self.all_visible, self.excluded)
+
+    def _paged_proxy(self, model, index):
+        """Transient dialog/focus adapter; never inserts an item into a Qt tree."""
+        node = model._node(index)
+        item = QTreeWidgetItem([node.label])
+        keys = model.ids_below(node.key)
+        item.setData(0, Qt.ItemDataRole.UserRole,
+                     sorted(keys)[0] if node.kind == "object" and keys else None)
+        self.members[id(item)] = keys
+        return item
+
+    def _focus_paged_item(self, browser, index):
+        if not index.isValid() or browser.model()._node(index).kind != "object":
+            return
+        item = self._paged_proxy(browser.model(), index)
+        try:
+            self.focus_item(item, 0)
+        finally:
+            self.members.pop(id(item), None)
+
+    def _paged_context_menu(self, browser, position):
+        index = browser.indexAt(position)
+        if not index.isValid():
+            return
+        if not browser.selectionModel().isSelected(index):
+            browser.setCurrentIndex(index)
+        model = browser.model()
+        keys = {key for selected in browser.selectionModel().selectedRows()
+                for key in model.ids_below(model._node(selected).key)}
+        item = self._paged_proxy(model, index)
+        node = model._node(index)
+        folder = None
+        if node.kind == "folder":
+            with closing(sqlite3.connect(self.catalog.path)) as db:
+                raw = db.execute("SELECT path FROM rail_directory_nodes WHERE id=?", (node.key,)).fetchone()[0]
+            folder = tuple(json.loads(raw)[1:])
+        context = (model, node.key, folder) if folder else None
+        menu = self.item_menu(item, keys, directory_context=context)
+        try:
+            menu.exec(browser.viewport().mapToGlobal(position))
+        finally:
+            menu.deleteLater()
+            self.members.pop(id(item), None)
+
+    def _rename_paged_folder(self, context, name):
+        if not name.strip() or "/" in name or name.strip() == "已归档":
+            raise ValueError("请填写有效文件夹名称")
+        model, node_key, folder = context
+        keys = model.ids_below(node_key)
+        changes = {}
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            for key in keys:
+                raw = db.execute("SELECT d.path FROM rail_directory_nodes d JOIN rail_directory_members m ON m.node_id=d.id WHERE m.catalog_id=? AND d.view=?", (key, model.view)).fetchone()[0]
+                path = json.loads(raw)[1:]
+                path[len(folder)-1] = name.strip()
+                if path and path[0] == "已归档":
+                    path = path[1:]
+                changes[key] = {"folder_path": path}
+        self.save_overrides(changes)
+
+    def _move_paged_items(self, model, nodes, target):
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            row = db.execute("SELECT path FROM rail_directory_nodes WHERE id=?", (target,)).fetchone()
+        if row is None:
+            return
+        path = json.loads(row[0])[1:]
+        if path and path[0] == "已归档":
+            path = path[1:]
+        keys = {key for node in nodes for key in model.ids_below(node)}
+        if keys and path:
+            # Delay the reset until Qt finishes its drop event.
+            QTimer.singleShot(0, lambda: self.move_items(keys, path))
+
+    def _reveal_paged_key(self, key):
+        for model, browser, page in ((self.line_model, self.line_browser, self.line_page),
+                                     (self.facility_model, self.facility_browser, self.yard_page)):
+            index = model.reveal_catalog_id(key)
+            if not index.isValid():
+                continue
+            ancestor = index.parent()
+            while ancestor.isValid():
+                browser.expand(ancestor)
+                ancestor = ancestor.parent()
+            browser.setCurrentIndex(index)
+            browser.scrollTo(index)
+            self.tabs.setCurrentWidget(page)
+            self.note.setText("地图已选择：" + self.display_name(key))
+            return True
+        return False
+
     def populate(self):
         if not hasattr(self, "tree"):
+            return
+        self._populate_paged_directory()
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
+            self.tree.clear()
+            self.items, self.members, self.groups = {}, {}, {}
+            self.line_group_paths = {}
+            self.catalog_limited = False
             return
         self._sync_folder_index()
         expanded = {
@@ -851,6 +1008,11 @@ class RailCatalog(QWidget):
         QTimer.singleShot(0, self.tree.scrollToTop)
 
     def search_changed(self, text):
+        if hasattr(self, "line_model"):
+            self.line_model.set_search(text)
+            self.line_model.fetchMore()
+            self.facility_model.set_search(text)
+            self.facility_model.fetchMore()
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
             self.filter_tree(text)
         else:
@@ -957,6 +1119,8 @@ class RailCatalog(QWidget):
 
     def populate_yard_tree(self):
         self.yard_tree.clear()
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
+            return
         groups = {}
         groups_source = self.catalog.station_groups() if isinstance(self.catalog, RailCatalogIndex) else self.catalog.items()
         for key, group in sorted(groups_source, key=lambda value: (str(value[1].get("station_name") or ""), value[0])):
@@ -2295,6 +2459,9 @@ class RailCatalog(QWidget):
         control.blockSignals(False)
 
     def _move_line_items_in_tree(self, keys):
+        self._populate_paged_directory()
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
+            return False
         items = {id(self.items[key]): self.items[key] for key in keys if key in self.items}
         moves = []
         for item in items.values():
@@ -2458,12 +2625,14 @@ class RailCatalog(QWidget):
         menu.exec(self.tree.viewport().mapToGlobal(position))
         menu.deleteLater()
 
-    def item_menu(self, item, selected_keys=None):
+    def item_menu(self, item, selected_keys=None, directory_context=None):
         keys = set(selected_keys or self.members.get(id(item), set()))
         leaf = item.data(0, Qt.ItemDataRole.UserRole)
         folder = next(
             (path for path, candidate in self.groups.items() if candidate is item), None
         )
+        if directory_context:
+            folder = directory_context[2]
         menu = QMenu(self)
 
         def perform(action):
@@ -2489,7 +2658,8 @@ class RailCatalog(QWidget):
                     lambda: (
                         self.rename_items(keys, value)
                         if leaf
-                        else self.rename_folder(folder, value)
+                        else self._rename_paged_folder(directory_context, value)
+                        if directory_context else self.rename_folder(folder, value)
                     )
                 )
 
@@ -2559,13 +2729,27 @@ class RailCatalog(QWidget):
 
     def show_topology(self, key):
         meta = self.meta(key)
+        try:
+            from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+        except ImportError:
+            from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+        provenance = meta.get('provenance') or {}
+        semantics = (
+            f"铁路类别：{CLASS_LABELS.get(meta.get('railway_class'), '待核实')}\n"
+            f"业务线路角色：{LINE_ROLE_LABELS.get(meta.get('line_role'), '待核实')}\n"
+            f"轨道用途：{ROLE_LABELS.get(meta.get('track_role'), '待核实')}\n"
+            f"设施 / 车场 / 站区：{meta.get('facility_id') or '未关联'} / {meta.get('yard_id') or '未关联'} / {meta.get('zone_id') or '未关联'}\n"
+            f"运营状态：{meta.get('construction_status', 'unknown')}\n"
+            f"核验状态：{meta.get('verification_status', 'unverified')}\n"
+            f"用途依据：{provenance.get('track_role', {}).get('evidence', '尚无证据')}\n"
+        )
         if meta.get("catalog_group_id"):
             QMessageBox.information(
                 self,
                 "线路属性",
                 f"目录对象：{self.display_name(key)}\n"
                 f"目录编号：{meta['catalog_group_id']}\n"
-                f"轨道类型：{meta.get('track_type', '未确认类型')}\n"
+                + semantics + f"旧版分类：{meta.get('track_type', '未确认类型')}\n"
                 f"端点线段：{meta.get('section_count', 0)} 项\n"
                 f"NetworkEdge：{meta.get('edge_count', 0)} 项\n\n"
                 "具体 RS 编号、两端点及相邻线段请点击地图上的轨道线段查看。",
@@ -2575,7 +2759,7 @@ class RailCatalog(QWidget):
             f"线段：{meta.get('name', key)}\n"
             f"线段编号：{meta.get('id', key)}\n"
             f"物理线路：{meta.get('line_display_name', meta.get('line_name', '旧目录未记录'))}\n"
-            f"轨道类型：{meta.get('track_type', '未确认类型')}\n\n"
+            + semantics + f"旧版分类：{meta.get('track_type', '未确认类型')}\n\n"
             f"起点：{meta.get('from_name', '旧目录未记录')}\n"
             f"起点编号：{meta.get('from_node', '旧目录未记录')}\n"
             f"相接线段：{', '.join(meta.get('from_adjacent_sections', [])) or '无 / 待重建'}\n\n"
@@ -2705,6 +2889,7 @@ class RailCatalog(QWidget):
         self._sync_line_switches()
 
     def _sync_line_switches(self):
+        self._sync_paged_visibility()
         self._sync_asset_switches()
         # Update ancestors without destroying the switch handling the current event.
         for item in {id(value): value for value in self.items.values()}.values():
@@ -2930,9 +3115,10 @@ class RailCatalog(QWidget):
             self.pinned_line_key = key
             self.search_timer.stop()
             self.populate()
+        paged_found = self._reveal_paged_key(key)
         item = self.items.get(key)
         if item is None:
-            return False
+            return paged_found
         ancestor = item.parent()
         while ancestor:
             ancestor.setExpanded(True)
@@ -2953,6 +3139,9 @@ class RailCatalog(QWidget):
             )
         )
         names = sorted(self.items)
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
+            names = sorted({key for index in self.line_browser.selectionModel().selectedRows()
+                            for key in self.line_model.ids_below(self.line_model._node(index).key)})[:MAX_LEGACY_EDITOR_ITEMS]
         if len(names) < len(self.catalog):
             layout.addWidget(
                 QLabel(

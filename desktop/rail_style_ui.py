@@ -23,11 +23,14 @@ from PySide6.QtCore import Qt
 
 try:
     from .rail_categories import TRACK_TYPES
+    from .rail_style_resolver import STYLE_SOURCES, STYLE_LABELS
 except ImportError:
     from rail_categories import TRACK_TYPES
+    from rail_style_resolver import STYLE_SOURCES, STYLE_LABELS
 
 SPEED_STYLE_KEYS = tuple('高速铁路线 · ' + str(speed) + ' km/h' for speed in (350, 250, 200, 160))
-STYLE_TYPES = (TRACK_TYPES[0], *SPEED_STYLE_KEYS, *TRACK_TYPES[1:])
+LEGACY_STYLE_TYPES = (TRACK_TYPES[0], *SPEED_STYLE_KEYS, *TRACK_TYPES[1:])
+STYLE_TYPES = tuple(STYLE_SOURCES)
 PATTERNS = {'alternating': '彩白相间', 'solid': '实线', 'dashed': '短虚线', 'long_dash': '长虚线', 'dotted': '点线', 'dash_dot': '点划线'}
 
 ZOOM_CURVE_KEY = "_zoom_width_curve"
@@ -65,6 +68,8 @@ def defaults():
     }
     for key in SPEED_STYLE_KEYS:
         styles[key] = dict(styles['高速铁路线'])
+    for key, legacy in STYLE_SOURCES.items():
+        styles[key] = dict(styles[legacy])
     styles[ZOOM_CURVE_KEY] = recommended_zoom_curve()
     return styles
 
@@ -76,9 +81,11 @@ def validate_styles(value):
     value.setdefault(ZOOM_CURVE_KEY, recommended_zoom_curve())
     for key in SPEED_STYLE_KEYS:
         value.setdefault(key, dict(value.get('高速铁路线', defaults()['高速铁路线'])))
-    if set(value) != set(STYLE_TYPES) | {ZOOM_CURVE_KEY}:
+    for key, legacy in STYLE_SOURCES.items():
+        value.setdefault(key, dict(value.get(legacy, defaults()[legacy])))
+    if set(value) != set(STYLE_TYPES) | set(LEGACY_STYLE_TYPES) | {ZOOM_CURVE_KEY}:
         raise ValueError("铁路样式必须完整包含所有轨道类型和缩放线宽曲线")
-    for name in STYLE_TYPES:
+    for name in (*STYLE_TYPES, *LEGACY_STYLE_TYPES):
         item = value[name]
         if (
             not isinstance(item, dict)
@@ -132,6 +139,8 @@ def load_styles(path):
 class RailStyleDialog(QDialog):
     def __init__(self, styles, parent=None):
         super().__init__(parent)
+        styles = validate_styles(styles)
+        self._legacy_styles = {key: dict(styles[key]) for key in LEGACY_STYLE_TYPES}
         self.setWindowTitle("铁路样式 · 轨道类型与视角线宽")
         self.resize(700, 760)
         layout = QVBoxLayout(self)
@@ -142,7 +151,7 @@ class RailStyleDialog(QDialog):
         table.verticalHeader().hide()
         self.controls = {}
         for row, name in enumerate(STYLE_TYPES):
-            label = QTableWidgetItem(name)
+            label = QTableWidgetItem(STYLE_LABELS[name])
             label.setFlags(label.flags() & ~Qt.ItemFlag.ItemIsEditable)
             table.setItem(row, 0, label)
             color = QPushButton(styles[name]["color"])
@@ -228,6 +237,7 @@ class RailStyleDialog(QDialog):
             }
             for name, (color, width, pattern) in self.controls.items()
         }
+        value.update(self._legacy_styles)
         value[ZOOM_CURVE_KEY] = [
             {"zoom": zoom.value(), "scale": scale.value()}
             for zoom, scale in self.curve_controls

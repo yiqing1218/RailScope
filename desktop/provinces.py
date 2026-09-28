@@ -9,11 +9,13 @@ from uuid import uuid4
 try:
     from .geometry import distance_m
     from .rail_categories import track_type, corridor_for
+    from .rail_semantics import semantic_record, aggregate_semantics
 except ImportError:
     from geometry import distance_m
     from rail_categories import track_type, corridor_for
+    from rail_semantics import semantic_record, aggregate_semantics
 
-VERSION = "topology-line-endpoint-catalog-v9"
+VERSION = "topology-line-endpoint-catalog-v10"
 NAMES = {
     "Hainan": "海南省",
     "Taiwan": "台湾省",
@@ -165,6 +167,7 @@ def add_track(catalog, feature, index):
                 "type_evidence": evidence,
                 "classification": VERSION,
                 "construction": bool(props.get("construction")),
+                **semantic_record(props),
             },
         )
         if props["osm_way_id"] not in record["way_ids"]:
@@ -173,7 +176,7 @@ def add_track(catalog, feature, index):
 
 def _catalog_group(record):
     if (
-        "站场" in record["track_type"]
+        (record.get('facility_only') or record.get('track_role', 'unknown') not in ('main_track', 'unknown'))
         and record.get("station_name")
         and record["station_name"] != "未关联站场"
     ):
@@ -214,8 +217,11 @@ def _compact_catalog(sections):
                 "classification": VERSION,
                 "construction": bool(section.get("construction")),
                 "provinces": [],
+                **semantic_record(section),
             },
         )
+        if record['section_count']:
+            record.update(aggregate_semantics([semantic_record(record), semantic_record(section)]))
         record["section_count"] += 1
         record["provinces"] = sorted(set(record["provinces"]) | set(section.get("provinces", ())))
         record["edge_count"] += len(section["edge_ids"])
@@ -318,7 +324,7 @@ def geographic_catalog(directory, force=False):
         category = section["track_type"]
         station_name, station_status, station_confidence = (
             nearest_station(section)
-            if "站场" in category
+            if section.get('facility_only') or section.get('track_role', 'unknown') not in ('main_track', 'unknown')
             else (None, "not_applicable", None)
         )
         edge_ids = [leg["edge_id"] for leg in section["path"]]
@@ -346,6 +352,7 @@ def geographic_catalog(directory, force=False):
             "station_assignment_confidence": station_confidence,
             "classification": VERSION,
             "construction": bool(section.get("construction")),
+            **semantic_record(section),
             "provinces": sorted({
                 province_index.locate(point)
                 for point in (section.get("from_coordinate"), section.get("to_coordinate"))

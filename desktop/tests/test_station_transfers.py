@@ -121,25 +121,23 @@ def test_transfer_keeps_a_valid_arrival_when_another_would_backtrack(tmp_path):
     assert [leg["edge_id"] for leg in lib.resolve(sequence, "auto")] == ["in-other", "out-a", "out-b", "out-c"]
 
 
-def test_index_13_upgrade_only_builds_endpoint_indexes(tmp_path, monkeypatch):
+def test_index_13_upgrade_adds_semantics_without_replacing_topology(tmp_path):
     lib, _, _ = fixture(tmp_path)
     with sqlite3.connect(lib.path) as db:
+        before = db.execute("SELECT id,line_id,a,b,length_m FROM edges ORDER BY id").fetchall()
         source = json.loads(db.execute("SELECT value FROM metadata WHERE key='source'").fetchone()[0])
         source[0] = 13
         db.execute("UPDATE metadata SET value=? WHERE key='source'", (json.dumps(source),))
         db.execute("DROP INDEX edge_from")
         db.execute("DROP INDEX edge_to")
-    original = json.loads
-
-    def only_signature(text, *args, **kwargs):
-        assert not text.startswith("{"), "升级不能重新读取全国 geometry JSON"
-        return original(text, *args, **kwargs)
-
-    monkeypatch.setattr(json, "loads", only_signature)
+        db.execute("DROP TABLE edge_semantics")
+        db.execute("DROP TABLE line_semantics")
     build_line_index(tmp_path / "rail.sqlite", lib.path, [], [])
     assert index_ready(lib.path, fingerprint(tmp_path / "rail.sqlite", []))
     with sqlite3.connect(lib.path) as db:
         assert db.execute("SELECT count(*) FROM edges").fetchone()[0] == 5
+        assert db.execute("SELECT id,line_id,a,b,length_m FROM edges ORDER BY id").fetchall() == before
+        assert db.execute("SELECT count(*) FROM edge_semantics").fetchone()[0] == 5
         assert {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='index'")} >= {"edge_from", "edge_to"}
 
 

@@ -59,6 +59,10 @@ def test_signal_box_rename_uses_index_and_reuses_coordinates(tmp_path, qtbot, mo
     original_connect = catalog_module.sqlite3.connect
     calls = []
     def connect(path, *args, **kwargs):
+        # Lazy Qt views may page their small catalog cache during event-loop
+        # processing; the assertion concerns geometry scans for the rename.
+        if str(path).split('?', 1)[0].endswith('rail_catalog.sqlite'):
+            return original_connect(path, *args, **kwargs)
         calls.append(str(path))
         assert str(path).endswith('rail_lines.sqlite')  # No full rail.sqlite scan.
         return original_connect(path, *args, **kwargs)

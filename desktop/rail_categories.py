@@ -169,7 +169,14 @@ def catalog_parents(meta, mode):
     Unknown speed and geography stay explicit so directory labels never claim
     facts absent from source tags or reviewed workspace metadata.
     """
-    category = meta.get("track_type", "未确认类型")
+    try:
+        from .rail_semantics import semantic_record
+        from .rail_style_resolver import ROLE_LABELS
+    except ImportError:
+        from rail_semantics import semantic_record
+        from rail_style_resolver import ROLE_LABELS
+    facts = semantic_record(meta)
+    railway_class, line_role, role = (facts[key] for key in ('railway_class','line_role','track_role'))
     name = (
         meta.get("line_name")
         or meta.get("line_display_name")
@@ -177,12 +184,11 @@ def catalog_parents(meta, mode):
         or "未命名物理线路"
     ).split(" · ", 1)[0]
     prefix = ("在建铁路",) if meta.get("construction") else ()
-    yard = ("站场股道", "道岔连接轨", "车辆段", "折返线")
-    if "站场股道" in category or category in {"渡线 / 道岔连接轨", "车辆段 / 检修线", "折返线"}:
-        role = next((item for item in yard if item[:2] in category), "其他站场线")
-        return prefix + ("站台线&股道线", role)
-    if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
-        high = any(word in name for word in ("高速", "高铁", "客专")) or meta.get("highspeed") is True
+    if facts.get('facility_only') or role not in ('main_track', 'unknown'):
+        return prefix + ('车站设施', meta.get('station_name') or facts.get('facility_id') or '未关联设施',
+                         ROLE_LABELS.get(role, '用途待核实'))
+    if line_role == 'connecting_line':
+        high = railway_class == 'high_speed'
         return prefix + ("联络线", "高速联络线" if high else "普速联络线")
     if any(word in name for word in ("地方铁路", "地方线")):
         return prefix + ("其他铁路", "地方铁路")
@@ -191,7 +197,7 @@ def catalog_parents(meta, mode):
     if any(word in name for word in ("港口", "港区", "码头")):
         return prefix + ("其他铁路", "港口铁路")
     region = _rail_region(meta)
-    if category == "高速铁路线":
+    if railway_class == 'high_speed':
         trunk = any(word in name for word in ("京沪", "京广", "沪昆", "徐兰", "京哈", "京港", "沿海", "陆桥"))
         technical = meta.get("technical_attributes") or {}
         speed = meta.get("design_speed_kmh") or technical.get("design_speed_kmh") or meta.get("maxspeed")
@@ -201,9 +207,9 @@ def catalog_parents(meta, mode):
             speed = None
         band = str(speed) if speed in (350, 250, 200) else "其他/速度待核对"
         return prefix + ("高速铁路", "干线" if trunk else region, band)
-    if category in {"普速铁路线", "货运铁路线", "支线 / 岔道"}:
+    if railway_class in {'conventional', 'freight'}:
         trunk = any(word in name for word in ("京沪", "京广", "陇海", "沪昆", "京九", "兰新"))
-        service = "货运" if category == "货运铁路线" else meta.get("service_type", "客货运")
+        service = "货运" if railway_class == 'freight' else meta.get("service_type", "客货运")
         if service not in {"客运", "货运", "客货运"}:
             service = "客货运"
         return prefix + ("普速铁路", "干线" if trunk else region, service)

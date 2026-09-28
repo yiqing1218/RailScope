@@ -3619,6 +3619,7 @@ class Desk(QMainWindow):
                 TRACK_TYPES,
                 primary.get("track_type", "未确认类型"),
                 self,
+                rail_semantics=primary,
             )
             from rail_relationship_ui import RelationshipSelector
             from rail_relationships import line_relationships, relationship_changes
@@ -3672,24 +3673,36 @@ class Desk(QMainWindow):
                     changed["display_name"] = value["display_name"]
                 if value["folder_path"] != list(current_path):
                     changed["folder_path"] = value["folder_path"]
-                if value["track_type"] != primary.get("track_type", "未确认类型"):
-                    changed["track_type"] = value["track_type"]
                 if value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
+                if value.get('rail_semantics'):
+                    from railscope.rail_semantics import validate_semantic_fields
+                    semantic_override = {**primary.get('rail_semantics', {}), **value['rail_semantics'],
+                        'verification_status': 'user_verified', 'source': 'workspace_override'}
+                    validate_semantic_fields(semantic_override)
+                    changed['rail_semantics'] = semantic_override
                 changes = {
                     key: dict(changed)
                     for key in rail_groups
                 }
+                line_semantics_changes = {}
+                if value.get('rail_semantics'):
+                    for key in rail_groups:
+                        line_id = self.rail_catalog_widget.catalog[key].get('line_id')
+                        if line_id:
+                            line_semantics_changes[line_id] = {'rail_semantics': changed['rail_semantics']}
                 if relationship_updates:
                     for key, values in changes.items():
                         relationship_updates.setdefault(key, {}).update(values)
-                    self.rail_catalog_widget._save_local_overrides(relationship_updates)
+                    self.rail_catalog_widget._save_local_overrides({**relationship_updates, **line_semantics_changes})
                     self.rail_catalog_widget.metadata_changed.emit()
                     self.rail_catalog_widget._refresh_station_items({key.removeprefix('station:') for key in relationship_updates if key.startswith('station:')})
                     self.rail_catalog_widget.populate()
                     self.rail_catalog_widget.send_visibility(False)
                 elif changed:
                     self.rail_catalog_widget.save_overrides(changes)
+                    if line_semantics_changes:
+                        self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
                 if "display_name" in changed:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
@@ -3797,14 +3810,24 @@ class Desk(QMainWindow):
             province.setText(current[0] if current else "全国铁路线")
             city.setText(current[1] if len(current) > 1 else "")
             folder.setText(current[2] if len(current) > 2 else "")
-            rail_track_type = QComboBox()
-            rail_track_type.addItems(TRACK_TYPES)
-            rail_track_type.setCurrentText(
-                self.rail_catalog_widget.meta(rail_group).get(
-                    "track_type", "未确认类型"
-                )
-            )
-            form.addRow("轨道类型", rail_track_type)
+            from railscope.rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
+            from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+            current_facts = self.rail_catalog_widget.meta(rail_group)
+            rail_semantic_controls = {}
+            for key, title, labels, allowed in (
+                ('railway_class', '铁路类别', CLASS_LABELS, RAILWAY_CLASSES),
+                ('line_role', '线路网络角色', LINE_ROLE_LABELS, LINE_ROLES),
+                ('track_role', '此物理轨道用途', ROLE_LABELS, TRACK_ROLES),
+            ):
+                if key == 'track_role' and not props.get('network_edge_id'):
+                    continue
+                control = QComboBox()
+                for semantic_id, label in labels.items():
+                    if semantic_id in allowed:
+                        control.addItem(label, semantic_id)
+                control.setCurrentIndex(max(0, control.findData(props.get(key, current_facts.get(key, 'unknown')))))
+                form.addRow(title, control)
+                rail_semantic_controls[key] = control
         elif rail_node is not None or rail_station_id is not None:
             if rail_node is not None:
                 self.rail_catalog_widget.select_station(rail_node)
@@ -3880,18 +3903,26 @@ class Desk(QMainWindow):
                     display_name = name.text().strip()
                     if not display_name:
                         raise ValueError("名称不能为空")
-                    self.rail_catalog_widget.save_overrides(
-                        {
-                            rail_group: {
-                                "display_name": display_name,
-                                "folder_path": path,
-                                "track_type": rail_track_type.currentText(),
-                            }
-                        }
-                    )
+                    semantic_change = {key: control.currentData() for key, control in rail_semantic_controls.items()
+                        if control.currentData() != props.get(key, current_facts.get(key, 'unknown'))}
+                    current_override = self.rail_catalog_widget.overrides.get(rail_group, {}).get('rail_semantics', {})
+                    group_facts = {key: value for key, value in semantic_change.items() if key != 'track_role'}
+                    changes = {rail_group: {'display_name': display_name, 'folder_path': path}}
+                    if group_facts:
+                        changes[rail_group]['rail_semantics'] = {**current_override, **group_facts,
+                            'verification_status': 'user_verified', 'source': 'workspace_override'}
+                    self.rail_catalog_widget.save_overrides(changes)
                     line_id = self.rail_catalog_widget.catalog[rail_group].get("line_id")
                     if line_id:
                         self.rail_operations.save_line_names({line_id: display_name})
+                        if group_facts:
+                            self.rail_catalog_widget._save_local_overrides({line_id: {
+                                'rail_semantics': changes[rail_group]['rail_semantics']}})
+                    if 'track_role' in semantic_change and props.get('network_edge_id'):
+                        self.rail_catalog_widget._save_local_overrides({
+                            'object:network_edge_id:' + str(props['network_edge_id']): {
+                                'rail_semantics': {'track_role': semantic_change['track_role'],
+                                    'verification_status': 'user_verified', 'source': 'workspace_override'}}})
                 elif (rail_node is not None or rail_station_id is not None) and record:
                     connections = connection_selector.connections()
                     custom_attributes = {}

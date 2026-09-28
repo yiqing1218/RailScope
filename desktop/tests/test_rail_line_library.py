@@ -291,7 +291,7 @@ def test_national_line_directory_does_not_load_geometry(tmp_path):
     export_path = tmp_path / "中文 线路.json"
     library.write_export(export_path)
     exported = json.loads(export_path.read_text(encoding="utf-8"))
-    assert exported["schema"] == "railscope.rail-graph.v1"
+    assert exported["schema"] == "railscope.rail-graph.v2"
     assert exported["corridor_format"]["sequence"] == "endpoint-line-endpoint-line-endpoint"
     assert any(s["line_id"] == ident for s in exported["sections"])
     editor.merge_corridors(

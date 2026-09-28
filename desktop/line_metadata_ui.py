@@ -16,12 +16,15 @@ from PySide6.QtWidgets import (
 
 try:
     from .line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
+    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS
 except ImportError:
     from line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
+    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS
 
 
 class LineMetadataDialog(QDialog):
-    def __init__(self, kind, name, path, attributes, track_types=None, track_type="", parent=None):
+    def __init__(self, kind, name, path, attributes, track_types=None, track_type="", parent=None,
+                 rail_semantics=None):
         super().__init__(parent)
         self.kind = kind
         self.setWindowTitle(("地铁" if kind == "metro" else "国铁") + "线路信息")
@@ -40,11 +43,17 @@ class LineMetadataDialog(QDialog):
         general_form.addRow("二级目录", self.city)
         general_form.addRow("线路 / 分类目录", self.folder)
         self.track_type = None
-        if track_types:
-            self.track_type = QComboBox()
-            self.track_type.addItems(track_types)
-            self.track_type.setCurrentText(track_type)
-            general_form.addRow("轨道类型", self.track_type)
+        self.rail_semantics = {}
+        self._original_semantics = dict(rail_semantics or {})
+        if kind == 'rail':
+            for key, title, labels in (('railway_class','铁路类别',CLASS_LABELS),
+                                       ('line_role','线路网络角色',LINE_ROLE_LABELS)):
+                control = QComboBox()
+                for ident, label in labels.items():
+                    control.addItem(label, ident)
+                control.setCurrentIndex(max(0, control.findData(self._original_semantics.get(key, 'unknown'))))
+                general_form.addRow(title, control)
+                self.rail_semantics[key] = control
         tabs.addTab(general, "名称与目录")
 
         detail_host = QWidget()
@@ -100,4 +109,6 @@ class LineMetadataDialog(QDialog):
             ],
             "track_type": self.track_type.currentText() if self.track_type else None,
             "technical_attributes": normalize_line_attributes(attributes, self.kind),
+            "rail_semantics": {key: control.currentData() for key, control in self.rail_semantics.items()
+                               if control.currentData() != self._original_semantics.get(key, 'unknown')},
         }

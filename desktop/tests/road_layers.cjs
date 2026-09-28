@@ -33,9 +33,9 @@ sandbox.testMap={getLayer:id=>layers.get(id),addLayer:l=>layers.set(l.id,l),
   getStyle:()=>({layers:[...layers.values()]}),hasImage:()=>true,
   getZoom:()=>zoom,getBounds:()=>({getWest:()=>120,getSouth:()=>30,getEast:()=>122,getNorth:()=>32})};
 vm.runInContext(`map=testMap;config={roadViewport:true,sources:Object.fromEntries(['metro','stations','areas','construction','rail','railPoints','railPlatforms','railStationAreas','railSignalBoxes','railVehicles','road','imported'].map(k=>[k,empty]))}; installLayers();`,sandbox);
-vm.runInContext(`config.railStyles={'普速铁路线':{color:'#283541',width:2.5,pattern:'solid'}};applyRailStyles();`,sandbox);
-assert.match(JSON.stringify(layers.get('rail').paint['line-color'][1]), /design_speed_kmh/);
-assert.match(JSON.stringify(layers.get('rail-stripes').paint['line-opacity']),/display_track_type/);
+vm.runInContext(`config.railStyles={'class.conventional':{color:'#283541',width:2.5,pattern:'solid'}};applyRailStyles();`,sandbox);
+assert.match(JSON.stringify(layers.get('rail').paint['line-color']), /rail_style_key/);
+assert.match(JSON.stringify(layers.get('rail-stripes').paint['line-opacity']), /rail_style_key/);
 const specPath='../../frontend/node_modules/@maplibre/maplibre-gl-style-spec';
 try{
   const {validateStyleMin}=require(specPath);

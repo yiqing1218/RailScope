@@ -325,9 +325,7 @@ function applyRailStyles(){
   const curve=Array.isArray(styles._zoom_width_curve)&&styles._zoom_width_curve.length>=2
     ?styles._zoom_width_curve
     :[{zoom:3,scale:.8},{zoom:5,scale:.9},{zoom:8,scale:1.05},{zoom:12,scale:1.25},{zoom:16,scale:1.5},{zoom:19,scale:1.8}];
-  const category=['coalesce',['get','display_track_type'],['get','track_type']];
-  const speed=['to-number',['get','design_speed_kmh'],0];
-  const role=['case',['all',['==',category,'高速铁路线'],['in',speed,['literal',[350,250,200,160]]]],['concat','高速铁路线 · ',['to-string',speed],' km/h'],category];
+  const role=['coalesce',['get','rail_style_key'],'class.unknown'];
   const colors=['match',role],widths=['match',role];
   for(const [type,style] of entries){
     colors.push(type,style.color);widths.push(type,Number(style.width));

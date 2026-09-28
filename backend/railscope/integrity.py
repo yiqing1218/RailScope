@@ -77,11 +77,15 @@ def path_refs(repo, legs, allow_nonoperating=False):
 
 def references(repo, kind, ident):
     """Return stable IDs, not map features; include transitive corridor/run impact."""
-    result={key:[] for key in ('lines','sections','corridors','station_routes','station_tracks','train_runs')}
+    result={key:[] for key in ('lines','sections','corridors','station_routes','station_tracks','train_runs',
+                              'operational_points','yards','station_zones','route_intents','edges','blocks')}
     if kind=='edge':
         result['lines']=[m.line_id for m in repo.memberships if m.edge_id==ident]
         for collection in ('sections','corridors','station_routes','station_tracks'):
             result[collection]=[p.id for p in getattr(repo,collection).values() if any(r.edge_id==ident for r in p.edge_refs)]
+        result['station_tracks'] += [m.station_track_id for m in repo.station_track_edges if m.edge_id==ident]
+        result['blocks'] = [m.block_id for m in repo.block_edges if m.edge_id==ident]
+        result['train_runs'] += [s.train_run_id for s in repo.stops if s.stop_edge_id==ident]
     elif kind=='station':
         node_ids={n.id for n in repo.nodes.values() if n.station_id==ident}
         station=repo.stations.get(ident)
@@ -92,9 +96,35 @@ def references(repo, kind, ident):
             for key, values in references(repo,'edge',edge).items():
                 result[key].extend(values)
         result['station_routes'] += [r.id for r in repo.station_routes.values() if r.station_id==ident]
+        for collection in ('station_tracks','operational_points','yards','station_zones'):
+            result[collection] += [r.id for r in getattr(repo,collection).values() if r.station_id==ident]
+        result['edges'] += [e.id for e in repo.edges.values() if e.facility_id==ident]
         result['train_runs'] += [s.train_run_id for s in repo.stops if s.station_id==ident]
+        result['train_runs'] += [t.id for t in repo.train_runs.values() if ident in (t.origin_station_id,t.destination_station_id)]
     elif kind=='corridor':
         result['corridors']=[ident]
+    elif kind=='yard':
+        result['station_tracks'] = [t.id for t in repo.station_tracks.values() if t.yard_id==ident]
+        result['station_zones'] = [z.id for z in repo.station_zones.values() if z.yard_id==ident]
+        result['edges'] = [e.id for e in repo.edges.values() if e.yard_id==ident]
+    elif kind=='station_zone':
+        result['station_tracks'] = [t.id for t in repo.station_tracks.values() if t.zone_id==ident]
+        result['edges'] = [e.id for e in repo.edges.values() if e.zone_id==ident]
+    elif kind=='operational_point':
+        result['edges'] = [e.id for e in repo.edges.values() if e.facility_id==ident]
+    elif kind=='line':
+        result['edges'] = [e.id for e in repo.edges.values() if e.infrastructure_line_id==ident]
+        result['edges'] += [m.edge_id for m in repo.memberships if m.line_id==ident]
+        result['station_tracks'] = [t.id for t in repo.station_tracks.values() if t.infrastructure_line_id==ident]
+    elif kind=='node':
+        result['operational_points'] = [p.id for p in repo.operational_points.values() if ident in p.node_ids]
+        result['edges'] = [e.id for e in repo.edges.values() if ident in (e.from_node_id,e.to_node_id)]
+    elif kind=='route_intent':
+        result['route_intents'] = [ident]
+    intent_kind = 'infrastructure_line' if kind=='line' else kind
+    result['route_intents'] += [r.id for r in repo.route_intents.values()
+        if any(step.kind==intent_kind and step.reference_id==ident for step in r.steps)]
+    result['corridors'] += [c.id for c in repo.corridors.values() if c.route_intent_id in result['route_intents']]
     result['train_runs'] += [t.id for t in repo.train_runs.values() if t.corridor_id in result['corridors']]
     return {key:sorted(set(value)) for key,value in result.items()}
 
@@ -102,16 +132,63 @@ def references(repo, kind, ident):
 def validate_repository(repo):
     errors=[]
     from .presentation import valid_color, design_speed
+    from .rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
     for line in repo.lines.values():
         try: design_speed(line.design_speed_kmh)
         except ValueError as exc: errors.append(f'line {line.id}: {exc}')
+        if line.railway_class not in RAILWAY_CLASSES or line.line_role not in LINE_ROLES:
+            errors.append(f'line {line.id}: invalid railway semantics')
     for corridor in repo.corridors.values():
         try: valid_color(corridor.color)
         except ValueError as exc: errors.append(f'corridor {corridor.id}: {exc}')
+        if corridor.route_intent_id and corridor.route_intent_id not in repo.route_intents:
+            errors.append(f'corridor {corridor.id}: route intent missing')
+        if corridor.resolution_mode not in {'automatic_reference','strict_unique','manual_verified','legacy'}:
+            errors.append(f'corridor {corridor.id}: invalid resolution mode')
+    for point in repo.operational_points.values():
+        if point.point_type not in {'station','junction_post','block_post','signal_box','other_control_point'}:
+            errors.append(f'operational point {point.id}: invalid point type')
+        if point.station_id and point.station_id not in repo.stations:
+            errors.append(f'operational point {point.id}: station missing')
+        if any(node not in repo.nodes for node in point.node_ids):
+            errors.append(f'operational point {point.id}: node missing')
+    for yard in repo.yards.values():
+        if yard.station_id not in repo.stations:
+            errors.append(f'yard {yard.id}: station missing')
+    for zone in repo.station_zones.values():
+        if zone.station_id not in repo.stations:
+            errors.append(f'station zone {zone.id}: station missing')
+        if zone.yard_id and (zone.yard_id not in repo.yards or repo.yards[zone.yard_id].station_id!=zone.station_id):
+            errors.append(f'station zone {zone.id}: yard missing or belongs to another station')
+    intent_collections={'operational_point':repo.operational_points,'infrastructure_line':repo.lines,
+                        'node':repo.nodes,'station':repo.stations}
+    for intent in repo.route_intents.values():
+        if [s.sequence for s in intent.steps] != list(range(1,len(intent.steps)+1)):
+            errors.append(f'route intent {intent.id}: invalid sequence')
+        for step in intent.steps:
+            if step.kind not in intent_collections or step.reference_id not in intent_collections[step.kind]:
+                errors.append(f'route intent {intent.id}: missing {step.kind} {step.reference_id}')
+            if step.direction not in {'forward','reverse','both','unknown'}:
+                errors.append(f'route intent {intent.id}: invalid direction')
+        kinds=[s.kind for s in intent.steps]
+        if kinds and (len(kinds)%2==0 or any((k=='infrastructure_line') != (i%2==1) for i,k in enumerate(kinds))):
+            errors.append(f'route intent {intent.id}: expected endpoint / line / endpoint sequence')
     for geometry in repo.service_area_geometries.values():
         if geometry.service_area_id not in repo.service_areas:
             errors.append(f'service geometry {geometry.id}: owner missing')
     for track in repo.station_tracks.values():
+        if track.track_role not in TRACK_ROLES or track.railway_class not in RAILWAY_CLASSES:
+            errors.append(f'station track {track.id}: invalid railway semantics')
+        if track.infrastructure_line_id and track.infrastructure_line_id not in repo.lines:
+            errors.append(f'station track {track.id}: line missing')
+        for attr,collection in (('yard_id',repo.yards),('zone_id',repo.station_zones)):
+            ident=getattr(track,attr)
+            if ident and (ident not in collection or collection[ident].station_id!=track.station_id):
+                errors.append(f'station track {track.id}: {attr} missing or belongs to another station')
+        if track.yard_id in repo.yards and track.zone_id in repo.station_zones:
+            zone=repo.station_zones[track.zone_id]
+            if zone.yard_id and zone.yard_id!=track.yard_id:
+                errors.append(f'station track {track.id}: inconsistent yard/zone')
         if track.edge_refs:
             try:
                 expected = path_refs(repo, [(r.edge_id, r.forward) for r in track.edge_refs], allow_nonoperating=True)
@@ -119,6 +196,24 @@ def validate_repository(repo):
                     raise ValueError('股道边序或累计里程无效')
             except ValueError as exc:
                 errors.append(f'station track {track.id}: {exc}')
+    track_members={}
+    for member in repo.station_track_edges:
+        if member.station_track_id not in repo.station_tracks or member.edge_id not in repo.edges:
+            errors.append(f'station track membership {member.station_track_id}: missing track/edge')
+        if member.direction not in {'forward','reverse'}:
+            errors.append(f'station track membership {member.station_track_id}: invalid direction')
+        track_members.setdefault(member.station_track_id,[]).append(member)
+    for track_id,members in track_members.items():
+        members=sorted(members,key=lambda m:m.sequence)
+        if [m.sequence for m in members]!=list(range(1,len(members)+1)):
+            errors.append(f'station track membership {track_id}: invalid sequence')
+        try:
+            expected=path_refs(repo,[(m.edge_id,m.forward) for m in members],allow_nonoperating=True)
+            track=repo.station_tracks.get(track_id)
+            if track and track.edge_refs and track.edge_refs!=expected:
+                errors.append(f'station track membership {track_id}: disagrees with legacy edge_refs')
+        except ValueError as exc:
+            errors.append(f'station track membership {track_id}: {exc}')
     for edge in repo.edges.values():
         if edge.from_node_id not in repo.nodes or edge.to_node_id not in repo.nodes:
             errors.append(f'edge {edge.id}: endpoint missing')
@@ -126,6 +221,25 @@ def validate_repository(repo):
             errors.append(f'edge {edge.id}: invalid construction_status')
         if len(edge.coordinates)<2 or not math.isfinite(edge.length_m) or edge.length_m<=0:
             errors.append(f'edge {edge.id}: invalid geometry/length')
+        if edge.railway_class not in RAILWAY_CLASSES or edge.line_role not in LINE_ROLES or edge.track_role not in TRACK_ROLES:
+            errors.append(f'edge {edge.id}: invalid railway semantics')
+        if edge.infrastructure_line_id and edge.infrastructure_line_id not in repo.lines:
+            errors.append(f'edge {edge.id}: infrastructure line missing')
+        if edge.facility_id and not any(edge.facility_id in collection for collection in (repo.stations,repo.operational_points,repo.service_areas)):
+            errors.append(f'edge {edge.id}: facility missing')
+        facility_station = edge.facility_id if edge.facility_id in repo.stations else None
+        if edge.facility_id in repo.operational_points:
+            facility_station = repo.operational_points[edge.facility_id].station_id
+        for attr,collection in (('yard_id',repo.yards),('zone_id',repo.station_zones)):
+            ident=getattr(edge,attr)
+            if ident and ident not in collection:
+                errors.append(f'edge {edge.id}: {attr} missing')
+            elif ident and facility_station and collection[ident].station_id!=facility_station:
+                errors.append(f'edge {edge.id}: {attr} belongs to another station')
+        if edge.yard_id in repo.yards and edge.zone_id in repo.station_zones:
+            zone=repo.station_zones[edge.zone_id]
+            if zone.station_id!=repo.yards[edge.yard_id].station_id or (zone.yard_id and zone.yard_id!=edge.yard_id):
+                errors.append(f'edge {edge.id}: inconsistent yard/zone')
     for member in repo.memberships:
         if member.edge_id not in repo.edges or member.line_id not in repo.lines:
             errors.append(f'membership {member.edge_id}: missing edge/line')
@@ -203,7 +317,7 @@ def validate_repository(repo):
 
 def delete_edge(repo, edge_id):
     refs=references(repo,'edge',edge_id)
-    if any(refs[k] for k in ('sections','corridors','station_routes','station_tracks','train_runs')):
+    if any(refs[k] for k in ('sections','corridors','station_routes','station_tracks','train_runs','blocks')):
         raise ValueError(f"轨道被 {len(refs['corridors'])} 个 Corridor、{len(refs['train_runs'])} 个 TrainRun 引用：{refs}")
     del repo.edges[edge_id]
     repo.memberships[:]=[m for m in repo.memberships if m.edge_id!=edge_id]

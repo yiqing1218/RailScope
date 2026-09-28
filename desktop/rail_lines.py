@@ -12,9 +12,11 @@ import io
 try:
     from .geometry import distance_m
     from .rail_categories import track_type
+    from .rail_semantics import semantic_record, aggregate_semantics
 except ImportError:
     from geometry import distance_m
     from rail_categories import track_type
+    from rail_semantics import semantic_record, aggregate_semantics
 
 RESOLUTION_KEY = "railscope.org/line-resolution"
 
@@ -71,6 +73,7 @@ LEGACY_CORRIDOR_COLUMNS = tuple(
 )
 EXTENDED_CORRIDOR_COLUMNS = (*CORRIDOR_COLUMNS, "extensions")
 COLORED_CORRIDOR_COLUMNS = (*EXTENDED_CORRIDOR_COLUMNS, "color")
+DOMAIN_CORRIDOR_COLUMNS = (*COLORED_CORRIDOR_COLUMNS, 'route_intent', 'resolved_corridor')
 
 
 def edge_endpoints(edge):
@@ -101,7 +104,7 @@ def _endpoint(value):
 
 def import_corridor_csv(text):
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS), list(COLORED_CORRIDOR_COLUMNS)):
+    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS), list(COLORED_CORRIDOR_COLUMNS), list(DOMAIN_CORRIDOR_COLUMNS)):
         raise ValueError(
             "通道 CSV 表头必须为：" + ",".join(CORRIDOR_COLUMNS)
             + "（旧版不含 section_id 仍可导入）"
@@ -127,6 +130,11 @@ def import_corridor_csv(text):
             },
         )
         sequence = route["sequence"]
+        for field in ('route_intent', 'resolved_corridor'):
+            if row.get(field):
+                if sequence:
+                    raise ValueError('通道 CSV 的领域对象只填写在首行')
+                route[field] = json.loads(row[field])
         if row.get('color'):
             from railscope.presentation import valid_color
             valid_color(row['color'])
@@ -166,7 +174,7 @@ def import_corridor_csv(text):
 
 def export_corridor_csv(document):
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=COLORED_CORRIDOR_COLUMNS)
+    writer = csv.DictWriter(output, fieldnames=DOMAIN_CORRIDOR_COLUMNS)
     writer.writeheader()
     for route in document["corridors"]:
         sequence = route["sequence"]
@@ -182,6 +190,8 @@ def export_corridor_csv(document):
                     "section_id": sequence[index].get("section_id", ""),
                     "to_node": sequence[index + 1]["node_id"],
                     "extensions": json.dumps(route.get("extensions", {}), ensure_ascii=False, separators=(",", ":")) if index == 1 else "",
+                    **{key: json.dumps(route[key], ensure_ascii=False, separators=(',', ':'))
+                       if index == 1 and key in route else '' for key in ('route_intent','resolved_corridor')},
                 }
             )
     return output.getvalue()
@@ -262,6 +272,7 @@ class RailLineLibrary:
             for node in (a, b):
                 self.nodes[node] = labels.get(node) or control_point_label(node)
         for ident, record in self.lines.items():
+            record.update(aggregate_semantics(semantic_record(self.edges[key]) for key in record['edge_ids']))
             record["name"] = (
                 self.names.get(ident, record["source_name"]) + " · " + ident
             )
@@ -651,6 +662,7 @@ class RailLineLibrary:
                             "from_node": start,
                             "to_node": end,
                             "path": legs,
+                            **aggregate_semantics(semantic_record(self.edges[leg['edge_id']]) for leg in legs),
                         }
                     )
         return deepcopy(output)

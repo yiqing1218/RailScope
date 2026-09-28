@@ -127,6 +127,10 @@ def test_independent_corridor_import_export_and_map_train_selection(tmp_path):
         for leg in reversed(other["path"])
     ]
     other.pop("sequence", None)
+    # This exercises a legacy physical-path import. V2 duplicated fields must
+    # agree; a caller intentionally constructing an old DTO omits them.
+    other.pop('route_intent', None)
+    other.pop('resolved_corridor', None)
     editor.merge_corridors({**document, "corridors": [other]})
     editor.show_corridor(other["id"])
     preview = next(

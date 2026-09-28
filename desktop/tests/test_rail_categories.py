@@ -91,6 +91,6 @@ def test_catalog_hierarchy_uses_business_lines_without_province_splitting():
     meta.update(track_type="普速铁路线", line_display_name="京沪铁路 · IL-TEST")
     assert catalog_parents(meta, 0) == ("普速铁路", "干线", "客货运")
     meta.update(track_type="高速铁路站场股道", station_name="上海虹桥站")
-    assert catalog_parents(meta, 0) == ("站台线&股道线", "站场股道")
+    assert catalog_parents(meta, 0) == ("车站设施", "上海虹桥站", "用途待核实")
     meta.update(track_type="未确认类型", line_display_name="金温地方铁路 · IL-TEST")
     assert catalog_parents(meta, 0) == ("其他铁路", "地方铁路")

@@ -47,7 +47,9 @@ def test_numbering_keeps_manual_names_and_schematic_uses_shared_geometry(tmp_pat
             verification_status='user_named' if index==0 else 'source_unverified')
     assert automatic_numbering(repo)==2
     assert repo.station_tracks['0'].name=='货1道'
-    assert {t.track_number for t in repo.station_tracks.values()}=={'1','2','3'}
+    assert {t.track_number for t in repo.station_tracks.values()}=={'1',None}
+    assert all(repo.station_tracks[key].provenance['display_alias']['verification_status'] == 'display_only'
+               for key in ('1', '2'))
     assert automatic_numbering(repo)==0
     from desktop.station_track_ui import StationTrackDialog
     dialog=StationTrackDialog(repo);qtbot.addWidget(dialog)

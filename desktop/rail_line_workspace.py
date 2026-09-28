@@ -164,6 +164,9 @@ class LineWorkspace:
         return {
             "source": "workspace_and_indexed_shared_nodes", "snapshot": snapshot,
             "verification_status": "topology_checked_not_dispatch_verified",
+            "schema_version": 2,
+            "evidence": "共享节点和人工 membership；线路身份与名称未获官方核验",
+            "confidence": None,
             "groups": groups,
             "version": hashlib.sha256(json.dumps(groups, sort_keys=True).encode()).hexdigest()[:16],
         }

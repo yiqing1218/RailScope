@@ -28,6 +28,10 @@ class InfrastructureLine:
     verification_status: str = "unverified"
     confidence: float | None = None
     design_speed_kmh: int | None = None
+    railway_class: str = "unknown"
+    line_role: str = "unknown"
+    snapshot_id: str | None = None
+    provenance: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,14 @@ class NetworkEdge:
     source_tags: dict = field(default_factory=dict)
     verification_status: str = "unverified"
     confidence: float | None = None
+    railway_class: str = "unknown"
+    line_role: str = "unknown"
+    track_role: str = "unknown"
+    facility_id: str | None = None
+    yard_id: str | None = None
+    zone_id: str | None = None
+    provenance: dict = field(default_factory=dict)
+    track_type: str | None = None  # Legacy display classification, never a core fact.
 
 
 @dataclass(frozen=True)
@@ -153,6 +165,69 @@ class LineMembership:
 
 
 @dataclass(frozen=True)
+class OperationalPoint:
+    """Business control point referencing physical nodes, never their geometry."""
+    id: str
+    name: str
+    point_type: str = "other_control_point"
+    station_id: str | None = None
+    node_ids: tuple[str, ...] = ()
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Yard:
+    id: str
+    station_id: str
+    name: str
+    yard_type: str = "unknown"
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StationZone:
+    """A station region, e.g. a throat; it does not classify track functions."""
+    id: str
+    station_id: str
+    name: str
+    zone_type: str = "throat"
+    yard_id: str | None = None
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RouteIntentStep:
+    sequence: int
+    kind: str  # operational_point / infrastructure_line / node / station
+    reference_id: str
+    direction: str = "unknown"
+
+
+@dataclass(frozen=True)
+class RouteIntent:
+    """Saved endpoint/line choices; no geometry and no second physical path."""
+    id: str
+    name: str
+    steps: tuple[RouteIntentStep, ...] = ()
+    snapshot_id: str | None = None
+    source_id: str | None = None
+    verification_status: str = "unverified"
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RouteSection:
     id: str
     edge_refs: tuple[DirectedEdgeRef, ...]
@@ -173,6 +248,13 @@ class Corridor:
     verification_status: str = "unverified"
     confidence: float | None = None
     color: str = "#466979"
+    route_intent_id: str | None = None
+    resolution_mode: str = "automatic_reference"
+    provenance: dict = field(default_factory=dict)
+
+
+# The resolved path remains the same shared Corridor entity and identifier.
+ResolvedCorridor = Corridor
 
 
 @dataclass(frozen=True)
@@ -263,6 +345,27 @@ class StationTrack:
     source_member_ids: tuple[str, ...] = ()
     snapshot_id: str | None = None
     verification_status: str = "unverified"
+    track_role: str = "unknown"
+    railway_class: str = "unknown"
+    infrastructure_line_id: str | None = None
+    yard_id: str | None = None
+    zone_id: str | None = None
+    source_id: str | None = None
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+    legacy_metadata: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StationTrackEdge:
+    station_track_id: str
+    edge_id: str
+    sequence: int
+    direction: str = "forward"
+
+    @property
+    def forward(self) -> bool:
+        return self.direction == "forward"
 
 
 @dataclass(frozen=True)

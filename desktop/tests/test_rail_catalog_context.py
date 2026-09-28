@@ -287,13 +287,17 @@ def test_large_directory_prioritizes_named_business_lines_and_includes_station_y
     widget.resize(380, 900)
     widget.show()
     qtbot.wait(1)
-    assert "RL-NAMED" in widget.items
-    assert "ST-YARD" in widget.items
-    assert widget.yard_tree.topLevelItemCount() >= 1
-    assert not any(key.startswith("RL-U-") for key in widget.items)
-    assert widget.tree.topLevelItemCount() > 0
-    assert widget.tree.verticalScrollBar().value() == 0
-    assert widget.tree.y() < 80
+    from PySide6.QtWidgets import QTreeView
+    assert isinstance(widget.line_browser, QTreeView)
+    assert widget.items == {}, "全国目录不能构建逐项 QTreeWidget 编辑适配器"
+    assert widget.tree.topLevelItemCount() == 0
+    assert widget.yard_tree.topLevelItemCount() == 0
+    line = widget.line_model.reveal_catalog_id("RL-NAMED")
+    assert line.isValid()
+    assert not widget.line_model.reveal_catalog_id("ST-YARD").isValid()
+    assert widget.facility_model.reveal_catalog_id("ST-YARD").isValid()
+    assert widget.line_browser.verticalScrollBar().value() == 0
+    assert widget.line_browser.y() < 80
 
 
 def test_station_context_menu_requests_the_shared_metadata_editor(

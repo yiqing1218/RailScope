@@ -10,15 +10,16 @@ from pathlib import Path
 import json
 import math
 import sqlite3
-import re
 
-from railscope.domain import Station, StationTrack
+from railscope.domain import Station, StationTrack, StationTrackEdge
 from railscope.identity import IdentityRegistry
 from railscope.integrity import path_refs
 try:
     from .domain_adapter import build_repository
+    from .station_track_semantics import track_number, migrate_track_override, semantic_track_name
 except ImportError:
     from domain_adapter import build_repository
+    from station_track_semantics import track_number, migrate_track_override, semantic_track_name
 
 
 def ordered_track_legs(edges):
@@ -43,20 +44,6 @@ def ordered_track_legs(edges):
     return result
 
 
-def track_number(tags):
-    value = tags.get('railway:track_ref')
-    if value:
-        return str(value)
-    match = re.search(r'([0-9ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)道$', tags.get('name', ''))
-    if match:
-        return match[1]
-    value = str(tags.get('ref') or '')
-    # Four-digit main-line reference codes are not station track numbers.
-    if tags.get('service') in ('yard', 'siding') and re.fullmatch(r'\d{1,3}|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+', value):
-        return value
-    return None
-
-
 def track_sections(sections, by_edge, overrides):
     """Join named fragments only with equal source track numbers and real nodes."""
     parent = {key:key for key in sections}
@@ -73,7 +60,7 @@ def track_sections(sections, by_edge, overrides):
             continue
         number = next(iter(values))
         custom = overrides.get('object:section_id:' + section, {})
-        manual = custom.get('display_name') if custom.get('verification_status') == 'user_named' else None
+        manual = custom.get('display_name') if custom.get('source') == 'manual' or custom.get('verification_status') in ('user_named', 'user_verified', 'official_confirmed') else None
         if manual:
             manual_names[section].add(manual)
         for key in members:
@@ -163,12 +150,17 @@ def load_station_tracks(directory, identity_path, station, overrides):
         members = set().union(*(sections[section] for section in source_sections))
         keys = ['object:' + ('section_id:' if section.startswith('RS-') else 'network_edge_id:') + section for section in source_sections]
         saved_values = [overrides.get(key, {}) for key in keys]
-        saved = next((v for v in saved_values if v.get('verification_status') == 'user_named'), saved_values[0])
+        saved = next((v for v in saved_values if v.get('source') == 'manual' or v.get('verification_status') in ('user_named', 'user_verified', 'official_confirmed')), saved_values[0])
         # Source section IDs remain aliases, not per-map-fragment business IDs.
         ident = registry.resolve_alias('station_track', source_sections[0], 'TRK')
-        raw = saved.get('station_track', {})
         source_edges = [by_edge[value] for value in sorted(members)]
         refs = path_refs(repo, [(bindings['edges'][key], forward) for key, forward in ordered_track_legs(source_edges)], allow_nonoperating=True)
+        def shared_attribute(attribute, default=None):
+            values = {getattr(repo.edges[ref.edge_id], attribute) for ref in refs}
+            return next(iter(values)) if len(values) == 1 else default
+        role = shared_attribute('track_role', 'unknown')
+        saved = migrate_track_override(saved, name + '站', role)
+        raw = saved.get('station_track', {})
         if raw.get('edge_refs') and {ref['edge_id'] for ref in raw['edge_refs']} != {ref.edge_id for ref in refs}:
             raise ValueError('股道物理引用发生变化，需要迁移核对：' + (saved.get('display_name') or ident))
         tags = [edge.get('way_tags', {}) for edge in source_edges]
@@ -176,18 +168,31 @@ def load_station_tracks(directory, identity_path, station, overrides):
         numbers = {track_number(t) for t in tags} - {None}
         number = str(saved.get('track_number') or raw.get('track_number') or (next(iter(numbers)) if len(numbers) == 1 else ''))
         track_name = saved.get('display_name') or raw.get('name') or next((t['name'] for t in tags if t.get('name') and t.get('service') in ('yard','siding')), '')
-        if saved.get('source') in ('automatic_yard_track_number', 'osm_track_ref') and number:
+        if saved.get('source') == 'osm_track_ref' and number:
             track_name = number + ('' if number.endswith('道') else '道')
         if not track_name and number:
             track_name = number + ('' if number.endswith('道') else '道')
-        role = 'arrival_departure' if any(t.get('service') == 'siding' for t in tags) else 'yard' if any(t.get('service') == 'yard' for t in tags) else 'main'
-        entity = StationTrack(ident, station_id, track_name or '未编号股道', number or None,
-            length_m=refs[-1].end_distance_m, is_virtual=False, edge_refs=refs, role=role,
+        provenance = dict(raw.get('provenance', {}))
+        provenance.setdefault('track_role', {'source': 'shared_network_edges',
+            'edge_ids': [ref.edge_id for ref in refs], 'verification_status': 'derived'})
+        if number and 'track_number' not in provenance:
+            provenance['track_number'] = {'source': 'workspace_override' if saved.get('track_number') else 'osm_explicit',
+                'evidence': number, 'verification_status': saved.get('verification_status', 'osm_explicit')}
+        entity = StationTrack(raw.get('id') or ident, station_id, track_name or semantic_track_name(name + '站', role), number or None,
+            length_m=refs[-1].end_distance_m, is_virtual=False, edge_refs=refs,
+            track_role=raw.get('track_role', role), railway_class=shared_attribute('railway_class', 'unknown'),
+            infrastructure_line_id=shared_attribute('infrastructure_line_id'),
+            yard_id=raw.get('yard_id') or shared_attribute('yard_id'), zone_id=raw.get('zone_id') or shared_attribute('zone_id'),
+            provenance=provenance, legacy_metadata=raw.get('legacy_metadata', saved.get('legacy_metadata', {})),
             source_member_ids=source_sections, snapshot_id=str((directory / 'rail.sqlite').stat().st_mtime_ns),
-            verification_status=saved.get('verification_status', 'source_unverified'))
+            verification_status=saved.get('verification_status', 'user_named' if saved.get('source') == 'manual' else 'source_unverified'))
+        ident = entity.id
         repo.station_tracks[ident] = entity
+        repo.station_track_edges.extend(StationTrackEdge(ident, ref.edge_id, ref.sequence,
+            'forward' if ref.forward else 'reverse') for ref in refs)
         points = [p for edge in source_edges for p in edge['coordinates']]
         rows[ident] = {'keys': keys, 'source_edges': tuple(sorted(members)),
+                       'saved_overrides': {key: overrides.get(key, {}) for key in keys},
                        'station_source': source, 'station_name': name + '站',
                        'bounds': [[min(p[0] for p in points), min(p[1] for p in points)],
                                   [max(p[0] for p in points), max(p[1] for p in points)]]}
@@ -198,18 +203,20 @@ def load_station_tracks(directory, identity_path, station, overrides):
 
 
 def track_overrides(repo, rows):
-    return {source_key: {'station_track': asdict(track), 'station_track_id': track.id,
+    return {source_key: {**rows[key].get('saved_overrides', {}).get(source_key, {}),
+            'station_track': asdict(track), 'station_track_id': track.id,
             'source_edge_ids': list(rows[key]['source_edges']),
             'display_name': track.name, 'track_number': track.track_number,
             'source': 'manual' if track.verification_status == 'user_named' else 'station_track_entity',
             'station_source': rows[key]['station_source'], 'station_name': rows[key]['station_name'],
-            'bounds': rows[key]['bounds'], 'snapshot': track.snapshot_id, 'version': 2,
+            'bounds': rows[key]['bounds'], 'snapshot': track.snapshot_id, 'version': 3,
+            'legacy_metadata': track.legacy_metadata,
             'confidence': None, 'verification_status': track.verification_status}
             for key, track in repo.station_tracks.items() for source_key in rows[key]['keys']}
 
 
 def automatic_numbering(repo, replace_automatic=False):
-    """Persisted assistance, ordered across the yard; manual/source names win."""
+    """Assign display aliases only. Official numbering always needs evidence."""
     if not repo.station_tracks:
         return 0
     positions = {}
@@ -223,14 +230,15 @@ def automatic_numbering(repo, replace_automatic=False):
     xx=sum(x*x for x,y in local.values()); yy=sum(y*y for x,y in local.values()); xy=sum(x*y for x,y in local.values())
     angle = .5*math.atan2(2*xy, xx-yy)
     transverse = lambda key: -local[key][0]*math.sin(angle)+local[key][1]*math.cos(angle)
-    candidates = [key for key, track in repo.station_tracks.items() if track.verification_status != 'user_named'
-                  and (not track.track_number or (replace_automatic and track.verification_status == 'automatic_reference'))
-                  and (track.name == '未编号股道' or '暂编' in track.name or track.verification_status == 'automatic_reference')]
-    used = {str(t.track_number) for key,t in repo.station_tracks.items() if key not in candidates and t.track_number}
-    number = 1
-    for key in sorted(candidates, key=lambda k: (transverse(k), k)):
-        while str(number) in used:
-            number += 1
-        repo.station_tracks[key] = replace(repo.station_tracks[key], name=f'{number}道', track_number=str(number), verification_status='automatic_reference')
-        used.add(str(number))
+    candidates = [key for key, track in repo.station_tracks.items()
+        if not track.track_number and track.verification_status not in ('user_named', 'user_verified', 'official_confirmed')
+        and (replace_automatic or 'display_alias' not in track.provenance)]
+    for number, key in enumerate(sorted(candidates, key=lambda k: (transverse(k), k)), 1):
+        track = repo.station_tracks[key]
+        provenance = {**track.provenance, 'display_alias': {'value': f'显示序号 {number}',
+            'source': 'automatic_transverse_order', 'verification_status': 'display_only', 'snapshot_id': track.snapshot_id}}
+        generic = track.name == '未编号股道' or '暂编' in track.name
+        repo.station_tracks[key] = replace(track,
+            name=semantic_track_name(repo.stations[track.station_id].name, track.track_role) if generic else track.name,
+            provenance=provenance)
     return len(candidates)

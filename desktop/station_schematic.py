@@ -65,11 +65,11 @@ def station_svg(repo, context=(), width=2400):
             center = [sum(p[i] for p in ring)/len(ring) for i in (0,1)]
             x,y = project(center)
             out.append(f'<text x="{x:.1f}" y="{y+4:.1f}" text-anchor="middle" font-size="12">站台 {escape(str(platform_ref))}</text>')
-    roles={ref.edge_id:track.role for track in tracks for ref in track.edge_refs}
+    roles={ref.edge_id:track.track_role for track in tracks for ref in track.edge_refs}
     node_degree={}
     for key,edge in repo.edges.items():
         for node in (edge.from_node_id,edge.to_node_id):node_degree[node]=node_degree.get(node,0)+1
-        main=roles.get(key)=='main' or (key not in yard_ids and edge.service not in ('yard','siding'))
+        main=roles.get(key, edge.track_role)=='main_track'
         color='#1f6687' if main else '#526877'
         dash=' stroke-dasharray="9 5"' if edge.construction_status!='operating' else ''
         out.append(f'<path data-edge-id="{escape(key)}" d="{path(edge.coordinates)}" fill="none" stroke="{color}" stroke-width="{3.2 if main else 1.8}"{dash}/>')
@@ -105,5 +105,5 @@ def station_svg(repo, context=(), width=2400):
         f'<line x1="280" y1="{height-70}" x2="320" y2="{height-70}" stroke="#526877" stroke-width="1.8"/>',
         f'<text x="330" y="{height-65}" font-size="15">到发线 / 站场股道</text>',
         f'<circle cx="550" cy="{height-70}" r="4" fill="#c18334"/><text x="565" y="{height-65}" font-size="15">真实拓扑岔接点</text>',
-        f'<text x="65" y="{height-30}" font-size="13">{len(tracks)} 根已识别股道 · 数据 © OpenStreetMap contributors · 暂编编号可人工修改 · 未关联站台不推测补画</text>', '</svg>'])
+        f'<text x="65" y="{height-30}" font-size="13">{len(tracks)} 根已识别股道 · 数据 © OpenStreetMap contributors · 正式股道号需来源核验 · 未关联站台不推测补画</text>', '</svg>'])
     return '\n'.join(out)
