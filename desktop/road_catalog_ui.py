@@ -5,12 +5,12 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QTreeView, QVBoxLayout, QWidget, QTabWidget
 
 try:
-    from .components import text_label
+    from .components import text_label, directory_checkbox_style
     from .lazy_directory import SqliteDirectoryModel
     from .road_store import route, routes, sync_directory
     from .road_services import services, sync_directory as sync_services
 except ImportError:
-    from components import text_label
+    from components import text_label, directory_checkbox_style
     from lazy_directory import SqliteDirectoryModel
     from road_store import route, routes, sync_directory
     from road_services import services, sync_directory as sync_services
@@ -34,6 +34,7 @@ class RoadCatalog(QWidget):
         self.search.textChanged.connect(self.filter_rows)
         layout.addWidget(self.search)
         self.tree = QTreeView()
+        self.tree.setStyleSheet(directory_checkbox_style())
         self.tree.setHeaderHidden(True)
         self.tree.setUniformRowHeights(True)
         self.tree.setMinimumHeight(260)
@@ -44,6 +45,7 @@ class RoadCatalog(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.tree, '高速线路')
         self.service_tree = QTreeView()
+        self.service_tree.setStyleSheet(directory_checkbox_style())
         self.service_tree.setHeaderHidden(True)
         self.service_tree.setUniformRowHeights(True)
         self.service_tree.setMinimumHeight(260)

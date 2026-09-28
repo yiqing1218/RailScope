@@ -89,6 +89,24 @@ def test_native_checkbox_click_turns_on_a_lazy_folder(qtbot,tmp_path):
     assert calls == [True]
 
 
+def test_rail_catalog_checkbox_is_left_of_name_and_controls_visibility(qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QTreeWidgetItem
+    from desktop.rail_catalog_ui import CatalogTree, TreeSwitch
+    tree = CatalogTree()
+    tree.setColumnCount(1)
+    qtbot.addWidget(tree)
+    item = QTreeWidgetItem(tree, ['京沪高铁'])
+    control = TreeSwitch(False)
+    changed = []
+    control.toggled.connect(changed.append)
+    tree.setItemWidget(item, 1, control)  # Existing directory call sites.
+    assert item.checkState(0) == Qt.CheckState.Unchecked
+    assert tree.itemWidget(item, 0) is control
+    item.setCheckState(0, Qt.CheckState.Checked)
+    assert changed == [True]
+
+
 def test_hidden_tall_tab_does_not_leave_a_blank_tail(qtbot):
     from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
     from desktop.components import CurrentPageTabs

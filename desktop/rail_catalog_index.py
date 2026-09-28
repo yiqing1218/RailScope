@@ -23,6 +23,21 @@ def index_path(directory):
     return Path(directory) / "rail_catalog.sqlite"
 
 
+def _install_in_place(target, replacement):
+    """Windows cannot replace an open SQLite file; update its rows atomically."""
+    with closing(sqlite3.connect(target, timeout=30)) as db:
+        db.execute("ATTACH DATABASE ? AS replacement", (str(replacement),))
+        try:
+            with db:
+                db.execute("DELETE FROM catalog")
+                db.execute("INSERT INTO catalog SELECT * FROM replacement.catalog")
+                db.execute("INSERT OR REPLACE INTO metadata SELECT * FROM replacement.metadata")
+                # Presentation rows derived from the old catalog must be rebuilt.
+                db.execute("DELETE FROM metadata WHERE key='paged_directory_signature'")
+        finally:
+            db.execute("DETACH DATABASE replacement")
+
+
 def build_index(directory, catalog=None):
     directory = Path(directory)
     topology = directory / "rail_catalog.topology.json"
@@ -32,7 +47,10 @@ def build_index(directory, catalog=None):
         with topology.open("r", encoding="utf-8") as stream:
             header = stream.read(256)
         match = re.search(r'"version"\s*:\s*"([^"]+)"', header)
-        if match and match.group(1) == VERSION:
+        # V9 already has stable RL/ST catalog keys. Keep it visible while V10
+        # semantics are regenerated; the name-only fallback loses those keys
+        # and strands every saved workspace override.
+        if match and match.group(1) in (VERSION, "topology-line-endpoint-catalog-v9"):
             source = topology
     target = index_path(directory)
     stamp = f"{source.name}:{source.stat().st_size}:{source.stat().st_mtime_ns}" if source.exists() else "empty"
@@ -82,7 +100,12 @@ def build_index(directory, catalog=None):
                 ("schema", str(SCHEMA)), ("source", stamp),
             ])
             db.commit()
-        temporary.replace(target)
+        try:
+            temporary.replace(target)
+        except PermissionError:
+            if not target.is_file():
+                raise
+            _install_in_place(target, temporary)
     finally:
         temporary.unlink(missing_ok=True)
     return target

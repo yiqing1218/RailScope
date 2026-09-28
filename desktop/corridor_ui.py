@@ -27,10 +27,10 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import GrowingTree, text_label, Switch, Fold
+    from .components import GrowingTree, text_label, Switch
     from .rail_lines import RESOLUTION_KEY
 except ImportError:
-    from components import GrowingTree, text_label, Switch, Fold
+    from components import GrowingTree, text_label, Switch
     from rail_lines import RESOLUTION_KEY
 
 
@@ -639,17 +639,16 @@ class CorridorPanel(QWidget):
             "QTableWidget QComboBox QLineEdit { border: none; padding: 0; background: transparent; }"
         )
         form = QFormLayout(dialog)
-        form.setContentsMargins(20, 18, 20, 18)
-        form.setVerticalSpacing(12)
+        form.setContentsMargins(16, 10, 16, 12)
+        form.setVerticalSpacing(6)
         title_row = QHBoxLayout()
         heading = text_label("通道编排", 'dialogTitle')
         title_row.addWidget(heading)
         title_row.addStretch()
         title_row.addWidget(text_label('单向 · 共享物理路径', 'badge'))
         form.addRow(title_row)
-        form.addRow(text_label('沿线路连接端点，建立可供多个车次共用的完整通道。', 'muted'))
         identity = QHBoxLayout()
-        identity.setSpacing(12)
+        identity.setSpacing(10)
         code = QLineEdit(ident or "COR-" + uuid4().hex[:12].upper())
         code.setObjectName("corridorId")
         code.setPlaceholderText("唯一编号，例如 COR-JINGHU-DOWN")
@@ -665,13 +664,13 @@ class CorridorPanel(QWidget):
         form.addRow(identity)
         color = QPushButton(route.get('color', '#466979') if route else '#466979')
         color.setObjectName('corridorColor')
+        color.setToolTip('通道在地图上的显示颜色')
         def choose_color():
             selected = QColorDialog.getColor(QColor(color.text()), dialog, '通道颜色')
             if selected.isValid():
                 color.setText(selected.name())
                 color.setStyleSheet('color: ' + selected.name())
         color.clicked.connect(choose_color)
-        form.addRow('通道颜色', color)
         manual_name = [bool(route)]
         name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
         policy = QComboBox()
@@ -681,17 +680,14 @@ class CorridorPanel(QWidget):
         saved_resolution = route.get("extensions", {}).get(RESOLUTION_KEY, {}) if route else {}
         if saved_resolution.get("policy") in ("strict", "mainline"):
             policy.setCurrentIndex(1)
-        form.addRow("拼接方式", policy)
         source = (
             "已导入的全国铁路库"
             if (self.editor.directory / "rail.sqlite").exists()
             else "尚未导入全国铁路库"
         )
-        form.addRow(text_label('可先选点，也可先选线；两侧候选自动联动。末行只填终点。', 'muted', True))
-        help_text = text_label(source + '。自动参考模式可补齐站内连接轨和同一线路名称中断处的真实运营区间；'
-            '实际经过的线路随通道保存，仍可指定物理区间。严格模式保持唯一性校验。停站、站台由车次定义；参考路径不是已核验调度进路。', 'muted', True)
-        help_fold = Fold('路径规则与数据来源', help_text, False)
-        form.addRow(help_fold)
+        policy.setToolTip(source + '。自动参考模式可补齐站内连接轨和同一线路名称中断处的真实运营区间；'
+            '实际经过的线路随通道保存，仍可指定物理区间。严格模式保持唯一性校验。'
+            '停站、站台由车次定义；参考路径不是已核验调度进路。')
         sequence = (
             (route.get("sequence") or library.describe(route["path"])) if route else []
         )
@@ -705,7 +701,15 @@ class CorridorPanel(QWidget):
         physical = QCheckBox("手工调整 · 显示道岔与轨道节点")
         physical.setObjectName("corridorPhysicalEndpoints")
         physical.setEnabled(hasattr(library, "workspace"))
-        form.addRow(physical)
+        physical.setToolTip('显示真实道岔和轨道节点，便于指定物理区间；末行只填终点。')
+        settings = QHBoxLayout()
+        settings.setSpacing(8)
+        settings.addWidget(text_label('颜色', 'sectionLabel'))
+        settings.addWidget(color)
+        settings.addWidget(text_label('拼接方式', 'sectionLabel'))
+        settings.addWidget(policy, 1)
+        settings.addWidget(physical)
+        form.addRow(settings)
 
         def physical_changed(on):
             table.physical = on

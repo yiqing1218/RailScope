@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QModelIndex, Qt
@@ -31,6 +32,41 @@ def _index(tmp_path, records, overrides=None):
 
 def _loaded(node):
     return len(node.children) + sum(_loaded(child) for child in node.children)
+
+
+def test_previous_topology_catalog_keeps_stable_line_ids_until_reclassified(tmp_path):
+    (tmp_path / "rail_catalog.json").write_text(
+        json.dumps({"旧名称目录": _record(1)}, ensure_ascii=False), encoding="utf-8")
+    keys = {"RL-one": _record(1), "RL-two": _record(2),
+            "ST-yard": {**_record(3), "station_name": "测试站"}}
+    (tmp_path / "rail_catalog.topology.json").write_text(
+        json.dumps({"version": "topology-line-endpoint-catalog-v9", "catalog": keys}, ensure_ascii=False),
+        encoding="utf-8")
+    catalog = RailCatalogIndex(build_index(tmp_path))
+    assert set(catalog) == set(keys)
+    assert "旧名称目录" not in catalog
+
+
+def test_locked_catalog_index_updates_rows_without_losing_old_on_failure(tmp_path, monkeypatch):
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({"old": _record(1)}), encoding="utf-8")
+    target = build_index(tmp_path)
+    with sqlite3.connect(target) as db:
+        db.execute("INSERT INTO metadata VALUES('paged_directory_signature','stale')")
+    (tmp_path / "rail_catalog.topology.json").write_text(
+        json.dumps({"version": "topology-line-endpoint-catalog-v9",
+                    "catalog": {"RL-new": _record(2)}}), encoding="utf-8")
+    original_replace = Path.replace
+
+    def locked(self, destination):
+        if str(self).endswith(".sqlite.tmp"):
+            raise PermissionError("open SQLite file")
+        return original_replace(self, destination)
+
+    monkeypatch.setattr(Path, "replace", locked)
+    build_index(tmp_path)
+    with sqlite3.connect(target) as db:
+        assert [row[0] for row in db.execute("SELECT id FROM catalog")] == ["RL-new"]
+        assert db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone() is None
 
 
 def test_pages_are_sqlite_backed_and_focus_does_not_read_preceding_pages(qtbot, tmp_path):

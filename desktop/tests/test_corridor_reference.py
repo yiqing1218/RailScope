@@ -134,6 +134,7 @@ def test_default_dialog_apply_reopen_roundtrip_and_domain_status(qtbot, tmp_path
             assert policy.currentData() == "auto"
             assert policy.findData("strict") >= 0
             table = dialog.findChild(QTableWidget)
+            assert table.y() < 280  # Keep the route rows above the dialog fold.
             if reopen:
                 assert [table.cellWidget(0, 0).currentData(), table.cellWidget(0, 1).currentData(), table.cellWidget(1, 0).currentData()] == [
                     sequence[0]["node_id"], sequence[1]["line_id"], sequence[2]["node_id"]]

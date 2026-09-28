@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import text_label, GrowingTree, CurrentPageTabs
+    from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
     from .provinces import geographic_catalog, VERSION
@@ -42,7 +42,7 @@ try:
         station_directory_path,
     )
 except ImportError:
-    from components import text_label, GrowingTree, CurrentPageTabs
+    from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
     from provinces import geographic_catalog, VERSION
@@ -91,9 +91,9 @@ class TreeSwitch:
     def attach(self, tree, item):
         self._tree, self._item = tree, item
         if self._tooltip:
-            item.setToolTip(1, self._tooltip)
+            item.setToolTip(0, self._tooltip)
         if self._accessible_name:
-            item.setData(1, Qt.ItemDataRole.AccessibleTextRole, self._accessible_name)
+            item.setData(0, Qt.ItemDataRole.AccessibleTextRole, self._accessible_name)
         self._render()
 
     def _render(self):
@@ -108,12 +108,14 @@ class TreeSwitch:
             else:
                 flags &= ~Qt.ItemFlag.ItemIsUserCheckable
             self._item.setFlags(flags)
-            state = Qt.CheckState.PartiallyChecked if self._mixed else (
-                Qt.CheckState.Checked if self._checked else Qt.CheckState.Unchecked
-            )
-            self._item.setCheckState(1, state)
+            self._item.setCheckState(0, self.display_state())
         finally:
             tree.blockSignals(blocked)
+
+    def display_state(self):
+        return Qt.CheckState.PartiallyChecked if self._mixed else (
+            Qt.CheckState.Checked if self._checked else Qt.CheckState.Unchecked
+        )
 
     def setChecked(self, value):
         self._checked = bool(value)
@@ -142,12 +144,12 @@ class TreeSwitch:
     def setToolTip(self, text):
         self._tooltip = text
         if self._item is not None:
-            self._item.setToolTip(1, text)
+            self._item.setToolTip(0, text)
 
     def setAccessibleName(self, text):
         self._accessible_name = text
         if self._item is not None:
-            self._item.setData(1, Qt.ItemDataRole.AccessibleTextRole, text)
+            self._item.setData(0, Qt.ItemDataRole.AccessibleTextRole, text)
 
     def click(self):
         if self._enabled:
@@ -214,23 +216,24 @@ class CatalogTree(GrowingTree):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet(directory_checkbox_style())
         self.drop_callback = None
         self._switches = {}
         self.itemChanged.connect(self._checkbox_changed)
 
     def setItemWidget(self, item, column, control):
-        if column != 1 or not isinstance(control, TreeSwitch):
+        if column not in (0, 1) or not isinstance(control, TreeSwitch):
             return super().setItemWidget(item, column, control)
         self._switches[id(item)] = control
         control.attach(self, item)
 
     def itemWidget(self, item, column):
-        if column == 1:
+        if column in (0, 1):
             return self._switches.get(id(item))
         return super().itemWidget(item, column)
 
     def removeItemWidget(self, item, column):
-        if column == 1:
+        if column in (0, 1):
             self._switches.pop(id(item), None)
             return
         super().removeItemWidget(item, column)
@@ -242,10 +245,11 @@ class CatalogTree(GrowingTree):
         super().clear()
 
     def _checkbox_changed(self, item, column):
-        if column == 1:
+        if column == 0:
             control = self._switches.get(id(item))
-            if control is not None:
-                control._user_toggled(item.checkState(1) != Qt.CheckState.Unchecked)
+            # Text, tooltip and role edits also emit itemChanged for column 0.
+            if control is not None and item.checkState(0) != control.display_state():
+                control._user_toggled(item.checkState(0) != Qt.CheckState.Unchecked)
 
     def dropEvent(self, event):
         target = self.itemAt(event.position().toPoint())
@@ -402,14 +406,11 @@ class RailCatalog(QWidget):
         line_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         line_layout.addWidget(text_label("全国铁路线", "sectionLabel"))
         self.tree = CatalogTree()
-        self.tree.setColumnCount(2)
+        self.tree.setColumnCount(1)
         self.tree.setHeaderHidden(True)
         self.tree.setIndentation(12)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.tree.header().setStretchLastSection(False)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 62)
+        self.tree.header().setStretchLastSection(True)
         self.tree.setMinimumWidth(0)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.setDragEnabled(True)
@@ -431,14 +432,11 @@ class RailCatalog(QWidget):
         station_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         station_layout.addWidget(text_label("省 / 市 / 车站实体", "sectionLabel"))
         self.station_tree = CatalogTree()
-        self.station_tree.setColumnCount(2)
+        self.station_tree.setColumnCount(1)
         self.station_tree.setHeaderHidden(True)
         self.station_tree.setIndentation(12)
         self.station_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.station_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.station_tree.header().setStretchLastSection(False)
-        self.station_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.station_tree.setColumnWidth(1, 62)
+        self.station_tree.header().setStretchLastSection(True)
         self.station_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.station_tree.setDragEnabled(True)
         self.station_tree.setAcceptDrops(True)
@@ -459,7 +457,7 @@ class RailCatalog(QWidget):
         yard_layout = QVBoxLayout(self.yard_page)
         yard_layout.setContentsMargins(0, 0, 0, 0)
         self.yard_tree = CatalogTree()
-        self.yard_tree.setColumnCount(2)
+        self.yard_tree.setColumnCount(1)
         self.yard_tree.setHeaderHidden(True)
         self.yard_tree.itemDoubleClicked.connect(self.focus_yard_item)
         self.yard_tree.setParent(self.yard_page)
@@ -471,14 +469,11 @@ class RailCatalog(QWidget):
         platform_layout = QVBoxLayout(self.platform_page)
         platform_layout.setContentsMargins(0, 0, 0, 0)
         self.platform_tree = CatalogTree()
-        self.platform_tree.setColumnCount(2)
+        self.platform_tree.setColumnCount(1)
         self.platform_tree.setHeaderHidden(True)
         self.platform_tree.itemDoubleClicked.connect(self.focus_platform_item)
         for asset_tree in (self.yard_tree, self.platform_tree):
-            asset_tree.header().setStretchLastSection(False)
-            asset_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            asset_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-            asset_tree.setColumnWidth(1, 62)
+            asset_tree.header().setStretchLastSection(True)
         platform_layout.addWidget(self.platform_tree)
         self.tabs.addTab(self.platform_page, "站台线目录")
         self.tabs.currentChanged.connect(self._load_catalog_tab)

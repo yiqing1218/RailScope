@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from components import Fold, Switch, THEME, switch_row, text_label, GrowingTree
+from components import Fold, SquareSwitch, THEME, visibility_row, directory_checkbox_style, text_label, GrowingTree
 from geometry import build_demo_path
 from hierarchy import Hierarchy
 from hierarchy_ui import HierarchyDialog
@@ -1728,10 +1728,10 @@ class Desk(QMainWindow):
         return panel
 
     def new_switch(self, key, title, subtitle=""):
-        control = Switch(self.flags[key])
+        control = SquareSwitch(self.flags[key])
         control.toggled.connect(lambda on, k=key: self.set_flag(k, on))
         self.switches[key] = control
-        return switch_row(title, control, subtitle)
+        return visibility_row(title, control, subtitle)
 
     def map_controls(self):
         scroll = QScrollArea()
@@ -1770,13 +1770,13 @@ class Desk(QMainWindow):
             ("其他文字与 POI", "labels"),
             ("建筑信息", "buildings"),
         ]:
-            switch = Switch(True)
+            switch = SquareSwitch(True)
             switch.toggled.connect(
                 lambda on, k=key: self.map.call("setBaseDetail", k, on)
             )
             switch.setEnabled(False)
             self.base_switches[key] = switch
-            detail_layout.addWidget(switch_row(title, switch))
+            detail_layout.addWidget(visibility_row(title, switch))
         layout.addWidget(Fold("信息显示", details, expanded=False, count="4 项"))
         self.base_hint = text_label("底图连接中…", wrap=True)
         layout.addWidget(self.base_hint)
@@ -1800,6 +1800,7 @@ class Desk(QMainWindow):
         self.line_search.textChanged.connect(self.filter_tree)
         line_layout.addWidget(self.line_search)
         self.tree = QTreeView()
+        self.tree.setStyleSheet(directory_checkbox_style())
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(14)
@@ -1825,6 +1826,7 @@ class Desk(QMainWindow):
         station_layout.setContentsMargins(0, 0, 0, 0)
         station_layout.addWidget(text_label("地铁站目录", "sectionLabel"))
         self.station_tree = QTreeView()
+        self.station_tree.setStyleSheet(directory_checkbox_style())
         self.station_tree.setHeaderHidden(True)
         self.station_tree.setRootIsDecorated(True)
         self.station_tree.setIndentation(14)
@@ -2902,7 +2904,7 @@ class Desk(QMainWindow):
                 self.edit_service_area(feature)
                 return
             track_key = yard_track_key(props)
-            if track_key or props.get('station_track_id'):
+            if props.get('station_track_id') or str(props.get('catalog_group_id', '')).startswith('ST-'):
                 self.edit_station_tracks()
                 return
             if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and (track_key or not props.get('catalog_group_id')):
@@ -3730,7 +3732,7 @@ class Desk(QMainWindow):
         if props.get("service_id"):
             self.edit_service_area(feature)
             return
-        if yard_track_key(props) or props.get('station_track_id'):
+        if props.get('station_track_id') or str(props.get('catalog_group_id', '')).startswith('ST-'):
             self.edit_station_tracks()
             return
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
@@ -4400,7 +4402,7 @@ def main():
                 checks = {
                     "single_workspace": not hasattr(window, "pages"),
                     "sidebar_reopen": False,
-                    "switch_has_thumb": isinstance(window.switches["metro"], Switch),
+                    "visibility_square_left": isinstance(window.switches["metro"], SquareSwitch),
                     "continuous_demo_km": round(window.demo["length_m"] / 1000, 2),
                     "startup_simulation_disabled": not window.operations.enabled
                     and not window.operations.playing

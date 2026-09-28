@@ -14,9 +14,11 @@ from PySide6.QtWidgets import QAbstractItemView, QTreeView
 try:
     from .lazy_directory import SqliteDirectoryModel, PAGE_SIZE
     from .rail_semantics import semantic_record
+    from .components import directory_checkbox_style
 except ImportError:
     from lazy_directory import SqliteDirectoryModel, PAGE_SIZE
     from rail_semantics import semantic_record
+    from components import directory_checkbox_style
 
 
 PRESENTATION_VERSION = 2
@@ -228,6 +230,7 @@ class RailDirectoryView(QTreeView):
 
     def __init__(self,parent=None):
         super().__init__(parent)
+        self.setStyleSheet(directory_checkbox_style())
         self.setHeaderHidden(True)
         self.setUniformRowHeights(True)
         self.setMinimumHeight(240)

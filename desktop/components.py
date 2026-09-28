@@ -1,5 +1,7 @@
 """Reusable native controls for the RailScope desktop workbench."""
 
+from pathlib import Path
+
 from PySide6.QtCore import (
     Property,
     QPropertyAnimation,
@@ -267,6 +269,56 @@ class Switch(QAbstractButton):
             painter.drawRoundedRect(QRectF(0.8, 0.8, 54.4, 26.4), 13, 13)
 
 
+class SquareSwitch(QAbstractButton):
+    """White visibility checkbox used by map-layer master controls."""
+
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setChecked(checked)
+        self.setFixedSize(22, 22)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._mixed = False
+        self.toggled.connect(lambda _: self.setMixed(False))
+
+    def setMixed(self, value):
+        self._mixed = bool(value)
+        self.update()
+
+    def setChecked(self, checked):
+        self._mixed = False
+        super().setChecked(checked)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if not self.isEnabled():
+            painter.setOpacity(0.45)
+        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(QPen(QColor("#0c776f" if self.isChecked() or self._mixed else "#8297a2"), 1.5))
+        painter.drawRoundedRect(QRectF(2.5, 2.5, 17, 17), 2, 2)
+        painter.setPen(QPen(QColor("#0c776f"), 2.3, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        if self._mixed:
+            painter.drawLine(7, 11, 15, 11)
+        elif self.isChecked():
+            painter.drawLine(6, 11, 10, 15)
+            painter.drawLine(10, 15, 16, 7)
+
+
+def directory_checkbox_style():
+    """Render one white square in the left-hand check column of each directory."""
+    icons = Path(__file__).resolve().parent / "assets"
+    states = {"unchecked": "visibility_off.svg", "checked": "visibility_on.svg",
+              "indeterminate": "visibility_mixed.svg"}
+    return "\n".join(
+        f'{view}::indicator:{state} {{ width: 18px; height: 18px; image: url("{(icons / file).as_posix()}"); }}'
+        for view in ("QTreeView", "QTreeWidget")
+        for state, file in states.items()
+    )
+
+
 def text_label(text, name="muted", wrap=False):
     label = QLabel(text)
     label.setObjectName(name)
@@ -291,6 +343,23 @@ def switch_row(title, switch, subtitle=""):
     switch.setAccessibleName(title)
     layout.addWidget(switch)
     layout.setSpacing(12)
+    return row
+
+
+def visibility_row(title, control, subtitle=""):
+    """Keep the square on the left, aligned with directory row indicators."""
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 4, 0, 4)
+    layout.setSpacing(10)
+    control.setAccessibleName(title)
+    layout.addWidget(control, alignment=Qt.AlignmentFlag.AlignTop)
+    captions = QVBoxLayout()
+    captions.setSpacing(2)
+    captions.addWidget(text_label(title, name="", wrap=True))
+    if subtitle:
+        captions.addWidget(text_label(subtitle, wrap=True))
+    layout.addLayout(captions, 1)
     return row
 
 

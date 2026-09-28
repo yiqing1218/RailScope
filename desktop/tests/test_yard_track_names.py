@@ -50,3 +50,15 @@ def test_map_rename_opens_track_entity_editor_not_line_metadata():
     Desk.rename_map_selection(desk)
     assert edits == [feature]
     assert yard_track_key({'catalog_group_id': 'RL-main', 'network_edge_id': 'e'}) is None
+
+
+def test_unassociated_yard_track_with_line_id_opens_line_editor():
+    from desktop.launcher import Desk
+    feature = {'layer': 'rail', 'properties': {'catalog_group_id': 'RL-yard',
+                'section_id': 'RS-one', 'network_edge_id': 'edge-one', 'service': 'yard'}}
+    calls = []
+    desk = SimpleNamespace(selected_data=feature, route_lookup={},
+        edit_station_tracks=lambda: calls.append('station'),
+        edit_line_metadata=lambda selected, kind, **kwargs: calls.append((selected, kind, kwargs)))
+    Desk.edit_selected_metadata(desk)
+    assert calls == [(feature, 'rail', {'rail_groups': ['RL-yard']})]
