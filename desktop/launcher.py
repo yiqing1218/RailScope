@@ -3251,7 +3251,7 @@ class Desk(QMainWindow):
             self.open_sidebar(2)
             self.corridor_panel.focus_item(props["corridor_id"], train_id)
             self.rail_operations.show_corridor(props["corridor_id"], train_id)
-        elif layer in ("rail", "rail-stripes", "rail-construction") and props.get(
+        elif layer in ("rail", "rail-stripes", "rail-construction", "rail-line-labels") and props.get(
             "osm_way_id"
         ) is not None:
             self.open_sidebar(0)
@@ -3903,7 +3903,7 @@ class Desk(QMainWindow):
         merged_groups = props.get("merged_catalog_ids", [])
         rail_group = props.get("catalog_group_id")
         rail_groups = merged_groups or ([rail_group] if rail_group else [])
-        if not rail_station_record and rail_groups and layer in ("rail", "rail-stripes", "rail-construction"):
+        if not rail_station_record and rail_groups and layer in ("rail", "rail-stripes", "rail-construction", "rail-line-labels"):
             self.edit_line_metadata(feature, "rail", rail_groups=rail_groups)
             return
         dialog = QDialog(self)

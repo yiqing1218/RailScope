@@ -780,6 +780,29 @@ def test_map_context_menu_edits_the_selected_object(qtbot, monkeypatch):
     assert edited == [selected]
 
 
+def test_map_rail_label_opens_full_line_editor(qtbot, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QMainWindow
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = SimpleNamespace(catalog={"ST-yard": {}})
+    host.route_lookup = {}
+    opened = []
+    host.edit_line_metadata = lambda feature, kind, **kwargs: opened.append((feature, kind, kwargs))
+    feature = {"layer": "rail-line-labels", "properties": {
+        "catalog_group_id": "ST-yard", "network_edge_id": "RS-1",
+        "track_type": "高速铁路站场股道", "line_name": "甲站8道"}}
+
+    launcher.Desk.edit_selected_metadata(host, feature)
+
+    assert opened == [(feature, "rail", {"rail_groups": ["ST-yard"]})]
+
+
 def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
     from pathlib import Path
     from types import SimpleNamespace
