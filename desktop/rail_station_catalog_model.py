@@ -104,9 +104,12 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             edited = overrides.get(catalog_id, {})
             owner_id = edited.get("station_id", record.get("station_id"))
             certainty = "已指定"
-            if owner_id not in station_by_id:
+            if edited.get("station_assignment") == "pending":
                 owner_id = None
-                if edited.get("station_assignment") != "pending":
+            elif owner_id not in station_by_id:
+                source_id = edited.get("station_source", record.get("station_source"))
+                owner_id = source_id if source_id in station_by_id else None
+                if owner_id is None:
                     province = record.get("provinces") or []
                     candidates = {sid for p in province for sid in name_owners.get(
                         (str(record.get("station_name") or "").removesuffix("站").casefold(), p), ())}
@@ -115,8 +118,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                         certainty = "名称匹配，待核对"
             if owner_id:
                 station_node, station_path, _ = station_by_id[owner_id]
-                base_path = station_path + ["车站设施"]
-                base = add_folder(station_node, "facility-folder:" + _key(base_path), "车站设施", base_path)
+                base_path = station_path + ["站内轨道"]
+                base = add_folder(station_node, "facility-folder:" + _key(base_path), "站内轨道", base_path)
                 path = base_path
                 parent = base
                 ancestors = [station_node, base]

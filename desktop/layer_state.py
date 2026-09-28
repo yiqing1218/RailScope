@@ -10,6 +10,7 @@ def initial_visibility():
             "construction",
             "rail",
             "railConstruction",
+            "railStationTracks",
             "railStations",
             "railControlPoints",
             "railVehicles",

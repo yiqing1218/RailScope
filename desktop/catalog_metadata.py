@@ -40,6 +40,8 @@ STATION_OVERVIEW_FIELDS = (
     ("main_lines", "主要线路"),
     ("regional_management", "区域管理"),
     ("platform_scale", "站台规模"),
+    ("platform_count", "站台数量"),
+    ("track_count", "股道数量"),
     ("annual_freight_volume", "年货运量"),
     ("address", "车站地址"),
 )
@@ -72,6 +74,8 @@ def station_overview(properties, record=None, custom=None):
         "main_lines": "、".join(record.get("line_names", [])),
         "regional_management": tags.get("operator") or properties.get("operator", ""),
         "platform_scale": tags.get("platforms") or tags.get("tracks", ""),
+        "platform_count": tags.get("platforms") or tags.get("station:platforms", ""),
+        "track_count": tags.get("tracks") or tags.get("railway:tracks", ""),
         "annual_freight_volume": tags.get("freight:annual") or tags.get("annual_freight", ""),
         "address": tags.get("addr:full") or "".join(
             str(tags.get(key, ""))

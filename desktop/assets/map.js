@@ -3,7 +3,7 @@ const maplibregl = window.maplibregl;
 let bridge, map, config, standardStyle, currentBase = 'standard', pendingBase=null, selectedFeature = null, selectedLayer = null;
 let selectedFeatures=[],selectionMode='click',boxSelecting=false,suppressMapClick=false;
 let running = false, travelled = 0;
-const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railStations:false,railControlPoints:false,railVehicles:false,railPlan:false,road:false,roadConstruction:false,roadServices:false, imported:false, vehicles:false};
+const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railStationTracks:false,railStations:false,railControlPoints:false,railVehicles:false,railPlan:false,road:false,roadConstruction:false,roadServices:false, imported:false, vehicles:false};
 let railHiddenLineIds=[];
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], visibleStationIds=[], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
@@ -214,7 +214,7 @@ let railAssetSelection={platforms:[],hiddenPlatforms:[],switches:[],hiddenSwitch
 function railSourceVisible(kind){
   const zoom=map.getZoom();
   if(graphicsPaused||document.hidden)return false;
-  if(kind==='rail')return (visibility.rail||visibility.railConstruction)&&zoom>=(minZooms.railLines||0);
+  if(kind==='rail')return (visibility.rail||visibility.railConstruction||visibility.railStationTracks)&&zoom>=(minZooms.railLines||0);
   if(kind==='railPoints')return (visibility.railStations&&zoom>=(minZooms.railStations??10))||(visibility.railControlPoints&&zoom>=(minZooms.railSwitches??15));
   if(kind==='railPlatforms')return visibility.railStations&&zoom>=(minZooms.railPlatforms??12);
   if(kind==='railStationAreas')return visibility.railStations&&zoom>=(minZooms.railAreas??11);
@@ -286,7 +286,7 @@ function applyRailWays(){
     map.setFilter(id,selected?['all',construction,selected]:construction);
   }
   if(map.getLayer('rail-line-labels')){
-    const state=['any',['all',['!',inactive],['literal',!!visibility.rail]],['all',inactive,['literal',!!visibility.railConstruction]]];
+    const state=['any',['all',['!',inactive],['literal',!!(visibility.rail||visibility.railStationTracks)]],['all',inactive,['literal',!!visibility.railConstruction]]];
     map.setFilter('rail-line-labels',selected?['all',state,selected]:state);
   }
 }
@@ -302,7 +302,7 @@ async function updateRailViewport(){
       const params=new URLSearchParams({kind,bbox,zoom:String(map.getZoom())});
       if(kind==='rail'){
         params.set('exclude',String(railExclude));
-        params.set('states',JSON.stringify([...(visibility.rail?['operating','unknown']:[]),...(visibility.railConstruction?['construction','planned','disused']:[])]));
+        params.set('states',JSON.stringify([...(visibility.rail||visibility.railStationTracks?['operating','unknown']:[]),...(visibility.railConstruction?['construction','planned','disused']:[])]));
         if((railSections||[]).length)params.set('sections',JSON.stringify(railSections));
         if((railWays||[]).length)params.set('ways',JSON.stringify(railWays));
         if((railGroups||[]).length)params.set('groups',JSON.stringify(railGroups));
@@ -385,13 +385,13 @@ function applyRailPointStyles(){
     map.setLayoutProperty('rail-station-labels','text-size',Number(labels.station_font_size)||12);
   }
   if(map.getLayer('rail-line-labels')){
-    map.setLayoutProperty('rail-line-labels','visibility',labels.show_line_names===false?'none':((visibility.rail||visibility.railConstruction)?'visible':'none'));
+    map.setLayoutProperty('rail-line-labels','visibility',labels.show_line_names===false?'none':((visibility.rail||visibility.railConstruction||visibility.railStationTracks)?'visible':'none'));
     map.setLayoutProperty('rail-line-labels','text-size',Number(labels.line_font_size)||11);
   }
 }
 function applyLineLabelVisibility(){
   const enabled=config.railPointStyles?.labels?.show_line_names!==false;
-  for(const [id,on] of [['rail-line-labels',visibility.rail||visibility.railConstruction],['line-labels',visibility.metro],['road-labels',visibility.road],['road-construction-labels',visibility.roadConstruction]])
+  for(const [id,on] of [['rail-line-labels',visibility.rail||visibility.railConstruction||visibility.railStationTracks],['line-labels',visibility.metro],['road-labels',visibility.road],['road-construction-labels',visibility.roadConstruction]])
     if(map.getLayer(id))map.setLayoutProperty(id,'visibility',enabled&&on?'visible':'none');
 }
 function applyMinZooms(){
@@ -534,7 +534,7 @@ function refreshSelection(){
   const entityVisible=feature=>{
     const p=feature.properties||{}, layer=feature.__layer||feature.layer||selectedLayer;
     const group=Object.entries(groups).find(([,layers])=>layers.includes(layer))?.[0];
-    if(group&&!visibility[group]&&!(layer==='rail-line-labels'&&visibility.railConstruction))return false;
+    if(group&&!visibility[group]&&!(group==='rail'&&visibility.railStationTracks)&&!(layer==='rail-line-labels'&&(visibility.railConstruction||visibility.railStationTracks)))return false;
     if(p.service_id)return roadVisibleServices.includes(p.service_id);
     if(group==='railStations'&&Array.isArray(p.line_ids)&&p.line_ids.length){
       const explicit=(railPointIncludes||[]).includes(p.osm_node_id)||(railControlPointIncludes||[]).includes(p.osm_node_id);
@@ -543,7 +543,7 @@ function refreshSelection(){
     }
     if(groups.rail.includes(layer)||layer==='rail-construction'){
       const inactive=['construction','planned','disused'].includes(p.construction_status||(p.construction?'construction':'operating'));
-      if(!visibility[inactive?'railConstruction':'rail'])return false;
+      if(!visibility[inactive?'railConstruction':'rail']&&!(visibility.railStationTracks&&!inactive))return false;
       if(railSections!==null||railWays!==null||railGroups!==null){
         const selected=(railSections||[]).includes(p.section_id)||(railWays||[]).includes(p.osm_way_id)||(railGroups||[]).includes(p.catalog_group_id);
         if(railExclude?selected:!selected)return false;
@@ -560,6 +560,7 @@ function refreshSelection(){
 }
 function applyVisibility() {
   for (const [key, ids] of Object.entries(groups)) for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id,'visibility',visibility[key]?'visible':'none');
+  if(visibility.railStationTracks)for(const id of groups.rail)if(map.getLayer(id))map.setLayoutProperty(id,'visibility','visible');
   applyRailWays();sharedRailStationFilter();applyVehicleAppearance();applyRailPointStyles();applyLineLabelVisibility();refreshSelection();
   // DOM markers own moving vehicles. Never re-upload infrastructure or ask
   // MapLibre's symbol collision pass to replace labels on every simulation tick.
@@ -814,7 +815,7 @@ async function init() {
         }catch(error){report('imageCaptured','error');}
       });map.triggerRepaint();
     },
-    setVisibility(key,on){if(visibility[key]===!!on)return;visibility[key]=!!on;applyVisibility();updateStaticSources();if(['rail','railConstruction','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();},
+    setVisibility(key,on){if(visibility[key]===!!on)return;visibility[key]=!!on;applyVisibility();updateStaticSources();if(['rail','railConstruction','railStationTracks','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVisibility();},
     setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();scheduleMetroViewport();},

@@ -21,7 +21,7 @@ except ImportError:
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 4
+PRESENTATION_VERSION = 6
 
 
 def _json(value):
@@ -33,7 +33,8 @@ def facility_path(record):
     facts = semantic_record(record, record)
     role = facts.get("track_role", "unknown")
     facility = facts.get("facility_id")
-    is_facility = bool(facility or facts.get("yard_id") or facts.get("zone_id") or facts.get("facility_only"))
+    is_facility = bool(facility or facts.get("yard_id") or facts.get("zone_id") or facts.get("facility_only")
+                       or record.get("station_id") or record.get("station_source"))
     is_facility |= role not in ("main_track", "unknown")
     # Legacy station groups are source object kinds, not inferred track roles.
     is_facility |= str(record.get("catalog_group_id", record.get("id", ""))).startswith("ST-")
@@ -83,10 +84,8 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
             facts_path = facility_path({"id": key, **record})
             if facts_path is None and line_path and line_path[0] == "车站设施":
                 facts_path = tuple(line_path[1:])
-            # A station mainline appears in both views; service tracks only in facilities.
-            role = semantic_record(record, record).get("track_role", "unknown")
             views = []
-            if facts_path is None or role == "main_track" or record.get("assembly_id"):
+            if facts_path is None:
                 views.append(("lines", tuple(line_path)))
             if facts_path is not None:
                 custom_path = record.get("folder_path")

@@ -2531,6 +2531,7 @@ class Desk(QMainWindow):
         layout.addWidget(self.new_switch("rail", "铁路线"))
         for key, title in [
             ("railConstruction", "在建铁路"),
+            ("railStationTracks", "车站轨道"),
             ("railStations", "车站及线路所"),
         ]:
             layout.addWidget(self.new_switch(key, title))
@@ -2565,6 +2566,9 @@ class Desk(QMainWindow):
         self.refresh_map_names()
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
+        )
+        self.rail_catalog_widget.line_edit_requested.connect(
+            self.edit_rail_line_metadata
         )
         self.rail_catalog_widget.feature_activated.connect(self.display_feature)
         self.rail_catalog_widget.enabled_requested.connect(
@@ -2738,6 +2742,9 @@ class Desk(QMainWindow):
     def map_context_menu(self):
         menu = QMenu(self)
         switches = self.selected_switch_ids()
+        edit = menu.addAction("编辑对象信息…", lambda: self.edit_selected_metadata(self.selected_features[0]))
+        edit.setEnabled(len(self.selected_features) == 1)
+        menu.addSeparator()
         menu.addAction("由所选道岔新建线路所…", self.create_signal_box_from_selection).setEnabled(len(switches) >= 2)
         menu.addAction("移动所选对象到目录…", self.move_map_selection).setEnabled(bool(self.selected_features))
         menu.addAction("重命名所选对象…", self.rename_map_selection).setEnabled(bool(self.selected_features))
@@ -3140,6 +3147,8 @@ class Desk(QMainWindow):
             self.rail_catalog_widget.set_line_master(
                 "operating" if key == "rail" else "construction", on
             )
+        elif key == "railStationTracks":
+            self.rail_catalog_widget.set_station_track_master(on)
         elif key == "railStations":
             self.rail_catalog_widget.set_station_master("station", on)
         elif key in ('road', 'roadConstruction'):
@@ -3580,7 +3589,7 @@ class Desk(QMainWindow):
         self.detail_rail.setChecked(True)
 
     def edit_rail_station_metadata(self, station_id):
-        record = self.rail_catalog_widget.station_record_by_id.get(station_id)
+        record = self.rail_catalog_widget.station_record(station_id)
         if record is None:
             self.rail_catalog_widget.station_query = station_id.split("/", 1)[-1]
             self.rail_catalog_widget.populate_station_tree()
@@ -3590,11 +3599,48 @@ class Desk(QMainWindow):
             return
         props = {
             **record.get("properties", {}),
-            "osm_node_id": record["osm_node_id"],
+            "osm_node_id": record.get("osm_node_id"),
+            "infrastructure_id": record["id"],
             "display_name": record["name"],
             "station_type": record["station_type"],
         }
         self.edit_selected_metadata({"layer": "rail-points", "properties": props})
+
+    def edit_rail_line_metadata(self, group_ids):
+        group_ids = [group_ids] if isinstance(group_ids, str) else list(group_ids)
+        group_ids = [key for key in group_ids if key in self.rail_catalog_widget.catalog]
+        if not group_ids:
+            QMessageBox.information(self, "不可编辑", "线路目录中不存在该对象。")
+            return
+        props = {**self.rail_catalog_widget.meta(group_ids[0]), "catalog_group_id": group_ids[0]}
+        self.edit_line_metadata({"layer": "rail", "properties": props}, "rail", rail_groups=group_ids)
+
+    def _rail_station_record_for_feature(self, feature):
+        layer = feature.get("layer", "")
+        if layer not in ("rail-points", "rail-detail-points", "rail-platform-fill",
+                         "rail-platform-outline", "rail-station-fill", "rail-station-outline",
+                         "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
+            return None
+        props = feature.get("properties", {})
+        if props.get("kind") == "switch":
+            return None
+        candidates = [props.get("infrastructure_id"), props.get("station_id")]
+        if props.get("osm_node_id") is not None:
+            candidates.append("node/" + str(props["osm_node_id"]).removeprefix("node/"))
+        associated = props.get("associated_station_ids") or []
+        if isinstance(associated, str):
+            try:
+                associated = json.loads(associated)
+            except ValueError:
+                associated = []
+        if isinstance(associated, list) and len(associated) == 1:
+            candidates.append("node/" + str(associated[0]).removeprefix("node/"))
+        for candidate in candidates:
+            if candidate:
+                record = self.rail_catalog_widget.station_record(str(candidate))
+                if record:
+                    return record
+        return None
 
     def edit_line_metadata(self, feature, kind, relation=None, rail_groups=None):
         props = feature.get("properties", {})
@@ -3619,9 +3665,7 @@ class Desk(QMainWindow):
                 return
             primary = self.rail_catalog_widget.meta(rail_groups[0])
             current_path = list(self.rail_catalog_widget.parents(rail_groups[0]))
-            display_name = props.get("display_name") or self.rail_catalog_widget.display_name(
-                rail_groups[0]
-            )
+            display_name = self.rail_catalog_widget.display_name(rail_groups[0])
             attributes = source_line_attributes(
                 {**primary, **props},
                 "rail",
@@ -3762,6 +3806,7 @@ class Desk(QMainWindow):
                     self.rail_catalog_widget.save_overrides(changes)
                     if line_semantics_changes:
                         self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
+                        self.rail_catalog_widget.metadata_changed.emit()
                 if "display_name" in changed:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
@@ -3773,7 +3818,8 @@ class Desk(QMainWindow):
                     if line_names:
                         self.rail_catalog_widget.line_names_changed.emit(line_names)
             self.load_status.setText("  线路概览已保存到工作区；原始 OSM 数据未修改")
-            self.refresh_map_names()
+            if kind == "metro":
+                self.refresh_map_names()
             self.display_feature(feature)
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "线路信息未保存", str(error))
@@ -3796,14 +3842,30 @@ class Desk(QMainWindow):
             self.display_feature(feature)
             return
         layer = feature.get("layer", "")
+        rail_station_layers = ("rail-points", "rail-detail-points", "rail-platform-fill",
+                               "rail-platform-outline", "rail-station-fill", "rail-station-outline",
+                               "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol")
+        rail_station_record = self._rail_station_record_for_feature(feature) if layer in rail_station_layers else None
+        if layer in rail_station_layers and not rail_station_record:
+            QMessageBox.information(self, "不可编辑", "此地图要素尚未关联到唯一车站，请先在车站目录核对归属。")
+            return
+        if rail_station_record:
+            props = {
+                **rail_station_record.get("properties", {}), **props,
+                "infrastructure_id": rail_station_record["id"],
+                "osm_node_id": rail_station_record.get("osm_node_id"),
+                "display_name": rail_station_record["name"],
+                "station_type": rail_station_record["station_type"],
+            }
+            feature = {**feature, "properties": props}
         relation = props.get("route_relation_id", props.get("osm_relation_id"))
-        if relation in self.route_lookup and layer == "metro":
+        if not rail_station_record and relation in self.route_lookup and layer == "metro":
             self.edit_line_metadata(feature, "metro", relation=relation)
             return
         merged_groups = props.get("merged_catalog_ids", [])
         rail_group = props.get("catalog_group_id")
         rail_groups = merged_groups or ([rail_group] if rail_group else [])
-        if rail_groups and layer in ("rail", "rail-stripes", "rail-construction"):
+        if not rail_station_record and rail_groups and layer in ("rail", "rail-stripes", "rail-construction"):
             self.edit_line_metadata(feature, "rail", rail_groups=rail_groups)
             return
         dialog = QDialog(self)
@@ -3814,7 +3876,17 @@ class Desk(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(fields)
-        dialog_layout.addWidget(scroll)
+        station_tabs = QTabWidget() if rail_station_record else None
+        if station_tabs:
+            station_tabs.addTab(scroll, "车站信息")
+            raw_source = QPlainTextEdit()
+            raw_source.setReadOnly(True)
+            raw_source.setPlainText(json.dumps(rail_station_record.get("properties", {}),
+                                               ensure_ascii=False, indent=2))
+            station_tabs.addTab(raw_source, "原始属性 JSON")
+            dialog_layout.addWidget(station_tabs)
+        else:
+            dialog_layout.addWidget(scroll)
         name = QLineEdit(
             str(props.get("display_name") or props.get("source_name") or props.get("name") or "")
         )
@@ -3843,7 +3915,34 @@ class Desk(QMainWindow):
             and props.get("infrastructure_id")
             else None
         )
-        if relation in self.route_lookup:
+        if rail_station_record:
+            record = rail_station_record
+            custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
+            directory = station_directory_path(record, custom)
+            province.setText(directory[0] if directory else "")
+            city.setText(directory[1] if len(directory) > 1 else "")
+            folder.setText(directory[2] if len(directory) > 2 else "")
+            station_kind.setCurrentText(record["station_type"])
+            form.addRow("车站类型", station_kind)
+            connection_selector = StationConnectionSelector(
+                self.rail_operations.line_library(), "station:" + record["id"])
+            form.addRow("经过线路（接轨关系）", connection_selector)
+            overview = station_overview(props, record, custom)
+            for key, label in STATION_OVERVIEW_FIELDS:
+                if key == "region":
+                    continue
+                control = QLineEdit(overview.get(key, ""))
+                form.addRow(label, control)
+                station_overview_controls[key] = control
+            station_custom = QPlainTextEdit()
+            station_custom.setPlaceholderText("每行填写：属性名=属性值；原始属性保留在右侧 JSON 页")
+            station_custom.setPlainText("\n".join(
+                f"{key}={value}" for key, value in custom.get("custom_attributes", {}).items()))
+            station_custom.setMaximumHeight(110)
+            form.addRow("补充属性", station_custom)
+            dialog.setWindowTitle("编辑国铁车站信息 · 工作区覆盖")
+            dialog.resize(800, 750)
+        elif relation in self.route_lookup:
             current = self.hierarchy.parent(self.route_lookup[relation])
             province.setText(current[0])
             city.setText(current[1])
@@ -3940,7 +4039,25 @@ class Desk(QMainWindow):
 
         def save():
             try:
-                if relation in self.route_lookup:
+                if rail_station_record:
+                    connections = connection_selector.connections()
+                    custom_attributes = {}
+                    for line in station_custom.toPlainText().splitlines():
+                        if not line.strip():
+                            continue
+                        separator = "=" if "=" in line else "：" if "：" in line else None
+                        if not separator:
+                            raise ValueError("自定义属性每行应为“属性名=属性值”")
+                        key, value = line.split(separator, 1)
+                        custom_attributes[key.strip()] = value.strip()
+                    self.rail_catalog_widget.save_station_override(
+                        record["id"], name.text(),
+                        [value.strip() for value in (province.text(), city.text(), folder.text()) if value.strip()],
+                        station_kind.currentText(), connections,
+                        {key: control.text() for key, control in station_overview_controls.items()},
+                        custom_attributes,
+                    )
+                elif relation in self.route_lookup:
                     self.hierarchy.set_parent({int(relation)}, province.text(), city.text(), folder.text())
                     self.hierarchy.save()
                     self.refresh_hierarchy({int(relation)})
@@ -3962,7 +4079,7 @@ class Desk(QMainWindow):
                     if not display_name:
                         raise ValueError("名称不能为空")
                     semantic_change = {key: control.currentData() for key, control in rail_semantic_controls.items()
-                        if control.currentData() != props.get(key, current_facts.get(key, 'unknown'))}
+                        if control.currentData() != current_facts.get(key, 'unknown')}
                     current_override = self.rail_catalog_widget.overrides.get(rail_group, {}).get('rail_semantics', {})
                     group_facts = {key: value for key, value in semantic_change.items() if key != 'track_role'}
                     changes = {rail_group: {'display_name': display_name, 'folder_path': path}}

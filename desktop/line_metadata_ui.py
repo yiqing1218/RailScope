@@ -16,10 +16,10 @@ from PySide6.QtWidgets import (
 
 try:
     from .line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS
+    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
 except ImportError:
     from line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS
+    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
 
 
 class LineMetadataDialog(QDialog):
@@ -47,7 +47,8 @@ class LineMetadataDialog(QDialog):
         self._original_semantics = dict(rail_semantics or {})
         if kind == 'rail':
             for key, title, labels in (('railway_class','铁路类别',CLASS_LABELS),
-                                       ('line_role','线路网络角色',LINE_ROLE_LABELS)):
+                                       ('line_role','线路网络角色',LINE_ROLE_LABELS),
+                                       ('track_role','物理轨道用途',ROLE_LABELS)):
                 control = QComboBox()
                 for ident, label in labels.items():
                     control.addItem(label, ident)

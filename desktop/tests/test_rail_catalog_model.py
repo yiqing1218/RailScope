@@ -135,14 +135,17 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
         "yard-b": _record(3, facility_id="ST-B", station_name="同名站", track_role="shunting_track"),
         "unknown": _record(4, track_role="unknown", facility_only=True),
         "yard-linked": _record(5, station_id="ST-C", station_name="人工关联站", facility_only=True),
+        "station-main": _record(6, station_id="ST-D", station_name="站内正线"),
     }
     catalog, _ = _index(tmp_path, records)
     lines = RailDirectoryModel(catalog.path)
     facilities = RailDirectoryModel(catalog.path, "facilities")
-    assert lines.reveal_catalog_id("main").isValid()
+    assert not lines.reveal_catalog_id("main").isValid()
     assert facilities.reveal_catalog_id("main").isValid()
     assert not lines.reveal_catalog_id("yard-a").isValid()
     assert not lines.reveal_catalog_id("unknown").isValid()
+    assert not lines.reveal_catalog_id("station-main").isValid()
+    assert facilities.reveal_catalog_id("station-main").isValid()
     facilities.fetchMore()
     with sqlite3.connect(catalog.path) as db:
         paths = {key: json.loads(path) for key, path in db.execute(
@@ -176,12 +179,27 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
     assert model.ids_below(pending) == (set(), {"ambiguous", "unknown"})
     with sqlite3.connect(catalog.path) as db:
         assert db.execute("SELECT facility_total FROM rail_station_nodes WHERE id='station:node/1'").fetchone()[0] == 2
-        assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:explicit'").fetchone()[0] == "车站设施"
+        assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:explicit'").fetchone()[0] == "站内轨道"
         assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:inferred'").fetchone()[0] == "名称匹配，待核对"
     assert sync_station_catalog(tmp_path, catalog.path, [], {}) is False
     model.set_search("甲站")
     model.fetchMore()
     assert model.rowCount() > 0
+
+
+def test_station_source_id_places_track_under_exact_station(qtbot, tmp_path, monkeypatch):
+    import desktop.rail_station_catalog_model as station_module
+
+    stations = [{"id": "node/1", "name": "同名站", "province": "甲省", "city": "甲市"},
+                {"id": "node/2", "name": "同名站", "province": "甲省", "city": "甲市"}]
+    monkeypatch.setattr(station_module, "rail_station_records", lambda *args, **kwargs: (stations, 2))
+    (tmp_path / "rail_lines.sqlite").touch()
+    catalog, _ = _index(tmp_path, {"track": _record(1, station_name="同名站", provinces=["甲省"],
+                                                  station_source="node/2", track_role="shunting_track")})
+    sync_station_catalog(tmp_path, catalog.path, [], {})
+    model = StationCatalogModel(catalog.path)
+    assert model.ids_below("station:node/2") == ({"node/2"}, {"track"})
+    assert model.ids_below("station:node/1") == ({"node/1"}, set())
 
 
 def test_search_honors_override_names_and_literal_wildcards(qtbot, tmp_path):
