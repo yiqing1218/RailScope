@@ -26,12 +26,14 @@ from PySide6.QtWidgets import (
     QMenu,
     QInputDialog,
     QAbstractItemView,
+    QSizePolicy,
 )
 
 try:
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
+    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
@@ -45,6 +47,7 @@ except ImportError:
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory
+    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
     from catalog_metadata import (
@@ -62,7 +65,7 @@ MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
 LINE_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_line_directory.json"
 STATION_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_station_directory.json"
-DIRECTORY_FIELDS = {"folder_path", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics"}
+DIRECTORY_FIELDS = {"folder_path", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
 
 
 def line_directory_overrides(overrides):
@@ -489,8 +492,7 @@ class RailCatalog(QWidget):
         self.station_page = QWidget()
         station_layout = QVBoxLayout(self.station_page)
         station_layout.setContentsMargins(0, 0, 0, 0)
-        station_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        station_layout.addWidget(text_label("省 / 市 / 车站实体", "sectionLabel"))
+        station_layout.addWidget(text_label("省 / 市 / 车站 / 设施", "sectionLabel"))
         self.station_tree = CatalogTree()
         self.station_tree.setColumnCount(1)
         self.station_tree.setHeaderHidden(True)
@@ -510,6 +512,9 @@ class RailCatalog(QWidget):
             self.station_context_menu
         )
         station_layout.addWidget(self.station_tree)
+        self.station_browser = RailDirectoryView()
+        self.station_browser.hide()
+        station_layout.addWidget(self.station_browser, 1)
         self.station_note = text_label("正在读取车站实体目录…", wrap=True)
         station_layout.addWidget(self.station_note)
         self.tabs.addTab(self.station_page, "车站目录")
@@ -538,12 +543,12 @@ class RailCatalog(QWidget):
         self.tabs.addTab(self.platform_page, "站台线目录")
         self.tabs.currentChanged.connect(self._load_catalog_tab)
         self.station_tree.itemExpanded.connect(self._load_station_switches)
-        layout.addWidget(self.tabs)
+        layout.addWidget(self.tabs, 1)
         self.note = text_label(
             self.catalog_note(),
             wrap=True,
         )
-        layout.addWidget(self.note)
+        layout.addWidget(self.note, 0)
         # National automatic track naming scans the entire rendered railway.
         # Existing workspace names are already loaded; keep first paint fast.
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
@@ -785,10 +790,16 @@ class RailCatalog(QWidget):
                 aliases[0] if aliases else record.get("name", key))
             return record, self._record_parents(record), label
 
-        presentation_overrides = {key: value for key, value in self.overrides.items()
-                                  if not key.startswith(("object:", "station:", "switch:", "system:"))}
-        sync_catalog_directory(self.catalog, presentation_overrides, resolve,
-                               self.mode.currentIndex(), self.way_names)
+        presentation_overrides = {
+            key: {field: value for field, value in fields.items()
+                  if field not in ("station_id", "station_assignment")}
+            for key, fields in self.overrides.items()
+            if not key.startswith(("object:", "station:", "switch:", "system:"))
+        }
+        directory_changed = sync_catalog_directory(self.catalog, presentation_overrides, resolve,
+                                                   self.mode.currentIndex(), self.way_names)
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
+            self.catalog.ensure_way_lookup()
         if not hasattr(self, "line_model"):
             for browser, view in ((self.line_browser, "lines"), (self.facility_browser, "facilities")):
                 model = RailDirectoryModel(self.catalog.path, view, browser)
@@ -803,8 +814,35 @@ class RailCatalog(QWidget):
                 else:
                     self.facility_model = model
         for model in (self.line_model, self.facility_model):
-            model.set_search(self.search.text())
-            model.fetchMore()
+            if directory_changed:
+                model.reset_from_disk()
+            if model.search != self.search.text().strip():
+                model.set_search(self.search.text())
+            if not model.root.children:
+                model.fetchMore()
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (self.directory / "rail_lines.sqlite").exists():
+            station_changed = sync_station_catalog(self.directory, self.catalog.path, self.regions, self.overrides)
+            if not hasattr(self, "station_model"):
+                self.station_model = StationCatalogModel(self.catalog.path, self.station_browser)
+                self.station_browser.setModel(self.station_model)
+                self.station_browser.collapsed.connect(self.station_model.release_branch)
+                self.station_model.toggled.connect(self._toggle_paged_station_node)
+                self.station_browser.doubleClicked.connect(self._focus_paged_station_item)
+                self.station_browser.move_requested.connect(self._move_paged_station_assets)
+                self.station_browser.customContextMenuRequested.connect(self._station_paged_context_menu)
+            elif station_changed:
+                self.station_model.reset_from_disk()
+                self.station_model.search = ""
+            if self.station_model.search != self.station_query.strip():
+                self.station_model.set_search(self.station_query)
+            if not self.station_model.root.children:
+                self.station_model.fetchMore()
+            self.station_tree.hide()
+            self.station_browser.show()
+            self.tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+            self.tabs.removeTab(self.tabs.indexOf(self.yard_page)) if self.tabs.indexOf(self.yard_page) >= 0 else None
+            self.station_note.setText("车站与设施共用目录；名称匹配尚待核验，其余设施位于“待核对”。拖动或右键可指定设施归属。")
+            self._sync_paged_station_visibility()
         # Destination paths live on disk, including currently unloaded branches.
         with closing(sqlite3.connect(self.catalog.path)) as db:
             self.line_folder_paths = {
@@ -818,6 +856,96 @@ class RailCatalog(QWidget):
             model = getattr(self, name, None)
             if model is not None:
                 model.set_visibility(self.visible, self.all_visible, self.excluded)
+        self._sync_paged_station_visibility()
+
+    def _sync_paged_station_visibility(self):
+        model = getattr(self, "station_model", None)
+        if model is not None:
+            model.visible_state(self.station_masters["station"], self.station_direct_visible,
+                                self.station_excluded, self.all_visible, self.visible, self.excluded)
+
+    def _toggle_paged_station_node(self, node, on):
+        station_ids, facilities = self.station_model.ids_below(node)
+        if station_ids:
+            if self.station_masters["station"]:
+                self.station_excluded.difference_update(station_ids) if on else self.station_excluded.update(station_ids)
+            else:
+                self.station_direct_visible.update(station_ids) if on else self.station_direct_visible.difference_update(station_ids)
+                for station_id in station_ids:
+                    if on:
+                        self.station_direct_groups[station_id] = "station"
+                    else:
+                        self.station_direct_groups.pop(station_id, None)
+                self.station_partial_changed.emit("station", self._any_station_assets_visible())
+            self.send_station_visibility()
+        if facilities:
+            self.toggle_group(facilities, on)
+        self._sync_paged_station_visibility()
+
+    def _focus_paged_station_item(self, index):
+        node = self.station_model._node(index)
+        if node.kind == "station":
+            record = self.station_record(node.object_id)
+            if record:
+                self.map.call("focus", *record["coordinates"], 15, record["name"])
+        elif node.kind == "facility":
+            self.focus_catalog_key(node.object_id)
+
+    def _move_paged_station_assets(self, nodes, target):
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            current = target
+            owner = None
+            pending = False
+            while current:
+                row = db.execute("SELECT kind,object_id,parent_id,label FROM rail_station_nodes WHERE id=?", (current,)).fetchone()
+                if row is None:
+                    break
+                if row[0] == "station":
+                    owner = row[1]
+                    break
+                if row[3] == "待核对":
+                    pending = True
+                current = row[2]
+        if not owner and not pending:
+            return
+        facilities = {key for node in nodes for key in self.station_model.ids_below(node)[1]}
+        if facilities:
+            QTimer.singleShot(0, lambda: self._assign_station_facilities(facilities, owner))
+
+    def _assign_station_facilities(self, facilities, station_id):
+        changes = {key: {"station_id": station_id or "",
+                         "station_assignment": "manual" if station_id else "pending"}
+                   for key in facilities}
+        self.save_overrides(changes)
+
+    def _station_paged_context_menu(self, point):
+        index = self.station_browser.indexAt(point)
+        if not index.isValid() or self.station_model._node(index).kind != "facility":
+            return
+        selected = self.station_browser.selectionModel().selectedRows()
+        facilities = {self.station_model._node(row).object_id for row in selected
+                      if self.station_model._node(row).kind == "facility"}
+        if self.station_model._node(index).object_id not in facilities:
+            facilities = {self.station_model._node(index).object_id}
+        menu = QMenu(self)
+        move = menu.addAction("移至车站…")
+        pending = menu.addAction("移至待核对")
+        chosen = menu.exec(self.station_browser.viewport().mapToGlobal(point))
+        menu.deleteLater()
+        if chosen is pending:
+            self._assign_station_facilities(facilities, None)
+        elif chosen is move:
+            value, accepted = QInputDialog.getText(self, "指定车站", "车站名称或稳定编号")
+            if not accepted or not value.strip():
+                return
+            value = value.strip()
+            with closing(sqlite3.connect(self.catalog.path)) as db:
+                rows = db.execute("SELECT object_id FROM rail_station_nodes WHERE kind='station' "
+                                  "AND (object_id=? OR label=?)", (value.removeprefix("station:"), value)).fetchall()
+            if len(rows) != 1:
+                QMessageBox.warning(self, "无法确定车站", "请输入唯一车站名称或 node/… 稳定编号。")
+                return
+            self._assign_station_facilities(facilities, rows[0][0])
 
     def _paged_proxy(self, model, index):
         """Transient dialog/focus adapter; never inserts an item into a Qt tree."""
@@ -894,6 +1022,15 @@ class RailCatalog(QWidget):
     def _reveal_paged_key(self, key):
         for model, browser, page in ((self.line_model, self.line_browser, self.line_page),
                                      (self.facility_model, self.facility_browser, self.yard_page)):
+            if page is self.yard_page and hasattr(self, "station_model"):
+                index = self.station_model.reveal_id("facility", key)
+                if index.isValid():
+                    self.tabs.setCurrentWidget(self.station_page)
+                    self.station_browser.setCurrentIndex(index)
+                    self.station_browser.scrollTo(index)
+                    self.note.setText("地图已选择：" + self.display_name(key))
+                    return True
+                continue
             index = model.reveal_catalog_id(key)
             if not index.isValid():
                 continue
@@ -1093,6 +1230,9 @@ class RailCatalog(QWidget):
             self.line_model.fetchMore()
             self.facility_model.set_search(text)
             self.facility_model.fetchMore()
+            if hasattr(self, "station_model"):
+                self.station_model.set_search(text)
+                self.station_model.fetchMore()
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
             self.filter_tree(text)
 
@@ -1151,14 +1291,17 @@ class RailCatalog(QWidget):
             self.search_changed(value)
         if search_type in ("全部", "车站及线路所"):
             self.station_query = value
-            if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS or self.tabs.currentWidget() is self.station_page:
+            if hasattr(self, "station_model"):
+                self.station_model.set_search(value)
+                self.station_model.fetchMore()
+            elif len(self.catalog) <= MAX_CATALOG_TREE_ITEMS or self.tabs.currentWidget() is self.station_page:
                 self.populate_station_tree()
             self.tabs.setCurrentWidget(self.station_page)
         elif search_type == "铁路线":
             self.tabs.setCurrentWidget(self.line_page)
 
     def _load_catalog_tab(self, index):
-        if self.tabs.widget(index) is self.station_page and not self.station_records:
+        if self.tabs.widget(index) is self.station_page and not self.station_records and not hasattr(self, "station_model"):
             self.populate_station_tree()
         elif self.tabs.widget(index) is self.yard_page:
             self.populate_yard_tree()
@@ -1556,16 +1699,11 @@ class RailCatalog(QWidget):
         # One business master controls both owners and their child switches.
         self.station_masters["station"] = bool(on)
         self.station_masters["control"] = bool(on)
-        group_ids = {
-            record["id"]
-            for record in self.station_records
-            if self.station_group(record) == "station"
-        }
         direct_ids = set(self.station_direct_visible)
         self.station_direct_visible.difference_update(direct_ids)
         for station_id in direct_ids:
             self.station_direct_groups.pop(station_id, None)
-        self.station_excluded.difference_update(group_ids)
+        self.station_excluded.clear()
         self.sync_station_switches()
         self.send_station_visibility()
 
@@ -1589,6 +1727,7 @@ class RailCatalog(QWidget):
 
     def sync_station_switches(self):
         self._sync_asset_switches()
+        self._sync_paged_station_visibility()
         for record in self.station_records:
             item = self.station_items.get(record["id"])
             if not item:
@@ -2043,7 +2182,35 @@ class RailCatalog(QWidget):
                     self.station_tree.setUpdatesEnabled(True)
         return key if key in self.station_items else None
 
+    def station_record(self, station_id):
+        """Load one station on demand; a map click must not populate the nation."""
+        record = self.station_record_by_id.get(station_id)
+        if record is not None:
+            return record
+        records, _ = rail_station_records(self.directory, self.regions,
+                                          str(station_id), 5, self.overrides)
+        record = next((value for value in records if value["id"] == station_id), None)
+        if record is None:
+            return None
+        record["_source_name"] = record["name"]
+        record["_source_station_type"] = record["station_type"]
+        record["_source_line_ids"] = list(record["line_ids"])
+        record["_source_line_names"] = list(record["line_names"])
+        self._apply_station_override(record)
+        self.station_record_by_id[station_id] = record
+        return record
+
     def select_station(self, osm_node_id):
+        if hasattr(self, "station_model"):
+            station_id = str(osm_node_id)
+            if not station_id.startswith("node/"):
+                station_id = "node/" + station_id
+            if self.select_station_record(station_id):
+                return True
+            # Only switches require inferred owner resolution. A station click
+            # never scans nearby topology or rebuilds a tree.
+            owner = rail_switch_owner(self.directory, osm_node_id, self.regions, self.overrides)
+            return self.select_station_record(owner["id"]) if owner else False
         key = self.station_owner_for_node(osm_node_id)
         item = self.station_items.get(key) if key else None
         if not item:
@@ -2221,6 +2388,14 @@ class RailCatalog(QWidget):
         return {"type": "FeatureCollection", "features": features}
 
     def select_station_record(self, station_id):
+        if hasattr(self, "station_model"):
+            index = self.station_model.reveal_id("station", station_id)
+            if not index.isValid():
+                return False
+            self.tabs.setCurrentWidget(self.station_page)
+            self.station_browser.setCurrentIndex(index)
+            self.station_browser.scrollTo(index)
+            return True
         item = self.station_items.get(station_id)
         if item is None:
             return False
@@ -3175,11 +3350,10 @@ class RailCatalog(QWidget):
         elif section_id in self.catalog:
             candidates = [section_id]
         else:
-            candidates = [
-                key
-                for key, record in self.catalog.items()
-                if way_id in record.get("way_ids", [])
-            ]
+            candidates = (self.catalog.groups_for_way(way_id)
+                          if isinstance(self.catalog, RailCatalogIndex)
+                          else [key for key, record in self.catalog.items()
+                                if way_id in record.get("way_ids", [])])
         if province:
             preferred = [
                 key for key in candidates if self.meta(key).get("province") == province

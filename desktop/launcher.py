@@ -3354,14 +3354,8 @@ class Desk(QMainWindow):
                 )
             )
         merged_groups = props.get("merged_catalog_ids", [])
-        if feature.get("layer") in ("rail", "rail-stripes", "rail-construction"):
-            keys = [key for key in [rail_group, *merged_groups] if key in self.rail_catalog_widget.catalog]
-            if keys:
-                props.update(self.rail_catalog_widget.line_relationships(keys))
-            elif props.get("line_id"):
-                library = self.rail_operations.line_library()
-                if hasattr(library, "line_stations") and props["line_id"] in library.lines:
-                    props["station_names"] = [name for _, name in library.line_stations(props["line_id"])]
+        # National line relationships can traverse thousands of topology nodes.
+        # The editor loads them when needed; map selection must remain immediate.
         if merged_groups:
             first = next(
                 (
@@ -3399,9 +3393,11 @@ class Desk(QMainWindow):
             )
             osm_node_id = props.get("osm_node_id")
             station_id = str(props.get("infrastructure_id") or "")
-            if station_id not in self.rail_catalog_widget.station_record_by_id:
+            if not station_id.startswith(("node/", "signalbox/")):
                 station_id = f"node/{osm_node_id}"
             record = self.rail_catalog_widget.station_record_by_id.get(station_id)
+            if record is None and station_id.startswith(("node/", "signalbox/")):
+                record = self.rail_catalog_widget.station_record(station_id)
             if record:
                 station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
                 folder = station_directory_path(record, station_custom)
@@ -3410,9 +3406,8 @@ class Desk(QMainWindow):
                 props["city"] = folder[1] if len(folder) > 1 else ""
                 props["folder_path"] = list(folder)
                 props["station_type"] = record["station_type"]
-                connected = self.rail_operations.line_library().connected_lines('station:' + record['id'], limit=10000)
-                props["line_ids"] = [line['id'] for line in connected]
-                props["line_names"] = [line['name'] for line in connected]
+                props["line_ids"] = record.get("line_ids", [])
+                props["line_names"] = record.get("line_names", [])
                 props["station_overview"] = station_overview(
                     props,
                     record,

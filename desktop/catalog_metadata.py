@@ -484,7 +484,11 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         # The directory and corridor picker now read the same station owners.
         # Search includes workspace names so a map rename remains discoverable.
         features = []
-        for key, record in station_directory.items():
+        direct_key = query.strip().removeprefix("node/")
+        candidates = ([("node/" + direct_key, station_directory["node/" + direct_key])]
+                      if direct_key.isdigit() and "node/" + direct_key in station_directory
+                      else station_directory.items())
+        for key, record in candidates:
             feature = record['feature']
             coordinate = feature.get('geometry', {}).get('coordinates')
             if not coordinate:
@@ -495,7 +499,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
             elif query:
                 custom = (overrides or {}).get('station:' + key, {}).get('display_name', '')
                 text = ' '.join((record['name'], key, custom)).casefold()
-                if normalized_query not in text:
+                if normalized_query not in text and key != "node/" + direct_key:
                     continue
             features.append(feature)
         features.sort(key=lambda f: (0 if f['properties'].get('kind')=='station' else 1,
@@ -516,7 +520,6 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
     line_db = directory / "rail_lines.sqlite"
     if line_db.exists() and node_ids:
         with sqlite3.connect(line_db) as db:
-            line_names = dict(db.execute("SELECT id,source_name FROM lines"))
             for start in range(0, len(node_ids), 800):
                 batch = node_ids[start : start + 800]
                 marks = ",".join("?" for _ in batch)
@@ -533,6 +536,13 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 )
                 for node, line_id in db.execute(alias_sql, batch):
                     line_map[node].add(line_id)
+            matched_lines = sorted({line for values in line_map.values() for line in values})
+            for start in range(0, len(matched_lines), 800):
+                batch = matched_lines[start:start + 800]
+                marks = ",".join("?" for _ in batch)
+                line_names.update(db.execute(
+                    f"SELECT id,source_name FROM lines WHERE id IN ({marks})", batch
+                ))
     index = ProvinceIndex()
     result = []
     for feature in features:

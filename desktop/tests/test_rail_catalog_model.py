@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QTreeView
 
 from desktop.rail_catalog_index import RailCatalogIndex, build_index
 from desktop.rail_catalog_model import RailDirectoryModel, sync_catalog_directory
+from desktop.rail_station_catalog_model import StationCatalogModel, sync_station_catalog
 from desktop.rail_catalog_ui import RailCatalog
 from desktop.tests.test_operating_ui import MapStub
 
@@ -78,6 +79,7 @@ def test_locked_catalog_index_updates_rows_without_losing_old_on_failure(tmp_pat
 
 def test_pages_are_sqlite_backed_and_focus_does_not_read_preceding_pages(qtbot, tmp_path):
     catalog, _ = _index(tmp_path, {f"RL-{i}": _record(i) for i in range(3000)})
+    assert catalog.groups_for_way(2999) == ["RL-2999"]
     model = RailDirectoryModel(catalog.path)
     assert model.rowCount() == 0
     model.fetchMore()
@@ -148,6 +150,38 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
     assert paths["yard-a"][1] != paths["yard-b"][1]
     assert paths["unknown"][1] == "设施归属待核实"
     assert paths["yard-linked"][1] == "人工关联站 · ST-C"
+
+
+def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qtbot, tmp_path, monkeypatch):
+    import desktop.rail_station_catalog_model as station_module
+
+    stations = [
+        {"id": "node/1", "name": "甲站", "province": "甲省", "city": "甲市"},
+        {"id": "node/2", "name": "同名站", "province": "乙省", "city": "乙市"},
+        {"id": "node/3", "name": "同名站", "province": "乙省", "city": "乙市"},
+    ]
+    monkeypatch.setattr(station_module, "rail_station_records", lambda *args, **kwargs: (stations, 3))
+    (tmp_path / "rail_lines.sqlite").touch()
+    records = {
+        "explicit": _record(1, station_name="任意名称", station_id="node/1", track_role="shunting_track"),
+        "inferred": _record(2, station_name="甲", provinces=["甲省"], track_role="shunting_track"),
+        "ambiguous": _record(3, station_name="同名", provinces=["乙省"], track_role="shunting_track"),
+        "unknown": _record(4, track_role="shunting_track"),
+    }
+    catalog, _ = _index(tmp_path, records)
+    assert sync_station_catalog(tmp_path, catalog.path, [], {}) is True
+    model = StationCatalogModel(catalog.path)
+    assert model.ids_below("station:node/1") == ({"node/1"}, {"explicit", "inferred"})
+    pending = 'folder:["stations","待核对"]'
+    assert model.ids_below(pending) == (set(), {"ambiguous", "unknown"})
+    with sqlite3.connect(catalog.path) as db:
+        assert db.execute("SELECT facility_total FROM rail_station_nodes WHERE id='station:node/1'").fetchone()[0] == 2
+        assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:explicit'").fetchone()[0] == "车站设施"
+        assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:inferred'").fetchone()[0] == "名称匹配，待核对"
+    assert sync_station_catalog(tmp_path, catalog.path, [], {}) is False
+    model.set_search("甲站")
+    model.fetchMore()
+    assert model.rowCount() > 0
 
 
 def test_search_honors_override_names_and_literal_wildcards(qtbot, tmp_path):

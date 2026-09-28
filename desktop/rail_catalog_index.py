@@ -34,6 +34,7 @@ def _install_in_place(target, replacement):
                 db.execute("INSERT OR REPLACE INTO metadata SELECT * FROM replacement.metadata")
                 # Presentation rows derived from the old catalog must be rebuilt.
                 db.execute("DELETE FROM metadata WHERE key='paged_directory_signature'")
+                db.execute("DELETE FROM metadata WHERE key='way_lookup_schema'")
         finally:
             db.execute("DETACH DATABASE replacement")
 
@@ -189,6 +190,23 @@ class RailCatalogIndex(Mapping):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+    def ensure_way_lookup(self):
+        """Index legacy map way IDs once instead of scanning every catalog row."""
+        with closing(sqlite3.connect(self.path)) as db:
+            ready = db.execute("SELECT value FROM metadata WHERE key='way_lookup_schema'").fetchone()
+            if ready and ready[0] == "1":
+                return
+            with db:
+                db.execute("CREATE TABLE IF NOT EXISTS rail_catalog_way_ids (way_id TEXT NOT NULL,catalog_id TEXT NOT NULL,PRIMARY KEY(way_id,catalog_id))")
+                db.execute("DELETE FROM rail_catalog_way_ids")
+                db.execute("INSERT OR IGNORE INTO rail_catalog_way_ids SELECT cast(j.value AS TEXT),c.id FROM catalog c,json_each(c.data,'$.way_ids') j")
+                db.execute("INSERT OR REPLACE INTO metadata VALUES('way_lookup_schema','1')")
+
+    def groups_for_way(self, way_id):
+        self.ensure_way_lookup()
+        return [row[0] for row in self._connect().execute(
+            "SELECT catalog_id FROM rail_catalog_way_ids WHERE way_id=?", (str(way_id),))]
 
     def __del__(self):
         self.close()

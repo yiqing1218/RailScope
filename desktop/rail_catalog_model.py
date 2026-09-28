@@ -66,7 +66,7 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
     with closing(sqlite3.connect(catalog.path)) as db:
         old = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
         if old and old[0] == signature:
-            return
+            return False
         # DDL stays in this transaction: a failed resolver preserves the old index.
         db.execute("BEGIN")
         db.execute("CREATE TABLE IF NOT EXISTS rail_directory_nodes (id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,label TEXT NOT NULL,kind TEXT NOT NULL,object_id TEXT,path TEXT NOT NULL,child_count INTEGER NOT NULL DEFAULT 0,total INTEGER NOT NULL DEFAULT 0,archived INTEGER NOT NULL DEFAULT 0,view TEXT NOT NULL,searchable TEXT NOT NULL DEFAULT '')")
@@ -128,6 +128,7 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
         db.execute("UPDATE rail_directory_nodes SET child_count=(SELECT count(*) FROM rail_directory_nodes c WHERE c.parent_id=rail_directory_nodes.id)")
         db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)", (signature,))
         db.commit()
+        return True
 
 
 class RailDirectoryModel(SqliteDirectoryModel):
