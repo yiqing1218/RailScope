@@ -96,7 +96,7 @@ class SqliteDirectoryModel(QAbstractItemModel):
 
     def canFetchMore(self, parent=QModelIndex()):
         node = self._node(parent)
-        return len(node.children) < self._count_children(node.key)
+        return len(node.children) - int(getattr(node, "spotlight", None) in node.children) < self._count_children(node.key)
 
     def fetchMore(self, parent=QModelIndex()):
         node = self._node(parent)
@@ -106,7 +106,8 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 f"SELECT id,label,kind,object_id,child_count,total,archived "
                 f"FROM {self.table} WHERE parent_id=?" + self._search_clause()
                 + " ORDER BY kind='object',label,id LIMIT ? OFFSET ?",
-                (node.key, *self._search_args(), PAGE_SIZE, len(node.children)),
+                (node.key, *self._search_args(), PAGE_SIZE,
+                 len(node.children) - int(getattr(node, "spotlight", None) in node.children)),
             ).fetchall()
         if not rows:
             return

@@ -42,9 +42,16 @@ def test_previous_topology_catalog_keeps_stable_line_ids_until_reclassified(tmp_
     (tmp_path / "rail_catalog.topology.json").write_text(
         json.dumps({"version": "topology-line-endpoint-catalog-v9", "catalog": keys}, ensure_ascii=False),
         encoding="utf-8")
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript("CREATE TABLE features(id INTEGER PRIMARY KEY,data TEXT);"
+                         "CREATE TABLE rail_feature_groups(feature_id INTEGER,group_id TEXT);")
+        db.execute("INSERT INTO features VALUES(?,?)", (1, json.dumps({"properties": {
+            "line_name": "待补入线路", "way_tags": {"railway": "rail", "usage": "main"}}})))
+        db.execute("INSERT INTO rail_feature_groups VALUES(?,?)", (1, "RL-rendered"))
     catalog = RailCatalogIndex(build_index(tmp_path))
-    assert set(catalog) == set(keys)
+    assert set(catalog) == set(keys) | {"RL-rendered"}
     assert "旧名称目录" not in catalog
+    assert catalog["RL-rendered"]["source"] == "rendered_group_fallback"
 
 
 def test_locked_catalog_index_updates_rows_without_losing_old_on_failure(tmp_path, monkeypatch):
@@ -81,10 +88,12 @@ def test_pages_are_sqlite_backed_and_focus_does_not_read_preceding_pages(qtbot, 
     assert model.canFetchMore(folder)
     model.fetchMore(folder)
     assert model.rowCount(folder) == 256
+    loaded_before = _loaded(model.root)
     index = model.reveal_catalog_id("RL-2999")
     assert index.isValid()
     assert model.ids_below(model._node(index).key) == {"RL-2999"}
-    assert _loaded(model.root) == 2
+    assert _loaded(model.root) == loaded_before + 1
+    assert model.rowCount(folder) == 256
     model.set_search("")
     model.fetchMore()
     folder = model.index(0, 0)
@@ -123,6 +132,7 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
         "yard-a": _record(2, facility_id="ST-A", station_name="同名站", track_role="shunting_track"),
         "yard-b": _record(3, facility_id="ST-B", station_name="同名站", track_role="shunting_track"),
         "unknown": _record(4, track_role="unknown", facility_only=True),
+        "yard-linked": _record(5, station_id="ST-C", station_name="人工关联站", facility_only=True),
     }
     catalog, _ = _index(tmp_path, records)
     lines = RailDirectoryModel(catalog.path)
@@ -137,6 +147,7 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
             "SELECT m.catalog_id,d.path FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id WHERE view='facilities'")}
     assert paths["yard-a"][1] != paths["yard-b"][1]
     assert paths["unknown"][1] == "设施归属待核实"
+    assert paths["yard-linked"][1] == "人工关联站 · ST-C"
 
 
 def test_search_honors_override_names_and_literal_wildcards(qtbot, tmp_path):
@@ -184,7 +195,14 @@ def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_pat
     assert _loaded(widget.line_model.root) <= 128
     widget.move_items({"RL-699"}, ["自定义", "线路"])
     assert widget.meta("RL-699")["folder_path"] == ["自定义", "线路"]
+    directory_record = json.loads((tmp_path / "rail_line_directory.json").read_text(encoding="utf-8"))
+    assert directory_record["overrides"]["RL-699"]["folder_path"] == ["自定义", "线路"]
+    existing_folder = widget.line_model._node(widget.line_model.index(0, 0))
+    widget.line_model.fetchMore(widget.line_model.index(0, 0))
+    loaded_children = tuple(existing_folder.children)
     assert widget.select_way(699, group_id="RL-699")
+    assert existing_folder in widget.line_model.root.children
+    assert tuple(existing_folder.children) == loaded_children
     index = widget.line_browser.currentIndex()
     assert index.isValid()
     opened = []
@@ -193,7 +211,7 @@ def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_pat
     assert opened[-1]["properties"]["name"] == records["RL-699"]["name"]
     widget.rename_item("RL-699", "新显示名")
     index = widget.line_model.reveal_catalog_id("RL-699")
-    assert widget.line_model.data(index) == "新显示名"
+    assert widget.line_model.data(index).endswith("新显示名")
     widget.archive_items({"RL-699"})
     index = widget.line_model.reveal_catalog_id("RL-699")
     assert not (widget.line_model.flags(index) & Qt.ItemFlag.ItemIsUserCheckable)

@@ -12,20 +12,20 @@ from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QTreeView
 
 try:
-    from .lazy_directory import SqliteDirectoryModel, PAGE_SIZE
+    from .lazy_directory import SqliteDirectoryModel, PAGE_SIZE, _Node
     from .rail_semantics import semantic_record
     from .components import directory_checkbox_style
 except ImportError:
-    from lazy_directory import SqliteDirectoryModel, PAGE_SIZE
+    from lazy_directory import SqliteDirectoryModel, PAGE_SIZE, _Node
     from rail_semantics import semantic_record
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 2
+PRESENTATION_VERSION = 4
 
 
 def _json(value):
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def facility_path(record):
@@ -48,8 +48,9 @@ def facility_path(record):
         "safety_siding": "安全线", "escape_siding": "避难线",
         "other_station_track": "其他站线", "unknown": "用途待核实",
     }
-    owner = (str(record.get("facility_name") or record.get("station_name") or facility)
-             + " · " + str(facility)) if facility else "设施归属待核实"
+    owner_id = facility or record.get("station_id")
+    owner = (str(record.get("facility_name") or record.get("station_name") or owner_id)
+             + " · " + str(owner_id)) if owner_id else "设施归属待核实"
     path = [owner]
     if facts.get("yard_id"):
         path.append(str(record.get("yard_name") or facts["yard_id"]))
@@ -74,6 +75,9 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
         db.execute("CREATE INDEX IF NOT EXISTS rail_directory_catalog ON rail_directory_members(catalog_id,node_id)")
         db.execute("DELETE FROM rail_directory_members")
         db.execute("DELETE FROM rail_directory_nodes")
+        totals = {}
+        searches = {}
+        seen_folders = set()
         for key, raw in db.execute("SELECT id,data FROM catalog ORDER BY id"):
             record, line_path, label = resolve(key, json.loads(raw))
             facts_path = facility_path({"id": key, **record})
@@ -99,8 +103,10 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
                     if depth == 1:
                         parent = folder
                         continue  # invisible view root
-                    db.execute("INSERT OR IGNORE INTO rail_directory_nodes(id,parent_id,label,kind,path,archived,view) VALUES(?,?,?,'folder',?,?,?)",
-                               (folder, parent, prefix[-1], json.dumps(prefix, ensure_ascii=False), int(bool(record.get("archived"))), view))
+                    if folder not in seen_folders:
+                        db.execute("INSERT INTO rail_directory_nodes(id,parent_id,label,kind,path,archived,view) VALUES(?,?,?,'folder',?,?,?)",
+                                   (folder, parent, prefix[-1], json.dumps(prefix, ensure_ascii=False), int(bool(record.get("archived"))), view))
+                        seen_folders.add(folder)
                     parent = folder
                 assembly = record.get("assembly_id")
                 # Same-name presentation grouping is not a claim of line identity.
@@ -110,10 +116,15 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
                 db.execute("INSERT OR IGNORE INTO rail_directory_nodes(id,parent_id,label,kind,object_id,path,archived,view,searchable) VALUES(?,?,?,'object',?,?,?,?,?)",
                            (node_id, parent, label, key, json.dumps(full_path, ensure_ascii=False), int(bool(record.get("archived"))), view, search.casefold()))
                 db.execute("INSERT INTO rail_directory_members VALUES(?,?)", (node_id,key))
-                db.execute("UPDATE rail_directory_nodes SET total=total+1,searchable=searchable||? WHERE id=?", (" " + search.casefold(),node_id))
+                totals[node_id] = totals.get(node_id, 0) + 1
+                searches[node_id] = searches.get(node_id, "") + " " + search.casefold()
                 for depth in range(2,len(full_path)+1):
                     folder = "folder:" + json.dumps(full_path[:depth],ensure_ascii=False)
-                    db.execute("UPDATE rail_directory_nodes SET total=total+1 WHERE id=?",(folder,))
+                    totals[folder] = totals.get(folder, 0) + 1
+        db.executemany("UPDATE rail_directory_nodes SET total=? WHERE id=?",
+                       ((count, key) for key, count in totals.items()))
+        db.executemany("UPDATE rail_directory_nodes SET searchable=searchable||? WHERE id=?",
+                       ((value, key) for key, value in searches.items()))
         db.execute("UPDATE rail_directory_nodes SET child_count=(SELECT count(*) FROM rail_directory_nodes c WHERE c.parent_id=rail_directory_nodes.id)")
         db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)", (signature,))
         db.commit()
@@ -129,7 +140,8 @@ class RailDirectoryModel(SqliteDirectoryModel):
         self.reveal_target = None
 
     def hasChildren(self, parent=QModelIndex()):
-        return self._node(parent).child_count > 0 if parent.isValid() else self._count_children(self.root.key) > 0
+        return (self._node(parent).child_count > 0 if parent.isValid()
+                else bool(self.root.children) or self._count_children(self.root.key) > 0)
 
     def _search_clause(self):
         if self.reveal_target:
@@ -186,34 +198,46 @@ class RailDirectoryModel(SqliteDirectoryModel):
 
     def reveal_catalog_id(self,key):
         with self._connect() as db:
-            row=db.execute("SELECT d.id,d.path FROM rail_directory_nodes d JOIN rail_directory_members m ON m.node_id=d.id WHERE m.catalog_id=? AND d.view=?",(key,self.view)).fetchone()
+            row=db.execute("SELECT d.id,d.path,d.label,d.total,d.archived FROM rail_directory_nodes d JOIN rail_directory_members m ON m.node_id=d.id WHERE m.catalog_id=? AND d.view=?",(key,self.view)).fetchone()
         if row is None:
+            self.clear_spotlight()
             return QModelIndex()
-        # Map focus must not walk every preceding page in a 100k-row folder.
-        # Temporarily show the exact object's branch; a new search restores the
-        # ordinary directory. The map-header query is retained by the widget.
-        self.beginResetModel()
-        self.reveal_target = row[0]
-        self.root.children.clear()
-        self.root.fetched = False
-        self.endResetModel()
+        # A map focus must not reset the tree or fetch thousands of preceding
+        # pages. Reuse loaded rows, otherwise pin one transient object at root.
+        spotlight = getattr(self.root, "spotlight", None)
+        if spotlight in self.root.children and spotlight.key != row[0]:
+            self.clear_spotlight()
         parts=json.loads(row[1])
         targets=["folder:"+json.dumps(parts[:depth],ensure_ascii=False) for depth in range(2,len(parts)+1)]+[row[0]]
         parent=QModelIndex()
         for target in targets:
-            while True:
-                found=next((self.index(i,0,parent) for i in range(self.rowCount(parent)) if self._node(self.index(i,0,parent)).key==target),None)
-                if found is not None:
-                    parent=found
-                    break
-                if not self.canFetchMore(parent):
-                    return QModelIndex()
-                self.fetchMore(parent)
+            found=next((self.index(i,0,parent) for i in range(self.rowCount(parent)) if self._node(self.index(i,0,parent)).key==target),None)
+            if found is None:
+                if spotlight in self.root.children and spotlight.key == row[0]:
+                    return self.index(self.root.children.index(spotlight), 0)
+                pinned = _Node(row[0], self.root, "地图选中 · " + row[2], "object", key,
+                               0, row[3], bool(row[4]))
+                self.beginInsertRows(QModelIndex(), 0, 0)
+                self.root.children.insert(0, pinned)
+                self.root.spotlight = pinned
+                self.endInsertRows()
+                return self.index(0, 0)
+            parent=found
         return parent
+
+    def clear_spotlight(self):
+        spotlight = getattr(self.root, "spotlight", None)
+        if spotlight in self.root.children:
+            position = self.root.children.index(spotlight)
+            self.beginRemoveRows(QModelIndex(), position, position)
+            self.root.children.pop(position)
+            self.endRemoveRows()
+        self.root.spotlight = None
 
     def set_search(self, query):
         self.reveal_target = None
         super().set_search(query)
+        self.root.spotlight = None
 
     def release_branch(self, index):
         """Collapsed branches release their page objects; SQLite retains all rows."""

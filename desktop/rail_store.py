@@ -361,6 +361,9 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            group_index = bool(selected_values["groups"]) and db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rail_feature_groups'"
+            ).fetchone() is not None
             if kind == "rail" and "states" in selection:
                 states = selection['states']
                 if not isinstance(states, list) or any(v not in ('operating','construction','planned','disused','unknown') for v in states):
@@ -397,6 +400,8 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                     if values:
                         placeholders = ",".join("?" for _ in values)
                         selectors.append(
+                            f"f.id IN (SELECT feature_id FROM rail_feature_groups WHERE group_id IN ({placeholders}))"
+                            if name == "groups" and group_index else
                             f"json_extract(f.data, '$.properties.{property_name}') IN ({placeholders})"
                         )
                         parameters.extend(values)

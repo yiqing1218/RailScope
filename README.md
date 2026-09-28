@@ -203,6 +203,8 @@ python -m desktop.audit_corridor --start 仙林 --line 仙宁线 --end 南京南
 
 原始 PBF、大型派生数据、`.venv`、地图组件缓存、用户设置、日志和测试临时目录不提交。更新代码前建议备份 `data/user_settings/`；不要用原始 OSM 文件承载人工改名或运行计划。
 
+铁路人工目录分别保存在 `data/catalog/rail_line_directory.json` 和 `data/catalog/rail_station_directory.json`，随 Git 提交。它们记录线路、站场组和车站的人工名称、分类、目录，以及明确建立的股道与车站关联；自动生成的海量轨道名称仍留在本地工作区。程序启动时读取这些共享记录，覆盖旧的本地目录设置。使用菜单“数据 → 铁路线数据 / 铁路站数据 → 导入/导出目录分类”交换同格式文件；导入会更新工作区和共享记录。未核实的轨道保持待核实目录，不会因显示分类而修改原始 OSM 或正式运行拓扑。
+
 ## 开发与验证
 
 ### 桌面与后端测试
@@ -214,6 +216,12 @@ python -m pip install -e "./backend[dev]" -r desktop/requirements.txt pytest-qt
 $env:PYTHONPATH = "$PWD\desktop;$PWD\backend;$PWD"
 $env:QT_QPA_PLATFORM = "offscreen"
 python -m pytest backend/tests desktop/tests -q --basetemp .pytest-work/full
+```
+
+日常修改铁路目录或地图显示时，先运行针对性的快速测试（约 45 项）；跨领域改动再运行上面的全量回归：
+
+```powershell
+python -m pytest -q --basetemp .pytest-work/rail-quick desktop/tests/test_rail_catalog_model.py desktop/tests/test_rail_categories.py desktop/tests/test_entity_presentation.py desktop/tests/test_rail_catalog_focus.py desktop/tests/test_station_identity.py desktop/tests/test_station_track_positions.py
 ```
 
 地图脚本语法检查（需要 Node.js）：

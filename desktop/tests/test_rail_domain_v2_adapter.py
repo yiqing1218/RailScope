@@ -120,6 +120,12 @@ def test_selected_station_load_keeps_multi_edge_track_and_workspace_metadata(tmp
     assert saved['station_track']['legacy_metadata']['automatic_numbering']['track_number'] == '98'
     reread, _, _ = load_station_tracks(tmp_path, tmp_path / 'identity.sqlite', station, {'object:section_id:RS-one': saved})
     assert next(iter(reread.station_tracks.values())) == track
+    with sqlite3.connect(tmp_path / 'rail_catalog.sqlite') as db:
+        db.execute("UPDATE catalog SET station_name='未关联站场' WHERE id='ST-test'")
+    linked, _, _ = load_station_tracks(tmp_path, tmp_path / 'identity.sqlite', station,
+                                       {'ST-test': {'station_source': 'node/1'},
+                                        'object:section_id:RS-one': saved})
+    assert next(iter(linked.station_tracks.values())) == track
 
 
 def test_canonical_route_intent_uses_stable_references_without_changing_path(tmp_path):

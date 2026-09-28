@@ -94,6 +94,17 @@ def load_station_tracks(directory, identity_path, station, overrides):
                 name = row[0].removesuffix('站')
         groups = [(key, json.loads(raw)) for key, raw in db.execute(
             "SELECT id,data FROM catalog WHERE station_name IN (?,?)", (name, name + '站'))]
+        source = station.get('infrastructure_id') if station.get('kind') in ('station', 'halt') else station.get('station_source')
+        if source:
+            groups = [(key, row) for key, row in groups
+                      if not overrides.get(key, {}).get('station_source')
+                      or overrides[key]['station_source'] == source]
+            manual_groups = {key for key, override in overrides.items()
+                             if key.startswith('ST-') and override.get('station_source') == source}
+            for key in sorted(manual_groups - {key for key, _ in groups}):
+                row = db.execute('SELECT data FROM catalog WHERE id=?', (key,)).fetchone()
+                if row:
+                    groups.append((key, json.loads(row[0])))
     province = station.get('province')
     if province:
         groups = [(key, row) for key, row in groups if province in row.get('provinces', [])]

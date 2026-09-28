@@ -3,7 +3,7 @@
 import json
 import hashlib
 from copy import deepcopy
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 import threading
 import sqlite3
@@ -60,6 +60,55 @@ MAX_CATALOG_TREE_ITEMS = 4000
 MAX_LEGACY_EDITOR_ITEMS = 512
 MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
+LINE_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_line_directory.json"
+STATION_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_station_directory.json"
+DIRECTORY_FIELDS = {"folder_path", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics"}
+
+
+def line_directory_overrides(overrides):
+    """Keep human directory edits, excluding bulk inferred OSM names."""
+    result = {}
+    for key, value in overrides.items():
+        if not key.startswith(("RL-", "ST-")) or not isinstance(value, dict):
+            continue
+        fields = {name: value[name] for name in DIRECTORY_FIELDS if name in value}
+        if str(value.get("source", "")).startswith("automatic_"):
+            fields.pop("display_name", None)
+        if value.get("source") == "manual" and "station_source" in value:
+            fields.update({name: value[name] for name in
+                           ("station_source", "station_id", "station_name", "station_assignment_status", "source", "verification_status")
+                           if name in value})
+        if fields:
+            result[key] = fields
+    return result
+
+
+def save_line_directory(path, overrides):
+    payload = {"schema": "railscope.catalog-exchange.v1", "kind": "rail-lines",
+               "overrides": line_directory_overrides(overrides)}
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)
+
+
+def station_directory_overrides(overrides):
+    return {key: {name: value[name] for name in ("folder_path", "display_name", "station_type", "archived")
+                  if name in value}
+            for key, value in overrides.items()
+            if key.startswith("station:") and isinstance(value, dict)
+            and any(name in value for name in ("folder_path", "display_name", "station_type", "archived"))}
+
+
+def save_station_directory(path, overrides):
+    payload = {"schema": "railscope.catalog-exchange.v1", "kind": "rail-stations",
+               "overrides": station_directory_overrides(overrides)}
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)
 
 
 class _SignalCallbacks:
@@ -178,6 +227,8 @@ def _read_catalog_overrides(path):
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict) and payload.get("schema") == "railscope.catalog-exchange.v1":
+        payload = payload.get("overrides")
     if not isinstance(payload, dict):
         raise ValueError(f"铁路目录文件格式无效：{path}")
     records = {
@@ -347,6 +398,11 @@ class RailCatalog(QWidget):
         self.directory = Path(directory).resolve()
         self.path = Path(settings)
         self.shared_path = Path(shared_path) if shared_path is not None else SHARED_CATALOG_PATH
+        self.line_directory_path = (LINE_DIRECTORY_PATH if self.path.resolve() ==
+                                    (LINE_DIRECTORY_PATH.parents[1] / "user_settings" / "rail_catalog.json").resolve()
+                                    else self.path.with_name("rail_line_directory.json"))
+        self.station_directory_path = (STATION_DIRECTORY_PATH if self.line_directory_path == LINE_DIRECTORY_PATH
+                                       else self.path.with_name("rail_station_directory.json"))
         self.catalog = RailCatalogIndex(build_catalog_index(self.directory))
         self.shared_overrides = {}
         self.local_overrides = {}
@@ -374,7 +430,11 @@ class RailCatalog(QWidget):
         self.line_folder_paths = set()
         try:
             self.shared_overrides = _read_catalog_overrides(self.shared_path)
+            directory_overrides = {**_read_catalog_overrides(self.line_directory_path),
+                                   **_read_catalog_overrides(self.station_directory_path)}
             self.local_overrides = _read_catalog_overrides(self.path)
+            for key, values in directory_overrides.items():
+                self.local_overrides[key] = {**self.local_overrides.get(key, {}), **values}
             self._merge_catalog_overrides()
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "国铁分类设置未载入", str(error))
@@ -484,15 +544,22 @@ class RailCatalog(QWidget):
             wrap=True,
         )
         layout.addWidget(self.note)
-        self.name_identified_yards()
+        # National automatic track naming scans the entire rendered railway.
+        # Existing workspace names are already loaded; keep first paint fast.
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.name_identified_yards()
         self.populate()
-        self.populate_station_tree()
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.populate_station_tree()
         self.populate_yard_tree()
         self.classified.connect(self.apply_classification)
         self.classification_failed.connect(self.note.setText)
-        if (Path(directory) / "rail.sqlite").exists() and not all(
-            r.get("classification") == VERSION for r in self.catalog.values()
-        ):
+        topology_file = Path(directory) / "rail_catalog.topology.json"
+        with topology_file.open("r", encoding="utf-8") if topology_file.exists() else nullcontext(None) as stream:
+            current_topology = bool(stream and ('"version": "' + VERSION + '"') in stream.read(256))
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            current_topology = all(record.get("classification") == VERSION for record in self.catalog.values())
+        if (Path(directory) / "rail.sqlite").exists() and not current_topology:
             self.note.setText("正在后台按线路拓扑重建端点线段目录…无需重新导入 PBF。")
 
             def classify():
@@ -520,7 +587,8 @@ class RailCatalog(QWidget):
         if isinstance(self.catalog, RailCatalogIndex):
             self.catalog.close()
         self.catalog = RailCatalogIndex(build_catalog_index(self.directory, catalog))
-        self.name_identified_yards()
+        if len(catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.name_identified_yards()
         if hasattr(self, "_source_construction_keys"):
             del self._source_construction_keys
         self.excluded = set()
@@ -538,14 +606,15 @@ class RailCatalog(QWidget):
         if ways or was_all:
             self.send_visibility(False)
         self.populate()
-        self.populate_station_tree()
+        if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
+            self.populate_station_tree()
         self.populate_yard_tree()
         self.note.setText(
             self.catalog_note("目录已按轨道类型和物理线路/车站重建。")
         )
 
     def _merge_catalog_overrides(self):
-        keys = self.shared_overrides.keys() | self.local_overrides.keys()
+        keys = sorted(self.shared_overrides.keys() | self.local_overrides.keys())
         self.overrides = {
             key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
             for key in keys
@@ -587,6 +656,13 @@ class RailCatalog(QWidget):
         temporary.replace(self.path)
         self.local_overrides = proposed
         self._merge_catalog_overrides()
+        if any(key.startswith(("RL-", "ST-")) and (DIRECTORY_FIELDS | {"station_source"}).intersection(change)
+               for key, change in changes.items()):
+            save_line_directory(self.line_directory_path, self.overrides)
+        if any(key.startswith("station:") and
+               {"folder_path", "display_name", "station_type", "archived"}.intersection(change)
+               for key, change in changes.items()):
+            save_station_directory(self.station_directory_path, self.overrides)
         self.catalog_undo.append(before)
         self.catalog_undo = self.catalog_undo[-30:]
         self.catalog_redo.clear()
@@ -609,6 +685,10 @@ class RailCatalog(QWidget):
         temporary.replace(self.path)
         self.local_overrides = value
         self._merge_catalog_overrides()
+        if any(key.startswith(("RL-", "ST-")) for key in changed):
+            save_line_directory(self.line_directory_path, self.overrides)
+        if any(key.startswith("station:") for key in changed):
+            save_station_directory(self.station_directory_path, self.overrides)
         self.metadata_changed.emit()
         if any(key.startswith("switch:node/") for key in changed):
             self._refresh_switch_labels()
@@ -705,7 +785,9 @@ class RailCatalog(QWidget):
                 aliases[0] if aliases else record.get("name", key))
             return record, self._record_parents(record), label
 
-        sync_catalog_directory(self.catalog, self.overrides, resolve,
+        presentation_overrides = {key: value for key, value in self.overrides.items()
+                                  if not key.startswith(("object:", "station:", "switch:", "system:"))}
+        sync_catalog_directory(self.catalog, presentation_overrides, resolve,
                                self.mode.currentIndex(), self.way_names)
         if not hasattr(self, "line_model"):
             for browser, view in ((self.line_browser, "lines"), (self.facility_browser, "facilities")):
@@ -823,6 +905,9 @@ class RailCatalog(QWidget):
             browser.scrollTo(index)
             self.tabs.setCurrentWidget(page)
             self.note.setText("地图已选择：" + self.display_name(key))
+            return True
+        if key in self.catalog:
+            self.note.setText("地图已选择：" + self.display_name(key) + "。目录保持当前展开状态，可用搜索定位。")
             return True
         return False
 
@@ -1010,8 +1095,6 @@ class RailCatalog(QWidget):
             self.facility_model.fetchMore()
         if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS:
             self.filter_tree(text)
-        else:
-            self.search_timer.start()
 
     def parents(self, key):
         meta = self.meta(key)
@@ -1065,16 +1148,19 @@ class RailCatalog(QWidget):
             self.search.blockSignals(True)
             self.search.setText(value)
             self.search.blockSignals(False)
-            self.populate()
+            self.search_changed(value)
         if search_type in ("全部", "车站及线路所"):
             self.station_query = value
-            self.populate_station_tree()
+            if len(self.catalog) <= MAX_CATALOG_TREE_ITEMS or self.tabs.currentWidget() is self.station_page:
+                self.populate_station_tree()
             self.tabs.setCurrentWidget(self.station_page)
         elif search_type == "铁路线":
             self.tabs.setCurrentWidget(self.line_page)
 
     def _load_catalog_tab(self, index):
-        if self.tabs.widget(index) is self.yard_page:
+        if self.tabs.widget(index) is self.station_page and not self.station_records:
+            self.populate_station_tree()
+        elif self.tabs.widget(index) is self.yard_page:
             self.populate_yard_tree()
         elif self.tabs.widget(index) is self.platform_page:
             self.populate_platform_tree()
@@ -2947,7 +3033,7 @@ class RailCatalog(QWidget):
         sections = [
             self.catalog[name].get("id", name)
             for name in sorted(names)
-            if self.catalog[name].get("edge_ids")
+            if self.catalog[name].get("edge_ids") and not self.catalog[name].get("catalog_group_id")
         ]
         ids = [
             way
@@ -3106,7 +3192,7 @@ class RailCatalog(QWidget):
             current.data(0, Qt.ItemDataRole.UserRole) if current is not None else None
         )
         key = current_key if current_key in candidates else sorted(candidates)[0]
-        if key not in self.items:
+        if len(self.catalog) <= MAX_LEGACY_EDITOR_ITEMS and key not in self.items:
             self.pinned_line_key = key
             self.search_timer.stop()
             self.populate()

@@ -41,12 +41,12 @@ def test_track_numbering_is_per_track_persistent_and_preserves_source_names(tmp_
     assert track['legacy_metadata']['automatic_numbering']['track_number'] == 98
 
 
-def test_map_rename_opens_track_entity_editor_not_line_metadata():
+def test_map_rename_opens_track_object_editor_without_station_link():
     from desktop.launcher import Desk
     feature = {'layer': 'rail', 'properties': {'catalog_group_id': 'ST-test',
                 'section_id': 'RS-one', 'network_edge_id': 'edge-one'}}
     edits = []
-    desk = SimpleNamespace(selected_features=[feature], edit_station_tracks=lambda: edits.append(feature))
+    desk = SimpleNamespace(selected_features=[feature], edit_selected_metadata=lambda value: edits.append(value))
     Desk.rename_map_selection(desk)
     assert edits == [feature]
     assert yard_track_key({'catalog_group_id': 'RL-main', 'network_edge_id': 'e'}) is None

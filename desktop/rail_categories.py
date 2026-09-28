@@ -184,19 +184,34 @@ def catalog_parents(meta, mode):
         or "未命名物理线路"
     ).split(" · ", 1)[0]
     prefix = ("在建铁路",) if meta.get("construction") else ()
+    region = _rail_region(meta)
+    track_kind = str(meta.get("track_type") or "")
+    mixed_evidence = "多种可追溯分类依据" in str(meta.get("type_evidence") or "")
     if facts.get('facility_only') or role not in ('main_track', 'unknown'):
         return prefix + ('车站设施', meta.get('station_name') or facts.get('facility_id') or '未关联设施',
                          ROLE_LABELS.get(role, '用途待核实'))
     if line_role == 'connecting_line':
         high = railway_class == 'high_speed'
-        return prefix + ("联络线", "高速联络线" if high else "普速联络线")
+        return prefix + ("联络线", "高速联络线" if high else "普速联络线" if railway_class == 'conventional' else "速度待核实的联络线")
     if any(word in name for word in ("地方铁路", "地方线")):
         return prefix + ("其他铁路", "地方铁路")
     if any(word in name for word in ("矿区", "矿山")):
         return prefix + ("其他铁路", "矿区铁路")
     if any(word in name for word in ("港口", "港区", "码头")):
         return prefix + ("其他铁路", "港口铁路")
-    region = _rail_region(meta)
+    if not mixed_evidence and railway_class == 'unknown':
+        if track_kind == '普速铁路线':
+            railway_class = 'conventional'
+        elif track_kind == '高速铁路线':
+            railway_class = 'high_speed'
+        elif track_kind == '货运铁路线':
+            railway_class = 'freight'
+    if railway_class == 'unknown' and str(meta.get('service_type')) == 'industrial':
+        return prefix + ('货运与专用铁路', region, '工业专用线')
+    if railway_class == 'unknown' and (name.startswith('未命名') or name.startswith('站线（用途待核实）')):
+        return prefix + ('待归属物理轨道', region, '线路归属待核实')
+    if railway_class == 'unknown' and line_role in ('main_line', 'branch_line'):
+        return prefix + ('铁路干支线', region, '干线·速度待核实' if line_role == 'main_line' else '支线·速度待核实')
     if railway_class == 'high_speed':
         trunk = any(word in name for word in ("京沪", "京广", "沪昆", "徐兰", "京哈", "京港", "沿海", "陆桥"))
         technical = meta.get("technical_attributes") or {}
@@ -213,7 +228,7 @@ def catalog_parents(meta, mode):
         if service not in {"客运", "货运", "客货运"}:
             service = "客货运"
         return prefix + ("普速铁路", "干线" if trunk else region, service)
-    return prefix + ("其他铁路", "不确定铁路")
+    return prefix + ("其他铁路", "类型待核实")
 
 
 def _rail_region(meta):

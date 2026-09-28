@@ -53,7 +53,10 @@ def build_index(directory, catalog=None):
         if match and match.group(1) in (VERSION, "topology-line-endpoint-catalog-v9"):
             source = topology
     target = index_path(directory)
-    stamp = f"{source.name}:{source.stat().st_size}:{source.stat().st_mtime_ns}" if source.exists() else "empty"
+    render = directory / "rail.sqlite"
+    source_stamp = f"{source.name}:{source.stat().st_size}:{source.stat().st_mtime_ns}" if source.exists() else "empty"
+    render_stamp = f"{render.stat().st_size}:{render.stat().st_mtime_ns}" if render.exists() else "empty"
+    stamp = f"{source_stamp}:render:{render_stamp}:coverage-v1"
     if target.is_file() and catalog is None:
         try:
             with closing(sqlite3.connect(target)) as db:
@@ -96,6 +99,63 @@ def build_index(directory, catalog=None):
                      int(name.startswith("未命名轨道")),
                      json.dumps(record, ensure_ascii=False, separators=(",", ":"))),
                 )
+            # Rendering and topology caches may be from different import
+            # snapshots. Every rendered stable RL/ST group remains addressable
+            # until the next topology refresh reconciles the two caches.
+            if render.exists():
+                with closing(sqlite3.connect(render)) as rendered:
+                    has_groups = rendered.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rail_feature_groups'"
+                    ).fetchone()
+                    if has_groups:
+                        try:
+                            from .rail_categories import track_type
+                            from .rail_semantics import semantic_record
+                        except ImportError:
+                            from rail_categories import track_type
+                            from rail_semantics import semantic_record
+                        groups = rendered.execute(
+                            "SELECT group_id,min(feature_id) FROM rail_feature_groups GROUP BY group_id"
+                        )
+                        for group_id, feature_id in groups:
+                            if group_id in catalog:
+                                continue
+                            raw = rendered.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
+                            if raw is None:
+                                continue
+                            props = json.loads(raw[0]).get("properties", {})
+                            if not group_id.startswith(("RL-", "ST-")):
+                                continue
+                            tags = props.get("way_tags")
+                            if not isinstance(tags, dict):
+                                tags = {}
+                            track_kind, evidence = track_type(tags)
+                            facts = semantic_record({"way_tags": tags})
+                            station = group_id.startswith("ST-")
+                            name = str(props.get("station_name") or props.get("line_name") or "未命名轨道")
+                            if "\ufffd" in name:
+                                name = "未命名轨道 · " + group_id
+                            record = {
+                                "id": group_id, "catalog_group_id": group_id,
+                                "name": name, "line_name": None if station else name,
+                                "line_id": None if station else group_id,
+                                "station_name": props.get("station_name") if station else None,
+                                "track_type": props.get("track_type") or track_kind,
+                                "type_evidence": props.get("track_type_evidence") or evidence,
+                                "construction": bool(props.get("construction")),
+                                "way_ids": [], "section_count": 0,
+                                **facts,
+                                "facility_only": station or facts.get("facility_only", False),
+                                "source": "rendered_group_fallback",
+                                "snapshot": render_stamp,
+                                "verification_status": "unresolved",
+                                "classification": VERSION,
+                            }
+                            searchable = (name + " " + group_id).casefold()
+                            db.execute("INSERT INTO catalog VALUES(?,?,?,?,?,?,?,?)",
+                                       (group_id, name, None, record["station_name"], record["line_id"],
+                                        searchable, int(name.startswith("未命名轨道")),
+                                        json.dumps(record, ensure_ascii=False, separators=(",", ":"))))
             db.executemany("INSERT INTO metadata VALUES(?,?)", [
                 ("schema", str(SCHEMA)), ("source", stamp),
             ])
