@@ -1998,6 +1998,13 @@
       },
       "track_type": "普速铁路站场股道"
     },
+    "ST-da915dd5cb7f715a8fd5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东"
+      ]
+    },
     "ST-e623e620cb8c2ec945e5": {
       "rail_semantics": {
         "source": "workspace_override",
