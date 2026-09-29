@@ -863,3 +863,42 @@ def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
     assert ("经过线路", "") in rows
     assert not {"所属地区", "省级行政区", "城市"} & {label for label, _value in rows}
     assert inspector.selected_data["properties"]["station_overview"]["region"] == "山东省泰安"
+
+
+def test_line_catalog_segment_edit_reclassifies_whole_line(qtbot, tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QDialog, QMainWindow
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-a": {"name": "甲线A", "line_id": "IL-main", "way_ids": [1], "track_role": "main_track"},
+        "RL-b": {"name": "甲线B", "line_id": "IL-main", "way_ids": [2], "track_role": "main_track"},
+        "RL-c": {"name": "乙线", "line_id": "IL-other", "way_ids": [3], "track_role": "main_track"},
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = widget
+    host.route_lookup = {}
+    host.rail_operations = SimpleNamespace(line_library=lambda: None)
+    host.load_status = SimpleNamespace(setText=lambda text: None)
+    host.refresh_map_names = lambda: None
+    host.display_feature = lambda feature: None
+
+    def exec_dialog(dialog):
+        dialog.track_type.setCurrentText("联络线 / 匝道")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(launcher.LineMetadataDialog, "exec", exec_dialog)
+    segment = {"layer": "rail", "properties": {
+        "catalog_group_id": "RL-a", "network_edge_id": "RS-one",
+        "line_name": "甲线A", "track_type": "高速铁路线"}}
+    launcher.Desk.edit_line_metadata(host, segment, "rail", rail_groups=["RL-a"])
+
+    assert widget.meta("RL-a")["track_type"] == "联络线 / 匝道"
+    assert widget.meta("RL-b")["track_type"] == "联络线 / 匝道"
+    assert widget.meta("RL-c").get("track_type") != "联络线 / 匝道"

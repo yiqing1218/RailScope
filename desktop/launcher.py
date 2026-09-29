@@ -3688,6 +3688,17 @@ class Desk(QMainWindow):
             primary = self.rail_catalog_widget.meta(rail_groups[0])
             facility_edit = rail_groups[0] in self.rail_catalog_widget.station_track_keys()
             selected_object = object_key(props) if props.get("network_edge_id") or props.get("section_id") else None
+            if selected_object and not facility_edit:
+                # 线路目录中的长线路按整条业务线编辑：选中其中一个线段修改类型，
+                # 应作用到整条同名/同 line_id 线路，而不是只改选中线段。
+                line_id = self.rail_catalog_widget.catalog[rail_groups[0]].get("line_id")
+                if line_id:
+                    with sqlite3.connect(self.rail_catalog_widget.catalog.path) as db:
+                        rail_groups = sorted(
+                            row[0] for row in db.execute(
+                                "SELECT id FROM catalog WHERE line_id=?", (line_id,)))
+                    selected_object = None
+                    primary = self.rail_catalog_widget.meta(rail_groups[0])
             object_edit = self.rail_catalog_widget.overrides.get(selected_object, {})
             current_line_name = str(object_edit.get("line_name", props.get("line_name")) or "")
             current_track_type = object_edit.get("track_type") or props.get("track_type") or primary.get("track_type", "未确认类型")
