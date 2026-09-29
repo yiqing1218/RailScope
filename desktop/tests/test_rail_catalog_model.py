@@ -77,7 +77,7 @@ def test_locked_catalog_index_updates_rows_without_losing_old_on_failure(tmp_pat
         assert db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone() is None
 
 
-def test_pages_are_sqlite_backed_and_focus_does_not_read_preceding_pages(qtbot, tmp_path):
+def test_pages_are_sqlite_backed_and_reveal_navigates_to_real_item(qtbot, tmp_path):
     catalog, _ = _index(tmp_path, {f"RL-{i}": _record(i) for i in range(3000)})
     assert catalog.groups_for_way(2999) == ["RL-2999"]
     model = RailDirectoryModel(catalog.path)
@@ -90,12 +90,13 @@ def test_pages_are_sqlite_backed_and_focus_does_not_read_preceding_pages(qtbot, 
     assert model.canFetchMore(folder)
     model.fetchMore(folder)
     assert model.rowCount(folder) == 256
-    loaded_before = _loaded(model.root)
     index = model.reveal_catalog_id("RL-2999")
     assert index.isValid()
-    assert model.ids_below(model._node(index).key) == {"RL-2999"}
-    assert _loaded(model.root) == loaded_before + 1
-    assert model.rowCount(folder) == 256
+    node = model._node(index)
+    assert not node.label.startswith("地图选中")
+    assert model.ids_below(node.key) == {"RL-2999"}
+    assert not any(getattr(child, "label", "").startswith("地图选中")
+                   for child in model.root.children)
     model.set_search("")
     model.fetchMore()
     folder = model.index(0, 0)

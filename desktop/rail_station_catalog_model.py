@@ -354,20 +354,37 @@ class StationCatalogModel(SqliteDirectoryModel):
     def reveal_id(self, kind, object_id):
         key = kind + ":" + str(object_id)
         with self._connect() as db:
-            row = db.execute("SELECT label,child_count,total,archived FROM rail_station_nodes WHERE id=?", (key,)).fetchone()
-        if row is None:
-            return QModelIndex()
-        spotlight = getattr(self.root, "spotlight", None)
-        if spotlight in self.root.children and spotlight.key != key:
-            self.clear_spotlight()
-        if spotlight in self.root.children:
-            return self.index(self.root.children.index(spotlight), 0)
-        node = _Node(key, self.root, "地图选中 · " + row[0], kind, str(object_id), row[1], row[2], bool(row[3]))
-        self.beginInsertRows(QModelIndex(), 0, 0)
-        self.root.children.insert(0, node)
-        self.root.spotlight = node
-        self.endInsertRows()
-        return self.index(0, 0)
+            chain = []
+            current = key
+            while current:
+                chain.append(current)
+                row = db.execute("SELECT parent_id FROM rail_station_nodes WHERE id=?", (current,)).fetchone()
+                if row is None:
+                    return QModelIndex()
+                current = row[0]
+        chain.reverse()
+        self.clear_spotlight()
+        parent = QModelIndex()
+        for node_id in chain:
+            index = self._find_child(parent, node_id)
+            if index is None:
+                while self.canFetchMore(parent):
+                    before = self.rowCount(parent)
+                    self.fetchMore(parent)
+                    index = self._find_child(parent, node_id)
+                    if index is not None or self.rowCount(parent) == before:
+                        break
+            if index is None:
+                return QModelIndex()
+            parent = index
+        return parent
+
+    def _find_child(self, parent, key):
+        for i in range(self.rowCount(parent)):
+            index = self.index(i, 0, parent)
+            if self._node(index).key == key:
+                return index
+        return None
 
     def clear_spotlight(self):
         spotlight = getattr(self.root, "spotlight", None)

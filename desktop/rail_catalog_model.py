@@ -456,28 +456,33 @@ class RailDirectoryModel(SqliteDirectoryModel):
         if row is None:
             self.clear_spotlight()
             return QModelIndex()
-        # A map focus must not reset the tree or fetch thousands of preceding
-        # pages. Reuse loaded rows, otherwise pin one transient object at root.
-        spotlight = getattr(self.root, "spotlight", None)
-        if spotlight in self.root.children and spotlight.key != row[0]:
-            self.clear_spotlight()
+        # Navigate to the real directory item instead of pinning a transient
+        # “地图选中” row at the root.  Load each branch page until the child
+        # appears; SQLite pagination keeps this bounded for a single reveal.
+        self.clear_spotlight()
         parts=json.loads(row[1])
         targets=["folder:"+json.dumps(parts[:depth],ensure_ascii=False) for depth in range(2,len(parts)+1)]+[row[0]]
         parent=QModelIndex()
         for target in targets:
-            found=next((self.index(i,0,parent) for i in range(self.rowCount(parent)) if self._node(self.index(i,0,parent)).key==target),None)
-            if found is None:
-                if spotlight in self.root.children and spotlight.key == row[0]:
-                    return self.index(self.root.children.index(spotlight), 0)
-                pinned = _Node(row[0], self.root, "地图选中 · " + row[2], "object", key,
-                               0, row[3], bool(row[4]))
-                self.beginInsertRows(QModelIndex(), 0, 0)
-                self.root.children.insert(0, pinned)
-                self.root.spotlight = pinned
-                self.endInsertRows()
-                return self.index(0, 0)
-            parent=found
+            index=self._find_child(parent,target)
+            if index is None:
+                while self.canFetchMore(parent):
+                    before=self.rowCount(parent)
+                    self.fetchMore(parent)
+                    index=self._find_child(parent,target)
+                    if index is not None or self.rowCount(parent)==before:
+                        break
+            if index is None:
+                return QModelIndex()
+            parent=index
         return parent
+
+    def _find_child(self,parent,key):
+        for i in range(self.rowCount(parent)):
+            index=self.index(i,0,parent)
+            if self._node(index).key==key:
+                return index
+        return None
 
     def clear_spotlight(self):
         spotlight = getattr(self.root, "spotlight", None)
