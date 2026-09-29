@@ -67,7 +67,7 @@ MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
 LINE_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_line_directory.json"
 STATION_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_station_directory.json"
-DIRECTORY_FIELDS = {"folder_path", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
+DIRECTORY_FIELDS = {"folder_path", "directory_view", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
 
 
 def line_directory_overrides(overrides):
@@ -393,6 +393,7 @@ class RailCatalog(QWidget):
     station_partial_changed = Signal(str, bool)
     station_edit_requested = Signal(str)
     line_edit_requested = Signal(object)
+    segment_edit_requested = Signal(dict)
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
     presentation_changed = Signal()
@@ -920,6 +921,8 @@ class RailCatalog(QWidget):
                 self.map.call("focus", *record["coordinates"], 15, record["name"])
         elif node.kind == "facility":
             self.focus_catalog_key(node.object_id)
+        elif node.kind == "segment":
+            self.segment_edit_requested.emit(self._segment_feature(node.key))
 
     def _move_paged_station_assets(self, nodes, target):
         with closing(sqlite3.connect(self.catalog.path)) as db:
@@ -943,8 +946,11 @@ class RailCatalog(QWidget):
             QTimer.singleShot(0, lambda: self._assign_station_facilities(facilities, owner))
 
     def _assign_station_facilities(self, facilities, station_id):
+        record = self.station_record(station_id) if station_id else None
+        folder = ["车站设施", record["name"] if record else "待核对"]
         changes = {key: {"station_id": station_id or "",
-                         "station_assignment": "manual" if station_id else "pending"}
+                         "station_assignment": "manual" if station_id else "pending",
+                         "directory_view": "facilities", "folder_path": folder}
                    for key in facilities}
         self.save_overrides(changes)
 
@@ -955,6 +961,15 @@ class RailCatalog(QWidget):
         node = self.station_model._node(index)
         if not self.station_browser.selectionModel().isSelected(index):
             self.station_browser.setCurrentIndex(index)
+        if node.kind == "segment":
+            menu = QMenu(self)
+            menu.addAction("编辑对象信息…",
+                           lambda: self.segment_edit_requested.emit(self._segment_feature(node.key)))
+            try:
+                menu.exec(self.station_browser.viewport().mapToGlobal(point))
+            finally:
+                menu.deleteLater()
+            return
         if node.kind == "station":
             menu = QMenu(self)
             menu.addAction("编辑名称、目录、类型和接轨线路…",
@@ -991,6 +1006,10 @@ class RailCatalog(QWidget):
         edit.setEnabled(bool(facilities))
         menu.addAction("在地图中定位", lambda: self.focus_catalog_key(node.object_id))
         menu.addSeparator()
+        line_move = menu.addMenu("移动到线路目录")
+        add_folder_move_menu(line_move, self.line_destination_paths(),
+                             lambda path: self.save_overrides({key: {
+                                 "directory_view": "lines", "folder_path": path} for key in facilities}))
         move = menu.addAction("移至车站…")
         pending = menu.addAction("移至待核对")
         chosen = menu.exec(self.station_browser.viewport().mapToGlobal(point))
@@ -999,6 +1018,16 @@ class RailCatalog(QWidget):
             self._assign_station_facilities(facilities, None)
         elif chosen is move:
             self._prompt_station_assignment(facilities)
+
+    def _segment_feature(self, node_key):
+        feature_id = int(node_key.removeprefix("segment:"))
+        with closing(sqlite3.connect(self.directory / "rail_lines.sqlite")) as db:
+            row = db.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
+        if row is None:
+            raise ValueError("轨道段已变化，请重新展开目录")
+        feature = json.loads(row[0])
+        feature["layer"] = "rail"
+        return feature
 
     def _prompt_station_assignment(self, facilities):
         value, accepted = QInputDialog.getText(self, "指定车站", "车站名称或目录编号")
@@ -2766,10 +2795,14 @@ class RailCatalog(QWidget):
         if not effective and not object_changes:
             return
 
-        reclassifying = any({"rail_semantics", "station_id", "station_source"} & set(change)
+        reclassifying = any({"rail_semantics", "directory_view", "station_id", "station_source"} & set(change)
                            for change in effective.values())
         old_facilities = self.station_track_keys() if reclassifying else None
         self._save_local_overrides({**effective, **object_changes})
+        if not effective and object_changes:
+            self._update_segment_labels(object_changes)
+            self.presentation_changed.emit()
+            return
         name_only = all(set(change) <= {"display_name"} for change in effective.values())
         presentation_only = name_only and all(
             set(change) <= {"line_name", "track_type", "source", "verification_status"}
@@ -2822,6 +2855,34 @@ class RailCatalog(QWidget):
                 self.tree.schedule_height()
                 self.tree.scrollToItem(item)
         self.metadata_changed.emit()
+
+    def _update_segment_labels(self, object_changes):
+        if not hasattr(self, "station_model"):
+            return
+        source = self.directory / "rail_lines.sqlite"
+        if not source.exists():
+            return
+        with closing(sqlite3.connect(self.catalog.path)) as index_db, closing(sqlite3.connect(source)) as rail_db:
+            for object_id in object_changes:
+                for node_id, parent_id in index_db.execute(
+                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind='segment' AND object_id=?",
+                    (object_id,),
+                ).fetchall():
+                    feature_id = int(node_id.removeprefix("segment:"))
+                    row = rail_db.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
+                    if row is None:
+                        continue
+                    props = json.loads(row[0]).get("properties", {})
+                    edit = self.overrides.get(object_id, {})
+                    line_name = edit.get("line_name") if "line_name" in edit else props.get("line_name")
+                    parent = index_db.execute("SELECT label FROM rail_station_nodes WHERE id=?", (parent_id,)).fetchone()
+                    name = line_name or edit.get("display_name") or (parent[0] if parent else props.get("display_name"))
+                    endpoints = "→".join(str(props.get(key) or "?") for key in ("from_name", "to_name"))
+                    label = str(name or object_id) + " · " + endpoints
+                    index_db.execute("UPDATE rail_station_nodes SET label=?,searchable=? WHERE id=?",
+                                     (label, (label + " " + object_id).casefold(), node_id))
+            index_db.commit()
+        self.station_model.reset_from_disk()
 
     def archive_items(self, keys, archived=True):
         self.save_overrides({key: {"archived": archived} for key in keys})
@@ -3188,6 +3249,11 @@ class RailCatalog(QWidget):
             self.line_destination_paths(),
             lambda path: perform(lambda: self.move_items(keys, path)),
         )
+        line_move = menu.addMenu("移动到线路目录")
+        add_folder_move_menu(line_move, self.line_destination_paths(),
+                             lambda path: perform(lambda: self.save_overrides({
+                                 key: {"directory_view": "lines", "folder_path": path} for key in keys})))
+        menu.addAction("移动到车站目录…", lambda: self._prompt_station_assignment(keys))
         if leaf:
             menu.addAction(
                 "查看线路属性…"

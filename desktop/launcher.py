@@ -2572,6 +2572,7 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.line_edit_requested.connect(
             self.edit_rail_line_metadata
         )
+        self.rail_catalog_widget.segment_edit_requested.connect(self.edit_selected_metadata)
         self.rail_catalog_widget.feature_activated.connect(self.display_feature)
         self.rail_catalog_widget.enabled_requested.connect(
             self.enable_rail_from_catalog
@@ -2860,13 +2861,16 @@ class Desk(QMainWindow):
                 lambda path: self.move_metro_lines(metro_lines, path),
             )
         elif rail_lines:
+            line_move = menu.addMenu("移动到线路目录")
             add_folder_move_menu(
-                menu,
+                line_move,
                 self.rail_catalog_widget.line_destination_paths(),
                 lambda path: self.rail_catalog_widget.save_overrides({
-                    key: {"folder_path": path} for key in rail_lines
+                    key: {"directory_view": "lines", "folder_path": path} for key in rail_lines
                 }),
             )
+            menu.addAction("移动到车站目录…",
+                           lambda: self.rail_catalog_widget._prompt_station_assignment(rail_lines))
         elif rail_stations:
             add_folder_move_menu(
                 menu,
@@ -3377,7 +3381,7 @@ class Desk(QMainWindow):
                 source_line_attributes(
                     props,
                     "rail",
-                    catalog_meta.get("technical_attributes", {}),
+                    object_edit.get("technical_attributes", catalog_meta.get("technical_attributes", {})),
                 )
             )
         merged_groups = props.get("merged_catalog_ids", [])
@@ -3683,16 +3687,17 @@ class Desk(QMainWindow):
                 return
             primary = self.rail_catalog_widget.meta(rail_groups[0])
             facility_edit = rail_groups[0] in self.rail_catalog_widget.station_track_keys()
-            selected_object = object_key(props) if facility_edit else None
+            selected_object = object_key(props) if props.get("network_edge_id") or props.get("section_id") else None
             object_edit = self.rail_catalog_widget.overrides.get(selected_object, {})
             current_line_name = str(object_edit.get("line_name", props.get("line_name")) or "")
             current_track_type = object_edit.get("track_type") or props.get("track_type") or primary.get("track_type", "未确认类型")
             current_path = list(self.rail_catalog_widget.parents(rail_groups[0]))
-            display_name = self.rail_catalog_widget.display_name(rail_groups[0])
+            display_name = (object_edit.get("display_name") or props.get("display_name") or current_line_name
+                            if selected_object else self.rail_catalog_widget.display_name(rail_groups[0]))
             attributes = source_line_attributes(
                 {**primary, **props},
                 "rail",
-                primary.get("technical_attributes", {}),
+                object_edit.get("technical_attributes", primary.get("technical_attributes", {})),
             )
             dialog = LineMetadataDialog(
                 "rail",
@@ -3702,9 +3707,8 @@ class Desk(QMainWindow):
                 TRACK_TYPES,
                 current_track_type,
                 self,
-                rail_semantics=primary,
-                directory_location=(self.rail_catalog_widget.effective_directory_path(rail_groups[0])
-                                    if facility_edit else None),
+                rail_semantics={**primary, **object_edit.get("rail_semantics", {})},
+                directory_view="facilities" if facility_edit else "lines",
                 line_name=current_line_name,
             )
             from rail_relationship_ui import RelationshipSelector
@@ -3798,35 +3802,50 @@ class Desk(QMainWindow):
                                                  'station_assignment_status': 'manual',
                                                  'source': 'manual',
                                                  'verification_status': 'user_verified'}
-                if value["display_name"] != display_name:
+                if not selected_object and value["display_name"] != display_name:
                     changed["display_name"] = value["display_name"]
-                if not facility_edit and value["folder_path"] != list(current_path):
+                if value["folder_path"] != list(current_path):
                     changed["folder_path"] = value["folder_path"]
-                if value["technical_attributes"] != attributes:
+                if value["directory_view"] != ("facilities" if facility_edit else "lines"):
+                    changed["directory_view"] = value["directory_view"]
+                if not selected_object and value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
+                if not selected_object and value["track_type"] != current_track_type:
+                    changed["track_type"] = value["track_type"]
+                if not selected_object and value["line_name"] != current_line_name:
+                    changed["line_name"] = value["line_name"]
                 if value.get('rail_semantics'):
                     from railscope.rail_semantics import validate_semantic_fields
                     semantic_override = {**primary.get('rail_semantics', {}), **value['rail_semantics'],
                         'verification_status': 'user_verified', 'source': 'workspace_override'}
                     validate_semantic_fields(semantic_override)
-                    changed['rail_semantics'] = semantic_override
+                    if selected_object:
+                        object_semantics = semantic_override
+                    else:
+                        changed['rail_semantics'] = semantic_override
                 changes = {
                     key: {**changed, **(station_track_sources if key.startswith('ST-') else {})}
                     for key in rail_groups
                 }
                 object_changes = {}
-                if facility_edit and selected_object:
+                if selected_object:
                     object_values = {}
+                    if value["display_name"] != display_name:
+                        object_values["display_name"] = value["display_name"]
                     if value["line_name"] != current_line_name:
                         object_values["line_name"] = value["line_name"]
                     if value["track_type"] != current_track_type:
                         object_values["track_type"] = value["track_type"]
+                    if value["technical_attributes"] != attributes:
+                        object_values["technical_attributes"] = value["technical_attributes"]
+                    if value.get('rail_semantics'):
+                        object_values['rail_semantics'] = object_semantics
                     if object_values:
                         object_changes[selected_object] = {
                             **object_values, "source": "manual",
                             "verification_status": "user_verified"}
                 line_semantics_changes = {}
-                if value.get('rail_semantics'):
+                if value.get('rail_semantics') and not selected_object:
                     for key in rail_groups:
                         line_id = self.rail_catalog_widget.catalog[key].get('line_id')
                         if line_id:

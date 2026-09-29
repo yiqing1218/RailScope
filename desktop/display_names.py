@@ -144,6 +144,12 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
+        group_line_edit = overrides.get(props.get('catalog_group_id'), {})
+        object_line_edit = overrides.get(object_key(props), {})
+        if 'line_name' in group_line_edit:
+            props['line_name'] = group_line_edit['line_name']
+        if 'line_name' in object_line_edit:
+            props['line_name'] = object_line_edit['line_name']
         yard_key = yard_track_key(props)
         track = migrate_track_override(overrides.get(yard_key, {}),
             station_name=props.get('station_name', ''), track_role=props.get('track_role', 'unknown'))
@@ -155,11 +161,11 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
             object_edit = overrides.get(object_key(props), {})
             if 'line_name' in object_edit:
                 props['line_name'] = object_edit['line_name']
-            line_name = str(props.get('line_name') or '').strip()
+            group_edit = overrides.get(props.get('catalog_group_id'), {})
+            line_name = str(props.get('line_name') or group_edit.get('line_name') or '').strip()
             if line_name.startswith('未命名'):
                 line_name = ''
-            group_edit = overrides.get(props.get('catalog_group_id'), {})
-            label = (line_name or group_edit.get('display_name') or
+            label = (line_name or object_edit.get('display_name') or group_edit.get('display_name') or
                      props.get('display_name') or track.get('display_name'))
             if label:
                 props['display_name'] = label

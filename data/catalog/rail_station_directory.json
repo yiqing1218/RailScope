@@ -990,6 +990,14 @@
       ],
       "station_type": "客运站"
     },
+    "station:node/7161749775": {
+      "display_name": "上海站",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "客货运站"
+    },
     "station:node/7168565706": {
       "display_name": "莘庄",
       "folder_path": [
@@ -1020,6 +1028,9 @@
         "安徽省",
         "合肥"
       ],
+      "station_type": "客货运站"
+    },
+    "station:node/7212021583": {
       "station_type": "客货运站"
     },
     "station:node/7719582540": {
@@ -1444,6 +1455,9 @@
         "枣庄"
       ]
     },
+    "station:node/8436993844": {
+      "archived": true
+    },
     "station:node/8437402279": {
       "folder_path": [
         "山东省",
@@ -1759,6 +1773,14 @@
         "山东省",
         "济宁"
       ]
+    },
+    "station:node/9218083767": {
+      "display_name": "太仓南站",
+      "folder_path": [
+        "江苏省",
+        "苏州"
+      ],
+      "station_type": "未定义"
     },
     "station:node/9242148031": {
       "display_name": "南翔北",

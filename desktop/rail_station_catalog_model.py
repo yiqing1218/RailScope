@@ -33,11 +33,14 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                      if k.startswith("station:") and any(field in v for field in ("folder_path", "archived"))}
     facility_edits = {k: {field: v[field] for field in ("station_id", "station_assignment") if field in v}
                       for k, v in overrides.items() if "station_id" in v or "station_assignment" in v}
+    segment_edits = {k: {field: v[field] for field in ("display_name", "line_name", "track_type") if field in v}
+                     for k, v in overrides.items() if k.startswith("object:") and
+                     any(field in v for field in ("display_name", "line_name", "track_type"))}
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
-        signature = hashlib.sha256(_key([6, source.stat().st_mtime_ns,
+        signature = hashlib.sha256(_key([7, source.stat().st_mtime_ns,
                                          catalog_version[0] if catalog_version else "",
-                                         station_edits, facility_edits]).encode()).hexdigest()
+                                         station_edits, facility_edits, segment_edits]).encode()).hexdigest()
         old = db.execute("SELECT value FROM metadata WHERE key='station_catalog_signature'").fetchone()
         if old and old[0] == signature:
             return False
@@ -93,6 +96,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                 station_totals[key] = station_totals.get(key, 0) + 1
 
         pending = add_folder("", "folder:" + _key(root + ["待核对"]), "待核对", root + ["待核对"])
+        facility_parents = {}
         # The existing facilities view already resolves manual line names and
         # track roles. Reuse its members instead of reading raw OSM geometry.
         for catalog_id, label, raw, facility_path in db.execute(
@@ -138,9 +142,39 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             rows.append(("facility:" + catalog_id, parent, label, "facility", catalog_id,
                          _key(path + [catalog_id]), int(bool(record.get("archived"))),
                          (label + " " + catalog_id + " " + str(record.get("station_name") or "")).casefold()))
+            facility_parents[catalog_id] = ("facility:" + catalog_id, path + [catalog_id], bool(record.get("archived")))
             for ancestor in ancestors:
                 totals[ancestor] = totals.get(ancestor, 0) + 1
                 facility_totals[ancestor] = facility_totals.get(ancestor, 0) + 1
+        with closing(sqlite3.connect(source)) as rail_db:
+            if facility_parents and rail_db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_feature_groups'").fetchone():
+                rail_db.execute("CREATE TEMP TABLE selected_facility_groups(id TEXT PRIMARY KEY)")
+                rail_db.executemany("INSERT INTO selected_facility_groups VALUES(?)",
+                                    ((key,) for key in facility_parents))
+                seen_segments = set()
+                for group_id, feature_id, raw in rail_db.execute(
+                    "SELECT g.group_id,f.id,f.data FROM selected_facility_groups s "
+                    "JOIN rail_feature_groups g ON g.group_id=s.id "
+                    "JOIN features f ON f.id=g.feature_id ORDER BY g.group_id,f.id"
+                ):
+                    parent_info = facility_parents.get(group_id)
+                    if parent_info is None:
+                        continue
+                    props = json.loads(raw).get("properties", {})
+                    edge_id = props.get("network_edge_id") or props.get("section_id")
+                    if not edge_id or (group_id, edge_id) in seen_segments:
+                        continue
+                    seen_segments.add((group_id, edge_id))
+                    object_key = "object:network_edge_id:" + str(edge_id) if props.get("network_edge_id") else "object:section_id:" + str(edge_id)
+                    custom = overrides.get(object_key, {})
+                    line_name = custom.get("line_name") if "line_name" in custom else props.get("line_name")
+                    name = (line_name or custom.get("display_name") or props.get("display_name") or str(edge_id))
+                    endpoints = "→".join(str(props.get(key) or "?") for key in ("from_name", "to_name"))
+                    parent_id, parent_path, archived = parent_info
+                    rows.append(("segment:" + str(feature_id), parent_id,
+                                 name + " · " + endpoints, "segment", object_key,
+                                 _key(parent_path + [str(feature_id)]), int(archived),
+                                 (str(name) + " " + endpoints + " " + str(edge_id)).casefold()))
         db.executemany("INSERT INTO rail_station_nodes(id,parent_id,label,kind,object_id,path,archived,searchable) VALUES(?,?,?,?,?,?,?,?)", rows)
         db.executemany("UPDATE rail_station_nodes SET total=? WHERE id=?",
                        ((count, key) for key, count in totals.items()))
@@ -227,7 +261,7 @@ class StationCatalogModel(SqliteDirectoryModel):
                 db.execute("DELETE FROM rail_station_matches")
                 db.execute(
                     "WITH RECURSIVE matches(id,parent_id) AS ("
-                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility') "
+                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility','segment') "
                     "AND searchable LIKE ? ESCAPE '\\' "
                     "UNION ALL SELECT parent.id,parent.parent_id FROM rail_station_nodes parent "
                     "JOIN matches child ON parent.id=child.parent_id WHERE child.parent_id<>''"
@@ -251,6 +285,8 @@ class StationCatalogModel(SqliteDirectoryModel):
                 selected = (node.object_id not in self.facility_excluded if self.facility_master
                             else node.object_id in self.facility_direct)
                 return Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked
+            if node.kind == "segment":
+                return None
             station_total, facility_total = self._totals(node.key)
             selected_stations = (station_total - self._excluded_counts.get((node.key, "station"), 0)
                                  if self.station_master else self._direct_counts.get((node.key, "station"), 0))
@@ -270,7 +306,7 @@ class StationCatalogModel(SqliteDirectoryModel):
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if not self._node(index).archived:
+        if not self._node(index).archived and self._node(index).kind != "segment":
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         if self._node(index).kind == "facility":
             flags |= Qt.ItemFlag.ItemIsDragEnabled

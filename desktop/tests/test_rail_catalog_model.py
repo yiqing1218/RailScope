@@ -136,6 +136,7 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
         "unknown": _record(4, track_role="unknown", facility_only=True),
         "yard-linked": _record(5, station_id="ST-C", station_name="人工关联站", facility_only=True),
         "station-main": _record(6, station_id="ST-D", station_name="站内正线"),
+        "line-to-yard": _record(7),
     }
     catalog, _ = _index(tmp_path, records)
     lines = RailDirectoryModel(catalog.path)
@@ -153,6 +154,18 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
     assert paths["yard-a"][1] != paths["yard-b"][1]
     assert paths["unknown"][1] == "设施归属待核实"
     assert paths["yard-linked"][1] == "人工关联站 · ST-C"
+    changes = {"yard-a": {"directory_view": "lines", "folder_path": ["普速铁路", "人工归线"]},
+               "line-to-yard": {"directory_view": "facilities", "station_id": "ST-A"}}
+    def moved(key, raw):
+        record = {**raw, **changes.get(key, {})}
+        return record, record.get("folder_path", ["普速铁路"]), record.get("name", key)
+    sync_catalog_directory(catalog, changes, moved)
+    lines.reset_from_disk()
+    facilities.reset_from_disk()
+    assert lines.reveal_catalog_id("yard-a").isValid()
+    assert not facilities.reveal_catalog_id("yard-a").isValid()
+    assert facilities.reveal_catalog_id("line-to-yard").isValid()
+    assert not lines.reveal_catalog_id("line-to-yard").isValid()
 
 
 def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qtbot, tmp_path, monkeypatch):
@@ -166,7 +179,15 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
         {"id": "node/3", "name": "同名站", "province": "乙省", "city": "乙市"},
     ]
     monkeypatch.setattr(station_module, "rail_station_records", lambda *args, **kwargs: (stations, 3))
-    (tmp_path / "rail_lines.sqlite").touch()
+    with sqlite3.connect(tmp_path / "rail_lines.sqlite") as rail_db:
+        rail_db.executescript("CREATE TABLE features(id INTEGER PRIMARY KEY,data TEXT);"
+                              "CREATE TABLE rail_feature_groups(feature_id INTEGER,group_id TEXT);")
+        for number in (1, 2):
+            feature = {"properties": {"catalog_group_id": "explicit",
+                        "network_edge_id": f"RS-{number}", "line_name": f"甲站{number}道",
+                        "from_name": "A", "to_name": "B"}}
+            rail_db.execute("INSERT INTO features VALUES(?,?)", (number, json.dumps(feature, ensure_ascii=False)))
+            rail_db.execute("INSERT INTO rail_feature_groups VALUES(?,?)", (number, "explicit"))
     records = {
         "explicit": _record(1, station_name="任意名称", station_id="node/1", track_role="shunting_track"),
         "inferred": _record(2, station_name="甲", provinces=["甲省"], track_role="shunting_track"),
@@ -184,6 +205,17 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
         assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:explicit'").fetchone()[0] == "站内轨道"
         assert db.execute("SELECT p.label FROM rail_station_nodes f JOIN rail_station_nodes p ON p.id=f.parent_id WHERE f.id='facility:inferred'").fetchone()[0] == "名称匹配，待核对"
     assert sync_station_catalog(tmp_path, catalog.path, [], {}) is False
+    with sqlite3.connect(catalog.path) as db:
+        segments = db.execute("SELECT label,object_id FROM rail_station_nodes "
+                              "WHERE parent_id='facility:explicit' ORDER BY object_id").fetchall()
+    assert segments == [("甲站1道 · A→B", "object:network_edge_id:RS-1"),
+                        ("甲站2道 · A→B", "object:network_edge_id:RS-2")]
+    assert sync_station_catalog(tmp_path, catalog.path, [], {
+        "object:network_edge_id:RS-1": {"line_name": "甲站改名", "track_type": "渡线 / 道岔连接轨"}})
+    with sqlite3.connect(catalog.path) as db:
+        segments = db.execute("SELECT label FROM rail_station_nodes WHERE parent_id='facility:explicit' "
+                              "ORDER BY object_id").fetchall()
+    assert segments == [("甲站改名 · A→B",), ("甲站2道 · A→B",)]
     location = RailCatalog.effective_directory_path(
         SimpleNamespace(catalog=catalog, station_model=model), "explicit")
     assert location == ("车站目录", "甲省", "甲市", "甲站", "站内轨道")

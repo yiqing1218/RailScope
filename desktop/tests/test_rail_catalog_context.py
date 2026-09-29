@@ -158,6 +158,8 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
         "重命名…",
         "编辑对象信息…",
         "移动到",
+        "移动到线路目录",
+        "移动到车站目录…",
         "查看端点与相邻线段…",
         "归档",
     ]
@@ -628,8 +630,8 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
 
     def exec_dialog(dialog):
         observed.append((dialog.name.text(),
-                         dialog.rail_semantics.get("railway_class"),
-                         dialog.rail_semantics.get("line_role"),
+                         dialog.rail_semantics["railway_class"].currentData(),
+                         dialog.rail_semantics["line_role"].currentData(),
                          dialog.rail_semantics["track_role"].currentData()))
         if len(observed) == 2:
             return QDialog.DialogCode.Rejected
@@ -644,9 +646,23 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     feature = {"layer": "rail", "properties": {"catalog_group_id": "RL-main"}}
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
-    assert observed[1] == ("甲线新名", None, None, "arrival_departure_track")
+    assert observed[1] == ("甲线新名", "freight", "branch_line", "arrival_departure_track")
     assert widget.meta("RL-main")["railway_class"] == "freight"
     assert widget.meta("RL-main")["line_role"] == "branch_line"
+    def edit_one_segment(dialog):
+        assert dialog.directory_view.currentData() == "facilities"
+        dialog.name.setText("单段显示名")
+        dialog.line_name.setText("甲线一号线段")
+        dialog.track_type.setCurrentText("渡线 / 道岔连接轨")
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(launcher.LineMetadataDialog, "exec", edit_one_segment)
+    segment = {"layer": "rail", "properties": {"catalog_group_id": "RL-main",
+               "network_edge_id": "RS-one", "line_name": "旧线段"}}
+    launcher.Desk.edit_line_metadata(host, segment, "rail", rail_groups=["RL-main"])
+    edit = widget.overrides["object:network_edge_id:RS-one"]
+    assert (edit["display_name"], edit["line_name"], edit["track_type"]) == (
+        "单段显示名", "甲线一号线段", "渡线 / 道岔连接轨")
+    assert widget.display_name("RL-main") == "甲线新名"
 
 
 def test_station_tracks_have_separate_master_and_follow_station(qtbot, tmp_path, monkeypatch):

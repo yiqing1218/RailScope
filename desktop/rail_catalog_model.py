@@ -21,7 +21,7 @@ except ImportError:
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 8
+PRESENTATION_VERSION = 9
 LABEL_ONLY_FIELDS = {"display_name"}
 
 
@@ -90,6 +90,11 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
             facts_path = facility_path({"id": key, **record})
             if facts_path is None and line_path and line_path[0] == "车站设施":
                 facts_path = tuple(line_path[1:])
+            directory_view = record.get("directory_view")
+            if directory_view == "lines":
+                facts_path = None
+            elif directory_view == "facilities" and facts_path is None:
+                facts_path = tuple(line_path)
             views = []
             if facts_path is None:
                 views.append(("lines", tuple(line_path)))
