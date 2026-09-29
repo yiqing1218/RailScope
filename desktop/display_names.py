@@ -5,12 +5,12 @@ try:
     from .yard_track_names import yard_track_key
     from .rail_semantics import semantic_record
     from .rail_style_resolver import style_key
-    from .station_track_semantics import migrate_track_override
+    from .station_track_semantics import migrate_track_override, semantic_track_name
 except ImportError:
     from yard_track_names import yard_track_key
     from rail_semantics import semantic_record
     from rail_style_resolver import style_key
-    from station_track_semantics import migrate_track_override
+    from station_track_semantics import migrate_track_override, semantic_track_name
 
 
 _EDGE_ROLES_CACHE = {}
@@ -135,6 +135,28 @@ def apply_rail_presentation(collection, presentation, overrides=None):
                 **semantic_record({'track_type': legacy}),
                 'design_speed_kmh': props.get('design_speed_kmh')})
     return collection
+
+
+def generated_line_name(meta):
+    """Generate a readable name for an unnamed physical line from its facts."""
+    name = (meta.get("line_name") or meta.get("line_display_name") or meta.get("name") or "").split(" · ", 1)[0]
+    if name and not name.startswith("未命名"):
+        return name
+    role = meta.get("track_role", "unknown")
+    station = meta.get("station_name")
+    if not station:
+        folder = meta.get("folder_path") or []
+        if folder and folder[0] == "车站设施" and len(folder) > 1:
+            station = folder[1]
+    if role not in ("main_track", "unknown") or meta.get("facility_only") or station:
+        return semantic_track_name(station, role)
+    track_kind = meta.get("track_type")
+    if track_kind and track_kind != "未确认类型":
+        return track_kind
+    way_ids = meta.get("way_ids") or []
+    if way_ids:
+        return f"轨道 w{way_ids[0]}"
+    return name or "未命名轨道"
 
 
 def object_key(properties):

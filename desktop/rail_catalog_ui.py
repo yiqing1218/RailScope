@@ -1414,7 +1414,13 @@ class RailCatalog(QWidget):
         aliases = [self.way_names[str(way)] for way in record.get("way_ids", [])
                    if str(way) in self.way_names]
         label = record.get("assembly_name") or record.get("display_name") or (
-            aliases[0] if aliases else record.get("name", key))
+            aliases[0] if aliases else None)
+        if not label:
+            try:
+                from .display_names import generated_line_name
+            except ImportError:
+                from display_names import generated_line_name
+            label = generated_line_name(record)
         return record, self._record_parents(record), label
 
     def effective_directory_path(self, key):
@@ -3011,11 +3017,28 @@ class RailCatalog(QWidget):
         if any(self.meta(key).get("assembly_id") for key in keys):
             raise ValueError("请先拆分已组合的线路，再重新组合")
         ident = "RLU-" + uuid4().hex
-        first_path = self.parents(sorted(keys)[0])
+        first_key = sorted(keys)[0]
+        first_path = self.parents(first_key)
         folder = list(first_path[1:] if first_path and first_path[0] == "已归档" else first_path)
         def active_path(key):
             path = self.parents(key)
             return list(path[1:] if path and path[0] == "已归档" else path)
+        # 合并后所有成员共用同一元素的所有属性，以首段属性为准。
+        primary = self.meta(first_key)
+        shared = {"display_name": name, "line_name": name}
+        semantic = {}
+        for field in ("railway_class", "line_role", "track_role"):
+            value = primary.get(field)
+            if value not in (None, "", "unknown"):
+                semantic[field] = value
+        if semantic:
+            semantic["source"] = "workspace_override"
+            semantic["verification_status"] = "user_verified"
+            shared["rail_semantics"] = semantic
+        if primary.get("track_type") and primary.get("track_type") != "未确认类型":
+            shared["track_type"] = primary["track_type"]
+        if primary.get("technical_attributes"):
+            shared["technical_attributes"] = primary["technical_attributes"]
         changes = {
             key: {
                 "assembly_id": ident,
@@ -3023,6 +3046,7 @@ class RailCatalog(QWidget):
                 "assembly_previous_folder_path": active_path(key),
                 "folder_path": folder,
                 "assembly_verification_status": "user_grouping_unverified",
+                **shared,
             }
             for key in keys
         }
@@ -3455,8 +3479,14 @@ class RailCatalog(QWidget):
             }
         )
         label = record.get("display_name") or (
-            aliases[0] if aliases else record.get("name", key)
+            aliases[0] if aliases else None
         )
+        if not label:
+            try:
+                from .display_names import generated_line_name
+            except ImportError:
+                from display_names import generated_line_name
+            label = generated_line_name(record)
         stable = record.get("line_id") or record.get("catalog_group_id")
         if stable and label.endswith(" · " + str(stable)):
             label = label[: -(len(str(stable)) + 3)]

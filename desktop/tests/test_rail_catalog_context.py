@@ -652,7 +652,6 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     def edit_one_segment(dialog):
         assert dialog.directory_view.currentData() == "facilities"
         dialog.name.setText("单段显示名")
-        dialog.line_name.setText("甲线一号线段")
         dialog.track_type.setCurrentText("渡线 / 道岔连接轨")
         return QDialog.DialogCode.Accepted
     monkeypatch.setattr(launcher.LineMetadataDialog, "exec", edit_one_segment)
@@ -661,7 +660,7 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     launcher.Desk.edit_line_metadata(host, segment, "rail", rail_groups=["RL-main"])
     edit = widget.overrides["object:network_edge_id:RS-one"]
     assert (edit["display_name"], edit["line_name"], edit["track_type"]) == (
-        "单段显示名", "甲线一号线段", "渡线 / 道岔连接轨")
+        "单段显示名", "单段显示名", "渡线 / 道岔连接轨")
     assert widget.display_name("RL-main") == "甲线新名"
 
 
@@ -934,3 +933,26 @@ def test_map_context_menu_offers_batch_merge_and_split(qtbot, monkeypatch):
     launcher.Desk.map_context_menu(host)
     assert "组合所选铁路段为线路…" in captured
     assert "拆分所选组合线路" in captured
+
+
+def test_merge_shares_attributes_across_members(qtbot, tmp_path):
+    from desktop.rail_catalog_ui import RailCatalog
+    from desktop.tests.test_operating_ui import MapStub
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-a": {"name": "甲线", "way_ids": [1], "track_role": "main_track",
+                  "railway_class": "conventional", "line_role": "main_line"},
+        "RL-b": {"name": "乙线", "way_ids": [2], "track_role": "main_track",
+                  "railway_class": "high_speed", "line_role": "main_line"},
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    widget.merge_line_segments({"RL-a", "RL-b"}, "甲乙线")
+    for key in ("RL-a", "RL-b"):
+        meta = widget.meta(key)
+        assert meta.get("assembly_id")
+        assert meta.get("display_name") == "甲乙线"
+        assert meta.get("line_name") == "甲乙线"
+        assert meta.get("railway_class") == "conventional"
+        assert meta.get("line_role") == "main_line"
+        assert meta.get("track_role") == "main_track"

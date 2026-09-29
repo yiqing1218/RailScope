@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
@@ -22,9 +24,93 @@ except ImportError:
     from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
 
 
+class CascadingPathEditor(QWidget):
+    """A single-row cascading directory picker with an inline custom level."""
+
+    def __init__(self, paths, current, parent=None):
+        super().__init__(parent)
+        self._paths = sorted({tuple(part for part in path if part) for path in paths if path})
+        self._current = list(current) if current else []
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(4)
+        self.combos = []
+        self._build_from(0)
+
+    def _prefix(self, up_to):
+        result = []
+        for combo in self.combos[:up_to]:
+            data = combo.currentData()
+            if data in (None, "__custom__"):
+                break
+            result.append(data)
+        return tuple(result)
+
+    def _options(self, level):
+        prefix = self._prefix(level)
+        options = set()
+        for path in self._paths:
+            if len(path) > level and tuple(path[:level]) == prefix:
+                options.add(path[level])
+        return sorted(options)
+
+    def _build_from(self, level):
+        while len(self.combos) > level:
+            combo = self.combos.pop()
+            self._layout.removeWidget(combo)
+            combo.deleteLater()
+        options = self._options(level)
+        current = self._current[level] if level < len(self._current) else None
+        if not options and not current:
+            return
+        combo = QComboBox()
+        combo.addItem("自定义…", "__custom__")
+        for option in options:
+            combo.addItem(option, option)
+        if current is not None and combo.findData(current) < 0:
+            combo.addItem(current, current)
+        index = combo.findData(current) if current is not None else -1
+        combo.setCurrentIndex(max(0, index))
+        combo.currentIndexChanged.connect(lambda _index, l=level: self._on_level_changed(l))
+        self._layout.addWidget(combo, 1)
+        self.combos.append(combo)
+        prefix = self._prefix(level + 1)
+        has_children = any(
+            len(path) > level + 1 and tuple(path[: level + 1]) == prefix
+            for path in self._paths
+        )
+        if has_children or level + 1 < len(self._current):
+            self._build_from(level + 1)
+
+    def _on_level_changed(self, level):
+        combo = self.combos[level]
+        if combo.currentData() == "__custom__":
+            value, ok = QInputDialog.getText(self, "新建目录", f"第 {level + 1} 级目录名称")
+            if ok and value.strip():
+                value = value.strip()
+                if combo.findData(value) < 0:
+                    combo.addItem(value, value)
+                combo.setCurrentIndex(combo.findData(value))
+            else:
+                combo.blockSignals(True)
+                combo.setCurrentIndex(0)
+                combo.blockSignals(False)
+        self._build_from(level + 1)
+
+    def path(self):
+        result = []
+        for combo in self.combos:
+            data = combo.currentData()
+            if data in (None, "__custom__"):
+                break
+            result.append(data)
+        return result
+
+
 class LineMetadataDialog(QDialog):
     def __init__(self, kind, name, path, attributes, track_types=None, track_type="", parent=None,
-                 rail_semantics=None, directory_location=None, line_name="", directory_view="lines"):
+                 rail_semantics=None, directory_location=None, line_name="", directory_view="lines",
+                 path_options=None):
         super().__init__(parent)
         self.kind = kind
         self.setWindowTitle(("地铁" if kind == "metro" else "国铁") + "线路信息")
@@ -39,22 +125,25 @@ class LineMetadataDialog(QDialog):
         self.city = QLineEdit(path[1] if len(path) > 1 else "")
         self._original_tail = list(path[2:])
         self.folder = QLineEdit(" / ".join(self._original_tail))
-        general_form.addRow("显示名称", self.name)
+        general_form.addRow("名称", self.name)
         self.directory_view = None
+        self.path_editor = None
         if kind == "rail":
             self.directory_view = QComboBox()
             self.directory_view.addItem("线路目录", "lines")
             self.directory_view.addItem("车站目录", "facilities")
             self.directory_view.setCurrentIndex(max(0, self.directory_view.findData(directory_view)))
             general_form.addRow("所属目录", self.directory_view)
-        general_form.addRow("一级目录", self.province)
-        general_form.addRow("二级目录", self.city)
-        general_form.addRow("线路 / 分类目录", self.folder)
+        if kind == "rail" and path_options:
+            self.path_editor = CascadingPathEditor(path_options, path)
+            general_form.addRow("目录", self.path_editor)
+        else:
+            general_form.addRow("一级目录", self.province)
+            general_form.addRow("二级目录", self.city)
+            general_form.addRow("线路 / 分类目录", self.folder)
         self.track_type = None
         self.line_name = None
         if kind == "rail":
-            self.line_name = QLineEdit(line_name)
-            general_form.addRow("线路名称", self.line_name)
             self.track_type = QComboBox()
             self.track_type.addItems(track_types or ())
             if track_type and self.track_type.findText(track_type) < 0:
@@ -119,17 +208,21 @@ class LineMetadataDialog(QDialog):
             attributes[key] = (
                 control.toPlainText() if isinstance(control, QPlainTextEdit) else control.text()
             )
-        tail = (self._original_tail if self.folder.text() == " / ".join(self._original_tail)
-                else [part.strip() for part in self.folder.text().split(" / ") if part.strip()])
-        return {
-            "display_name": self.name.text().strip(),
-            "folder_path": [
+        if self.path_editor is not None:
+            folder_path = self.path_editor.path()
+        else:
+            tail = (self._original_tail if self.folder.text() == " / ".join(self._original_tail)
+                    else [part.strip() for part in self.folder.text().split(" / ") if part.strip()])
+            folder_path = [
                 value.strip()
                 for value in (self.province.text(), self.city.text(), *tail)
                 if value.strip()
-            ],
+            ]
+        return {
+            "display_name": self.name.text().strip(),
+            "folder_path": folder_path,
             "track_type": self.track_type.currentText() if self.track_type else None,
-            "line_name": self.line_name.text().strip() if self.line_name else None,
+            "line_name": self.name.text().strip(),
             "directory_view": self.directory_view.currentData() if self.directory_view else None,
             "technical_attributes": normalize_line_attributes(attributes, self.kind),
             "rail_semantics": {key: control.currentData() for key, control in self.rail_semantics.items()

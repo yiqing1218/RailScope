@@ -3725,6 +3725,7 @@ class Desk(QMainWindow):
                 rail_semantics={**primary, **object_edit.get("rail_semantics", {})},
                 directory_view="facilities" if facility_edit else "lines",
                 line_name=current_line_name,
+                path_options=self.rail_catalog_widget.line_destination_paths(),
             )
             from rail_relationship_ui import RelationshipSelector
             from rail_relationships import line_relationships, relationship_changes
