@@ -1266,6 +1266,14 @@
         "其他/速度待核对"
       ]
     },
+    "RL-9eb439edf70c58794067": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "高速铁路线"
+    },
     "RL-a09438174f0ebd36f59f": {
       "folder_path": [
         "高速铁路",
