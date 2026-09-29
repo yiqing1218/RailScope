@@ -48,8 +48,16 @@
       "folder_path": [
         "高速铁路",
         "华东",
-        "其他/速度待核对"
-      ]
+        "250"
+      ],
+      "technical_attributes": {
+        "design_speed_kmh": "250",
+        "gauge_mm": "1435",
+        "max_speed_kmh": "250",
+        "opening_date": "2019-12-16",
+        "operating_status": "运营中",
+        "power_supply": "25000 50 contact_line"
+      }
     },
     "RL-045eb3735f6c3d350f9f": {
       "directory_view": "facilities",
@@ -127,6 +135,14 @@
         "上海市"
       ],
       "track_type": "普速铁路线"
+    },
+    "RL-0d7cb3fc86565dd22e8f": {
+      "directory_view": "lines",
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-0dd3b31a5cef7bbd3037": {
       "folder_path": [
@@ -226,7 +242,15 @@
       "track_type": "高速铁路线"
     },
     "RL-1a896c6bcbdc279ca853": {
-      "display_name": "合武绕行线1"
+      "display_name": "合武绕行线1",
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "track_role": "unknown",
+        "verification_status": "user_verified"
+      },
+      "track_type": "联络线 / 匝道"
     },
     "RL-1aed667865b5a2f560cc": {
       "rail_semantics": {
@@ -278,6 +302,13 @@
         "其他/速度待核对"
       ],
       "track_type": "高速铁路线"
+    },
+    "RL-203651309f164e602f51": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-20c506239176488a32f9": {
       "folder_path": [
@@ -547,6 +578,20 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-38e67b763a823a59c5e3": {
+      "display_name": "邯黄线",
+      "folder_path": [
+        "普速铁路",
+        "华北",
+        "货运"
+      ],
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "货运铁路线"
+    },
     "RL-39636d80503612286580": {
       "folder_path": [
         "高速铁路",
@@ -637,6 +682,14 @@
       ],
       "track_type": "支线 / 岔道"
     },
+    "RL-42c4cba2ed032972cdb9": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-43287d4f2a5dde0e31e5": {
       "folder_path": [
         "高速铁路",
@@ -717,8 +770,16 @@
       "folder_path": [
         "高速铁路",
         "华东",
-        "其他/速度待核对"
+        "250"
       ],
+      "technical_attributes": {
+        "design_speed_kmh": "250",
+        "gauge_mm": "1435",
+        "max_speed_kmh": "250",
+        "opening_date": "2020-12-11",
+        "operating_status": "运营中",
+        "power_supply": "25000 50 contact_line"
+      },
       "track_type": "高速铁路线"
     },
     "RL-4b51250491394bd4af5f": {
@@ -824,6 +885,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-560795b0a3cb8afbe35a": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-5632f73b3a39024a02fc": {
       "folder_path": [
         "高速铁路",
@@ -873,6 +941,26 @@
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-5bc83f40098da51d5771": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
+    "RL-5cd69e446c16359df21f": {
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ],
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "普速铁路线"
     },
     "RL-5d1932c00c4c7f7953c2": {
       "folder_path": [
@@ -972,6 +1060,16 @@
         "西南",
         "其他/速度待核对"
       ]
+    },
+    "RL-6c03aaf60ac61b796e2c": {
+      "rail_semantics": {
+        "line_role": "dedicated_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "track_role": "crossover",
+        "verification_status": "user_verified"
+      },
+      "track_type": "渡线 / 道岔连接轨"
     },
     "RL-6c12a31f12bc40ed4bb9": {
       "rail_semantics": {
@@ -1157,6 +1255,14 @@
         "其他/速度待核对"
       ]
     },
+    "RL-87af6d9083f7ac10ce6b": {
+      "display_name": "邯黄线（邯济邯黄联络线）",
+      "rail_semantics": {
+        "railway_class": "freight",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-8a3cb617c6ad409e6563": {
       "folder_path": [
         "高速铁路",
@@ -1178,6 +1284,13 @@
         "东北",
         "其他/速度待核对"
       ]
+    },
+    "RL-8d3d35888921684d0406": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-8e71a30649b3ed2f9f16": {
       "folder_path": [
@@ -1237,12 +1350,42 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-99a59dadb94bb38c27bd": {
+      "rail_semantics": {
+        "line_role": "main_line",
+        "railway_class": "freight",
+        "source": "workspace_override",
+        "track_role": "main_track",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-9b09531145a394f5813c": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-9b97b757e6f05f614058": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "普速铁路线"
+    },
+    "RL-9c581bde203fd81d47c6": {
+      "folder_path": [
+        "普速铁路",
+        "华北",
+        "货运"
+      ],
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "货运铁路线"
     },
     "RL-9d032ef9ad81d924b4ab": {
       "folder_path": [
@@ -1258,6 +1401,13 @@
         "其他/速度待核对"
       ],
       "track_type": "渡线 / 道岔连接轨"
+    },
+    "RL-9d4fa5965c51817ea444": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-9d5e1c8735c5a88e5ce4": {
       "folder_path": [
@@ -1364,7 +1514,13 @@
         "高速铁路",
         "华东",
         "其他/速度待核对"
-      ]
+      ],
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "联络线 / 匝道"
     },
     "RL-a91a4bc008e318772be8": {
       "folder_path": [
@@ -1488,6 +1644,13 @@
         "高速联络线"
       ]
     },
+    "RL-bb06754df0bd09e776cd": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-bb589cf30fb64ff452f6": {
       "display_name": "广深港高速线",
       "folder_path": [
@@ -1535,8 +1698,16 @@
       "folder_path": [
         "高速铁路",
         "华东",
-        "其他/速度待核对"
+        "250"
       ],
+      "technical_attributes": {
+        "design_speed_kmh": "250",
+        "gauge_mm": "1435",
+        "max_speed_kmh": "250",
+        "opening_date": "2008-04-18",
+        "operating_status": "运营中",
+        "power_supply": "25000 50 contact_line"
+      },
       "track_type": "高速铁路线"
     },
     "RL-c3005b351d85038530f4": {
@@ -1606,12 +1777,30 @@
       },
       "track_type": "高速铁路线"
     },
+    "RL-c8c5be51fb09b30dc176": {
+      "rail_semantics": {
+        "line_role": "dedicated_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "track_role": "crossover",
+        "verification_status": "user_verified"
+      },
+      "track_type": "渡线 / 道岔连接轨"
+    },
     "RL-c8eae52343ca629aac34": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-c8f11adecf43a472d6ec": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-caaeb161429a04a4039c": {
       "folder_path": [
@@ -1665,6 +1854,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-d05e7281677dd52bac51": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-d13e0401dfd5ecb93f0e": {
       "folder_path": [
         "高速铁路",
@@ -1672,6 +1868,13 @@
         "其他/速度待核对"
       ],
       "track_type": "高速铁路线"
+    },
+    "RL-d4335d8bc8192f838c6b": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-d46857852aa840d44071": {
       "archived": true,
@@ -1683,6 +1886,14 @@
         "operating_status": "运营中"
       },
       "track_type": "高速铁路线"
+    },
+    "RL-d6ac85e0472664cff01e": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-d746639a27421484367d": {
       "folder_path": [
@@ -1772,6 +1983,14 @@
         "其他/速度待核对"
       ]
     },
+    "RL-e6c0f11e298375312fe4": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-e737c0fec9fdbf2713e0": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1780,6 +1999,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7161749775"
+    },
+    "RL-e74f69af9bbdf1c95d7d": {
+      "folder_path": [
+        "铁路干支线",
+        "华东",
+        "货运"
+      ],
+      "rail_semantics": {
+        "line_role": "main_line",
+        "railway_class": "freight",
+        "source": "workspace_override",
+        "track_role": "main_track",
+        "verification_status": "user_verified"
+      }
     },
     "RL-e7c78e2b749180fc9ce6": {
       "rail_semantics": {
@@ -1802,12 +2035,26 @@
         "其他/速度待核对"
       ]
     },
+    "RL-ebf922cddacd563f6599": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-ec975721732b294a7789": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-ecad57f504a9e7964ae2": {
+      "rail_semantics": {
+        "railway_class": "freight",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-eda97786f0efc40459ef": {
       "folder_path": [
@@ -1847,6 +2094,13 @@
       },
       "track_type": "高速铁路线"
     },
+    "RL-f4ca157de7ceed974cbc": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-f562b552b0acee13e237": {
       "folder_path": [
         "高速铁路",
@@ -1884,12 +2138,26 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-f962b99a06446393589e": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-fb48f0abe93ceb1982a9": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-fb8128edda138811ce31": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-fbe0bf3ed87d9cbaf0a1": {
       "folder_path": [
@@ -1904,6 +2172,13 @@
         "西北",
         "其他/速度待核对"
       ]
+    },
+    "RL-fc615f163f0055931ec2": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-fcaf2c5ddfcd840c3152": {
       "folder_path": [
