@@ -62,14 +62,224 @@ def facility_path(record):
     return tuple(path)
 
 
+def _directory_signature(overrides, mode):
+    placement = {key: fields for key, edit in overrides.items()
+                 if (fields := {field: value for field, value in edit.items()
+                                if field not in LABEL_ONLY_FIELDS})}
+    return hashlib.sha256(_json([PRESENTATION_VERSION, mode, placement]).encode()).hexdigest()
+
+
+def _facility_views(key, record, line_path, label):
+    """Return the same presentation rows the full directory cache would emit."""
+    facts_path = facility_path({"id": key, **record})
+    if facts_path is None and line_path and line_path[0] == "车站设施":
+        facts_path = tuple(line_path[1:])
+    directory_view = record.get("directory_view")
+    if directory_view == "lines":
+        facts_path = None
+    elif directory_view == "facilities" and facts_path is None:
+        facts_path = tuple(line_path)
+    views = []
+    if facts_path is None:
+        views.append(("lines", tuple(line_path)))
+    if facts_path is not None:
+        custom_path = record.get("folder_path")
+        path = tuple(custom_path) if custom_path else facts_path
+        path = (("已归档",) if record.get("archived") else ()) + path
+        views.append(("facilities", path))
+    rows = []
+    for view, path in views:
+        full_path = (view, *path)
+        assembly = record.get("assembly_id")
+        grouping = [view, assembly] if assembly else [view, path, label.casefold(),
+                                                      key if record.get("separate_catalog_entry") else ""]
+        node_id = "object:" + hashlib.sha256(_json(grouping).encode()).hexdigest()
+        search = (" ".join(str(record.get(field) or "") for field in
+                           ("name", "line_name", "station_name", "line_id",
+                            "railway_class", "line_role", "track_role"))
+                  + " " + key + " " + label)
+        rows.append({
+            "view": view, "path": path, "full_path": full_path, "node_id": node_id,
+            "label": label, "search": search, "archived": int(bool(record.get("archived"))),
+        })
+    return rows
+
+
+def _insert_rows_for_key(db, key, rows, seen_folders=None):
+    object_ids = set()
+    folder_ids = set()
+    for row in rows:
+        full_path = row["full_path"]
+        parent = ""
+        for depth in range(1, len(full_path) + 1):
+            prefix = full_path[:depth]
+            folder = "folder:" + json.dumps(prefix, ensure_ascii=False)
+            if depth == 1:
+                parent = folder
+                continue
+            if seen_folders is None or folder not in seen_folders:
+                db.execute(
+                    "INSERT OR IGNORE INTO rail_directory_nodes"
+                    "(id,parent_id,label,kind,path,archived,view) VALUES(?,?,?,'folder',?,?,?)",
+                    (folder, parent, prefix[-1], json.dumps(prefix, ensure_ascii=False),
+                     row["archived"], row["view"]))
+                if seen_folders is not None:
+                    seen_folders.add(folder)
+            parent = folder
+            folder_ids.add(folder)
+        db.execute(
+            "INSERT OR IGNORE INTO rail_directory_nodes"
+            "(id,parent_id,label,kind,object_id,path,archived,view,searchable) "
+            "VALUES(?,?,?,'object',?,?,?,?,?)",
+            (row["node_id"], parent, row["label"], key, json.dumps(full_path, ensure_ascii=False),
+             row["archived"], row["view"], row["search"].casefold()))
+        db.execute("INSERT OR REPLACE INTO rail_directory_members VALUES(?,?)",
+                   (row["node_id"], key))
+        object_ids.add(row["node_id"])
+    return object_ids, folder_ids
+
+
+def _search_for(record, key, label):
+    return (" ".join(str(record.get(field) or "") for field in
+                     ("name", "line_name", "station_name", "line_id",
+                      "railway_class", "line_role", "track_role"))
+            + " " + key + " " + label).casefold()
+
+
+def _update_directory_rows(db, catalog, changed_keys, resolve):
+    """Remove and re-insert only the listed keys in the paged directory cache."""
+    affected_object_ids = set()
+    affected_folders = set()
+    removed_facilities = set()
+
+    # 1) Remove the old rows for the changed keys.
+    for key in changed_keys:
+        old_nodes = db.execute(
+            "SELECT node_id FROM rail_directory_members WHERE catalog_id=?", (key,)).fetchall()
+        for (node_id,) in old_nodes:
+            node_row = db.execute(
+                "SELECT view,path FROM rail_directory_nodes WHERE id=?", (node_id,)).fetchone()
+            if node_row is None:
+                continue
+            view, path_value = node_row
+            full_path = json.loads(path_value)
+            if view == "facilities":
+                removed_facilities.add((node_id, path_value))
+            for depth in range(2, len(full_path) + 1):
+                affected_folders.add("folder:" + json.dumps(full_path[:depth], ensure_ascii=False))
+            affected_object_ids.add(node_id)
+        db.execute("DELETE FROM rail_directory_members WHERE catalog_id=?", (key,))
+    for node_id in affected_object_ids:
+        remaining = db.execute(
+            "SELECT count(*) FROM rail_directory_members WHERE node_id=?", (node_id,)).fetchone()[0]
+        if remaining == 0:
+            db.execute("DELETE FROM rail_directory_nodes WHERE id=?", (node_id,))
+
+    # 2) Insert the new rows.
+    inserted_object_ids = set()
+    inserted_facilities = set()
+    for key in changed_keys:
+        raw_row = db.execute("SELECT data FROM catalog WHERE id=?", (key,)).fetchone()
+        if raw_row is None:
+            continue
+        record_dict = json.loads(raw_row[0])
+        record, line_path, label = resolve(key, record_dict)
+        rows = _facility_views(key, record, line_path, label)
+        object_ids, folder_ids = _insert_rows_for_key(db, key, rows)
+        inserted_object_ids.update(object_ids)
+        affected_folders.update(folder_ids)
+        for row in rows:
+            if row["view"] == "facilities":
+                inserted_facilities.add((row["node_id"], json.dumps(row["full_path"], ensure_ascii=False)))
+
+    # 3) Recompute totals and searchable text for affected object nodes.
+    for node_id in affected_object_ids | inserted_object_ids:
+        members = db.execute(
+            "SELECT catalog_id FROM rail_directory_members WHERE node_id=?", (node_id,)).fetchall()
+        if not members:
+            continue
+        search_parts = []
+        for (member_id,) in members:
+            member_raw = db.execute("SELECT data FROM catalog WHERE id=?", (member_id,)).fetchone()
+            if member_raw is None:
+                continue
+            member_record = json.loads(member_raw[0])
+            member_resolved, _, member_label = resolve(member_id, member_record)
+            search_parts.append(_search_for(member_resolved, member_id, member_label))
+        db.execute("UPDATE rail_directory_nodes SET total=?, searchable=? WHERE id=?",
+                   (len(members), " ".join(search_parts), node_id))
+
+    # 4) Recompute folder totals and prune empty folders.
+    for folder_id in affected_folders:
+        path_row = db.execute(
+            "SELECT path FROM rail_directory_nodes WHERE id=?", (folder_id,)).fetchone()
+        if path_row is None:
+            continue
+        path = path_row[0]
+        total = db.execute(
+            "SELECT count(*) FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id "
+            "WHERE d.path=? OR substr(d.path,1,length(?)-1)=substr(?,1,length(?)-1)",
+            (path, path, path, path)).fetchone()[0]
+        db.execute("UPDATE rail_directory_nodes SET total=? WHERE id=?", (total, folder_id))
+    pending = set(affected_folders)
+    while True:
+        for folder_id in list(pending):
+            if db.execute("SELECT 1 FROM rail_directory_nodes WHERE id=?", (folder_id,)).fetchone() is None:
+                continue
+            child_count = db.execute(
+                "SELECT count(*) FROM rail_directory_nodes WHERE parent_id=?", (folder_id,)).fetchone()[0]
+            db.execute("UPDATE rail_directory_nodes SET child_count=? WHERE id=?", (child_count, folder_id))
+        empties = []
+        for folder_id in list(pending):
+            row = db.execute(
+                "SELECT parent_id,total,child_count FROM rail_directory_nodes WHERE id=?", (folder_id,)).fetchone()
+            if row and row[1] == 0 and row[2] == 0:
+                empties.append((folder_id, row[0]))
+        if not empties:
+            break
+        for folder_id, parent_id in empties:
+            db.execute("DELETE FROM rail_directory_nodes WHERE id=?", (folder_id,))
+            pending.discard(folder_id)
+            if parent_id:
+                pending.add(parent_id)
+
+    changed = bool(affected_object_ids or inserted_object_ids)
+    facility_changed = removed_facilities != inserted_facilities
+    return changed, facility_changed
+
+
+def update_catalog_directory(catalog, keys, overrides, resolve, mode=0, aliases=None):
+    """Update only the listed keys; never rescan the whole national catalog.
+
+    Returns ``(changed, facility_changed)``.  The caller must fall back to a
+    full rebuild when the cache has not been built yet.
+    """
+    signature = _directory_signature(overrides, mode)
+    with closing(sqlite3.connect(catalog.path)) as db:
+        old = db.execute(
+            "SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
+        has_nodes = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='rail_directory_nodes'").fetchone()
+        if old is None or not has_nodes or old[0] == signature:
+            return (False, False)
+        db.execute("BEGIN")
+        try:
+            changed, facility_changed = _update_directory_rows(db, catalog, list(keys), resolve)
+            if changed:
+                db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)",
+                           (signature,))
+            db.commit()
+            return (changed, facility_changed)
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
+
+
 def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
     """Stream records into a rebuildable SQLite cache, without Qt row objects."""
     # Names and overview text do not change directory membership. They are
     # updated in place so editing one track does not rebuild the national tree.
-    placement = {key: fields for key, edit in overrides.items()
-                 if (fields := {field: value for field, value in edit.items()
-                                if field not in LABEL_ONLY_FIELDS})}
-    signature = hashlib.sha256(_json([PRESENTATION_VERSION, mode, placement]).encode()).hexdigest()
+    signature = _directory_signature(overrides, mode)
     with closing(sqlite3.connect(catalog.path)) as db:
         old = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
         if old and old[0] == signature:

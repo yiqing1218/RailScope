@@ -343,3 +343,69 @@ def test_national_master_uses_compact_facility_filter(qtbot, tmp_path):
     widget.set_station_track_master(True)
     assert ("setRailFacilityMode", "all", []) in map_view.calls
     assert widget.facility_model.all_visible
+
+
+def test_update_catalog_directory_only_resolves_changed_keys(tmp_path):
+    from desktop.rail_catalog_model import update_catalog_directory
+    catalog, resolve = _index(tmp_path, {f"RL-{i}": _record(i) for i in range(60)})
+    resolved = []
+
+    def tracking_resolve(key, raw):
+        resolved.append(key)
+        return resolve(key, raw)
+
+    changes = {"RL-5": {"rail_semantics": {"railway_class": "conventional",
+                                           "line_role": "connecting_line",
+                                           "track_role": "main_track"}}}
+    changed, _ = update_catalog_directory(catalog, ["RL-5"], changes, tracking_resolve)
+    assert changed
+    assert set(resolved) == {"RL-5"}
+
+
+def test_update_catalog_directory_matches_full_rebuild_structure(tmp_path):
+    from desktop.rail_catalog_model import update_catalog_directory, sync_catalog_directory
+    from desktop.rail_catalog_index import RailCatalogIndex, build_index
+
+    records = {f"RL-{i}": _record(i) for i in range(30)}
+    records["RL-3"] = _record(3, station_name="某站", station_id="ST-A",
+                              track_role="shunting_track")
+
+    def resolve_for(changes):
+        def resolve(key, raw):
+            value = {**raw, **changes.get(key, {})}
+            if value.get("rail_semantics"):
+                from desktop.rail_semantics import semantic_record
+                value.update(semantic_record(raw, value))
+            parents = (tuple(value["folder_path"])
+                       if isinstance(value.get("folder_path"), list) and value.get("folder_path")
+                       else ("普速铁路",))
+            return value, parents, value.get("display_name", value["name"])
+        return resolve
+
+    incremental_dir = tmp_path / "incremental"
+    full_dir = tmp_path / "full"
+    incremental_dir.mkdir()
+    full_dir.mkdir()
+    catalog = RailCatalogIndex(build_index(incremental_dir, records))
+    other_catalog = RailCatalogIndex(build_index(full_dir, records))
+
+    changes = {"RL-3": {"rail_semantics": {"railway_class": "conventional",
+                                           "line_role": "connecting_line",
+                                           "track_role": "main_track"}}}
+    sync_catalog_directory(catalog, {}, resolve_for({}))
+    changed, facility_changed = update_catalog_directory(
+        catalog, ["RL-3"], changes, resolve_for(changes))
+    assert changed and facility_changed
+
+    def dump(path):
+        with sqlite3.connect(path) as db:
+            nodes = db.execute(
+                "SELECT id,parent_id,label,kind,object_id,path,child_count,total,archived,view "
+                "FROM rail_directory_nodes ORDER BY id").fetchall()
+            members = db.execute(
+                "SELECT node_id,catalog_id FROM rail_directory_members ORDER BY node_id,catalog_id").fetchall()
+        return nodes, members
+
+    sync_catalog_directory(other_catalog, changes, resolve_for(changes))
+    assert dump(catalog.path) == dump(other_catalog.path)
+

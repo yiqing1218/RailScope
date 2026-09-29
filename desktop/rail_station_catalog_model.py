@@ -23,11 +23,11 @@ def _key(parts):
     return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
 
 
-def sync_station_catalog(directory, catalog_path, regions, overrides):
-    """Build one disk-backed tree; do nothing when its inputs are unchanged."""
+def station_catalog_signature(directory, catalog_path, overrides):
+    """Hash the station-catalog inputs so the caller can mark it fresh."""
     source = directory / "rail_lines.sqlite"
     if not source.exists():
-        return
+        return None
     station_edits = {k: {field: v[field] for field in ("folder_path", "archived") if field in v}
                      for k, v in overrides.items()
                      if k.startswith("station:") and any(field in v for field in ("folder_path", "archived"))}
@@ -38,9 +38,17 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                      any(field in v for field in ("display_name", "line_name", "track_type"))}
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
-        signature = hashlib.sha256(_key([7, source.stat().st_mtime_ns,
-                                         catalog_version[0] if catalog_version else "",
-                                         station_edits, facility_edits, segment_edits]).encode()).hexdigest()
+    return hashlib.sha256(_key([7, source.stat().st_mtime_ns,
+                                 catalog_version[0] if catalog_version else "",
+                                 station_edits, facility_edits, segment_edits]).encode()).hexdigest()
+
+
+def sync_station_catalog(directory, catalog_path, regions, overrides):
+    """Build one disk-backed tree; do nothing when its inputs are unchanged."""
+    signature = station_catalog_signature(directory, catalog_path, overrides)
+    if signature is None:
+        return
+    with closing(sqlite3.connect(catalog_path)) as db:
         old = db.execute("SELECT value FROM metadata WHERE key='station_catalog_signature'").fetchone()
         if old and old[0] == signature:
             return False
@@ -146,6 +154,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             for ancestor in ancestors:
                 totals[ancestor] = totals.get(ancestor, 0) + 1
                 facility_totals[ancestor] = facility_totals.get(ancestor, 0) + 1
+        source = directory / "rail_lines.sqlite"
         with closing(sqlite3.connect(source)) as rail_db:
             if facility_parents and rail_db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_feature_groups'").fetchone():
                 rail_db.execute("CREATE TEMP TABLE selected_facility_groups(id TEXT PRIMARY KEY)")

@@ -32,8 +32,8 @@ from PySide6.QtWidgets import (
 try:
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
-    from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels
-    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label
+    from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory
+    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from .rail_semantics import semantic_record
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
@@ -47,8 +47,8 @@ try:
 except ImportError:
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
-    from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels
-    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label
+    from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory
+    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from rail_semantics import semantic_record
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
@@ -794,6 +794,62 @@ class RailCatalog(QWidget):
                 }
             else:
                 self.overrides.pop(key, None)
+
+    def _update_paged_directory(self, changed_keys):
+        """Recompute only changed rows in the paged directory cache.
+
+        Returns True when the cache changed and the visible views were refreshed.
+        """
+        if not isinstance(self.catalog, RailCatalogIndex):
+            return False
+        presentation_overrides = {
+            key: {field: value for field, value in fields.items()
+                  if field not in ("station_id", "station_assignment")}
+            for key, fields in self.overrides.items()
+            if not key.startswith(("object:", "station:", "switch:", "system:"))
+        }
+        directory_changed, facility_changed = update_catalog_directory(
+            self.catalog, changed_keys, presentation_overrides,
+            self._resolve_directory_record, self.mode.currentIndex(), self.way_names)
+        if not directory_changed:
+            return False
+        self._station_track_keys_cache = None
+        for model in (getattr(self, "line_model", None), getattr(self, "facility_model", None)):
+            if model is None:
+                continue
+            model.reset_from_disk()
+            if model.search != self.search.text().strip():
+                model.set_search(self.search.text())
+            if not model.root.children:
+                model.fetchMore()
+        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (self.directory / "rail_lines.sqlite").exists():
+            if facility_changed:
+                station_changed = sync_station_catalog(self.directory, self.catalog.path,
+                                                       self.regions, self.overrides)
+                station_model = getattr(self, "station_model", None)
+                if station_model is not None and station_changed:
+                    station_model.reset_from_disk()
+                    station_model.search = ""
+            else:
+                signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
+                if signature is not None:
+                    with closing(sqlite3.connect(self.catalog.path)) as db:
+                        db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)",
+                                   (signature,))
+                        db.commit()
+            station_model = getattr(self, "station_model", None)
+            if station_model is not None:
+                if station_model.search != self.station_query.strip():
+                    station_model.set_search(self.station_query)
+                if not station_model.root.children:
+                    station_model.fetchMore()
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            self.line_folder_paths = {
+                tuple(json.loads(raw)[1:]) for (raw,) in db.execute(
+                    "SELECT path FROM rail_directory_nodes WHERE kind='folder' AND view='lines' AND archived=0")
+            }
+        self._sync_paged_visibility()
+        return True
 
     def _populate_paged_directory(self):
         """Build only disk memberships; the visible views fetch individual pages."""
@@ -2824,7 +2880,12 @@ class RailCatalog(QWidget):
             key for key in self.visible if not self.meta(key).get("archived", False)
         }
         folder_only = all(set(change) <= {"folder_path"} for change in effective.values())
-        if not (folder_only and self._move_line_items_in_tree(set(effective))):
+        if len(self.catalog) <= MAX_LEGACY_EDITOR_ITEMS:
+            if not (folder_only and self._move_line_items_in_tree(set(effective))):
+                self.populate()
+        elif effective and self._update_paged_directory(set(effective)):
+            pass
+        else:
             self.populate()
         if old_facilities is not None:
             new_facilities = self.station_track_keys()
