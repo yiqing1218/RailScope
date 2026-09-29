@@ -1057,11 +1057,21 @@ class RailCatalog(QWidget):
         if self.station_model._node(index).object_id not in facilities:
             facilities = {self.station_model._node(index).object_id}
         menu = QMenu(self)
+
+        def perform(action):
+            try:
+                action()
+            except (ValueError, OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "目录修改未保存", str(error))
+
         edit = menu.addAction("编辑对象信息…",
                               lambda: self.line_edit_requested.emit(sorted(facilities)))
         edit.setEnabled(bool(facilities))
         menu.addAction("在地图中定位", lambda: self.focus_catalog_key(node.object_id))
         menu.addSeparator()
+        archived = all(self.meta(key).get("archived", False) for key in facilities)
+        menu.addAction("取消归档 / 恢复" if archived else "归档",
+                       lambda: perform(lambda: self.archive_items(set(facilities), not archived)))
         line_move = menu.addMenu("移动到线路目录")
         add_folder_move_menu(line_move, self.line_destination_paths(),
                              lambda path: self.save_overrides({key: {
@@ -2135,11 +2145,21 @@ class RailCatalog(QWidget):
         if isinstance(station_id, tuple) and station_id[0] == "yard":
             key = station_id[1]
             menu = QMenu(self)
+
+            def perform(action):
+                try:
+                    action()
+                except (ValueError, OSError, RuntimeError) as error:
+                    QMessageBox.warning(self, "目录修改未保存", str(error))
+
             menu.addAction("编辑对象信息…", lambda: self.line_edit_requested.emit([key]))
             menu.addAction("在地图中定位", lambda: self.focus_catalog_key(key))
             menu.addSeparator()
             menu.addAction("移至车站…", lambda: self._prompt_station_assignment({key}))
             menu.addAction("移至待核对", lambda: self._assign_station_facilities({key}, None))
+            archived = self.meta(key).get("archived", False)
+            menu.addAction("取消归档 / 恢复" if archived else "归档",
+                           lambda: perform(lambda: self.archive_items({key}, not archived)))
             return menu
         if isinstance(station_id, tuple) and station_id[0] == "platform":
             menu = QMenu(self)
@@ -2799,8 +2819,11 @@ class RailCatalog(QWidget):
                 raise ValueError("请选择有效的目标文件夹")
             changes["folder_path"] = [value.strip() for value in folder]
         self._save_local_overrides({"station:" + station_id: changes for station_id in station_ids})
+        placement_changed = bool({"folder_path", "archived"} & set(changes))
         self.metadata_changed.emit()
         self._refresh_station_items(station_ids)
+        if placement_changed and hasattr(self, "station_model"):
+            self.populate()
         self.send_station_visibility()
 
     def prefix_station_names(self, station_ids, prefix):
