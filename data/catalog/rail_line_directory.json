@@ -96,6 +96,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-08eef9a833d6d6413e69": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-090085eb69725456c269": {
       "folder_path": [
         "高速铁路",
@@ -133,6 +142,24 @@
         "其他/速度待核对"
       ]
     },
+    "RL-0f6a6708afbd5e0fd13a": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
+    "RL-117ad3596fd27a445733": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-1248a47ddf580b1ff598": {
       "display_name": "京哈高速线",
       "folder_path": [
@@ -157,6 +184,15 @@
       },
       "track_type": "高速铁路线"
     },
+    "RL-13dca8e8337c176ed784": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
+    },
     "RL-16ef002e54781e41c43b": {
       "folder_path": [
         "高速铁路",
@@ -171,6 +207,15 @@
         "西南",
         "其他/速度待核对"
       ]
+    },
+    "RL-19a92a92dbfda83bd8f1": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "江桥镇站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7168335771"
     },
     "RL-1a88b8b8c1aff3ff3354": {
       "folder_path": [
@@ -313,6 +358,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-2566363c0afe7ea2a318": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-25997be3e3afd10c7826": {
       "folder_path": [
         "高速铁路",
@@ -359,12 +413,30 @@
         "其他/速度待核对"
       ]
     },
+    "RL-2a5ff8195d0fecb92e01": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
+    },
     "RL-2a65c0a585da76a705c6": {
       "folder_path": [
         "高速铁路",
         "中南",
         "其他/速度待核对"
       ]
+    },
+    "RL-2a9e7c0a8d2ddaec66fc": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
     },
     "RL-2ac84aa86008a2b38744": {
       "folder_path": [
@@ -402,6 +474,15 @@
         "其他/速度待核对"
       ],
       "track_type": "高速铁路线"
+    },
+    "RL-2f2a7086fdc927e205dd": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
     },
     "RL-316be9db88b1b1c5406d": {
       "folder_path": [
@@ -497,6 +578,15 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-3e7364547d0e89ad4d87": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "江桥镇站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7168335771"
+    },
     "RL-3e8f935d0f4f3f739066": {
       "folder_path": [
         "高速铁路",
@@ -555,6 +645,15 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-437d2b76f2f0ad3012f7": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
+    },
     "RL-4433558094b16a320696": {
       "folder_path": [
         "普速铁路",
@@ -576,6 +675,15 @@
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-46856d4eb376788bff36": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
     },
     "RL-47d657bf39260fbcf507": {
       "folder_path": [
@@ -812,6 +920,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-65eff4aa616034c97d5a": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-67af8c62c0371ceb52e7": {
       "rail_semantics": {
         "line_role": "connecting_line",
@@ -839,6 +956,15 @@
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-687c57cfee3ec42dabc8": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
     },
     "RL-6a08fbd4c75ec5004438": {
       "folder_path": [
@@ -874,6 +1000,15 @@
         "中南",
         "其他/速度待核对"
       ]
+    },
+    "RL-709d120af7ba7c08081e": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
     },
     "RL-70a869ae23d4fb9071a3": {
       "display_name": "兰新客专线",
@@ -953,6 +1088,15 @@
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-79c11e4c3e64a4926863": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
     },
     "RL-7ae241d6e23efb9f73c1": {
       "folder_path": [
@@ -1069,6 +1213,15 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-949ea324379e64716c66": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-94b7b98a6d131584f4e6": {
       "folder_path": [
         "高速铁路",
@@ -1134,6 +1287,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-a296b3e743784f8a4f0d": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-a2d3efa868008cac62f8": {
       "folder_path": [
         "普速铁路",
@@ -1180,6 +1342,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-a74747e14b57271c24f4": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
+    },
     "RL-a819e1f16f9e891fbbc3": {
       "folder_path": [
         "高速铁路",
@@ -1193,6 +1364,15 @@
         "华北",
         "其他/速度待核对"
       ]
+    },
+    "RL-ac38ec7ee31a4e598d33": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
     },
     "RL-ac3dbb94abbf6c15c7a3": {
       "rail_semantics": {
@@ -1358,6 +1538,15 @@
         "其他/速度待核对"
       ]
     },
+    "RL-c41376ef7bdc39542869": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-c516cef4247b11ebdd60": {
       "display_name": "徐兰高速线",
       "folder_path": [
@@ -1369,6 +1558,15 @@
         "operating_status": "运营中"
       },
       "track_type": "高速铁路线"
+    },
+    "RL-c6fc255da34c6e83f035": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
     },
     "RL-c728b30467a494ad2886": {
       "rail_semantics": {
@@ -1517,6 +1715,15 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-e1bd0cf83496095a8021": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "望亭站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/8453216528"
+    },
     "RL-e40a1de43066841e9271": {
       "folder_path": [
         "高速铁路",
@@ -1556,6 +1763,15 @@
         "华东",
         "其他/速度待核对"
       ]
+    },
+    "RL-e737c0fec9fdbf2713e0": {
+      "directory_view": "facilities",
+      "folder_path": [
+        "车站设施",
+        "上海站"
+      ],
+      "station_assignment": "manual",
+      "station_id": "node/7161749775"
     },
     "RL-e7c78e2b749180fc9ce6": {
       "rail_semantics": {

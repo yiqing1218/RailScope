@@ -1632,6 +1632,9 @@
       ],
       "station_type": "客货运站"
     },
+    "station:node/8453216528": {
+      "station_type": "客货运站"
+    },
     "station:node/8454007046": {
       "folder_path": [
         "山东省",
