@@ -2751,6 +2751,10 @@ class Desk(QMainWindow):
         menu.addAction("由所选道岔新建线路所…", self.create_signal_box_from_selection).setEnabled(len(switches) >= 2)
         menu.addAction("移动所选对象到目录…", self.move_map_selection).setEnabled(bool(self.selected_features))
         menu.addAction("重命名所选对象…", self.rename_map_selection).setEnabled(bool(self.selected_features))
+        menu.addAction("组合所选铁路段为线路…", self.merge_map_rail_segments).setEnabled(
+            len(self.selected_features) >= 2)
+        menu.addAction("拆分所选组合线路", self.split_map_rail_assembly).setEnabled(
+            bool(self.selected_features))
         menu.addAction("归档所选对象", self.archive_map_selection).setEnabled(bool(self.selected_features))
         menu.exec(QCursor.pos())
         menu.deleteLater()

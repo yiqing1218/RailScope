@@ -786,7 +786,8 @@ def test_map_context_menu_edits_the_selected_object(qtbot, monkeypatch):
     host.selected_switch_ids = lambda: []
     host.edit_selected_metadata = edited.append
     for action in ("create_signal_box_from_selection", "move_map_selection",
-                   "rename_map_selection", "archive_map_selection"):
+                   "rename_map_selection", "archive_map_selection",
+                   "merge_map_rail_segments", "split_map_rail_assembly"):
         setattr(host, action, lambda: None)
     class CapturedMenu(QMenu):
         def exec(self, *_):
@@ -902,3 +903,34 @@ def test_line_catalog_segment_edit_reclassifies_whole_line(qtbot, tmp_path, monk
     assert widget.meta("RL-a")["track_type"] == "联络线 / 匝道"
     assert widget.meta("RL-b")["track_type"] == "联络线 / 匝道"
     assert widget.meta("RL-c").get("track_type") != "联络线 / 匝道"
+
+
+def test_map_context_menu_offers_batch_merge_and_split(qtbot, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtWidgets import QMainWindow, QMenu
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.selected_features = [
+        {"layer": "rail", "properties": {"catalog_group_id": "RL-a"}},
+        {"layer": "rail", "properties": {"catalog_group_id": "RL-b"}},
+    ]
+    host.selected_switch_ids = lambda: []
+    for action in ("edit_selected_metadata", "create_signal_box_from_selection",
+                   "move_map_selection", "rename_map_selection", "archive_map_selection",
+                   "merge_map_rail_segments", "split_map_rail_assembly"):
+        setattr(host, action, lambda *args, **kwargs: None)
+
+    captured = []
+
+    class CapturedMenu(QMenu):
+        def exec(self, *_):
+            captured.extend(action.text() for action in self.actions() if not action.isSeparator())
+
+    monkeypatch.setattr(launcher, "QMenu", CapturedMenu)
+    launcher.Desk.map_context_menu(host)
+    assert "组合所选铁路段为线路…" in captured
+    assert "拆分所选组合线路" in captured
