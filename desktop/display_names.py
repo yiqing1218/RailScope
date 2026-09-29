@@ -13,6 +13,25 @@ except ImportError:
     from station_track_semantics import migrate_track_override
 
 
+_EDGE_ROLES_CACHE = {}
+
+
+def _edge_roles(library):
+    """Cache the expensive edge-role scan; it does not depend on overrides."""
+    key = (str(library.path), library.path.stat().st_mtime_ns)
+    cached = _EDGE_ROLES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    roles = {}
+    with library.connect() as db:
+        for line, kind in db.execute('SELECT line_id,track_type FROM edges GROUP BY line_id,track_type'):
+            roles.setdefault(line, set()).add(kind)
+    if len(_EDGE_ROLES_CACHE) > 8:
+        _EDGE_ROLES_CACHE.clear()
+    _EDGE_ROLES_CACHE[key] = roles
+    return roles
+
+
 def rail_line_presentation(library):
     """One compact style/parent lookup, shared by every viewport of a snapshot."""
     if not hasattr(library, 'connect'):
@@ -20,10 +39,7 @@ def rail_line_presentation(library):
     cached = getattr(library, '_line_presentation', None)
     if cached is not None:
         return cached
-    roles = {}
-    with library.connect() as db:
-        for line, kind in db.execute('SELECT line_id,track_type FROM edges GROUP BY line_id,track_type'):
-            roles.setdefault(line, set()).add(kind)
+    roles = _edge_roles(library)
     result = {}
     main_roles = {'高速铁路线', '普速铁路线', '货运铁路线'}
     snapshot = str(library.path.stat().st_mtime_ns)

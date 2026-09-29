@@ -3871,10 +3871,9 @@ class Desk(QMainWindow):
                     self.rail_catalog_widget.populate()
                     self.rail_catalog_widget.send_visibility(False)
                 elif changed or station_track_sources or object_changes:
-                    self.rail_catalog_widget.save_overrides(changes, object_changes)
                     if line_semantics_changes:
                         self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
-                        self.rail_catalog_widget.metadata_changed.emit()
+                    self.rail_catalog_widget.save_overrides(changes, object_changes)
                 if "display_name" in changed and not facility_edit:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
