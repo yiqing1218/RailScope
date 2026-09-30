@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+from collections import defaultdict
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,8 +72,30 @@ def edges(bbox: str | None = None):
             raise ValueError("bbox coordinates or order are invalid")
         if (max_lon-min_lon) * (max_lat-min_lat) > 25:
             raise HTTPException(400, "bbox area exceeds debug API limit")
-        return [e for e in repo.edges.values() if any(min_lon <= x <= max_lon and min_lat <= y <= max_lat for x, y in e.coordinates)]
+        return [e for e in repo.edges.values() if polyline_intersects_bbox(e.coordinates, (min_lon, min_lat, max_lon, max_lat))]
     return list(repo.edges.values())
+
+
+def polyline_intersects_bbox(coordinates, bbox):
+    """Segment/rectangle intersection; vertex-only tests omit crossing edges."""
+    west, south, east, north = bbox
+    if any(west <= x <= east and south <= y <= north for x, y in coordinates):
+        return True
+    for a, b in zip(coordinates, coordinates[1:]):
+        enter, leave = 0.0, 1.0
+        for origin, target, low, high in ((a[0], b[0], west, east), (a[1], b[1], south, north)):
+            delta = target - origin
+            if delta == 0:
+                if not low <= origin <= high:
+                    break
+            else:
+                near, far = sorted(((low - origin) / delta, (high - origin) / delta))
+                enter, leave = max(enter, near), min(leave, far)
+                if enter > leave:
+                    break
+        else:
+            return True
+    return False
 
 
 @app.get("/api/v1/network/edges/{edge_id}")
@@ -128,12 +151,22 @@ def block(block_id: str): return get_or_404(repo.blocks, block_id)
 
 @app.get("/api/v1/blocks-geojson")
 def block_geojson():
-    members = {member.block_id: member.edge_id for member in repo.block_edges}
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "properties": {"id": block.id, "name": block.name},
-         "geometry": {"type": "LineString", "coordinates": repo.edges[members[block.id]].coordinates}}
-        for block in repo.blocks.values() if block.id in members
-    ]}
+    members = defaultdict(list)
+    for member in repo.block_edges:
+        members[member.block_id].append(member)
+    features = []
+    for block in repo.blocks.values():
+        lines = []
+        for member in sorted(members[block.id], key=lambda value: value.sequence):
+            if member.edge_id not in repo.edges:
+                raise ValueError(f'闭塞区间引用不存在的边：{block.id} / {member.edge_id}')
+            coordinates = repo.edges[member.edge_id].coordinates
+            lines.append(coordinates if member.forward else coordinates[::-1])
+        if lines:
+            geometry = {'type': 'LineString', 'coordinates': lines[0]} if len(lines) == 1 else {
+                'type': 'MultiLineString', 'coordinates': lines}
+            features.append({'type': 'Feature', 'properties': {'id': block.id, 'name': block.name}, 'geometry': geometry})
+    return {'type': 'FeatureCollection', 'features': features}
 
 
 @app.get("/api/v1/occupancies")

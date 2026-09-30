@@ -35,6 +35,15 @@ TYPES={
 LIST_TYPES={'memberships':d.LineMembership,'stops':d.StopTime,'block_edges':d.BlockEdge,
             'headway_rules':d.HeadwayRule,'events':d.DispatchEvent,'occupancies':d.TrackOccupancy,'conflicts':d.Conflict,
             'station_track_edges':d.StationTrackEdge}
+DERIVED_COLLECTIONS = frozenset({'occupancies', 'conflicts'})
+
+
+def rebuild_derived(repo):
+    """Rebuild projections from schedule, resources and events before publication."""
+    from .services.dispatch import recalculate
+    repo.occupancies, repo.conflicts = [], []
+    for scenario_id in repo.scenarios:
+        recalculate(repo, scenario_id)
 
 
 def _migrate_track_number(raw):
@@ -87,6 +96,8 @@ def _rows(repo):
         for key,obj in getattr(repo,collection).items():
             result[(collection,key)]=json.dumps(asdict(obj),ensure_ascii=False,sort_keys=True)
     for collection in LIST_TYPES:
+        if collection in DERIVED_COLLECTIONS:
+            continue
         result[(collection,'@list')]=json.dumps([asdict(v) for v in getattr(repo,collection)],ensure_ascii=False,sort_keys=True)
     return result
 
@@ -131,6 +142,8 @@ class SQLiteWorkspace:
             rows.update({(kind,key):raw for kind,key,raw in db.execute('SELECT kind,id,data FROM workspace_override')})
         legacy_routes=[]
         for (kind,key),raw in rows.items():
+            if kind in DERIVED_COLLECTIONS:
+                continue  # Old saved projections never override current project inputs.
             if raw is None: continue
             data=json.loads(raw)
             if kind in TYPES: getattr(repo,kind)[key]=decode(TYPES[kind],data)
@@ -153,6 +166,7 @@ class SQLiteWorkspace:
                 repo.station_track_edges.extend(d.StationTrackEdge(track.id,r.edge_id,r.sequence,
                     'forward' if r.forward else 'reverse') for r in track.edge_refs)
         validate_repository(repo)
+        rebuild_derived(repo)
         return repo,revision
 
     def save(self,repo,expected_revision):
@@ -190,6 +204,7 @@ class EditSession:
         candidate=deepcopy(self.repo)
         result=operation(candidate)
         validate_repository(candidate)
+        rebuild_derived(candidate)
         self.undo_stack.append(self.repo)
         self.repo=candidate
         self.redo_stack.clear()
