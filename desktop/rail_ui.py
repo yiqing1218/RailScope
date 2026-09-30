@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from .persistence import write_json_atomic
     from .operating_ui import OperationsEditor
     from .operating import Plan, read_plan
     from .rail import (
@@ -39,6 +40,7 @@ try:
     from .rail_station_directory import refresh_plan_names
     from .route_intent import promote_route, reresolve_route
 except ImportError:
+    from persistence import write_json_atomic
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
     from rail import (
@@ -108,6 +110,7 @@ class RailEditor(OperationsEditor):
                 ]
         self.rail_payload = None
         self._autosave_ready = False
+        self._plan_load_error = ''
         self.visible_corridors = set()
         self.displayed_train_id = ""
         super().__init__(Plan([], "rail"), RailMap(map_view), [], path)
@@ -118,6 +121,7 @@ class RailEditor(OperationsEditor):
             try:
                 self.apply_payload(read_plan(path))
             except (ValueError, OSError, KeyError, TypeError) as error:
+                self._plan_load_error = str(error)
                 self.message.setText("国铁计划未载入：" + str(error))
         if self.rail_payload is None:
             self.apply_payload(self.initial_g1_payload())
@@ -127,6 +131,8 @@ class RailEditor(OperationsEditor):
                 else "当前铁路库尚不能组合完整 G1 通道；请先导入覆盖京沪高铁的全国铁路数据。"
             )
         self._autosave_ready = True
+        if self._plan_load_error:
+            self.message.setText('原国铁计划未成功载入，已保留原文件：' + self._plan_load_error)
 
     def changed(self, message):
         super().changed(message)
@@ -173,7 +179,7 @@ class RailEditor(OperationsEditor):
                 return self.empty_payload()
         return self.empty_payload()
 
-    def canonical_repository(self, identity_path):
+    def canonical_repository(self, identity_path, *, graph=None, payload=None):
         """Expose the shared domain contract; desktop dictionaries are DTOs only."""
         try:
             from .domain_adapter import build_repository
@@ -187,7 +193,9 @@ class RailEditor(OperationsEditor):
                     values[key] = {**values.get(key, {}), **value}
             except (OSError, ValueError):
                 continue
-        return build_repository(self.graph, self.document(), identity_path, values, self.directory / 'rail.sqlite')
+        return build_repository(self.graph if graph is None else graph,
+            self.document() if payload is None else payload,
+            identity_path, values, self.directory / 'rail.sqlite')
 
     def play(self):
         if not self.plan.trains:
@@ -350,16 +358,6 @@ class RailEditor(OperationsEditor):
         validate_corridors(original_payload["routes"], edges)
         payload = expanded_document(original_payload)
         plan, lines = compile_rail_plan(payload, edges, points, self.platforms)
-        self.pause()
-        self.set_enabled(False)
-        self.graph["points"] = points
-        self.graph["edges"] = edges
-        self.shared_station_features = {
-            p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
-        }
-        self.visible_corridors.intersection_update(
-            r["id"] for r in original_payload["routes"]
-        )
         for profile, train, shared_train in zip(
             lines, payload["trains"], original_payload["trains"]
         ):
@@ -378,12 +376,22 @@ class RailEditor(OperationsEditor):
                 + " · 单向参考通道",
             )
             route.setdefault("track_changes", [])
+        graph = {**self.graph, 'points': points, 'edges': edges}
+        document = self.document(plan=plan, payload=original_payload, graph=graph)
+        domain_repo, domain_bindings = self.canonical_repository(
+            self.workspace_identity_path, graph=graph, payload=document)
+        # Publish only after both DTO and shared domain validation succeed.
+        self.pause()
+        self.set_enabled(False)
+        self.graph = graph
+        self.shared_station_features = {
+            p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
+        }
+        self.visible_corridors.intersection_update(r['id'] for r in original_payload['routes'])
         self.plan = plan
         self.base_lines = lines
         self.rail_payload = original_payload
-        self.domain_repo, self.domain_bindings = self.canonical_repository(
-            self.workspace_identity_path
-        )
+        self.domain_repo, self.domain_bindings = domain_repo, domain_bindings
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.line_combo.blockSignals(True)
@@ -760,14 +768,17 @@ class RailEditor(OperationsEditor):
                 self.route_switch.setChecked(False)
                 self.route_switch.blockSignals(False)
 
-    def document(self):
-        if self.rail_payload is None:
+    def document(self, *, plan=None, payload=None, graph=None):
+        plan = self.plan if plan is None else plan
+        payload = self.rail_payload if payload is None else payload
+        graph = self.graph if graph is None else graph
+        if payload is None:
             raise ValueError("请先导入国铁车次计划和实际基础设施")
-        self.plan.validate()
-        payload = deepcopy(self.rail_payload)
+        plan.validate()
+        payload = deepcopy(payload)
         payload["trains"] = []
-        for train in self.plan.trains:
-            profile = self.plan.lines[train["line_id"]]
+        for train in plan.trains:
+            profile = plan.lines[train["line_id"]]
             stops = []
             for stop in train["stops"]:
                 original = deepcopy(
@@ -792,7 +803,7 @@ class RailEditor(OperationsEditor):
                     profile["station_paths"]
                 )
         compile_rail_plan(
-            payload, self.graph["edges"], self.graph["points"], self.platforms
+            payload, graph["edges"], graph["points"], self.platforms
         )
         return shared_document(payload)
 
@@ -1914,14 +1925,10 @@ class RailEditor(OperationsEditor):
                 QMessageBox.warning(self, "模板未保存", str(error))
 
     def write(self, path):
+        if self._plan_load_error and Path(path).resolve() == Path(self.path).resolve():
+            raise ValueError('原计划未成功载入，禁止覆盖；请修复后重新打开或导入有效计划')
         payload = self.document()
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(path)
+        write_json_atomic(path, payload)
 
     def save(self):
         try:
@@ -1941,6 +1948,8 @@ class RailEditor(OperationsEditor):
             return
         try:
             self.apply_payload(read_plan(path), show_route=True)
+            self._plan_load_error = ''
+            self.write(self.path)
         except (ValueError, OSError, KeyError, TypeError) as error:
             QMessageBox.warning(self, "国铁计划导入失败", str(error))
 

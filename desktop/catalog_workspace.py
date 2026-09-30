@@ -6,7 +6,10 @@ over its seed on every load. Persistence succeeds before state/history changes.
 from copy import deepcopy
 import json
 from pathlib import Path
-import tempfile
+try:
+    from .persistence import write_json_atomic
+except ImportError:
+    from persistence import write_json_atomic
 
 
 def read_overrides(path):
@@ -16,6 +19,10 @@ def read_overrides(path):
     payload = json.loads(path.read_text(encoding='utf-8'))
     if isinstance(payload, dict) and payload.get('schema') == 'railscope.catalog-exchange.v1':
         payload = payload.get('overrides')
+    return validate_overrides(payload, path)
+
+
+def validate_overrides(payload, path):
     if not isinstance(payload, dict):
         raise ValueError(f'铁路目录文件格式无效：{path}')
     for key, value in payload.items():
@@ -52,18 +59,8 @@ class CatalogWorkspace:
     def _commit(self, proposed):
         if self.load_failed:
             raise ValueError('工作区未成功载入；请先修复文件并重新载入，原文件保留')
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
-                    dir=self.path.parent, prefix=self.path.name + '.', suffix='.tmp',
-                    delete=False) as handle:
-                temporary = Path(handle.name)
-                json.dump(proposed, handle, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
-            temporary.replace(self.path)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        validate_overrides(proposed, self.path)
+        write_json_atomic(self.path, proposed)
         self.values.clear()
         self.values.update(proposed)
 

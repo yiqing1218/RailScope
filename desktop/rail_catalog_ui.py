@@ -424,6 +424,7 @@ class RailCatalog(QWidget):
                 self._save_local_overrides(assembly_changes)
                 self.catalog_undo.clear()
         except (ValueError, OSError) as error:
+            self.workspace.load_failed = True
             QMessageBox.warning(self, "国铁分类设置未载入", str(error))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

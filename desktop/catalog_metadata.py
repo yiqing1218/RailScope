@@ -11,8 +11,12 @@ import sqlite3
 
 try:
     from .provinces import ProvinceIndex
+    from .catalog_workspace import validate_overrides
+    from .persistence import write_json_atomic
 except ImportError:
     from provinces import ProvinceIndex
+    from catalog_workspace import validate_overrides
+    from persistence import write_json_atomic
 
 
 STATION_TYPES = (
@@ -188,43 +192,36 @@ class CatalogOverrides:
         self.path = Path(path)
         self.schema = schema
         self.values = {}
+        self.load_failed = False
 
     def load(self):
+        self.load_failed = True
         if not self.path.exists():
+            self.load_failed = False
             return
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        if payload.get("schema") != self.schema or not isinstance(
+        if not isinstance(payload, dict) or payload.get("schema") != self.schema or not isinstance(
             payload.get("overrides"), dict
         ):
             raise ValueError("目录编辑文件格式无效")
-        proposed = {
-            str(key): value
-            for key, value in payload["overrides"].items()
-            if isinstance(value, dict)
-        }
+        proposed = validate_overrides(payload['overrides'], self.path)
         self.values.clear()
         self.values.update(proposed)
+        self.load_failed = False
 
     def update(self, key, **changes):
         self.update_many({str(key): changes})
 
     def update_many(self, changes):
+        if self.load_failed:
+            raise ValueError('目录未成功载入；请先修复文件并重新载入，原文件保留')
         proposed = {**self.values}
         for key, value in changes.items():
             if not isinstance(value, dict):
                 raise ValueError("目录批量修改内容无效")
             proposed[str(key)] = {**proposed.get(str(key), {}), **value}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(
-                {"schema": self.schema, "overrides": proposed},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        temporary.replace(self.path)
+        validate_overrides(proposed, self.path)
+        write_json_atomic(self.path, {"schema": self.schema, "overrides": proposed})
         self.values.clear()
         self.values.update(proposed)
 
