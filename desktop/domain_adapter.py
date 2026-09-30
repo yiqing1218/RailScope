@@ -283,7 +283,9 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
                         'source': 'desktop_saved_physical_path'},
             verification_status=(route.get("extensions", {}).get("railscope.org/line-resolution", {})
                                  .get("verification_status")
-                                 or route.get("extensions", {}).get("verification_status", "user_verified")),
+                                 or route.get('resolved_corridor', {}).get('verification_status')
+                                 or route.get("extensions", {}).get("verification_status", "unverified")),
+            confidence=route.get('extensions', {}).get('railscope.org/line-resolution', {}).get('confidence'),
         )
         repo.corridors[corridor_id] = corridor
         route_by_source[source_id] = corridor
@@ -310,10 +312,13 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
         repo.train_services.setdefault(service_id, TrainService(service_id, train["id"], source_id=document["source"]))
         stops = train["stops"]
         corridor_id = bindings["corridors"][train["route_id"]]
+        provenance = train.get('extensions', {}).get('railscope.org/provenance', {})
         repo.train_runs[run_id] = TrainRun(
             run_id, service_date, train["id"], stop_station(stops[0]),
             stop_station(stops[-1]), service_id=service_id,
-            corridor_id=corridor_id, source_id=document["source"], verification_status="user_verified",
+            corridor_id=corridor_id, source_id=document["source"],
+            source_version=provenance.get('source_version'),
+            verification_status=provenance.get('verification_status', 'unverified'),
         )
         for sequence, stop in enumerate(stops, 1):
             station_route_id = bindings["station_routes"].get(stop.get("station_route_id"))
