@@ -61,7 +61,7 @@ def path_refs(repo, legs, allow_nonoperating=False):
             raise ValueError(f'Edge 端点不存在：{key}')
         if previous is not None and a!=previous:
             raise ValueError(f'Corridor 轨道连接不连续：{key}')
-        if edge.direction=='closed' or (edge.direction=='forward' and not forward) or (edge.direction=='reverse' and forward):
+        if edge.direction not in {'both', 'forward' if forward else 'reverse'}:
             raise ValueError(f'Edge 方向不允许：{key}')
         if not allow_nonoperating and edge.construction_status!='operating':
             raise ValueError(f'非运营轨道不能进入正式通道：{key}')
@@ -131,6 +131,11 @@ def references(repo, kind, ident):
 
 def validate_repository(repo):
     errors=[]
+    from .timetable_validation import validate_timetables
+    try:
+        validate_timetables(repo)
+    except ValueError as exc:
+        errors.append(str(exc))
     from .presentation import valid_color, design_speed
     from .rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
     for line in repo.lines.values():
@@ -219,6 +224,8 @@ def validate_repository(repo):
             errors.append(f'edge {edge.id}: endpoint missing')
         if edge.construction_status not in {'operating','construction','planned','disused','unknown'}:
             errors.append(f'edge {edge.id}: invalid construction_status')
+        if edge.direction not in {'both', 'forward', 'reverse', 'closed'}:
+            errors.append(f'edge {edge.id}: invalid direction')
         if len(edge.coordinates)<2 or not math.isfinite(edge.length_m) or edge.length_m<=0:
             errors.append(f'edge {edge.id}: invalid geometry/length')
         if edge.railway_class not in RAILWAY_CLASSES or edge.line_role not in LINE_ROLES or edge.track_role not in TRACK_ROLES:
@@ -243,6 +250,22 @@ def validate_repository(repo):
     for member in repo.memberships:
         if member.edge_id not in repo.edges or member.line_id not in repo.lines:
             errors.append(f'membership {member.edge_id}: missing edge/line')
+    block_members = {}
+    for member in repo.block_edges:
+        if member.block_id not in repo.blocks or member.edge_id not in repo.edges:
+            errors.append(f'block membership {member.block_id}: missing block/edge')
+        block_members.setdefault(member.block_id, []).append(member)
+    for block_id, members in block_members.items():
+        if any(type(member.sequence) is not int for member in members):
+            errors.append(f'block membership {block_id}: invalid sequence')
+            continue
+        members = sorted(members, key=lambda member: member.sequence)
+        if [member.sequence for member in members] != list(range(1, len(members) + 1)):
+            errors.append(f'block membership {block_id}: invalid sequence')
+        try:
+            path_refs(repo, [(member.edge_id, member.forward) for member in members], allow_nonoperating=True)
+        except ValueError as exc:
+            errors.append(f'block membership {block_id}: {exc}')
     for collection in ('sections','corridors','station_routes'):
         for path in getattr(repo,collection).values():
             try:
@@ -284,32 +307,11 @@ def validate_repository(repo):
         except (KeyError, ValueError) as exc:
             errors.append(f'run {run.id}: invalid path nodes ({exc})')
             continue
-        cursor=-1
-        previous=-1
         try:
             from .services.timetable.canonical import stop_distances
             stop_distances(repo, path.edge_refs, repo.stops_for(run.id))
         except (KeyError, ValueError) as exc:
             errors.append(f'run {run.id}: {exc}')
-        for stop in repo.stops_for(run.id):
-            station=repo.stations.get(stop.station_id)
-            if not station:
-                errors.append(f'run {run.id}: station {stop.station_id} missing')
-                continue
-            try:
-                if stop.stop_edge_id is None:
-                    cursor=order.index(station.anchor_node_id,cursor+1)
-            except ValueError:
-                errors.append(f'run {run.id}: stops not in path order ({stop.station_id})')
-            times=[t for t in (stop.arrival_time_s,stop.departure_time_s) if t is not None]
-            if not times or any(type(t) is not int or t<previous for t in times) or times!=sorted(times):
-                errors.append(f'run {run.id}: stop times not monotonic')
-            if times: previous=times[-1]
-            for ident,collection in ((stop.platform_id,'platforms'),(stop.station_track_id,'station_tracks'),(stop.station_route_id,'station_routes')):
-                if ident:
-                    item=getattr(repo,collection).get(ident)
-                    if item is None or item.station_id!=stop.station_id:
-                        errors.append(f'run {run.id}: invalid {collection} reference {ident}')
     if errors:
         raise ValueError('\n'.join(errors))
     return True
