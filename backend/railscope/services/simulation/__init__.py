@@ -54,7 +54,6 @@ class TimetableLinearInterpolationModel:
     @staticmethod
     def _position(repo, effective, state, distance):
         result = {"state": state, "train_run_id": effective.train_run.id, "route_distance_m": distance}
-        run = effective.train_run
         path = repo.corridors.get(effective.corridor_id)
         if path is not None:
             result['coordinate'] = route_coordinate(repo, path.edge_refs, distance)

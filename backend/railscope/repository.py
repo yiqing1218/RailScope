@@ -1,6 +1,13 @@
 """Small deterministic repository used by demo/API; SQLAlchemy persistence can replace it at this boundary."""
 from dataclasses import dataclass, field
-from .domain import *
+from .domain import (
+    ServiceArea, ServiceAreaGeometry, DatasetSnapshot, LineMembership,
+    RouteSection, Corridor, StationRoute, TrainService, StationArea, Platform,
+    StopPosition, Entrance, DataSource, InfrastructureLine, NetworkNode,
+    NetworkEdge, Station, TrainRun, StopTime, BlockSection, BlockEdge,
+    StationTrack, HeadwayRule, DispatchScenario, DispatchEvent, TrackOccupancy,
+    Conflict, OperationalPoint, Yard, StationZone, StationTrackEdge, RouteIntent,
+)
 
 
 @dataclass

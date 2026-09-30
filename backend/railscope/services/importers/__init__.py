@@ -6,6 +6,10 @@ from .overpass import OSMImportResult, fetch_highspeed_railway, save_raw_geojson
 from .metro import MetroImportResult, extract_metro_routes
 from .construction import ConstructionMetroImportResult, extract_construction_metro
 
+__all__ = ['OSMImportResult', 'fetch_highspeed_railway', 'save_raw_geojson',
+           'MetroImportResult', 'extract_metro_routes', 'ConstructionMetroImportResult',
+           'extract_construction_metro', 'import_geojson', 'import_osm_pbf']
+
 
 def import_geojson(path: Path) -> ImportReport:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -16,7 +20,7 @@ def import_geojson(path: Path) -> ImportReport:
 
 def import_osm_pbf(path: Path) -> ImportReport:
     try:
-        import osmium  # type: ignore # optional production parser boundary
+        import osmium  # noqa: F401 - probe native parser availability, including DLL loading
     except ImportError:
         return ImportReport(str(path), errors=("osmium is not installed; install railscope[gis] to import PBF",))
     return ImportReport(str(path), warnings=("OSM PBF parser boundary is available; normalization requires a configured database importer.",))

@@ -303,7 +303,7 @@ def validate_repository(repo):
                 errors.append(f'run {run.id}: path missing')
             continue  # unresolved imports may exist, but cannot simulate.
         try:
-            order=[node for node, _ in ordered_path_nodes(repo, path.edge_refs)]
+            ordered_path_nodes(repo, path.edge_refs)
         except (KeyError, ValueError) as exc:
             errors.append(f'run {run.id}: invalid path nodes ({exc})')
             continue

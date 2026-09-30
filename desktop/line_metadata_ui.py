@@ -18,10 +18,10 @@ from PySide6.QtWidgets import (
 
 try:
     from .line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
+    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
 except ImportError:
     from line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
+    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
 
 
 class CascadingPathEditor(QWidget):

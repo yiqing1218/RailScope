@@ -1,6 +1,6 @@
 """Desktop path assembly using the shared backend simulation geometry."""
 
-from railscope.services.simulation.geometry import distance_m, interpolate
+from railscope.services.simulation.geometry import distance_m, interpolate as interpolate
 
 
 def build_demo_path(features, relation_id=199200):

@@ -2,7 +2,6 @@ import json
 from copy import deepcopy
 import pytest
 
-from desktop.rail_semantics import semantic_record
 from desktop.rail_style_resolver import style_key, speed_band, STYLE_SELECTIONS
 from desktop.rail_style_ui import defaults, validate_styles, RailStyleDialog
 from desktop.display_names import apply_rail_presentation, apply_names

@@ -1,5 +1,4 @@
 """Depot/station parity without moving passing main lines or whole mixed groups."""
-from copy import deepcopy
 import json
 import sqlite3
 from types import SimpleNamespace

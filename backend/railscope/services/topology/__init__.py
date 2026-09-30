@@ -1,6 +1,5 @@
 from __future__ import annotations
 from collections import Counter
-from ...domain import NetworkEdge
 from ...repository import RailRepository
 
 

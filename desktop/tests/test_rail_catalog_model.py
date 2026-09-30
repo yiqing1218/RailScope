@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeView
 
 from desktop.rail_catalog_index import RailCatalogIndex, build_index

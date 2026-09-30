@@ -12,11 +12,11 @@ from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QTreeView
 
 try:
-    from .lazy_directory import SqliteDirectoryModel, PAGE_SIZE, _Node
+    from .lazy_directory import SqliteDirectoryModel
     from .rail_semantics import semantic_record
     from .components import directory_checkbox_style
 except ImportError:
-    from lazy_directory import SqliteDirectoryModel, PAGE_SIZE, _Node
+    from lazy_directory import SqliteDirectoryModel
     from rail_semantics import semantic_record
     from components import directory_checkbox_style
 

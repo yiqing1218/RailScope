@@ -13,11 +13,11 @@ import sqlite3
 from PySide6.QtCore import QModelIndex, Qt
 
 try:
-    from .lazy_directory import SqliteDirectoryModel, _Node
+    from .lazy_directory import SqliteDirectoryModel
     from .catalog_metadata import rail_station_records, station_directory_path
     from .rail_facility_ownership import facility_track_owners
 except ImportError:
-    from lazy_directory import SqliteDirectoryModel, _Node
+    from lazy_directory import SqliteDirectoryModel
     from catalog_metadata import rail_station_records, station_directory_path
     from rail_facility_ownership import facility_track_owners
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from copy import deepcopy
-from dataclasses import asdict, fields, replace
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import sqlite3

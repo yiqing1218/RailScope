@@ -59,17 +59,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from components import Fold, SquareSwitch, THEME, visibility_row, directory_checkbox_style, text_label, GrowingTree
+from components import Fold, SquareSwitch, THEME, visibility_row, directory_checkbox_style, text_label
 from geometry import build_demo_path
 from hierarchy import Hierarchy
 from hierarchy_ui import HierarchyDialog
-from metro_data import (
-    associate_station_areas,
-    build_shanghai_lines,
-    display_stations,
-    display_station_areas,
-    iter_geojson_features,
-)
+from metro_data import build_shanghai_lines
 from operating import Plan
 from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
@@ -92,8 +86,7 @@ from road_store import database_path as road_database_path, viewport as road_vie
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
     StationLookup, area_summary as metro_area_summary,
-    database_path as metro_database_path, ensure_index as ensure_metro_index,
-    feature_count as metro_feature_count, find_physical_aliases,
+    ensure_index as ensure_metro_index, find_physical_aliases,
     find_station as find_metro_station, iter_features as iter_metro_features,
     iter_relation_features as iter_metro_relation_features,
     route_summaries as metro_route_summaries,
@@ -113,7 +106,6 @@ from railscope.services.topology import validate_topology
 from railscope.services.stations import StationRegistry
 from catalog_metadata import (
     CatalogOverrides,
-    metro_station_directory,
     station_type,
     STATION_TYPES,
     STATION_OVERVIEW_FIELDS,
