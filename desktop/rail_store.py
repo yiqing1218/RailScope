@@ -329,7 +329,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     selection = selection if kind == "rail" and isinstance(selection, dict) else {}
     selected_values = {}
-    for name in ("sections", "ways", "groups", "facility_groups"):
+    for name in ("sections", "ways", "groups", "facility_groups", "included_edges", "excluded_edges"):
         values = selection.get(name, [])
         if not isinstance(values, list) or len(values) > 100000:
             raise ValueError("线路选择无效")
@@ -340,7 +340,10 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     if type(excluded) is not bool:
         raise ValueError("线路排除选项无效")
     selected = any(selected_values[name] for name in ("sections", "ways", "groups"))
-    explicit = selected or bool(selected_values["facility_groups"])
+    explicit = selected or bool(selected_values["facility_groups"] or selected_values['included_edges'])
+    only_explicit = selection.get('only_explicit',False)
+    if type(only_explicit) is not bool:
+        raise ValueError('线路选择模式无效')
     facility_mode = selection.get("facility", "all")
     if kind == "rail" and facility_mode not in ("all", "lines", "facilities"):
         raise ValueError("站场轨道选择无效")
@@ -365,6 +368,10 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            edge_predicate = "json_extract(f.data,'$.properties.network_edge_id') IN (SELECT id FROM included_edges)"
+            for name in ('included_edges','excluded_edges'):
+                db.execute(f'CREATE TEMP TABLE {name}(id TEXT PRIMARY KEY)')
+                db.executemany(f'INSERT INTO {name} VALUES(?)',((str(key),) for key in selected_values[name]))
             if kind == "rail" and facility_mode != "all":
                 catalog_path = Path(directory) / "rail_catalog.sqlite"
                 if not catalog_path.exists():
@@ -375,6 +382,9 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                           "JOIN catalog_visibility.rail_directory_nodes d ON d.id=m.node_id "
                           "WHERE m.catalog_id=json_extract(f.data,'$.properties.catalog_group_id') "
                           "AND d.view='facilities')")
+                if db.execute("SELECT 1 FROM catalog_visibility.sqlite_master WHERE name='rail_facility_track_owners'").fetchone():
+                    member = ('('+member+" OR EXISTS (SELECT 1 FROM catalog_visibility.rail_facility_track_owners o "
+                        "WHERE o.object_id='object:network_edge_id:'||json_extract(f.data,'$.properties.network_edge_id')))")
                 exceptions = selected_values["facility_groups"]
                 extra = ""
                 if exceptions:
@@ -383,6 +393,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                                    ((str(group),) for group in exceptions))
                     extra = (" OR json_extract(f.data,'$.properties.catalog_group_id') "
                              "IN (SELECT group_id FROM facility_exceptions)")
+                extra += ' OR '+edge_predicate if selected_values['included_edges'] else ''
                 clauses.append("(NOT " + member + extra + ")" if facility_mode == "lines"
                                else "(" + member + extra + ")")
             group_index = bool(selected_values["groups"]) and db.execute(
@@ -430,10 +441,15 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                         )
                         parameters.extend(values)
                 predicate = "(" + " OR ".join(selectors) + ")"
-                clauses.append("NOT coalesce(" + predicate + ",0)" if excluded else predicate)
+                predicate = "NOT coalesce(" + predicate + ",0)" if excluded else predicate
+                clauses.append('('+predicate+' OR '+edge_predicate+')')
+            elif only_explicit and not excluded:
+                clauses.append(edge_predicate)
             elif not explicit:
                 clauses.append('(? >= 10 OR f.service="main")')
                 parameters.append(zoom)
+            if selected_values['excluded_edges']:
+                clauses.append("coalesce(json_extract(f.data,'$.properties.network_edge_id'),'') NOT IN (SELECT id FROM excluded_edges)")
             parameters.append(feature_limit + 1 if feature_limit is not None else -1)
             rows = db.execute(
                 'SELECT CASE WHEN ? IS NULL OR length(f.data)<=? THEN f.data ELSE NULL END '

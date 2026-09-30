@@ -122,7 +122,9 @@ def station_type(tags, kind=""):
     )
     facility = tags.get("railway:facility", "")
     railway = tags.get('railway', kind)
-    if facility in ('maintenance', 'repair', 'workshop') or railway in ('workshop', 'works') or any(w in text for w in ('检修站','检修段','检修所','维修基地')):
+    if any(word in text for word in ('动车所','动车段','动车运用所','动车运用检修所','客整所','客车整备所','客车技术整备所')):
+        return '动车所/客整所'
+    if facility in ('maintenance', 'repair', 'workshop') or railway in ('workshop', 'works') or any(w in text for w in ('检修站','检修段','检修所','检修基地','维修基地')):
         return '检修站'
     if facility == 'locomotive_depot' or railway == 'engine_shed' or '机务段' in text:
         return '机务段'
@@ -138,9 +140,7 @@ def station_type(tags, kind=""):
         return "会让站"
     if kind == "halt" or tags.get("railway") == "halt" or "乘降所" in text:
         return "乘降所"
-    if any(word in text for word in ("动车所", "动车段", "客整所", "客车整备所")):
-        return "动车所/客整所"
-    if railway == 'depot' or facility in ('depot', 'rolling_stock_depot') or '车辆段' in text:
+    if railway == 'depot' or facility in ('depot', 'rolling_stock_depot') or any(word in text for word in ('车辆段','车辆基地')):
         return '车辆段'
     if facility in ('stabling_yard', 'stabling') or any(word in text for word in ('存车场', '停车场')):
         return '存车场'

@@ -423,6 +423,8 @@ class RailCatalog(QWidget):
         self.station_direct_groups = {}
         self.asset_visible = {"platform": set(), "switch": set()}
         self.asset_hidden = {"platform": set(), "switch": set()}
+        self.facility_tracks_visible = set()
+        self.facility_tracks_hidden = set()
         self.station_folder_paths = set()
         self.transient_station_records = {}
         self.selected_switch_owners = {}
@@ -965,8 +967,11 @@ class RailCatalog(QWidget):
         model = getattr(self, "station_model", None)
         if model is not None:
             shown, hidden, master = self._facility_visibility_state()
+            track_direct=(set(self.facility_tracks_visible)|model.track_ids_for_catalog(shown))-self.facility_tracks_hidden
+            track_hidden=(set(self.facility_tracks_hidden)|model.track_ids_for_catalog(hidden))-self.facility_tracks_visible
             model.visible_state(self.station_masters["station"], self.station_direct_visible,
-                                self.station_excluded, master, shown, hidden)
+                                self.station_excluded, master, shown, hidden,
+                                track_direct,track_hidden)
 
     def _toggle_paged_station_node(self, node, on):
         station_ids, facilities = self.station_model.ids_below(node)
@@ -984,7 +989,23 @@ class RailCatalog(QWidget):
             self.send_station_visibility()
         if facilities:
             self.toggle_group(facilities, on)
+        tracks = self.station_model.track_ids_below(node)
+        if tracks:
+            self._toggle_facility_tracks(tracks,on)
         self._sync_paged_station_visibility()
+
+    def _toggle_facility_tracks(self,tracks,on):
+        if on:
+            self.facility_tracks_visible.update(tracks)
+            self.facility_tracks_hidden.difference_update(tracks)
+        else:
+            self.facility_tracks_visible.difference_update(tracks)
+            self.facility_tracks_hidden.update(tracks)
+        self.map.call('setRailEdgeSelection',
+            sorted(key.removeprefix('object:network_edge_id:') for key in self.facility_tracks_visible),
+            sorted(key.removeprefix('object:network_edge_id:') for key in self.facility_tracks_hidden))
+        if on:
+            self.enabled_requested.emit()
 
     def _focus_paged_station_item(self, index):
         node = self.station_model._node(index)
@@ -994,7 +1015,7 @@ class RailCatalog(QWidget):
                 self.map.call("focus", *record["coordinates"], 15, record["name"])
         elif node.kind == "facility":
             self.focus_catalog_key(node.object_id)
-        elif node.kind == "segment":
+        elif node.kind in ("segment","facility_track"):
             self.segment_edit_requested.emit(self._segment_feature(node.key))
 
     def _move_paged_station_assets(self, nodes, target):
@@ -1017,6 +1038,10 @@ class RailCatalog(QWidget):
         facilities = {key for node in nodes for key in self.station_model.ids_below(node)[1]}
         if facilities:
             QTimer.singleShot(0, lambda: self._assign_station_facilities(facilities, owner))
+        tracks = {key for node in nodes for key in self.station_model.track_ids_below(node)}
+        if tracks:
+            QTimer.singleShot(0,lambda:self.save_overrides({},object_changes={key:{
+                'station_id':owner or '', 'station_assignment':'manual' if owner else 'pending'} for key in tracks}))
 
     def _assign_station_facilities(self, facilities, station_id):
         record = self.station_record(station_id) if station_id else None
@@ -1034,10 +1059,13 @@ class RailCatalog(QWidget):
         node = self.station_model._node(index)
         if not self.station_browser.selectionModel().isSelected(index):
             self.station_browser.setCurrentIndex(index)
-        if node.kind == "segment":
+        if node.kind in ("segment","facility_track"):
             menu = QMenu(self)
             menu.addAction("编辑对象信息…",
                            lambda: self.segment_edit_requested.emit(self._segment_feature(node.key)))
+            if node.kind == 'facility_track':
+                menu.addAction('显示轨道',lambda:self._toggle_paged_station_node(node.key,True))
+                menu.addAction('隐藏轨道',lambda:self._toggle_paged_station_node(node.key,False))
             try:
                 menu.exec(self.station_browser.viewport().mapToGlobal(point))
             finally:
@@ -1104,13 +1132,30 @@ class RailCatalog(QWidget):
 
     def _segment_feature(self, node_key):
         feature_id = int(node_key.removeprefix("segment:"))
-        with closing(sqlite3.connect(self.directory / "rail_lines.sqlite")) as db:
+        with closing(sqlite3.connect(self.catalog.path)) as index:
+            row = index.execute('SELECT kind FROM rail_station_nodes WHERE id=?',(node_key,)).fetchone()
+        source = 'rail.sqlite' if row and row[0]=='facility_track' else 'rail_lines.sqlite'
+        with closing(sqlite3.connect(self.directory / source)) as db:
             row = db.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
         if row is None:
             raise ValueError("轨道段已变化，请重新展开目录")
         feature = json.loads(row[0])
+        edge_id=feature.get('properties',{}).get('network_edge_id')
+        edit=getattr(self,'overrides',{}).get('object:network_edge_id:'+str(edge_id),{})
+        feature['properties'].update({field:edit[field] for field in ('display_name','line_name','track_type') if field in edit})
         feature["layer"] = "rail"
         return feature
+
+    def save_facility_track_metadata(self,key,name,semantics):
+        """A depot segment edit must not rename the old mixed national group."""
+        name=str(name).replace('（参考）','').replace('(参考)','').strip()
+        if not name:
+            raise ValueError('名称不能为空')
+        changes={'display_name':name,'line_name':name}
+        if semantics:
+            changes['rail_semantics']={**self.overrides.get(key,{}).get('rail_semantics',{}),**semantics,
+                                      'source':'workspace_override','verification_status':'user_verified'}
+        self.save_overrides({},object_changes={key:changes})
 
     def _prompt_station_assignment(self, facilities):
         value, accepted = QInputDialog.getText(self, "指定车站", "车站名称或目录编号")
@@ -1446,6 +1491,8 @@ class RailCatalog(QWidget):
             with closing(sqlite3.connect(self.catalog.path)) as db:
                 node = db.execute("SELECT parent_id FROM rail_station_nodes WHERE id=?",
                                   ("facility:" + key,)).fetchone()
+                if not node and str(key).startswith('object:network_edge_id:'):
+                    node = db.execute("SELECT parent_id FROM rail_station_nodes WHERE object_id=? AND kind='facility_track'",(key,)).fetchone()
                 if node:
                     labels = []
                     parent = node[0]
@@ -1457,7 +1504,7 @@ class RailCatalog(QWidget):
                         labels.append(row[1])
                         parent = row[0]
                     return ("车站目录", *reversed(labels))
-        return self.parents(key)
+        return () if str(key).startswith('object:network_edge_id:') else self.parents(key)
 
     def _record_parents(self, meta):
         folders = meta.get("folder_path")
@@ -1918,7 +1965,7 @@ class RailCatalog(QWidget):
         custom = self.overrides.get("station:" + record["id"], {})
         path = station_directory_path(record, custom)
         kind = custom.get('station_type') or record.get('station_type')
-        if kind in ('编组站','车辆段','检修站','机务段','存车场','动车所/客整所','货场'):
+        if not custom.get('folder_path') and kind in ('编组站','车辆段','检修站','机务段','存车场','动车所/客整所','货场'):
             path = (*path, kind)
         return ("已归档", *path) if record.get("archived") else path
 
@@ -2921,7 +2968,11 @@ class RailCatalog(QWidget):
         old_facilities = self.station_track_keys() if reclassifying else None
         self._save_local_overrides({**effective, **object_changes})
         if not effective and object_changes:
-            self._update_segment_labels(object_changes)
+            if any({'station_id','station_source','station_assignment','rail_semantics','line_kind'} & set(change)
+                   for change in object_changes.values()):
+                self.populate()
+            else:
+                self._update_segment_labels(object_changes)
             self.presentation_changed.emit()
             return
         name_only = all(set(change) <= {"display_name"} for change in effective.values())
@@ -2988,14 +3039,15 @@ class RailCatalog(QWidget):
         source = self.directory / "rail_lines.sqlite"
         if not source.exists():
             return
-        with closing(sqlite3.connect(self.catalog.path)) as index_db, closing(sqlite3.connect(source)) as rail_db:
+        with closing(sqlite3.connect(self.catalog.path)) as index_db, closing(sqlite3.connect(source)) as rail_db, closing(sqlite3.connect(self.directory/'rail.sqlite')) as geometry_db:
             for object_id in object_changes:
-                for node_id, parent_id in index_db.execute(
-                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind='segment' AND object_id=?",
+                for node_id, parent_id, kind in index_db.execute(
+                    "SELECT id,parent_id,kind FROM rail_station_nodes WHERE kind IN ('segment','facility_track') AND object_id=?",
                     (object_id,),
                 ).fetchall():
                     feature_id = int(node_id.removeprefix("segment:"))
-                    row = rail_db.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
+                    selected_db = geometry_db if kind=='facility_track' else rail_db
+                    row = selected_db.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
                     if row is None:
                         continue
                     props = json.loads(row[0]).get("properties", {})
@@ -3005,7 +3057,7 @@ class RailCatalog(QWidget):
                     name = line_name or edit.get("display_name") or (parent[0] if parent else props.get("display_name"))
                     name = str(name or object_id).replace('（参考）', '').replace('(参考)', '').strip()
                     endpoints = "→".join(str(props.get(key) or "?") for key in ("from_name", "to_name"))
-                    label = str(name or object_id) + " · " + endpoints
+                    label = str(name or object_id) + (" · " + endpoints if kind=='segment' else '')
                     index_db.execute("UPDATE rail_station_nodes SET label=?,searchable=? WHERE id=?",
                                      (label, (label + " " + object_id).casefold(), node_id))
             index_db.commit()
@@ -3656,7 +3708,7 @@ class RailCatalog(QWidget):
         self._sync_line_switches()
 
     def has_visible_lines(self):
-        return self.all_visible or bool(self.visible)
+        return self.all_visible or bool(self.visible) or bool(self.facility_tracks_visible)
 
     def is_visible(self, name):
         return (
@@ -3904,8 +3956,23 @@ class RailCatalog(QWidget):
         library = DiskRailLineLibrary(database, metadata=self.overrides)
         return line_relationships(library, line_ids)
 
-    def select_way(self, way_id, province=None, section_id=None, group_id=None):
+    def select_way(self, way_id, province=None, section_id=None, group_id=None, network_edge_id=None):
         """Reveal the exact map-selected RS section, with legacy way fallback."""
+        if network_edge_id and hasattr(self,'station_model'):
+            with closing(sqlite3.connect(self.catalog.path)) as db:
+                row = db.execute("SELECT id FROM rail_station_nodes WHERE kind='facility_track' AND object_id=?",
+                    ('object:network_edge_id:'+str(network_edge_id),)).fetchone()
+            if row:
+                index = self.station_model.reveal_id('segment',row[0].removeprefix('segment:'))
+                if index.isValid():
+                    self.tabs.setCurrentWidget(self.station_page)
+                    ancestor=index.parent()
+                    while ancestor.isValid():
+                        self.station_browser.expand(ancestor)
+                        ancestor=ancestor.parent()
+                    self.station_browser.setCurrentIndex(index)
+                    self.station_browser.scrollTo(index)
+                    return True
         if group_id in self.catalog:
             candidates = [group_id]
         elif section_id in self.catalog:

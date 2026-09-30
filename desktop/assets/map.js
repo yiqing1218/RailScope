@@ -211,6 +211,7 @@ async function updateMetroViewport(){
 }
 let railWays=null,railSections=null,railGroups=null,railExclude=false,railPointExclusions=null,railPointIncludes=null,railControlPointIncludes=null,railLineIds=null;
 let railFacilityMode='all',railFacilityGroups=[];
+let railIncludedEdges=[],railExcludedEdges=[];
 let railAssetSelection={platforms:[],hiddenPlatforms:[],switches:[],hiddenSwitches:[]};
 function railSourceVisible(kind){
   const zoom=map.getZoom();
@@ -281,6 +282,14 @@ function applyRailWays(){
     selected=filters.length===0?['==',['literal',1],0]:filters.length===1?filters[0]:['any',...filters];
     if(railExclude)selected=['!',selected];
   }
+  if(railIncludedEdges.length){
+    const direct=['in',['get','network_edge_id'],['literal',railIncludedEdges]];
+    if(selected)selected=['any',selected,direct];
+  }
+  if(railExcludedEdges.length){
+    const allowed=['!', ['in',['get','network_edge_id'],['literal',railExcludedEdges]]];
+    selected=selected?['all',selected,allowed]:allowed;
+  }
   const inactive=['in',['coalesce',['get','construction_status'],['case',['==',['get','construction'],true],'construction','operating']],['literal',['construction','planned','disused']]];
   for(const id of ['rail','rail-stripes','rail-construction'])if(map.getLayer(id)){
     const construction=id==='rail-construction'?inactive:['!',inactive];
@@ -309,6 +318,9 @@ async function updateRailViewport(){
         if((railSections||[]).length)params.set('sections',JSON.stringify(railSections));
         if((railWays||[]).length)params.set('ways',JSON.stringify(railWays));
         if((railGroups||[]).length)params.set('groups',JSON.stringify(railGroups));
+        if(railIncludedEdges.length)params.set('included_edges',JSON.stringify(railIncludedEdges));
+        if(railExcludedEdges.length)params.set('excluded_edges',JSON.stringify(railExcludedEdges));
+        params.set('only_explicit',String(railSections!==null||railWays!==null||railGroups!==null));
       }
       const key=params.toString();
       if(railSourceKeys.get(kind)===key)continue;
@@ -552,8 +564,9 @@ function refreshSelection(){
       if(!visibility[inactive?'railConstruction':'rail']&&!(visibility.railStationTracks&&!inactive))return false;
       if(railSections!==null||railWays!==null||railGroups!==null){
         const selected=(railSections||[]).includes(p.section_id)||(railWays||[]).includes(p.osm_way_id)||(railGroups||[]).includes(p.catalog_group_id);
-        if(railExclude?selected:!selected)return false;
+        if((railExclude?selected:!selected)&&!railIncludedEdges.includes(p.network_edge_id))return false;
       }
+      if(railExcludedEdges.includes(p.network_edge_id))return false;
     }
     return true;
   };
@@ -794,6 +807,7 @@ async function init() {
     setRoadRoutes(keys){roadVisibleRoutes=Array.isArray(keys)?keys:null;scheduleRoadViewport();},
     setRailSelection(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=false;applyRailWays();refreshSelection();scheduleRailViewport();},
     setRailExclusions(sectionIds,wayIds,groupIds=null){railSections=sectionIds;railWays=wayIds;railGroups=groupIds;railExclude=true;applyRailWays();refreshSelection();scheduleRailViewport();},
+    setRailEdgeSelection(included,excluded){railIncludedEdges=Array.isArray(included)?included:[];railExcludedEdges=Array.isArray(excluded)?excluded:[];applyRailWays();refreshSelection();scheduleRailViewport();},
     setRailFacilityMode(mode,groups=[]){railFacilityMode=['all','lines','facilities'].includes(mode)?mode:'all';railFacilityGroups=Array.isArray(groups)?groups:[];scheduleRailViewport();},
     setRailStyles(value){config.railStyles=value;applyRailStyles();},
     setRoadStyles(value){config.roadStyles=value;applyRoadStyles();},

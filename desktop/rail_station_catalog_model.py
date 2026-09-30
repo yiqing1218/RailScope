@@ -5,6 +5,7 @@ remain marked for review and never change infrastructure or operating IDs.
 """
 
 from contextlib import closing
+from collections import Counter
 import hashlib
 import json
 import sqlite3
@@ -14,9 +15,11 @@ from PySide6.QtCore import QModelIndex, Qt
 try:
     from .lazy_directory import SqliteDirectoryModel, _Node
     from .catalog_metadata import rail_station_records, station_directory_path
+    from .rail_facility_ownership import facility_track_owners
 except ImportError:
     from lazy_directory import SqliteDirectoryModel, _Node
     from catalog_metadata import rail_station_records, station_directory_path
+    from rail_facility_ownership import facility_track_owners
 
 
 def _key(parts):
@@ -33,12 +36,13 @@ def station_catalog_signature(directory, catalog_path, overrides):
                      if k.startswith("station:") and any(field in v for field in ("folder_path", "archived", "station_type"))}
     facility_edits = {k: {field: v[field] for field in ("station_id", "station_assignment") if field in v}
                       for k, v in overrides.items() if "station_id" in v or "station_assignment" in v}
-    segment_edits = {k: {field: v[field] for field in ("display_name", "line_name", "track_type") if field in v}
+    segment_edits = {k: {field: v[field] for field in ("display_name", "line_name", "track_type", "station_id", "station_source", "station_assignment", "rail_semantics", "line_kind") if field in v}
                      for k, v in overrides.items() if k.startswith("object:") and
-                     any(field in v for field in ("display_name", "line_name", "track_type"))}
+                     any(field in v for field in ("display_name", "line_name", "track_type", "station_id", "station_source", "station_assignment", "rail_semantics", "line_kind"))}
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
-    return hashlib.sha256(_key([8, source.stat().st_mtime_ns,
+    geometry = directory/'rail.sqlite'
+    return hashlib.sha256(_key([10, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
                                  catalog_version[0] if catalog_version else "",
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
 
@@ -53,10 +57,22 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
         if old and old[0] == signature:
             return False
         stations, _ = rail_station_records(directory, regions, limit=100000, overrides=overrides)
+        track_owners = facility_track_owners(directory,stations,overrides)
+        fully_owned = set()
+        counts = Counter(owner.get('catalog_id') for owner in track_owners.values())
+        source_geometry = directory/'rail.sqlite'
+        if counts and source_geometry.exists():
+            with closing(sqlite3.connect(source_geometry)) as geometry_db:
+                if geometry_db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_feature_groups'").fetchone():
+                    for group,count in counts.items():
+                        if group:
+                            total = geometry_db.execute('SELECT count(*) FROM rail_feature_groups WHERE group_id=?',(group,)).fetchone()[0]
+                            if total and count==total:
+                                fully_owned.add(group)
         db.execute("BEGIN")
         db.execute("CREATE TABLE IF NOT EXISTS rail_station_nodes (id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,label TEXT NOT NULL,kind TEXT NOT NULL,object_id TEXT,path TEXT NOT NULL,child_count INTEGER NOT NULL DEFAULT 0,total INTEGER NOT NULL DEFAULT 0,archived INTEGER NOT NULL DEFAULT 0,searchable TEXT NOT NULL DEFAULT '',station_total INTEGER NOT NULL DEFAULT 0,facility_total INTEGER NOT NULL DEFAULT 0)")
         existing_columns = {row[1] for row in db.execute("PRAGMA table_info(rail_station_nodes)")}
-        for column in ("station_total", "facility_total"):
+        for column in ("station_total", "facility_total", "track_total"):
             if column not in existing_columns:
                 db.execute(f"ALTER TABLE rail_station_nodes ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
         db.execute("CREATE INDEX IF NOT EXISTS rail_station_parent ON rail_station_nodes(parent_id,kind,label,id)")
@@ -64,11 +80,17 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
         db.execute("CREATE TABLE IF NOT EXISTS rail_station_matches (id TEXT PRIMARY KEY)")
         db.execute("DELETE FROM rail_station_nodes")
         db.execute("DELETE FROM rail_station_matches")
+        db.execute('CREATE TABLE IF NOT EXISTS rail_facility_track_owners(object_id TEXT PRIMARY KEY,station_id TEXT,data TEXT,catalog_id TEXT)')
+        if 'catalog_id' not in {row[1] for row in db.execute('PRAGMA table_info(rail_facility_track_owners)')}:
+            db.execute('ALTER TABLE rail_facility_track_owners ADD COLUMN catalog_id TEXT')
+        db.execute('CREATE INDEX IF NOT EXISTS rail_facility_track_catalog ON rail_facility_track_owners(catalog_id)')
+        db.execute('DELETE FROM rail_facility_track_owners')
         rows = []
         folders = set()
         totals = {}
         station_totals = {}
         facility_totals = {}
+        track_totals = {}
         root = ["stations"]
 
         def add_folder(parent, ident, label, path):
@@ -116,6 +138,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             "JOIN catalog c ON c.id=m.catalog_id "
             "WHERE d.view='facilities' AND d.kind='object' ORDER BY m.catalog_id"
         ):
+            if catalog_id in fully_owned:
+                continue  # All its real members are now under their exact owners.
             record = json.loads(raw)
             edited = overrides.get(catalog_id, {})
             owner_id = edited.get("station_id", record.get("station_id"))
@@ -177,6 +201,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                     if not edge_id or (group_id, edge_id) in seen_segments:
                         continue
                     seen_segments.add((group_id, edge_id))
+                    if edge_id in track_owners:
+                        continue  # Its exact source segment belongs to the real depot below.
                     object_key = "object:network_edge_id:" + str(edge_id) if props.get("network_edge_id") else "object:section_id:" + str(edge_id)
                     custom = overrides.get(object_key, {})
                     line_name = custom.get("line_name") if "line_name" in custom else props.get("line_name")
@@ -188,6 +214,30 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                                  name + " · " + endpoints, "segment", object_key,
                                  _key(parent_path + [str(feature_id)]), int(archived),
                                  (str(name) + " " + endpoints + " " + str(edge_id)).casefold()))
+        for edge_id,owner in track_owners.items():
+            if owner['station_id'] in station_by_id:
+                station_node,station_path,station_name = station_by_id[owner['station_id']]
+            else:
+                station_node,station_path,station_name = pending,root+['待核对'],'待核对'
+            base_path = station_path+['站内轨道']
+            parent = add_folder(station_node,'facility-folder:'+_key(base_path),'站内轨道',base_path)
+            props = owner['properties']
+            custom = overrides.get(owner['object_key'],{})
+            label = custom.get('line_name') or custom.get('display_name') or props.get('line_name') or props.get('display_name') or '未命名轨道'
+            label = str(label).replace('（参考）','').replace('(参考)','').strip()
+            category = custom.get('track_type') or props.get('track_type') or '用途待核实'
+            path = base_path+[category]
+            parent = add_folder(parent,'facility-folder:'+_key(path),category,path)
+            ident = 'segment:'+str(owner['feature_id'])
+            rows.append((ident,parent,label,'facility_track',owner['object_key'],_key(path+[str(edge_id)]),0,
+                         (station_name+' '+label+' '+category+' '+str(edge_id)).casefold()))
+            db.execute('INSERT INTO rail_facility_track_owners(object_id,station_id,data,catalog_id) VALUES(?,?,?,?)',
+                (owner['object_key'],owner['station_id'],json.dumps({k:v for k,v in owner.items() if k!='properties'},ensure_ascii=False),owner.get('catalog_id')))
+            ancestors = [station_node,'facility-folder:'+_key(base_path),parent]
+            ancestors += ['folder:'+_key(station_path[:depth]) for depth in range(2,len(station_path))]
+            for ancestor in ancestors:
+                totals[ancestor] = totals.get(ancestor,0)+1
+                track_totals[ancestor] = track_totals.get(ancestor,0)+1
         db.executemany("INSERT INTO rail_station_nodes(id,parent_id,label,kind,object_id,path,archived,searchable) VALUES(?,?,?,?,?,?,?,?)", rows)
         db.executemany("UPDATE rail_station_nodes SET total=? WHERE id=?",
                        ((count, key) for key, count in totals.items()))
@@ -195,6 +245,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                        ((count, key) for key, count in station_totals.items()))
         db.executemany("UPDATE rail_station_nodes SET facility_total=? WHERE id=?",
                        ((count, key) for key, count in facility_totals.items()))
+        db.executemany('UPDATE rail_station_nodes SET track_total=? WHERE id=?',((count,key) for key,count in track_totals.items()))
         db.execute("UPDATE rail_station_nodes SET child_count=(SELECT count(*) FROM rail_station_nodes c WHERE c.parent_id=rail_station_nodes.id)")
         db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)", (signature,))
         db.commit()
@@ -226,18 +277,21 @@ class StationCatalogModel(SqliteDirectoryModel):
         self.facility_master = False
         self.facility_direct = set()
         self.facility_excluded = set()
+        self.track_direct = set()
+        self.track_excluded = set()
         self._folder_totals = {}
         self._direct_counts = {}
         self._excluded_counts = {}
 
-    def _membership_counts(self, station_ids, facility_ids):
+    def _membership_counts(self, station_ids, facility_ids, track_ids=()):
         keys = ["station:" + str(value) for value in station_ids]
         keys.extend("facility:" + str(value) for value in facility_ids)
-        if not keys:
+        if not keys and not track_ids:
             return {}
         with self._connect() as db:
             db.execute("CREATE TEMP TABLE selected_station_nodes(id TEXT PRIMARY KEY)")
             db.executemany("INSERT OR IGNORE INTO selected_station_nodes VALUES(?)", ((key,) for key in keys))
+            db.executemany("INSERT OR IGNORE INTO selected_station_nodes SELECT id FROM rail_station_nodes WHERE kind='facility_track' AND object_id=?",((key,) for key in track_ids))
             rows = db.execute(
                 "WITH RECURSIVE ancestors(id,parent_id,kind) AS ("
                 "SELECT n.id,n.parent_id,n.kind FROM rail_station_nodes n "
@@ -252,8 +306,8 @@ class StationCatalogModel(SqliteDirectoryModel):
         if key not in self._folder_totals:
             with self._connect() as db:
                 self._folder_totals[key] = db.execute(
-                    "SELECT station_total,facility_total FROM rail_station_nodes WHERE id=?", (key,)
-                ).fetchone() or (0, 0)
+                    "SELECT station_total,facility_total,track_total FROM rail_station_nodes WHERE id=?", (key,)
+                ).fetchone() or (0, 0, 0)
         return self._folder_totals[key]
 
     def _search_clause(self):
@@ -274,7 +328,7 @@ class StationCatalogModel(SqliteDirectoryModel):
                 db.execute("DELETE FROM rail_station_matches")
                 db.execute(
                     "WITH RECURSIVE matches(id,parent_id) AS ("
-                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility','segment') "
+                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility','segment','facility_track') "
                     "AND searchable LIKE ? ESCAPE '\\' "
                     "UNION ALL SELECT parent.id,parent.parent_id FROM rail_station_nodes parent "
                     "JOIN matches child ON parent.id=child.parent_id WHERE child.parent_id<>''"
@@ -298,15 +352,20 @@ class StationCatalogModel(SqliteDirectoryModel):
                 selected = (node.object_id not in self.facility_excluded if self.facility_master
                             else node.object_id in self.facility_direct)
                 return Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked
+            if node.kind == 'facility_track':
+                selected = node.object_id not in self.track_excluded if self.facility_master else node.object_id in self.track_direct
+                return Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked
             if node.kind == "segment":
                 return None
-            station_total, facility_total = self._totals(node.key)
+            station_total, facility_total, track_total = self._totals(node.key)
             selected_stations = (station_total - self._excluded_counts.get((node.key, "station"), 0)
                                  if self.station_master else self._direct_counts.get((node.key, "station"), 0))
             selected_facilities = (facility_total - self._excluded_counts.get((node.key, "facility"), 0)
                                    if self.facility_master else self._direct_counts.get((node.key, "facility"), 0))
-            selected = selected_stations + selected_facilities
-            total = station_total + facility_total
+            selected_tracks = (track_total-self._excluded_counts.get((node.key,'facility_track'),0)
+                               if self.facility_master else self._direct_counts.get((node.key,'facility_track'),0))
+            selected = selected_stations + selected_facilities + selected_tracks
+            total = station_total + facility_total + track_total
             return (Qt.CheckState.Checked if total and selected >= total else
                     Qt.CheckState.PartiallyChecked if selected else Qt.CheckState.Unchecked)
         if index.isValid() and role == Qt.ItemDataRole.DisplayRole:
@@ -321,22 +380,24 @@ class StationCatalogModel(SqliteDirectoryModel):
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         if not self._node(index).archived and self._node(index).kind != "segment":
             flags |= Qt.ItemFlag.ItemIsUserCheckable
-        if self._node(index).kind == "facility":
+        if self._node(index).kind in ("facility","facility_track"):
             flags |= Qt.ItemFlag.ItemIsDragEnabled
         if self._node(index).kind in ("station", "folder", "facility"):
             flags |= Qt.ItemFlag.ItemIsDropEnabled
         return flags
 
     def visible_state(self, station_master, station_direct, station_excluded,
-                      facility_master, facility_direct, facility_excluded):
+                      facility_master, facility_direct, facility_excluded, track_direct=(), track_excluded=()):
         self.station_master = station_master
         self.station_direct = set(station_direct)
         self.station_excluded = set(station_excluded)
         self.facility_master = facility_master
         self.facility_direct = set(facility_direct)
         self.facility_excluded = set(facility_excluded)
-        self._direct_counts = self._membership_counts(self.station_direct, self.facility_direct)
-        self._excluded_counts = self._membership_counts(self.station_excluded, self.facility_excluded)
+        self.track_direct = set(track_direct)
+        self.track_excluded = set(track_excluded)
+        self._direct_counts = self._membership_counts(self.station_direct, self.facility_direct,self.track_direct)
+        self._excluded_counts = self._membership_counts(self.station_excluded, self.facility_excluded,self.track_excluded)
         self._emit_loaded(self.root)
 
     def reset_from_disk(self):
@@ -354,6 +415,24 @@ class StationCatalogModel(SqliteDirectoryModel):
                               (path, path, path, path)).fetchall()
         return ({ident for kind, ident in rows if kind == "station"},
                 {ident for kind, ident in rows if kind == "facility"})
+
+    def track_ids_below(self,key):
+        with self._connect() as db:
+            row = db.execute('SELECT path FROM rail_station_nodes WHERE id=?',(key,)).fetchone()
+            if not row:
+                return set()
+            path=row[0]
+            return {ident for (ident,) in db.execute("SELECT object_id FROM rail_station_nodes WHERE kind='facility_track' "
+                "AND (path=? OR substr(path,1,length(?))=substr(?,1,length(?)-1)||',')",(path,path,path,path))}
+
+    def track_ids_for_catalog(self,groups):
+        if not groups:
+            return set()
+        with self._connect() as db:
+            db.execute('CREATE TEMP TABLE selected_track_groups(id TEXT PRIMARY KEY)')
+            db.executemany('INSERT OR IGNORE INTO selected_track_groups VALUES(?)',((key,) for key in groups))
+            return {key for (key,) in db.execute('SELECT o.object_id FROM selected_track_groups g '
+                'JOIN rail_facility_track_owners o ON o.catalog_id=g.id')}
 
     def reveal_id(self, kind, object_id):
         key = kind + ":" + str(object_id)

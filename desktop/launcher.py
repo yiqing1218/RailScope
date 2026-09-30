@@ -365,7 +365,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
                 query = self.request_query()
                 selection = {}
-                for query_name in ("sections", "ways", "groups", "states", "facility_groups"):
+                for query_name in ("sections", "ways", "groups", "states", "facility_groups", "included_edges", "excluded_edges"):
                     if query_name in query:
                         value = json.loads(query[query_name][0])
                         if not isinstance(value, list):
@@ -373,6 +373,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                         selection[query_name] = value
                 selection["exclude"] = query.get("exclude", ["false"])[0] == "true"
                 selection["facility"] = query.get("facility", ["all"])[0]
+                selection['only_explicit'] = query.get('only_explicit',['false'])[0]=='true'
                 result = viewport(
                     active_rail_directory(ROOT),
                     query["kind"][0],
@@ -3272,13 +3273,15 @@ class Desk(QMainWindow):
                 props["osm_way_id"],
                 section_id=props.get("section_id"),
                 group_id=props.get("catalog_group_id"),
+                network_edge_id=props.get('network_edge_id'),
             )
-        elif layer in ("rail-points", "rail-detail-points") and props.get(
-            "osm_node_id"
-        ) is not None:
+        elif layer in ("rail-points", "rail-detail-points") and (props.get('osm_node_id') is not None or props.get('station_source_id')):
             if props.get("kind") != "switch":
                 self.open_sidebar(0)
-                self.rail_catalog_widget.select_station(props["osm_node_id"])
+                if props.get('station_source_id'):
+                    self.rail_catalog_widget.select_station_record(props['station_source_id'])
+                else:
+                    self.rail_catalog_widget.select_station(props["osm_node_id"])
         elif layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
             self.open_sidebar(0)
             self.rail_catalog_widget.select_station_record(
@@ -4066,7 +4069,11 @@ class Desk(QMainWindow):
                     folder.setText(current[2])
         elif rail_group in self.rail_catalog_widget.catalog:
             facility = rail_group in self.rail_catalog_widget.station_track_keys()
-            current = self.rail_catalog_widget.effective_directory_path(rail_group)
+            selected_key = object_key(props) if props.get('network_edge_id') else None
+            owned_path = self.rail_catalog_widget.effective_directory_path(selected_key) if selected_key else ()
+            owned = bool(owned_path and owned_path[0]=='车站目录')
+            facility = facility or owned
+            current = owned_path if owned else self.rail_catalog_widget.effective_directory_path(rail_group)
             province.setText(current[0] if current else "全国铁路线")
             city.setText(current[1] if len(current) > 1 else "")
             folder.setText(" / ".join(current[2:]) if facility else
@@ -4077,6 +4084,9 @@ class Desk(QMainWindow):
             from railscope.rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
             from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
             current_facts = self.rail_catalog_widget.meta(rail_group)
+            if owned:
+                current_facts={**current_facts,**{key:props[key] for key in ('railway_class','line_role','track_role') if key in props},
+                               **self.rail_catalog_widget.overrides.get(selected_key,{}).get('rail_semantics',{})}
             rail_semantic_controls = {}
             for key, title, labels, allowed in (
                 ('railway_class', '铁路类别', CLASS_LABELS, RAILWAY_CLASSES),
@@ -4182,6 +4192,11 @@ class Desk(QMainWindow):
                     )
                     self.metro_station_model.refresh_affected(affected)
                     self._refresh_metro_station_paths()
+                elif rail_group in self.rail_catalog_widget.catalog and owned:
+                    display_name=name.text().strip()
+                    semantics={key:control.currentData() for key,control in rail_semantic_controls.items()
+                               if control.currentData()!=current_facts.get(key,'unknown')}
+                    self.rail_catalog_widget.save_facility_track_metadata(selected_key,display_name,semantics)
                 elif rail_group in self.rail_catalog_widget.catalog:
                     path = [value for value in (province.text(), city.text(), folder.text()) if value.strip()]
                     display_name = name.text().strip()

@@ -22,7 +22,7 @@ except ImportError:
 def display_name(name):
     value = str(name or '').strip()
     if value and any('\u4e00' <= c <= '\u9fff' for c in value) and not value.endswith(
-            ('站', '线路所', '信号所', '乘降所', '车辆段', '机务段', '动车段', '动车所', '客整所', '整备所', '检修所', '检修段', '场', '）', ')')):
+            ('站', '线路所', '信号所', '乘降所', '车辆段', '机务段', '动车段', '动车所', '运用所', '客整所', '整备所', '检修所', '检修段', '基地', '车间', '场', '）', ')')):
         value += '站'
     return value
 
@@ -140,8 +140,16 @@ def nearby_tracks(source, db, coordinate, radius=800, line_ids=None):
 def read_directory(db):
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone():
         return {}
-    return {key: {'name': name, 'feature': json.loads(raw)}
-            for key, name, raw in db.execute('SELECT source_id,name,data FROM station_directory')}
+    result={}
+    for key,name,raw in db.execute('SELECT source_id,name,data FROM station_directory'):
+        feature=json.loads(raw)
+        original=feature.get('properties',{}).get('name') or ''
+        # Older display adapters appended 站 to depot bases/workshops. Repair
+        # only that generated suffix, retaining all real names and overrides.
+        if original and name==original+'站' and display_name(original)==original:
+            name=original
+        result[key]={'name':name,'feature':feature}
+    return result
 
 
 @lru_cache(maxsize=4)
