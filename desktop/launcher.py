@@ -1504,37 +1504,44 @@ class Desk(QMainWindow):
             QMessageBox.warning(self, '站场股道无法载入', str(error))
 
     def export_station_schematic(self):
-        from station_schematic import station_svg, ensure_export_font
+        from station_schematic import station_svg
+        from station_diagram_ui import StationDiagramDialog
+        from station_diagram_render import write_diagram
         try:
             selected = self.selected_station_tracks()
             if selected is None: return
             repo, rows, context = selected
             name = next(iter(repo.stations.values())).name
-            path, kind = QFileDialog.getSaveFileName(self, '导出站场示意图', str(ROOT / 'data/logs' / (name + '-站场.svg')), '矢量 SVG (*.svg);;高清 PNG (*.png);;矢量 PDF (*.pdf)')
-            if not path: return
-            from station_tracks import schematic_station_info
+            from station_tracks import schematic_station_info, load_station_tracks
             info = schematic_station_info(self.rail_catalog_widget.directory, repo, rows,
                                           self.rail_catalog_widget.overrides)
-            svg = station_svg(repo, context, station_info=info).encode('utf-8')
-            if Path(path).suffix.lower() == '.svg':
-                Path(path).write_bytes(svg)
-            else:
-                from PySide6.QtSvg import QSvgRenderer
-                from PySide6.QtGui import QImage, QPdfWriter
-                from PySide6.QtCore import QRectF
-                ensure_export_font()
-                renderer = QSvgRenderer(svg); size = renderer.defaultSize()
-                if Path(path).suffix.lower() == '.pdf':
-                    from PySide6.QtGui import QPageSize
-                    from PySide6.QtCore import QSizeF
-                    image = QPdfWriter(path); image.setResolution(300)
-                    image.setPageSize(QPageSize(QSizeF(size.width()/6, size.height()/6), QPageSize.Unit.Millimeter))
-                    painter = QPainter(image); renderer.render(painter, QRectF(0, 0, image.width(), image.height())); painter.end()
-                else:
-                    image = QImage(size*3, QImage.Format.Format_ARGB32); image.fill(QColor('white'))
-                    image.setDotsPerMeterX(11811); image.setDotsPerMeterY(11811)
-                    painter = QPainter(image); renderer.render(painter); painter.end()
-                    if not image.save(path): raise ValueError('示意图无法写入')
+            source = next((row.get('station_source') for row in rows.values() if row.get('station_source')), None)
+            def reload_diagram(depth):
+                if not source:
+                    return repo, context, info
+                loaded, loaded_rows, loaded_context = load_station_tracks(self.rail_catalog_widget.directory,
+                    self.rail_operations.workspace_identity_path,
+                    {'name': name, 'station_source_id': source}, self.rail_catalog_widget.overrides,
+                    approach_depth=depth)
+                loaded_info = schematic_station_info(self.rail_catalog_widget.directory, loaded, loaded_rows,
+                                                     self.rail_catalog_widget.overrides)
+                return loaded, loaded_context, loaded_info
+            dialog = StationDiagramDialog(repo, context, info, self,
+                ROOT / 'data/user_settings/station_diagram.json', reload_callback=reload_diagram)
+            if dialog.exec() != QDialog.DialogCode.Accepted: return
+            options = dialog.options()
+            repo, context, info = dialog.repo, dialog.context, dialog.info
+            svg = station_svg(repo, context, station_info=info, options=options)
+            format_name = {'svg': '矢量 SVG', 'png': '高清 PNG', 'pdf': '矢量 PDF'}[options.output_format]
+            path, _ = QFileDialog.getSaveFileName(self, '导出站场示意图',
+                str(ROOT / 'data/logs' / (name + '-站场.' + options.output_format)),
+                format_name + ' (*.' + options.output_format + ')')
+            if not path: return
+            if Path(path).suffix.lower() != '.' + options.output_format:
+                path += '.' + options.output_format
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            write_diagram(path, svg, options)
+            dialog.save_settings(options)
             self.load_status.setText('  站场示意图已保存：' + path)
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             QMessageBox.warning(self, '站场示意图未导出', str(error))

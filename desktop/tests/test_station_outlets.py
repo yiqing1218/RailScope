@@ -52,12 +52,12 @@ def test_three_exit_directions_keep_actual_track_counts_and_matching_colors(coun
     assert len({e.attrib['style'] for e in labels})==3
     paths={e.attrib['data-edge-id']:e for e in svg.iter() if 'data-edge-id' in e.attrib}
     for label in labels:
-        assert label.attrib['data-end']=='left' and '往甲城' in label.text
+        assert label.attrib['data-end']=='left' and '往甲城' in ''.join(label.itertext())
         color=label.attrib['style'].removeprefix('fill:')
         for edge in label.attrib['data-port-edges'].split():
             assert paths[edge].attrib['stroke']==color
         assert float(label.attrib['x'])<float(label.attrib['data-port-x'])
-    assert {path.attrib['stroke-width'] for path in paths.values()}=={'2.2'}
+    assert {path.attrib['stroke-width'] for path in paths.values()}=={'5.50'}
     assert all('stroke-dasharray' not in path.attrib for path in paths.values())
     assert repo.edges==source
 
@@ -69,7 +69,8 @@ def test_ports_do_not_label_auxiliary_lines_or_invent_connections():
     text=station_svg(repo,context)
     svg=ET.fromstring(text)
     labels=[e for e in svg.iter() if 'data-line-id' in e.attrib]
-    assert len(labels)==1 and '甲干线' in labels[0].text
+    assert len(labels)==1  # Only clean main-line outlets carry labels.
+    assert any('甲干线' in ''.join(label.itertext()) for label in labels)
     assert all('data-edge-id' in e.attrib for e in svg.iter() if e.tag.endswith('path'))
     assert 'data-platform-id' in text and '走行线' not in text
 

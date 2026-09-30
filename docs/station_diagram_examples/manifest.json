@@ -1,0 +1,572 @@
+{
+  "dataset": "D:\\RailScope\\data\\processed\\rail\\datasets\\769423dcd9e24eb78350498de462357a",
+  "source": "local OSM-derived shared infrastructure",
+  "verification_status": "automatic_reference",
+  "examples": [
+    {
+      "station_name": "济南西",
+      "station_id": "ST-eb233d439e264cbdaec9ed70717a5c83",
+      "station_source": "node/7733885005",
+      "loaded_edges": 249,
+      "drawn_edges": 218,
+      "platforms": 8,
+      "axis_source": "source_platform_axis",
+      "warnings": [],
+      "options": {
+        "auto_rotate": true,
+        "orientation": "landscape",
+        "show_north": true,
+        "station_compression": 4.0,
+        "outside_compression": 8.0,
+        "remove_common_bend": false,
+        "include_construction": false,
+        "platform_width": 1.4,
+        "margin": 50,
+        "topology_depth": 8,
+        "show_main": true,
+        "show_station": true,
+        "show_connectors": true,
+        "show_outer_main": true,
+        "show_outer_connectors": true,
+        "show_platforms": true,
+        "show_legend": true,
+        "show_title": true,
+        "show_endpoints": true,
+        "main_width": 5.5,
+        "station_width": 3.0,
+        "connector_width": 2.0,
+        "title_size": 48,
+        "label_size": 30,
+        "platform_fill": "gray",
+        "color_scheme": "systems",
+        "color_overrides": {},
+        "line_overrides": {},
+        "port_overrides": {},
+        "align_main_outlets": true,
+        "width": 2400,
+        "aspect_ratio": 1.85,
+        "output_format": "svg",
+        "dpi": 300
+      },
+      "variants": {
+        "common-bend-off": {
+          "drawn_edges": 218,
+          "visible_source_interval": [
+            -3904.442948933665,
+            3885.67596983799
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "common-bend-on": {
+          "drawn_edges": 218,
+          "visible_source_interval": [
+            -3904.442948933665,
+            3885.67596983799
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outlet-extension-off": {
+          "drawn_edges": 218,
+          "visible_source_interval": [
+            -3904.442948933665,
+            3885.67596983799
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outside-12": {
+          "drawn_edges": 218,
+          "visible_source_interval": [
+            -5518.354847917836,
+            5499.587868822162
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "construction": {
+          "drawn_edges": 218,
+          "visible_source_interval": [
+            -3904.442948933665,
+            3885.67596983799
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        }
+      },
+      "visible_source_interval": [
+        -3904.442948933665,
+        3885.67596983799
+      ],
+      "checks": {
+        "shared_junctions": true,
+        "source_unchanged": true,
+        "variant_canvas_fixed": true,
+        "outside_compression_expands_source_interval": true
+      }
+    },
+    {
+      "station_name": "郑州东",
+      "station_id": "ST-ad2f90ecfd914e20aebb4eae6b10f248",
+      "station_source": "node/6654827885",
+      "loaded_edges": 543,
+      "drawn_edges": 466,
+      "platforms": 16,
+      "axis_source": "source_platform_axis",
+      "warnings": [],
+      "options": {
+        "auto_rotate": true,
+        "orientation": "landscape",
+        "show_north": true,
+        "station_compression": 4.0,
+        "outside_compression": 8.0,
+        "remove_common_bend": false,
+        "include_construction": false,
+        "platform_width": 1.4,
+        "margin": 50,
+        "topology_depth": 8,
+        "show_main": true,
+        "show_station": true,
+        "show_connectors": true,
+        "show_outer_main": true,
+        "show_outer_connectors": true,
+        "show_platforms": true,
+        "show_legend": true,
+        "show_title": true,
+        "show_endpoints": true,
+        "main_width": 5.5,
+        "station_width": 3.0,
+        "connector_width": 2.0,
+        "title_size": 48,
+        "label_size": 30,
+        "platform_fill": "gray",
+        "color_scheme": "systems",
+        "color_overrides": {},
+        "line_overrides": {},
+        "port_overrides": {},
+        "align_main_outlets": true,
+        "width": 2400,
+        "aspect_ratio": 1.85,
+        "output_format": "svg",
+        "dpi": 300
+      },
+      "variants": {
+        "common-bend-off": {
+          "drawn_edges": 466,
+          "visible_source_interval": [
+            -3531.0454365513133,
+            3535.076037427831
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "common-bend-on": {
+          "drawn_edges": 466,
+          "visible_source_interval": [
+            -3531.0454365513133,
+            3535.076037427831
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outlet-extension-off": {
+          "drawn_edges": 466,
+          "visible_source_interval": [
+            -3531.0454365513133,
+            3535.076037427831
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outside-12": {
+          "drawn_edges": 469,
+          "visible_source_interval": [
+            -4994.963721424006,
+            4998.994322300523
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "construction": {
+          "drawn_edges": 466,
+          "visible_source_interval": [
+            -3531.0454365513133,
+            3535.076037427831
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        }
+      },
+      "visible_source_interval": [
+        -3531.0454365513133,
+        3535.076037427831
+      ],
+      "checks": {
+        "shared_junctions": true,
+        "source_unchanged": true,
+        "variant_canvas_fixed": true,
+        "outside_compression_expands_source_interval": true
+      }
+    },
+    {
+      "station_name": "商丘",
+      "station_id": "ST-8dc8b37e725c42039ba98ec4c4ca77df",
+      "station_source": "node/1775221285",
+      "loaded_edges": 295,
+      "drawn_edges": 206,
+      "platforms": 9,
+      "axis_source": "source_platform_axis",
+      "warnings": [],
+      "options": {
+        "auto_rotate": true,
+        "orientation": "landscape",
+        "show_north": true,
+        "station_compression": 4.0,
+        "outside_compression": 8.0,
+        "remove_common_bend": false,
+        "include_construction": false,
+        "platform_width": 1.4,
+        "margin": 50,
+        "topology_depth": 8,
+        "show_main": true,
+        "show_station": true,
+        "show_connectors": true,
+        "show_outer_main": true,
+        "show_outer_connectors": true,
+        "show_platforms": true,
+        "show_legend": true,
+        "show_title": true,
+        "show_endpoints": true,
+        "main_width": 5.5,
+        "station_width": 3.0,
+        "connector_width": 2.0,
+        "title_size": 48,
+        "label_size": 30,
+        "platform_fill": "gray",
+        "color_scheme": "systems",
+        "color_overrides": {},
+        "line_overrides": {},
+        "port_overrides": {},
+        "align_main_outlets": true,
+        "width": 2400,
+        "aspect_ratio": 1.85,
+        "output_format": "svg",
+        "dpi": 300
+      },
+      "variants": {
+        "common-bend-off": {
+          "drawn_edges": 206,
+          "visible_source_interval": [
+            -4453.382408975025,
+            4511.865658530864
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "common-bend-on": {
+          "drawn_edges": 206,
+          "visible_source_interval": [
+            -4453.382408975025,
+            4511.865658530864
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outlet-extension-off": {
+          "drawn_edges": 206,
+          "visible_source_interval": [
+            -4453.382408975025,
+            4511.865658530864
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outside-12": {
+          "drawn_edges": 220,
+          "visible_source_interval": [
+            -6310.750786064459,
+            6369.234035620297
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "construction": {
+          "drawn_edges": 206,
+          "visible_source_interval": [
+            -4453.382408975025,
+            4511.865658530864
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        }
+      },
+      "visible_source_interval": [
+        -4453.382408975025,
+        4511.865658530864
+      ],
+      "checks": {
+        "shared_junctions": true,
+        "source_unchanged": true,
+        "variant_canvas_fixed": true,
+        "outside_compression_expands_source_interval": true
+      }
+    },
+    {
+      "station_name": "南京南",
+      "station_id": "ST-9c692511248e43b6a0297d22ffb38040",
+      "station_source": "node/2483530943",
+      "loaded_edges": 606,
+      "drawn_edges": 279,
+      "platforms": 1,
+      "axis_source": "source_platform_axis",
+      "warnings": [],
+      "options": {
+        "auto_rotate": true,
+        "orientation": "landscape",
+        "show_north": true,
+        "station_compression": 4.0,
+        "outside_compression": 8.0,
+        "remove_common_bend": false,
+        "include_construction": false,
+        "platform_width": 1.4,
+        "margin": 50,
+        "topology_depth": 8,
+        "show_main": true,
+        "show_station": true,
+        "show_connectors": true,
+        "show_outer_main": true,
+        "show_outer_connectors": true,
+        "show_platforms": true,
+        "show_legend": true,
+        "show_title": true,
+        "show_endpoints": true,
+        "main_width": 5.5,
+        "station_width": 3.0,
+        "connector_width": 2.0,
+        "title_size": 48,
+        "label_size": 30,
+        "platform_fill": "gray",
+        "color_scheme": "systems",
+        "color_overrides": {},
+        "line_overrides": {},
+        "port_overrides": {},
+        "align_main_outlets": true,
+        "width": 2400,
+        "aspect_ratio": 1.85,
+        "output_format": "svg",
+        "dpi": 300
+      },
+      "variants": {
+        "common-bend-off": {
+          "drawn_edges": 279,
+          "visible_source_interval": [
+            -3570.625220071958,
+            3557.39331894304
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "common-bend-on": {
+          "drawn_edges": 279,
+          "visible_source_interval": [
+            -3570.625220071958,
+            3557.39331894304
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outlet-extension-off": {
+          "drawn_edges": 279,
+          "visible_source_interval": [
+            -3570.625220071958,
+            3557.39331894304
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outside-12": {
+          "drawn_edges": 387,
+          "visible_source_interval": [
+            -5047.366981815183,
+            5034.135080686265
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "construction": {
+          "drawn_edges": 279,
+          "visible_source_interval": [
+            -3570.625220071958,
+            3557.39331894304
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        }
+      },
+      "visible_source_interval": [
+        -3570.625220071958,
+        3557.39331894304
+      ],
+      "checks": {
+        "shared_junctions": true,
+        "source_unchanged": true,
+        "variant_canvas_fixed": true,
+        "outside_compression_expands_source_interval": true
+      }
+    },
+    {
+      "station_name": "重庆东",
+      "station_id": "ST-170c02a4b14e4f36bb2a74c96fbc4fdb",
+      "station_source": "node/10561477550",
+      "loaded_edges": 328,
+      "drawn_edges": 237,
+      "platforms": 15,
+      "axis_source": "source_platform_axis",
+      "warnings": [],
+      "options": {
+        "auto_rotate": true,
+        "orientation": "landscape",
+        "show_north": true,
+        "station_compression": 4.0,
+        "outside_compression": 8.0,
+        "remove_common_bend": false,
+        "include_construction": false,
+        "platform_width": 1.4,
+        "margin": 50,
+        "topology_depth": 8,
+        "show_main": true,
+        "show_station": true,
+        "show_connectors": true,
+        "show_outer_main": true,
+        "show_outer_connectors": true,
+        "show_platforms": true,
+        "show_legend": true,
+        "show_title": true,
+        "show_endpoints": true,
+        "main_width": 5.5,
+        "station_width": 3.0,
+        "connector_width": 2.0,
+        "title_size": 48,
+        "label_size": 30,
+        "platform_fill": "gray",
+        "color_scheme": "systems",
+        "color_overrides": {},
+        "line_overrides": {},
+        "port_overrides": {},
+        "align_main_outlets": true,
+        "width": 2400,
+        "aspect_ratio": 1.85,
+        "output_format": "svg",
+        "dpi": 300
+      },
+      "variants": {
+        "common-bend-off": {
+          "drawn_edges": 237,
+          "visible_source_interval": [
+            -4223.429490591473,
+            4213.376571327387
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "common-bend-on": {
+          "drawn_edges": 237,
+          "visible_source_interval": [
+            -4223.429490591473,
+            4213.376571327387
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outlet-extension-off": {
+          "drawn_edges": 237,
+          "visible_source_interval": [
+            -4223.429490591473,
+            4213.376571327387
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "outside-12": {
+          "drawn_edges": 237,
+          "visible_source_interval": [
+            -5971.318301369685,
+            5961.265382105599
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        },
+        "construction": {
+          "drawn_edges": 245,
+          "visible_source_interval": [
+            -4223.429490591473,
+            4213.376571327387
+          ],
+          "canvas": [
+            2400,
+            1297
+          ]
+        }
+      },
+      "visible_source_interval": [
+        -4223.429490591473,
+        4213.376571327387
+      ],
+      "checks": {
+        "shared_junctions": true,
+        "source_unchanged": true,
+        "variant_canvas_fixed": true,
+        "outside_compression_expands_source_interval": true
+      }
+    }
+  ]
+}

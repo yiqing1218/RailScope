@@ -208,8 +208,8 @@ def test_station_svg_shows_line_names_and_destinations_without_track_numbers():
     repo.station_tracks={'TRK-a':StationTrack('TRK-a','ST-a','甲站 · 12道','12',length_m=1000,edge_refs=refs)}
     text=station_svg(repo,station_info={'summary':'客运站 · 站台：2 · 股道：6',
         'line_destinations':{'IL-a':{'left':'乙站','right':'丙站'}}})
-    assert '甲乙线 · 往乙站' in text and '甲乙线 · 往丙站' in text
-    assert '客运站 · 站台：2 · 股道：6' in text
+    assert '甲乙线' in text and '往乙站' in text and '往丙站' in text
+    assert '客运站 · 站台：2 · 股道：6' not in text  # Side labels only; no extra explanations.
     assert '12道' not in text and '站台 12' not in text
     from dataclasses import replace
     repo.lines['IL-a']=replace(repo.lines['IL-a'],name='第12道')
@@ -217,14 +217,14 @@ def test_station_svg_shows_line_names_and_destinations_without_track_numbers():
 
 
 @pytest.mark.parametrize('station_name', ['甲站','北京南站','某车辆段'])
-def test_generic_station_export_keeps_map_proportions_and_rectangular_platforms(station_name):
+def test_legacy_map_baseline_keeps_proportions_and_rectangular_platforms(station_name):
     import math
     import re
     from xml.etree import ElementTree as ET
     from railscope.domain import Station, NetworkNode, NetworkEdge, InfrastructureLine, StationTrack
     from railscope.repository import RailRepository
     from railscope.integrity import path_refs
-    from desktop.station_schematic import station_svg, station_projection
+    from desktop.station_schematic import map_station_svg as station_svg, station_projection
     repo = RailRepository()
     coords = ((120,30),(120.006,30.002),(120.012,30))
     repo.nodes = {'NN-a':NetworkNode('NN-a',*coords[0]),'NN-b':NetworkNode('NN-b',*coords[-1])}

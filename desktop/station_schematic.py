@@ -28,7 +28,7 @@ def station_projection(repo):
     return local, cx, cy, cosine
 
 
-ACCESSORY_NAME = re.compile(r'走行|动走|动车|机务|车辆段|检修|出入段|牵出|疏解|联络|机走|折返|存车')
+ACCESSORY_NAME = re.compile(r'走行|动走|动车|机务|车辆段|检修|出入段|牵出|疏解|联络|机走|折返|立折|存车|客整')
 TRACK_NUMBER = re.compile(r'(?:第?\s*[\d一二三四五六七八九十ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*(?:站台|道|股道)|站台\s*\d+)')
 LINE_COLORS = ('#2774b5', '#ba4141', '#278557', '#8052a4', '#a46622', '#17878b', '#a34b83', '#59649d')
 
@@ -153,7 +153,8 @@ def platform_parts(context):
                 yield str(ident)+':'+str(index), kind, points
 
 
-def station_svg(repo, context=(), width=2400, station_info=None):
+def map_station_svg(repo, context=(), width=2400, station_info=None):
+    """Legacy map-proportional baseline, retained for comparison tooling only."""
     station = next(iter(repo.stations.values()))
     station_info = station_info or {}
     yard_ids = {ref.edge_id for track in repo.station_tracks.values() for ref in track.edge_refs}
@@ -342,3 +343,14 @@ def station_svg(repo, context=(), width=2400, station_info=None):
     out.extend([f'<text x="65" y="{height-62}" font-size="14">同色轨道与文字对应一个线路出口 · 站台用矩形图示 · 轨道按地图原形等比绘制</text>',
         f'<text x="65" y="{height-32}" font-size="12">自动参考，非联锁进路图 · 数据 © OpenStreetMap contributors</text>', '</svg>'])
     return '\n'.join(out)
+
+
+def station_svg(repo, context=(), width=2400, station_info=None, options=None):
+    """Public export API now builds a topology-based, partitioned diagram."""
+    try:
+        from .station_diagram_layout import DiagramOptions
+        from .station_diagram_render import render_svg
+    except ImportError:
+        from station_diagram_layout import DiagramOptions
+        from station_diagram_render import render_svg
+    return render_svg(repo, context, options or DiagramOptions(width=width), station_info)

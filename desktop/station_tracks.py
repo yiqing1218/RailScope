@@ -91,7 +91,7 @@ def station_assets(db, source):
         (source,source_node))]
 
 
-def extend_station_approaches(db, index_path, edges, bounds, distance=2500):
+def extend_station_approaches(db, index_path, edges, bounds, distance=2500, topology_depth=None):
     """Read connected physical continuations beyond the throat, without edits.
 
     The endpoint index avoids scanning the national geometry store. The window
@@ -104,19 +104,21 @@ def extend_station_approaches(db, index_path, edges, bounds, distance=2500):
     queue = deque()
     visited = set()
     with closing(sqlite3.connect(Path(index_path).resolve().as_uri()+'?mode=ro', uri=True)) as index:
-        def enqueue(edge):
+        def enqueue(edge, depth=0):
             row = index.execute('SELECT a,b FROM edges WHERE id=?', (edge['id'],)).fetchone()
             if row:
                 for node, point in zip(row, (edge['coordinates'][0],edge['coordinates'][-1])):
-                    if west-dx <= point[0] <= east+dx and south-dy <= point[1] <= north+dy:
-                        queue.append(node)
+                    if topology_depth is not None or west-dx <= point[0] <= east+dx and south-dy <= point[1] <= north+dy:
+                        queue.append((node, depth))
         for edge in edges:
             enqueue(edge)
         while queue:
-            node = queue.popleft()
+            node, depth = queue.popleft()
             if node in visited:
                 continue
             visited.add(node)
+            if topology_depth is not None and depth >= topology_depth:
+                continue
             for (key,) in index.execute('SELECT id FROM edges WHERE a=? UNION SELECT id FROM edges WHERE b=?', (node,node)):
                 if key in known:
                     continue
@@ -124,12 +126,18 @@ def extend_station_approaches(db, index_path, edges, bounds, distance=2500):
                 if not raw:
                     continue
                 edge = json.loads(raw[0])
+                if topology_depth is not None and edge.get('way_tags', {}).get('service') in ('yard', 'siding', 'spur') and not all(
+                        west-dx*.08 <= p[0] <= east+dx*.08 and south-dy*.08 <= p[1] <= north+dy*.08
+                        for p in edge['coordinates']):
+                    # Preserve short throat fragments needed by station tracks;
+                    # unrelated external sidings do not extend the neighbourhood.
+                    continue
                 known.add(key)
                 edges.append(edge)
-                enqueue(edge)
+                enqueue(edge, depth+1)
 
 
-def load_station_tracks(directory, identity_path, station, overrides):
+def load_station_tracks(directory, identity_path, station, overrides, approach_depth=None):
     """Return repository + source bindings + real platform/switch geometries."""
     directory = Path(directory)
     name = str(station.get('name') or station.get('display_name') or '').removesuffix('站')
@@ -210,7 +218,8 @@ def load_station_tracks(directory, identity_path, station, overrides):
                       if f['geometry']['type'] == 'LineString' and f['properties'].get('network_edge_id')} - edge_ids
         for key in sorted(access_ids):
             edges.append(json.loads(db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()[0]))
-        extend_station_approaches(db, directory/'rail_lines.sqlite', edges, (west,south,east,north))
+        extend_station_approaches(db, directory/'rail_lines.sqlite', edges, (west,south,east,north),
+                                 topology_depth=approach_depth)
     document = {'schema': 'railscope.rail-plan.v2', 'routes': [], 'trains': [], 'extensions': {},
                 'required_capabilities': [], 'service_date': '2026-01-01', 'timezone': 'Asia/Shanghai', 'source': 'station infrastructure'}
     repo, bindings = build_repository({'edges': edges, 'points': []}, document, identity_path, overrides=overrides)
