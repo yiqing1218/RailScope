@@ -82,6 +82,7 @@ from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
 from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation
 from yard_track_names import yard_track_key
+from rail_station_directory import RAIL_STATION_LAYERS
 from road_store import database_path as road_database_path, viewport as road_viewport
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
@@ -417,6 +418,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
 class Bridge(QObject):
     selected = Signal(str)
+    activated = Signal(str)
     selections = Signal(str)
     contextRequested = Signal()
     initialized = Signal()
@@ -436,6 +438,10 @@ class Bridge(QObject):
     @Slot(str)
     def featureSelected(self, data):
         self.selected.emit(data)
+
+    @Slot(str)
+    def featureActivated(self, data):
+        self.activated.emit(data)
 
     @Slot(str)
     def featuresSelected(self, data):
@@ -2679,6 +2685,7 @@ class Desk(QMainWindow):
     def connect_map(self):
         bridge = self.map.bridge
         bridge.selected.connect(self.select_map_feature)
+        bridge.activated.connect(self.select_map_feature)
         bridge.selections.connect(self.map_selection_changed)
         bridge.contextRequested.connect(self.map_context_menu)
         bridge.dataLoaded.connect(
@@ -3266,28 +3273,11 @@ class Desk(QMainWindow):
                 group_id=props.get("catalog_group_id"),
                 network_edge_id=props.get('network_edge_id'),
             )
-        elif layer in ("rail-points", "rail-detail-points") and (props.get('osm_node_id') is not None or props.get('station_source_id')):
-            if props.get("kind") != "switch":
+        elif layer in RAIL_STATION_LAYERS:
+            record = self._rail_station_record_for_feature(feature)
+            if record:
                 self.open_sidebar(0)
-                if props.get('station_source_id'):
-                    self.rail_catalog_widget.select_station_record(props['station_source_id'])
-                else:
-                    self.rail_catalog_widget.select_station(props["osm_node_id"])
-        elif layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
-            self.open_sidebar(0)
-            self.rail_catalog_widget.select_station_record(
-                str(props.get("infrastructure_id", ""))
-            )
-        elif layer in ("rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"):
-            associated = props.get("associated_station_ids") or []
-            if isinstance(associated, str):
-                try:
-                    associated = json.loads(associated)
-                except ValueError:
-                    associated = []
-            if len(associated) == 1:
-                self.open_sidebar(0)
-                self.rail_catalog_widget.select_station(associated[0])
+                self.rail_catalog_widget.select_station_record(record["id"])
         else:
             relation_ids = props.get("route_relation_ids", [])
             if isinstance(relation_ids, str):
@@ -3416,50 +3406,18 @@ class Desk(QMainWindow):
                     first.get("technical_attributes", {}),
                 )
             )
-        rail_station_layers = (
-            "rail-points", "rail-detail-points", "rail-platform-fill",
-            "rail-platform-outline", "rail-station-fill", "rail-station-outline",
-            "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol",
-        )
-        if feature.get("layer") in rail_station_layers:
-            if "osm_node_id" not in props:
-                associated = props.get("associated_station_ids") or []
-                if isinstance(associated, str):
-                    try:
-                        associated = json.loads(associated)
-                    except ValueError:
-                        associated = []
-                if len(associated) == 1:
-                    if str(associated[0]).startswith(('way/','relation/')):
-                        props['station_source_id'] = associated[0]
-                    else:
-                        props["osm_node_id"] = associated[0]
-            props.setdefault(
-                "station_type",
-                station_type(props.get("node_tags", {}), props.get("kind", "")),
-            )
-            osm_node_id = props.get("osm_node_id")
-            station_id = str(props.get('station_source_id') or props.get('station_id') or props.get("infrastructure_id") or "")
-            if not station_id.startswith(("node/", "signalbox/", 'way/', 'relation/')):
-                station_id = f"node/{osm_node_id}"
-            record = self.rail_catalog_widget.station_record_by_id.get(station_id)
-            if record is None and station_id.startswith(("node/", "signalbox/", 'way/', 'relation/')):
-                record = self.rail_catalog_widget.station_record(station_id)
-            if record:
-                station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
-                folder = station_directory_path(record, station_custom)
-                props["display_name"] = record["name"]
-                props["province"] = folder[0] if folder else ""
-                props["city"] = folder[1] if len(folder) > 1 else ""
-                props["folder_path"] = list(folder)
-                props["station_type"] = record["station_type"]
-                props["line_ids"] = record.get("line_ids", [])
-                props["line_names"] = record.get("line_names", [])
-                props["station_overview"] = station_overview(
-                    props,
-                    record,
-                    station_custom,
-                )
+        record = self._rail_station_record_for_feature(feature)
+        if record:
+            station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
+            folder = station_directory_path(record, station_custom)
+            props.update(station_source_id=record["id"], station_key="station:" + record["id"],
+                         display_name=record["name"], station_type=record["station_type"],
+                         province=folder[0] if folder else "", city=folder[1] if len(folder) > 1 else "",
+                         folder_path=list(folder), line_ids=record.get("line_ids", []),
+                         line_names=record.get("line_names", []))
+            props["station_overview"] = station_overview(
+                {**record.get("properties", {}), **props}, record, station_custom)
+            props['station_type_provenance'] = record.get('station_type_provenance', {})
         feature["properties"] = props
         self.selected_data = feature
         self._last_operating_detail = None
@@ -3487,6 +3445,10 @@ class Desk(QMainWindow):
         layers = {
             **{key: '服务区（统一实体）' for key in ('road-service-poi','road-service-labels','road-service-outline-fill','road-service-outline','road-service-buildings')},
             "rail-points": "国铁车站 / 线路所 / 道岔",
+            "rail-detail-points": "国铁控制点 / 设施点位",
+            "rail-station-labels": "国铁站场名称",
+            "rail-station-fill": "国铁真实站场区域",
+            "rail-station-outline": "国铁真实站场轮廓",
             "rail-platform-fill": "国铁真实站台面",
             "rail-platform-outline": "国铁站台轮廓",
             "rail-construction": "在建国铁轨道",
@@ -3534,6 +3496,8 @@ class Desk(QMainWindow):
             "infrastructure_id": ("原始 OSM 要素编号" if str(props.get('infrastructure_id', '')).startswith(('way/', 'node/', 'relation/'))
                                   else "稳定基础设施编号"),
             "station_id": "唯一车站编号",
+            "station_source_id": "站场原始来源编号",
+            "station_type_provenance": "站型识别依据（自动参考）",
             "area_id": "真实轮廓编号",
             "network_edge_id": "物理轨道段编号",
             "section_id": "端点线段编号",
@@ -3660,31 +3624,15 @@ class Desk(QMainWindow):
         self.edit_line_metadata({"layer": "rail", "properties": props}, "rail", rail_groups=group_ids)
 
     def _rail_station_record_for_feature(self, feature):
-        layer = feature.get("layer", "")
-        if layer not in ("rail-points", "rail-detail-points", "rail-platform-fill",
-                         "rail-platform-outline", "rail-station-fill", "rail-station-outline",
-                         "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
+        from rail_station_directory import RAIL_STATION_LAYERS, station_candidates
+        if feature.get("layer", "") not in RAIL_STATION_LAYERS:
             return None
-        props = feature.get("properties", {})
-        if props.get("kind") == "switch":
-            return None
-        candidates = [props.get("infrastructure_id"), props.get("station_id")]
-        if props.get("osm_node_id") is not None:
-            candidates.append("node/" + str(props["osm_node_id"]).removeprefix("node/"))
-        associated = props.get("associated_station_ids") or []
-        if isinstance(associated, str):
-            try:
-                associated = json.loads(associated)
-            except ValueError:
-                associated = []
-        if isinstance(associated, list) and len(associated) == 1:
-            value = str(associated[0])
-            candidates.append(value if value.startswith(('way/','relation/')) else "node/" + value.removeprefix("node/"))
-        for candidate in candidates:
-            if candidate:
-                record = self.rail_catalog_widget.station_record(str(candidate))
-                if record:
-                    return record
+        for candidate in station_candidates(feature.get("properties", {})):
+            record = getattr(self.rail_catalog_widget, 'station_record_by_id', {}).get(candidate)
+            if record is None:
+                record = self.rail_catalog_widget.station_record(candidate)
+            if record:
+                return record
         return None
 
     def edit_line_metadata(self, feature, kind, relation=None, rail_groups=None):
@@ -3938,9 +3886,8 @@ class Desk(QMainWindow):
             self.display_feature(feature)
             return
         layer = feature.get("layer", "")
-        rail_station_layers = ("rail-points", "rail-detail-points", "rail-platform-fill",
-                               "rail-platform-outline", "rail-station-fill", "rail-station-outline",
-                               "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol")
+        from rail_station_directory import RAIL_STATION_LAYERS
+        rail_station_layers = RAIL_STATION_LAYERS
         rail_station_record = self._rail_station_record_for_feature(feature) if layer in rail_station_layers else None
         if layer in rail_station_layers and not rail_station_record:
             QMessageBox.information(self, "不可编辑", "此地图要素尚未关联到唯一车站，请先在车站目录核对归属。")

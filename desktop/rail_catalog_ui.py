@@ -36,6 +36,7 @@ try:
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
     from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from .rail_semantics import semantic_record
+    from .rail_station_types import FACILITY_TYPES
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
@@ -52,6 +53,7 @@ except ImportError:
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
     from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from rail_semantics import semantic_record
+    from rail_station_types import FACILITY_TYPES
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
     from catalog_metadata import (
@@ -1008,7 +1010,7 @@ class RailCatalog(QWidget):
             return
         if node.kind == "station":
             menu = QMenu(self)
-            menu.addAction("编辑名称、目录、类型和接轨线路…",
+            menu.addAction("编辑对象信息…",
                            lambda: self.station_edit_requested.emit(node.object_id))
             menu.addAction("在地图中定位",
                            lambda: self._focus_paged_station_item(index))
@@ -1900,7 +1902,7 @@ class RailCatalog(QWidget):
         custom = self.overrides.get("station:" + record["id"], {})
         path = station_directory_path(record, custom)
         kind = custom.get('station_type') or record.get('station_type')
-        if not custom.get('folder_path') and kind in ('编组站','车辆段','检修站','机务段','存车场','动车所/客整所','货场'):
+        if not custom.get('folder_path') and kind in FACILITY_TYPES:
             path = (*path, kind)
         return ("已归档", *path) if record.get("archived") else path
 
@@ -2193,7 +2195,7 @@ class RailCatalog(QWidget):
                 QMessageBox.warning(self, "目录修改未保存", str(error))
 
         edit = menu.addAction(
-            "编辑名称、目录、类型和接轨线路…",
+            "编辑对象信息…",
             lambda: self.station_edit_requested.emit(station_id),
         )
         edit.setEnabled(len(station_ids) == 1 and bool(station_id))
@@ -2702,6 +2704,10 @@ class RailCatalog(QWidget):
             if not index.isValid():
                 return False
             self.tabs.setCurrentWidget(self.station_page)
+            ancestor = index.parent()
+            while ancestor.isValid():
+                self.station_browser.expand(ancestor)
+                ancestor = ancestor.parent()
             self.station_browser.setCurrentIndex(index)
             self.station_browser.scrollTo(index)
             return True

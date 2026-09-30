@@ -14,8 +14,10 @@ from railscope.domain import DatasetSnapshot
 from railscope.identity import IdentityRegistry, new_id
 try:
     from .transport_modes import other_transport
+    from .rail_station_types import station_point_kind
 except ImportError:
     from transport_modes import other_transport
+    from rail_station_types import station_point_kind
 
 
 def extract(pbf, output, identity_path=None):
@@ -28,7 +30,7 @@ def extract(pbf, output, identity_path=None):
     class Handler(osmium.SimpleHandler):
         def node(self, node):
             tags = dict(node.tags)
-            kind = tags.get("railway")
+            kind = station_point_kind(tags) or tags.get("railway")
             if kind not in (
                 "station",
                 "halt",
@@ -144,7 +146,7 @@ def extract(pbf, output, identity_path=None):
         str(native_path(pbf)),
         locations=True,
         idx=f"sparse_file_array,{idx}",
-        filters=[osmium.filter.KeyFilter("railway", "public_transport", "route")],
+        filters=[osmium.filter.KeyFilter("railway", "public_transport", "route", "railway:facility", "landuse", "building")],
     )
     degree = Counter()
     used = set()

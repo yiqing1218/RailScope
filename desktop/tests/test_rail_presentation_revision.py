@@ -127,7 +127,7 @@ def test_directory_move_does_not_rebuild_or_invalidate_topology(qtbot,tmp_path,m
 
 @pytest.mark.parametrize('tags,expected', [({'railway':'depot'},'车辆段'),
     ({'railway':'workshop'},'检修站'),({'railway:facility':'classification_yard'},'编组站'),
-    ({'railway':'engine_shed'},'机务段'),({'name':'动车所'},'动车所/客整所')])
+    ({'railway':'engine_shed'},'机务段'),({'name':'动车所'},'动车所')])
 def test_facility_types(tags,expected):
     from desktop.catalog_metadata import station_type
     assert station_type(tags)==expected

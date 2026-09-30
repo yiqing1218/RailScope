@@ -15,10 +15,12 @@ from PySide6.QtCore import QModelIndex, Qt
 try:
     from .lazy_directory import SqliteDirectoryModel
     from .catalog_metadata import rail_station_records, station_directory_path
+    from .rail_station_types import FACILITY_TYPES
     from .rail_facility_ownership import facility_track_owners
 except ImportError:
     from lazy_directory import SqliteDirectoryModel
     from catalog_metadata import rail_station_records, station_directory_path
+    from rail_station_types import FACILITY_TYPES
     from rail_facility_ownership import facility_track_owners
 
 
@@ -42,7 +44,7 @@ def station_catalog_signature(directory, catalog_path, overrides):
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
     geometry = directory/'rail.sqlite'
-    return hashlib.sha256(_key([10, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
+    return hashlib.sha256(_key([11, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
                                  catalog_version[0] if catalog_version else "",
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
 
@@ -107,7 +109,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             name = custom.get("display_name") or record["name"]
             folder = station_directory_path(record, custom)
             station_kind = custom.get('station_type') or record.get('station_type')
-            if not custom.get('folder_path') and station_kind in ('编组站', '车辆段', '检修站', '机务段', '动车所/客整所', '货场', '存车场'):
+            if not custom.get('folder_path') and station_kind in FACILITY_TYPES:
                 folder = (*folder, station_kind)
             archived = bool(custom.get("archived"))
             path = root + (["已归档"] if archived else []) + list(folder)

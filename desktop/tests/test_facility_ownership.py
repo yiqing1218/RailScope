@@ -126,8 +126,8 @@ def test_edge_viewport_selection_and_facility_mode_remain_consistent(tmp_path,mo
     assert read({'facility':'facilities'})=={'NE-a','NE-b'}
 
 
-@pytest.mark.parametrize('name,kind', [('甲车辆基地','车辆段'),('乙动车运用所','动车所/客整所'),
-                                      ('丙动车运用检修所','动车所/客整所'),('丁检修基地','检修站')])
+@pytest.mark.parametrize('name,kind', [('甲车辆基地','车辆段'),('乙动车运用所','动车所'),
+                                      ('丙动车运用检修所','动车所'),('丁检修基地','检修站')])
 def test_facility_names_and_types_use_station_editor_without_extra_station_suffix(name,kind):
     from desktop.catalog_metadata import station_type
     from desktop.rail_station_directory import display_name

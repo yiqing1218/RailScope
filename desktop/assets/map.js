@@ -715,7 +715,15 @@ async function init() {
   });
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
   map.on('moveend',()=>{const p=map.getCenter(),status=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;if(status!==lastCameraStatus){lastCameraStatus=status;document.getElementById('camera-status').textContent=status;report('cameraChanged',p.lng,p.lat,map.getZoom());}const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';});
-  const selectableLayers=()=>['rail-vehicle-symbols','rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol','rail-construction','rail','road-service-poi','road-service-buildings','road-service-outline-fill','road-construction','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));
+  const selectableLayers=()=>['rail-vehicle-symbols','rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-station-labels','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol','rail-construction','rail','road-service-poi','road-service-buildings','road-service-outline-fill','road-construction','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));
+  map.on('dblclick',event=>{
+    const feature=map.queryRenderedFeatures(event.point,{layers:selectableLayers()})[0];
+    if(!feature)return;
+    event.preventDefault();
+    selectFeature(feature);
+    const value=normalizedFeature(feature);
+    report('featureActivated',JSON.stringify({layer:value.__layer,properties:value.properties,geometry:value.geometry}));
+  });
   map.on('click',event=>{
     if(suppressMapClick){suppressMapClick=false;return;}
     const feature=map.queryRenderedFeatures(event.point,{layers:selectableLayers()})[0];
@@ -749,7 +757,7 @@ async function init() {
       const values=[],seen=new Set();
       for(const feature of features){
         if(selectionMode==='box_switch'&&feature.properties?.kind!=='switch')continue;
-        if(selectionMode==='box_station'&&feature.layer?.id!=='stations'&&!['station','halt','signal_box','junction','crossing'].includes(feature.properties?.kind))continue;
+        if(selectionMode==='box_station'&&feature.layer?.id!=='stations'&&!['station','halt','signal_box','junction','crossing','yard','depot','workshop','works','engine_shed'].includes(feature.properties?.kind))continue;
         const value=normalizedFeature(feature),key=selectionKey(value);
         if(!seen.has(key)){seen.add(key);values.push(value);}
         if(values.length>=5000)break;

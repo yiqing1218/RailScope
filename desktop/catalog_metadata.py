@@ -13,33 +13,13 @@ try:
     from .provinces import ProvinceIndex
     from .catalog_workspace import validate_overrides
     from .persistence import write_json_atomic
+    from .rail_station_types import STATION_TYPES, STATION_KINDS, station_type
 except ImportError:
     from provinces import ProvinceIndex
     from catalog_workspace import validate_overrides
     from persistence import write_json_atomic
+    from rail_station_types import STATION_TYPES, STATION_KINDS, station_type
 
-
-STATION_TYPES = (
-    "客运站",
-    "货运站",
-    "客货运站",
-    "编组站",
-    "区段站",
-    "中间站",
-    "线路所",
-    "乘降所",
-    "越行站",
-    "会让站",
-    "动车所/客整所",
-    "货场",
-    "车辆段",
-    "检修站",
-    "机务段",
-    "存车场",
-    "未定义",
-)
-STATION_KINDS = ('station', 'halt', 'signal_box', 'junction', 'crossing',
-                 'yard', 'depot', 'workshop', 'works', 'engine_shed')
 
 STATION_OVERVIEW_FIELDS = (
     ("chinese_name", "中文名"),
@@ -115,50 +95,6 @@ def normalize_station_attributes(values, custom=False):
     if not custom:
         result.pop("region", None)
     return result
-
-
-def station_type(tags, kind=""):
-    """Use explicit OSM evidence only; ambiguous stations remain 未定义."""
-    tags = tags or {}
-    text = " ".join(
-        str(tags.get(key, ""))
-        for key in ("name", "name:zh", "description", "railway:station_category")
-    )
-    facility = tags.get("railway:facility", "")
-    railway = tags.get('railway', kind)
-    if any(word in text for word in ('动车所','动车段','动车运用所','动车运用检修所','客整所','客车整备所','客车技术整备所')):
-        return '动车所/客整所'
-    if facility in ('maintenance', 'repair', 'workshop') or railway in ('workshop', 'works') or any(w in text for w in ('检修站','检修段','检修所','检修基地','维修基地')):
-        return '检修站'
-    if facility == 'locomotive_depot' or railway == 'engine_shed' or '机务段' in text:
-        return '机务段'
-    if kind in {"signal_box", "junction", "crossing"} or "线路所" in text:
-        return "线路所"
-    if any(word in text for word in ("编组站", "编组场")) or facility == "classification_yard":
-        return "编组站"
-    if "区段站" in text:
-        return "区段站"
-    if "越行站" in text:
-        return "越行站"
-    if "会让站" in text:
-        return "会让站"
-    if kind == "halt" or tags.get("railway") == "halt" or "乘降所" in text:
-        return "乘降所"
-    if railway == 'depot' or facility in ('depot', 'rolling_stock_depot') or any(word in text for word in ('车辆段','车辆基地')):
-        return '车辆段'
-    if facility in ('stabling_yard', 'stabling') or any(word in text for word in ('存车场', '停车场')):
-        return '存车场'
-    if "货场" in text or facility in {"freight_terminal", "freight_yard"}:
-        return "货场"
-    passenger = tags.get("passenger")
-    freight = tags.get("freight")
-    if passenger == "yes" and freight == "yes":
-        return "客货运站"
-    if passenger == "yes" and freight in {"no", None, ""}:
-        return "客运站"
-    if freight == "yes" and passenger in {"no", None, ""}:
-        return "货运站"
-    return "未定义"
 
 
 def nearest_city(coordinates, province, regions, tags=None):
@@ -477,7 +413,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         return [], 0
     where = (
         "kind='railPoints' AND json_extract(data,'$.properties.kind') "
-        "IN ('station','halt','signal_box','junction','crossing','yard','depot','workshop','works','engine_shed')"
+        "IN ('station','halt','signal_box','junction','yard','depot','workshop','works','engine_shed')"
     )
     args = []
     normalized_query = query.strip().removesuffix("市").removesuffix("站").casefold()
@@ -572,14 +508,23 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         node_id = props.get("osm_node_id", props.get('station_source_id'))
         source_id = props.get('station_source_id') or f'node/{node_id}'
         lines = sorted(line_map.get(node_id, set()))
+        source_props = station_directory.get(source_id, {}).get('feature', {}).get('properties', {})
+        source_type = station_type({'name': props.get('name', ''), **tags}, props.get('kind', ''))
+        type_provenance = {
+            'source': 'osm_station_name_or_tags', 'snapshot': str(source.stat().st_mtime_ns),
+            'verification_status': 'automatic_reference', 'confidence': None,
+        }
+        if source_type == '未定义' and source_props.get('station_type_hint'):
+            source_type = source_props['station_type_hint']
+            type_provenance = source_props.get('station_type_provenance', type_provenance)
         result.append(
             {
                 "id": source_id,
                 "name": station_directory.get(source_id, {}).get('name') or display_name(props.get("name") or f"节点 {node_id}"),
                 "station_key": 'station:' + source_id,
                 "kind": props.get("kind", ""),
-                "station_type": station_directory.get(source_id, {}).get('feature', {}).get('properties', {}).get('station_type_hint')
-                                or station_type(tags, props.get("kind", "")),
+                "station_type": source_type,
+                "station_type_provenance": type_provenance,
                 "province": province,
                 "city": nearest_city(coordinates, province, regions, tags),
                 "coordinates": coordinates,

@@ -11,11 +11,12 @@ import sqlite3
 
 try:
     from .rail_semantics import semantic_record
+    from .rail_station_types import FACILITY_TYPES
 except ImportError:
     from rail_semantics import semantic_record
+    from rail_station_types import FACILITY_TYPES
 
 
-FACILITY_TYPES = frozenset(('编组站','车辆段','检修站','机务段','存车场','动车所/客整所','货场'))
 FACILITY_KINDS = frozenset(('yard','depot','workshop','works','engine_shed'))
 
 

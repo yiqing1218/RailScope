@@ -331,7 +331,7 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     widget.station_edit_requested.connect(requested.append)
     menu = widget.station_item_menu(widget.station_items["node/100"])
     assert [action.text() for action in menu.actions()] == [
-        "编辑名称、目录、类型和接轨线路…",
+        "编辑对象信息…",
         "移动到",
         "在地图中定位",
         "归档",
@@ -856,6 +856,7 @@ def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
         selected_type=Field(), raw=Field(), right=Field(), detail_rail=Field(),
         set_property_rows=rows.extend, _restore_inspector_width=lambda: None,
     )
+    inspector._rail_station_record_for_feature = lambda feature: Desk._rail_station_record_for_feature(inspector, feature)
     Desk.display_feature(inspector, {
         "layer": "rail-points",
         "properties": {"osm_node_id": 101, "kind": "station", "name": "麻套"},

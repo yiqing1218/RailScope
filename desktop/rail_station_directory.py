@@ -22,7 +22,7 @@ except ImportError:
 def display_name(name):
     value = str(name or '').strip()
     if value and any('\u4e00' <= c <= '\u9fff' for c in value) and not value.endswith(
-            ('站', '线路所', '信号所', '乘降所', '车辆段', '机务段', '动车段', '动车所', '运用所', '客整所', '整备所', '检修所', '检修段', '基地', '车间', '场', '）', ')')):
+            ('站', '所', '段', '基地', '车间', '场', '）', ')')):
         value += '站'
     return value
 
@@ -64,7 +64,7 @@ def build_station_directory(db, source):
         for (raw,) in src.execute("SELECT data FROM features WHERE kind='railPoints'"):
             feature = json.loads(raw)
             p = feature.get('properties', {})
-            if p.get('kind') not in ('station', 'halt', 'signal_box', 'junction', 'crossing', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
+            if p.get('kind') not in ('station', 'halt', 'signal_box', 'junction', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
                 continue
             if other_transport(p.get('node_tags', {})):
                 db.execute('DELETE FROM station_aliases WHERE source_id=?', ('node/' + str(p.get('osm_node_id')),))
@@ -175,9 +175,40 @@ def station_key(props):
     source = props.get('source_station_node')
     if source is not None:
         return 'node/' + str(source)
-    if props.get('kind') in ('station', 'halt', 'signal_box', 'junction', 'crossing', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
+    if props.get('kind') in ('station', 'halt', 'signal_box', 'junction', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
         return props.get('infrastructure_id') or ('node/' + str(props.get('osm_node_id')))
     return None
+
+
+RAIL_STATION_LAYERS = (
+    'rail-points', 'rail-detail-points', 'rail-station-labels',
+    'rail-platform-fill', 'rail-platform-outline', 'rail-station-fill', 'rail-station-outline',
+    'rail-signal-box-fill', 'rail-signal-box-outline', 'rail-signal-box-symbol',
+)
+
+
+def station_candidates(props):
+    """Resolve every representation through one presentation owner lookup.
+
+    Raw area IDs are fallback sources; a linked POI owns the station editor.
+    Ambiguous areas remain unassigned rather than choosing a nearby station.
+    """
+    if props.get('kind') in ('switch', 'crossing'):
+        return []
+    values = [props.get('station_source_id'), props.get('station_key'), props.get('station_id')]
+    associated = props.get('associated_station_ids') or []
+    if isinstance(associated, str):
+        try:
+            associated = json.loads(associated)
+        except ValueError:
+            associated = []
+    if isinstance(associated, list) and len(associated) == 1:
+        value = str(associated[0])
+        values.append(value if value.startswith(('node/', 'way/', 'relation/')) else 'node/' + value)
+    if props.get('osm_node_id') is not None:
+        values.append('node/' + str(props['osm_node_id']).removeprefix('node/'))
+    values.append(props.get('infrastructure_id'))
+    return list(dict.fromkeys(str(value).removeprefix('station:') for value in values if value))
 
 
 def apply_station_names(collection, directory, overrides=None):
