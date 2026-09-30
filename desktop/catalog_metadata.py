@@ -197,11 +197,13 @@ class CatalogOverrides:
             payload.get("overrides"), dict
         ):
             raise ValueError("目录编辑文件格式无效")
-        self.values = {
+        proposed = {
             str(key): value
             for key, value in payload["overrides"].items()
             if isinstance(value, dict)
         }
+        self.values.clear()
+        self.values.update(proposed)
 
     def update(self, key, **changes):
         self.update_many({str(key): changes})
@@ -223,7 +225,8 @@ class CatalogOverrides:
             encoding="utf-8",
         )
         temporary.replace(self.path)
-        self.values = proposed
+        self.values.clear()
+        self.values.update(proposed)
 
 
 def _metro_platform_id(properties, entity_id, relation_id):

@@ -296,8 +296,9 @@ def test_national_ui_uses_paged_views_and_keeps_edits_in_override(qtbot, tmp_pat
     assert _loaded(widget.line_model.root) <= 128
     widget.move_items({"RL-699"}, ["自定义", "线路"])
     assert widget.meta("RL-699")["folder_path"] == ["自定义", "线路"]
-    directory_record = json.loads((tmp_path / "rail_line_directory.json").read_text(encoding="utf-8"))
-    assert directory_record["overrides"]["RL-699"]["folder_path"] == ["自定义", "线路"]
+    workspace_record = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert workspace_record["RL-699"]["folder_path"] == ["自定义", "线路"]
+    assert not (tmp_path / "rail_line_directory.json").exists()
     existing_folder = widget.line_model._node(widget.line_model.index(0, 0))
     widget.line_model.fetchMore(widget.line_model.index(0, 0))
     loaded_children = tuple(existing_folder.children)

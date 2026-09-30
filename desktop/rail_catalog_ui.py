@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from .catalog_workspace import CatalogWorkspace, read_overrides
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
@@ -45,6 +46,7 @@ try:
         station_directory_path,
     )
 except ImportError:
+    from catalog_workspace import CatalogWorkspace, read_overrides
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
@@ -228,28 +230,7 @@ Switch = TreeSwitch
 
 
 def _read_catalog_overrides(path):
-    path = Path(path)
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(payload, dict) and payload.get("schema") == "railscope.catalog-exchange.v1":
-        payload = payload.get("overrides")
-    if not isinstance(payload, dict):
-        raise ValueError(f"铁路目录文件格式无效：{path}")
-    records = {
-        key: value for key, value in payload.items()
-        if isinstance(key, str) and isinstance(value, dict)
-        and isinstance(value.get("archived", False), bool)
-        and (
-            "folder_path" not in value
-            or value['folder_path'] is None
-            or isinstance(value["folder_path"], list)
-            and bool(value["folder_path"])
-            and all(isinstance(part, str) and part.strip() for part in value["folder_path"])
-        )
-    }
-    # Classification/style migration must not rewrite saved directory choices.
-    return records
+    return read_overrides(path)
 
 
 class CatalogTree(GrowingTree):
@@ -400,10 +381,11 @@ class RailCatalog(QWidget):
                                        else self.path.with_name("rail_station_directory.json"))
         self.catalog = RailCatalogIndex(build_catalog_index(self.directory))
         self.shared_overrides = {}
-        self.local_overrides = {}
+        self.workspace = CatalogWorkspace(self.path)
+        self.local_overrides = self.workspace.values
         self.overrides = {}
-        self.catalog_undo = []
-        self.catalog_redo = []
+        self.catalog_undo = self.workspace.undo_stack
+        self.catalog_redo = self.workspace.redo_stack
         self.way_names = {}
         self.visible = set()
         self.all_visible = False
@@ -431,11 +413,7 @@ class RailCatalog(QWidget):
         self.line_folder_paths = set()
         try:
             self.shared_overrides = _read_catalog_overrides(self.shared_path)
-            directory_overrides = {**_read_catalog_overrides(self.line_directory_path),
-                                   **_read_catalog_overrides(self.station_directory_path)}
-            self.local_overrides = _read_catalog_overrides(self.path)
-            for key, values in directory_overrides.items():
-                self.local_overrides[key] = {**self.local_overrides.get(key, {}), **values}
+            self.workspace.load((self.line_directory_path, self.station_directory_path))
             self._merge_catalog_overrides()
             try:
                 from .rail_line_workspace import migrate_assembly_attributes
@@ -660,51 +638,12 @@ class RailCatalog(QWidget):
         except ImportError:
             from rail_line_workspace import expand_assembly_changes
         changes = expand_assembly_changes(self.overrides, changes)
-        before = {key: deepcopy(self.local_overrides.get(key)) for key in changes}
-        proposed = {**self.local_overrides}
-        for key, change in changes.items():
-            proposed[key] = {**proposed.get(key, {}), **change}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        temporary.replace(self.path)
-        self.local_overrides = proposed
+        self.workspace.update(changes)
         self._merge_changed_overrides(changes)
-        if any(key.startswith(("RL-", "ST-")) and (DIRECTORY_FIELDS | {"station_source"}).intersection(change)
-               for key, change in changes.items()):
-            save_line_directory(self.line_directory_path, self.overrides)
-        if any(key.startswith("station:") and
-               {"folder_path", "display_name", "station_type", "archived"}.intersection(change)
-               for key, change in changes.items()):
-            save_station_directory(self.station_directory_path, self.overrides)
-        self.catalog_undo.append(before)
-        self.catalog_undo = self.catalog_undo[-30:]
-        self.catalog_redo.clear()
 
-    def _restore_local_overrides(self, previous_values):
-        previous = self.local_overrides
-        value = {**previous}
-        for key, old in previous_values.items():
-            if old is None:
-                value.pop(key, None)
-            else:
-                value[key] = deepcopy(old)
-        # Undoing a grouping must not strand a Corridor/StationRoute/TrainRun
-        # created after it. Retain its immutable membership as a hidden alias.
-        for key in previous_values:
-            if key.startswith("line-assembly:") and key in previous and key not in value:
-                value[key] = {**previous[key], "active": False}
-        changed = {key for key in previous_values if previous.get(key) != value.get(key)}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(value, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        temporary.replace(self.path)
-        self.local_overrides = value
+    def _refresh_restored_overrides(self, previous, changed):
+        value = self.local_overrides
         self._merge_changed_overrides(changed)
-        if any(key.startswith(("RL-", "ST-")) for key in changed):
-            save_line_directory(self.line_directory_path, self.overrides)
-        if any(key.startswith("station:") for key in changed):
-            save_station_directory(self.station_directory_path, self.overrides)
         if any(key.startswith("switch:node/") for key in changed):
             self._refresh_switch_labels()
             self.switch_names_changed.emit()
@@ -733,16 +672,14 @@ class RailCatalog(QWidget):
             self.send_station_visibility()
 
     def undo_catalog(self):
-        if self.catalog_undo:
-            value = self.catalog_undo.pop()
-            self.catalog_redo.append({key: deepcopy(self.local_overrides.get(key)) for key in value})
-            self._restore_local_overrides(value)
+        result = self.workspace.undo()
+        if result is not None:
+            self._refresh_restored_overrides(*result)
 
     def redo_catalog(self):
-        if self.catalog_redo:
-            value = self.catalog_redo.pop()
-            self.catalog_undo.append({key: deepcopy(self.local_overrides.get(key)) for key in value})
-            self._restore_local_overrides(value)
+        result = self.workspace.redo()
+        if result is not None:
+            self._refresh_restored_overrides(*result)
 
     def refresh_catalog(self):
         self.note.setText("正在重新扫描铁路拓扑、线路与全部站点；工作区修改会自动重放…")
