@@ -3,7 +3,7 @@
 Source geometry stays in rail.sqlite; names/numbers and stable bindings are
 stored in the existing workspace override layer and survive source reimports.
 """
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import closing
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -91,6 +91,44 @@ def station_assets(db, source):
         (source,source_node))]
 
 
+def extend_station_approaches(db, index_path, edges, bounds, distance=2500):
+    """Read connected physical continuations beyond the throat, without edits.
+
+    The endpoint index avoids scanning the national geometry store. The window
+    limits traversal only; complete source edges and their identities survive.
+    """
+    west, south, east, north = bounds
+    dx = distance / (111320 * math.cos(math.radians((south+north)/2)))
+    dy = distance / 111320
+    known = {edge['id'] for edge in edges}
+    queue = deque()
+    visited = set()
+    with closing(sqlite3.connect(Path(index_path).resolve().as_uri()+'?mode=ro', uri=True)) as index:
+        def enqueue(edge):
+            row = index.execute('SELECT a,b FROM edges WHERE id=?', (edge['id'],)).fetchone()
+            if row:
+                for node, point in zip(row, (edge['coordinates'][0],edge['coordinates'][-1])):
+                    if west-dx <= point[0] <= east+dx and south-dy <= point[1] <= north+dy:
+                        queue.append(node)
+        for edge in edges:
+            enqueue(edge)
+        while queue:
+            node = queue.popleft()
+            if node in visited:
+                continue
+            visited.add(node)
+            for (key,) in index.execute('SELECT id FROM edges WHERE a=? UNION SELECT id FROM edges WHERE b=?', (node,node)):
+                if key in known:
+                    continue
+                raw = db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()
+                if not raw:
+                    continue
+                edge = json.loads(raw[0])
+                known.add(key)
+                edges.append(edge)
+                enqueue(edge)
+
+
 def load_station_tracks(directory, identity_path, station, overrides):
     """Return repository + source bindings + real platform/switch geometries."""
     directory = Path(directory)
@@ -172,6 +210,7 @@ def load_station_tracks(directory, identity_path, station, overrides):
                       if f['geometry']['type'] == 'LineString' and f['properties'].get('network_edge_id')} - edge_ids
         for key in sorted(access_ids):
             edges.append(json.loads(db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()[0]))
+        extend_station_approaches(db, directory/'rail_lines.sqlite', edges, (west,south,east,north))
     document = {'schema': 'railscope.rail-plan.v2', 'routes': [], 'trains': [], 'extensions': {},
                 'required_capabilities': [], 'service_date': '2026-01-01', 'timezone': 'Asia/Shanghai', 'source': 'station infrastructure'}
     repo, bindings = build_repository({'edges': edges, 'points': []}, document, identity_path, overrides=overrides)
@@ -349,7 +388,9 @@ def schematic_station_info(directory, repo, rows, overrides):
             a = coordinate(start, reference[0][1] if reference and start==reference[0][0] else None)
             b = coordinate(end, reference[1][1] if reference and end==reference[1][0] else None)
             left, right = (start, end) if not a or not b or local(a)[0] <= local(b)[0] else (end, start)
-            destinations[line.id] = {'left': left, 'right': right, 'source': evidence,
+            destinations[line.id] = {'left': left, 'right': right,
+                'terminals': [{'name':start, 'coordinates':a}, {'name':end, 'coordinates':b}],
+                'source': evidence,
                 'snapshot': str((Path(directory)/'rail_lines.sqlite').stat().st_mtime_ns),
                 'verification_status': 'nominal_route_reference', 'confidence': None}
     return {'summary': ' · '.join(summary), 'line_destinations': destinations}
