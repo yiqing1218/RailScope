@@ -37,6 +37,13 @@
       "station_assignment": "manual",
       "station_id": "node/2958261850"
     },
+    "RL-003584e4447c84133d73": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-0052ba6252c53fe50cc5": {
       "directory_view": "facilities",
       "folder_path": [
@@ -73,11 +80,18 @@
       },
       "track_type": "普速铁路线"
     },
-    "RL-00ffa5aea9b4c5c55ec5": {
-      "directory_view": "facilities",
+    "RL-00e9a0815e694c75c419": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "马栅站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-00ffa5aea9b4c5c55ec5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/3699740707"
@@ -109,10 +123,10 @@
       "station_id": "node/7555690994"
     },
     "RL-017da556750d2eac956c": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "顾北矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664078"
@@ -125,6 +139,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7706586838"
+    },
+    "RL-01a844b3d4ff3a3bf63d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-01b7851f97bb76338c87": {
       "directory_view": "facilities",
@@ -169,10 +190,10 @@
       ]
     },
     "RL-0245bad1139b5f3f466b": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "沙泉站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9728708931"
@@ -195,6 +216,13 @@
       "station_assignment": "manual",
       "station_id": "node/7740322569"
     },
+    "RL-02c307d74bffbeec0fd7": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-03218103a6a8e761ea21": {
       "directory_view": "facilities",
       "folder_path": [
@@ -203,6 +231,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1301805513"
+    },
+    "RL-032a9ea827b833cdf344": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0339d3ba2eb466959e3f": {
       "directory_view": "facilities",
@@ -257,6 +292,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5420397432"
+    },
+    "RL-03be2c830fa34d1659dc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-03c043d8c346bb3b5c5a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-03fd87bab5590fdee283": {
       "directory_view": "facilities",
@@ -354,6 +403,13 @@
       "station_assignment": "manual",
       "station_id": "node/5655797145"
     },
+    "RL-053030fe888a059fbc3b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-053f520397a0e5de60d6": {
       "directory_view": "facilities",
       "folder_path": [
@@ -362,6 +418,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9513113927"
+    },
+    "RL-055490b95441eb8d2e91": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-056182cbb1cc7a892af8": {
       "directory_view": "facilities",
@@ -409,10 +472,10 @@
       "station_id": "node/9334658552"
     },
     "RL-05ff00fcaf3e6d13a2fe": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "工业园站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690970"
@@ -442,6 +505,24 @@
       "station_assignment": "manual",
       "station_id": "node/9119790818"
     },
+    "RL-067f1257e4c0d8a75ff1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-0695a759ebdc9cbd7333": {
+      "folder_path": [
+        "联络线",
+        "普速联络线"
+      ],
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-06a714ef82e28e868bcc": {
       "directory_view": "facilities",
       "folder_path": [
@@ -459,6 +540,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7036495784"
+    },
+    "RL-06d1285bbd246adde0c9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-06d63af9eb54e97ef112": {
       "directory_view": "facilities",
@@ -574,11 +662,32 @@
       "station_assignment": "manual",
       "station_id": "node/2247329897"
     },
+    "RL-083e48620ec5e801aee4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-08617cdb2436a33e29f3": {
       "folder_path": [
         "高速铁路",
         "中南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-0869ab628bc93ec27df3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-086d053b8cf756a82fa8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-087cf98c2dd01cd7f9ce": {
@@ -723,6 +832,13 @@
       "station_assignment": "manual",
       "station_id": "node/553073423"
     },
+    "RL-099e588c1bb63e8778d4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-09b6fe5a110120481018": {
       "directory_view": "facilities",
       "folder_path": [
@@ -749,6 +865,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5211777601"
+    },
+    "RL-09edb2c5995797093366": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-0a1e12b32a781f8c7baf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0a262bba3e03eae67120": {
       "directory_view": "facilities",
@@ -803,6 +933,13 @@
       ],
       "track_type": "普速铁路线"
     },
+    "RL-0aa9d5b01aa3c3f668eb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-0abe221e61f721bb601c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -839,6 +976,13 @@
       "station_assignment": "manual",
       "station_id": "node/7138909238"
     },
+    "RL-0aeb33b299f19bcc4dd6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-0b0409fcccc922da6f4e": {
       "directory_view": "facilities",
       "folder_path": [
@@ -847,6 +991,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/843319819"
+    },
+    "RL-0b2c3c12e89a023c487f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0b5591c501383029a16d": {
       "directory_view": "facilities",
@@ -882,6 +1033,13 @@
         "港口铁路"
       ]
     },
+    "RL-0c2928268c67357fca23": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-0c5f74ff1960f7d76695": {
       "directory_view": "facilities",
       "folder_path": [
@@ -890,6 +1048,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3010140312"
+    },
+    "RL-0c758b045c405850fa34": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0cd56d1eda1949f8a868": {
       "directory_view": "facilities",
@@ -919,13 +1084,20 @@
       "station_id": "node/9322545561"
     },
     "RL-0d06207294b394f5b991": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "车集站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690971"
+    },
+    "RL-0d10a0f55fcd6276f827": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0d35df80f60989c6af4f": {
       "directory_view": "facilities",
@@ -944,6 +1116,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9166853511"
+    },
+    "RL-0d70d69e7df7d48cb7f6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-0d7cb3fc86565dd22e8f": {
       "directory_view": "lines",
@@ -1039,6 +1218,13 @@
       "station_assignment": "manual",
       "station_id": "node/9193526306"
     },
+    "RL-0f1b2ca939c33ea92840": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-0f458241dde1639f0623": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1065,6 +1251,27 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2897338934"
+    },
+    "RL-0f9cc12f36d4fe59424b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-0fadf5b9eee0e862d0e9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-0fe8ce08a65fff4006ef": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-102f21467f95d46b7152": {
       "directory_view": "facilities",
@@ -1111,6 +1318,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "普速铁路线"
+    },
+    "RL-10a33702b27b7a161972": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-10bb6b05ae12a1d201de": {
       "directory_view": "facilities",
@@ -1167,13 +1381,27 @@
       "station_id": "node/8856992320"
     },
     "RL-11cb7625c8a8e692a988": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "马栅站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/3699740707"
+    },
+    "RL-1206c8955468a1c7483c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-1226bd73f42fbc26e529": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-1248a47ddf580b1ff598": {
       "display_name": "京哈高速线",
@@ -1209,10 +1437,10 @@
       "track_type": "高速铁路线"
     },
     "RL-1270739391e894d8082b": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "新庄矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690969"
@@ -1253,6 +1481,13 @@
       "station_assignment": "manual",
       "station_id": "node/1273438120"
     },
+    "RL-1390b0daa72149a8942b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-139838461a68b95e0db7": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1270,6 +1505,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8012738238"
+    },
+    "RL-13cc7a513b1463da9eae": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-13dca8e8337c176ed784": {
       "directory_view": "facilities",
@@ -1314,6 +1556,13 @@
       "station_assignment": "manual",
       "station_id": "node/1273439109"
     },
+    "RL-14b34f7844adcf70ea43": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-14ca1df011c50ca78144": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1322,6 +1571,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7846554149"
+    },
+    "RL-14d59bbbde84ddd52b5d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-152e7e524b043149df93": {
       "directory_view": "facilities",
@@ -1368,6 +1624,13 @@
       "station_assignment": "manual",
       "station_id": "node/7296170209"
     },
+    "RL-16194b92ec68465db3a9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1629a9f7a2cea73fc11b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1394,6 +1657,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8454361479"
+    },
+    "RL-16475b33fd87e01a9b42": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-165ce5b3a2d4505a0b9d": {
       "directory_view": "facilities",
@@ -1510,6 +1780,13 @@
       "station_assignment": "manual",
       "station_id": "node/7555690994"
     },
+    "RL-17de5566e916d2d5593e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-17e7b8c6606c3a632520": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1537,6 +1814,13 @@
       "station_assignment": "manual",
       "station_id": "node/9334658552"
     },
+    "RL-181bc7e0bbfc5a43fe65": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-182f7d7926da3a01bc4c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1555,6 +1839,41 @@
       "station_assignment": "manual",
       "station_id": "node/1826090372"
     },
+    "RL-18ca963663ec4e7ce1a5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-18ce89622889c176a412": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
+    "RL-18e133b95ebf7f1d4834": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-18f362dd3b2da2e8b9b1": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
+    "RL-190496db8fa48b897d83": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-191a12a5bc6b7a1d6db7": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1563,6 +1882,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2279174925"
+    },
+    "RL-194494dc61794683f1d4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-196fe4f4a5fdd17d14d9": {
       "directory_view": "facilities",
@@ -1609,11 +1935,18 @@
       "station_assignment": "manual",
       "station_id": "node/4035963398"
     },
-    "RL-1a2f8745022559916790": {
-      "directory_view": "facilities",
+    "RL-1a0f077dd2b8e07b5ea4": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "高石崖站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-1a2f8745022559916790": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9728646336"
@@ -1664,6 +1997,13 @@
       "station_assignment": "manual",
       "station_id": "node/7923463040"
     },
+    "RL-1a9db7218c1c48f267a3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1ad0705b6cfb27226c0d": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1689,6 +2029,33 @@
         "source": "workspace_override",
         "verification_status": "user_verified"
       }
+    },
+    "RL-1b04f691f4bb9c98550d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ],
+      "rail_semantics": {
+        "railway_class": "freight",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "货运铁路线"
+    },
+    "RL-1b436c18f87063eb1a75": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-1b60492b6fc4535e1556": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-1b83a96574f48d355664": {
       "directory_view": "facilities",
@@ -1767,6 +2134,13 @@
       "station_assignment": "manual",
       "station_id": "node/9118892082"
     },
+    "RL-1bef6288e5527af9a063": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1c16bbf94cb2069d57f5": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1822,6 +2196,13 @@
       "station_assignment": "manual",
       "station_id": "node/1668749919"
     },
+    "RL-1cd78978c47bb7e7465e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1ce8e4b55f78ab3f5c58": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1865,6 +2246,13 @@
       "station_assignment": "manual",
       "station_id": "node/3500267612"
     },
+    "RL-1d751a523f7d9c760885": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1daf53efe43a9ce674f5": {
       "folder_path": [
         "高速铁路",
@@ -1883,6 +2271,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-1dc01fb964c841cc12ee": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-1dd9ca4a5b8e41686595": {
       "folder_path": [
         "高速铁路",
@@ -1898,6 +2293,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9171411667"
+    },
+    "RL-1e0b5f4a8364bce851b3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-1e0c470b913f84bc0f93": {
       "directory_view": "facilities",
@@ -1935,13 +2337,20 @@
       "station_id": "node/7235375608"
     },
     "RL-1eb2846b514436d73487": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
+    },
+    "RL-1f6844f0bc0c53bb8722": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-1f829e91fe8875712965": {
       "directory_view": "facilities",
@@ -1969,6 +2378,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-20585e7ab5411d96cae8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-208d73cf5b337a1e15bb": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1986,6 +2402,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3006129153"
+    },
+    "RL-20c2c1c3a2ba3a08d099": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-20c506239176488a32f9": {
       "folder_path": [
@@ -2162,6 +2585,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-22d4f4f186c0a31f0d6d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-22e5972442b9d9111ac6": {
       "folder_path": [
         "高速铁路",
@@ -2208,6 +2638,13 @@
       "station_assignment": "manual",
       "station_id": "node/8690142673"
     },
+    "RL-23821d9ab1f5f7d37d52": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-23a4448a3a307d23f4f9": {
       "folder_path": [
         "联络线",
@@ -2220,6 +2657,13 @@
         "高速铁路",
         "西南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-243f2d2cb5f6d37a27d9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-245197ed46f242389c0e": {
@@ -2264,6 +2708,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9242148027"
+    },
+    "RL-254603f1cb34599dc8d5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-25488ad86e5321f3f6b7": {
       "directory_view": "facilities",
@@ -2327,6 +2778,14 @@
       "station_assignment": "manual",
       "station_id": "node/7365811218"
     },
+    "RL-2683dd295e8b402779a9": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-26b17c8323e4673dba9b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2389,6 +2848,13 @@
       "station_assignment": "manual",
       "station_id": "node/8859072629"
     },
+    "RL-277c9c5f8ad50d67059d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-279f9ec05f5ea7f70efb": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2425,6 +2891,13 @@
       "station_assignment": "manual",
       "station_id": "node/9166853511"
     },
+    "RL-2837cc85ad6cabe5e737": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-287935f02dcaaa5e21c9": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2451,6 +2924,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4066214793"
+    },
+    "RL-28f7ac9d90337f276267": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2906ac875599ce2854e2": {
       "directory_view": "facilities",
@@ -2515,6 +2995,13 @@
       "station_assignment": "manual",
       "station_id": "node/7238885494"
     },
+    "RL-29775f3219fe6bbb8da4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-29a54fbebff8a166fce8": {
       "folder_path": [
         "高速铁路",
@@ -2555,10 +3042,10 @@
       ]
     },
     "RL-2a53a6b1edf017fc68d0": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "安阳城站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9320122087"
@@ -2607,6 +3094,13 @@
       },
       "track_type": "货运铁路线"
     },
+    "RL-2a9553401d0f9205f413": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2a9e7c0a8d2ddaec66fc": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2632,6 +3126,13 @@
       "station_assignment": "manual",
       "station_id": "node/3156146729"
     },
+    "RL-2aef418b3569759eef08": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2b1afb7fb9b3deaa3f35": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2649,6 +3150,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1675935499"
+    },
+    "RL-2b369acad44f9b7a880e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2b40c1c5498a7b244af7": {
       "directory_view": "facilities",
@@ -2689,6 +3197,13 @@
         "高速铁路",
         "东北",
         "其他/速度待核对"
+      ]
+    },
+    "RL-2b7bd951126c0002202a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-2b83c5d01d0dfb6b986d": {
@@ -2743,6 +3258,20 @@
       "station_assignment": "manual",
       "station_id": "node/2897338934"
     },
+    "RL-2c4597cedeb9c355d623": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-2cc8d264a7c42f2bb57f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2cd67e151a231427ce0e": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2761,6 +3290,13 @@
       "station_assignment": "manual",
       "station_id": "node/9118892105"
     },
+    "RL-2d347e4a35bfac87fb34": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2d3a119a59382650312d": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2769,6 +3305,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1720956490"
+    },
+    "RL-2d3df894f7a572d508c5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2d863f4739a4c8e7e73e": {
       "directory_view": "lines",
@@ -2787,6 +3330,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664095"
+    },
+    "RL-2da46c36ddae3efbf0af": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2dc32f14e56f3b24e77f": {
       "directory_view": "facilities",
@@ -2842,6 +3392,13 @@
       "station_assignment": "manual",
       "station_id": "node/4353564606"
     },
+    "RL-2e315171a0edcf8ae95b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2e5906ad9e007eee3825": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2869,6 +3426,13 @@
       "station_assignment": "manual",
       "station_id": "node/2344590262"
     },
+    "RL-2eb448e1641ec05935bb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2ed0c143cde98f5a11b3": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2877,6 +3441,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3685475103"
+    },
+    "RL-2f224cca350512e9f20c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2f2679783f5663263bb3": {
       "directory_view": "facilities",
@@ -2905,6 +3476,13 @@
       "station_assignment": "manual",
       "station_id": "node/7161749775"
     },
+    "RL-2f30e4b7df8931272481": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-2f31769c7cfb0bf71368": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2913,6 +3491,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3045622996"
+    },
+    "RL-2f4331e66583efdc3a09": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-2f6d48eb510914a02daf": {
       "directory_view": "facilities",
@@ -2968,6 +3553,13 @@
       "station_assignment": "manual",
       "station_id": "node/8390212289"
     },
+    "RL-3055372c97b88cdca9ff": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-307584d7c4f4112e5547": {
       "directory_view": "facilities",
       "folder_path": [
@@ -2995,6 +3587,13 @@
       "station_assignment": "manual",
       "station_id": "node/4072824047"
     },
+    "RL-311989c02673f78a787f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-3128fbfd5c6b9c4e9339": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3003,6 +3602,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7798541832"
+    },
+    "RL-3162ff49339bcaecc27c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-316a0f6e619d53610283": {
       "directory_view": "lines",
@@ -3089,6 +3695,27 @@
       "station_assignment": "manual",
       "station_id": "node/9193526298"
     },
+    "RL-32a9aa39d42505ff28a0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-32c25a4a840b69e93419": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-32cb1b005358626b41e3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-33090320b1ab76fb0163": {
       "directory_view": "lines",
       "display_name": "桃林铅锌矿未命名轨道·w462836228",
@@ -3122,6 +3749,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-33527a9cdf0909417b5f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-33a3287d9778904815bd": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3140,10 +3774,10 @@
       "track_type": "高速铁路线"
     },
     "RL-3437e7457b88fa8e8c12": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "钱庙站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/6037693976"
@@ -3163,6 +3797,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1545968418"
+    },
+    "RL-34c65a6a542bb13d503d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-35174f04ae9036dde492": {
       "folder_path": [
@@ -3207,6 +3848,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4440864400"
+    },
+    "RL-36293a28aa247c425be1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-364441132329ed8afeb0": {
       "directory_view": "facilities",
@@ -3298,6 +3946,13 @@
       "station_assignment": "manual",
       "station_id": "node/9242869553"
     },
+    "RL-36f81b0a311fa9dcc2bc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-36f8a21aae4cfd05c7bf": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3325,6 +3980,13 @@
       "station_assignment": "manual",
       "station_id": "node/3024685469"
     },
+    "RL-37489608f79faf5af0cb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-375ad9cee060dc957f53": {
       "archived": true,
       "track_type": "未确认类型"
@@ -3348,6 +4010,13 @@
     "RL-378f3bd4987b180e6e73": {
       "display_name": "待核对1未命名轨道·w1337853535"
     },
+    "RL-37f5900d3419d5a5af2a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-37f829f481a48c7cd01b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3356,6 +4025,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6225488925"
+    },
+    "RL-38014aa24e8594b4c5d5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-38059c04255dda080c0c": {
       "folder_path": [
@@ -3422,6 +4098,9 @@
       "station_assignment": "manual",
       "station_id": "node/3012041088"
     },
+    "RL-38c9d3304f8452a56664": {
+      "archived": true
+    },
     "RL-38e67b763a823a59c5e3": {
       "display_name": "邯黄线",
       "folder_path": [
@@ -3463,6 +4142,14 @@
       "station_assignment": "manual",
       "station_id": "node/9193526298"
     },
+    "RL-3938479f1290b3e08bf5": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-3940605bfeb7354f3190": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3497,6 +4184,13 @@
       "station_assignment": "manual",
       "station_id": "node/9226690951"
     },
+    "RL-39ce16fb3ca61cd69ea1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-39d3adc74ca5368f1b13": {
       "folder_path": [
         "普速铁路",
@@ -3504,6 +4198,13 @@
         "货运"
       ],
       "track_type": "货运铁路线"
+    },
+    "RL-3a1d4dd4e765a103dcb4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-3a2edf530192c66f05ac": {
       "directory_view": "facilities",
@@ -3540,6 +4241,27 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1583788094"
+    },
+    "RL-3a7c9486109846e6ac79": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-3a8cb2729dc993b505f4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-3ae6f5ada9a581290b04": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-3af6d002bac91e480b2a": {
       "directory_view": "facilities",
@@ -3602,6 +4324,13 @@
       "station_assignment": "manual",
       "station_id": "node/8308266735"
     },
+    "RL-3c17e92460bd7f617c81": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-3c22b5aafd3a4bb3dff2": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3610,6 +4339,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9174163152"
+    },
+    "RL-3c3819a13f9c1eb6dcd8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-3c407b65a2c3a6c22d47": {
       "directory_view": "facilities",
@@ -3665,6 +4401,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/12981749287"
+    },
+    "RL-3d59c752789fa9aa73de": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-3d714b3ae4805bc82324": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-3d73ae3ec1feb89b87aa": {
       "directory_view": "facilities",
@@ -3926,6 +4676,20 @@
       "station_assignment": "manual",
       "station_id": "node/2092929505"
     },
+    "RL-412e30e04489b47dddc2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-41480c94e8cec3e79e66": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-41532b620eba777d590e": {
       "directory_view": "facilities",
       "folder_path": [
@@ -3977,6 +4741,13 @@
       ],
       "track_type": "支线 / 岔道"
     },
+    "RL-41f90afb7ca99bbff2bf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-42268b42da23acc9e852": {
       "directory_view": "lines",
       "display_name": "桃林铅锌矿未命名轨道·w462909720",
@@ -4022,6 +4793,13 @@
       "station_assignment": "manual",
       "station_id": "node/5045240332"
     },
+    "RL-429185729152b107240d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-42adc9fda9ee07975279": {
       "directory_view": "lines",
       "display_name": "桃林铅锌矿未命名轨道·w462909721",
@@ -4048,6 +4826,26 @@
         "verification_status": "user_verified"
       },
       "track_type": "支线 / 岔道"
+    },
+    "RL-42e5b6c3eef11832333a": {
+      "folder_path": [
+        "高速铁路",
+        "西北",
+        "250"
+      ],
+      "rail_semantics": {
+        "railway_class": "high_speed",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "technical_attributes": {
+        "design_speed_kmh": "200",
+        "gauge_mm": "1435",
+        "max_speed_kmh": "200",
+        "operating_status": "运营中",
+        "power_supply": "25000 50 contact_line"
+      },
+      "track_type": "高速铁路线"
     },
     "RL-42e6fd86444f05a34a9b": {
       "rail_semantics": {
@@ -4199,6 +4997,13 @@
       "station_assignment": "manual",
       "station_id": "node/8041771712"
     },
+    "RL-4521454d6e465cd32a50": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-453380029b0e0ec2c94a": {
       "folder_path": [
         "高速铁路",
@@ -4252,6 +5057,20 @@
       "station_assignment": "manual",
       "station_id": "node/9226690938"
     },
+    "RL-45cd8daf81b44d5195f4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-45f22c17abbbc6b5c2f6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-460dded944e40dc6e169": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4285,6 +5104,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2662698018"
+    },
+    "RL-4667dcfa82c0b5032afd": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-46856d4eb376788bff36": {
       "directory_view": "facilities",
@@ -4331,6 +5157,20 @@
       "station_assignment": "manual",
       "station_id": "node/4553356420"
     },
+    "RL-47085f0783c085f6528c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-471295f34d626d99ccd2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-471c8a612b06afd8de77": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4347,6 +5187,13 @@
         "港口铁路"
       ]
     },
+    "RL-473ad7dc63e61919c97e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-473d837ea9d8646ed1ea": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4355,6 +5202,14 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6296203441"
+    },
+    "RL-4779c3547bf964d7ca87": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
     },
     "RL-478f8a1d8e19e19bbdf3": {
       "directory_view": "facilities",
@@ -4392,6 +5247,13 @@
       "station_assignment": "manual",
       "station_id": "node/7682078574"
     },
+    "RL-47cfef35eef751a20d41": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-47d657bf39260fbcf507": {
       "folder_path": [
         "高速铁路",
@@ -4416,6 +5278,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6322614509"
+    },
+    "RL-47fa5f73c9f2c77933d9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-4803a9f8bcacb713f4d3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
     },
     "RL-484039513766047accbd": {
       "directory_view": "facilities",
@@ -4465,6 +5341,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-49a98fec37ae84bfef65": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4a0e214524f878b18505": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4491,6 +5374,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3717101415"
+    },
+    "RL-4a28ec2facf934fe2373": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-4a49ad726466f3acd91d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4a574dd08635b95fe36f": {
       "rail_semantics": {
@@ -4554,6 +5451,13 @@
       "station_assignment": "manual",
       "station_id": "node/6322614509"
     },
+    "RL-4ade9efdb9be84377e4a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4af757900c6877fa2261": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4581,11 +5485,32 @@
       "station_assignment": "manual",
       "station_id": "node/1826090372"
     },
+    "RL-4b1ae914c691cef947ee": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-4b25bc074147ac5ee9b9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4b51250491394bd4af5f": {
       "folder_path": [
         "高速铁路",
         "西北",
         "其他/速度待核对"
+      ]
+    },
+    "RL-4b60f2f9f5b1f33cf2d2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-4b659adf57bdf2112469": {
@@ -4612,6 +5537,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1532826990"
+    },
+    "RL-4b945bd9de42ab67201c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4ba0908889eadfebb53d": {
       "directory_view": "facilities",
@@ -4692,6 +5624,13 @@
       "station_assignment": "manual",
       "station_id": "node/9174163152"
     },
+    "RL-4c97ba7fe38f58a744e8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4c9da3677cb8528eac17": {
       "folder_path": [
         "高速铁路",
@@ -4700,14 +5639,28 @@
       ],
       "track_type": "高速铁路线"
     },
-    "RL-4cc63b9442bdcc1cf8ba": {
-      "directory_view": "facilities",
+    "RL-4cac84c7b157e79388cf": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-4cc63b9442bdcc1cf8ba": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
+    },
+    "RL-4ccd63e6083d49433063": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4d05f5d629fa9f69f677": {
       "folder_path": [
@@ -4784,6 +5737,13 @@
       "station_assignment": "manual",
       "station_id": "node/13665364285"
     },
+    "RL-4dac69503d399f53a534": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4db4e35038e79ce8f4f1": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4810,6 +5770,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2348271086"
+    },
+    "RL-4de377ff3fa66b276f80": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4df69c1e8535651153a1": {
       "directory_view": "facilities",
@@ -4865,6 +5832,13 @@
       "station_assignment": "manual",
       "station_id": "node/7639802001"
     },
+    "RL-4e9b0bcc1ae45cc19038": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4ebf5269372abd46ce0f": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4873,6 +5847,32 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7751838223"
+    },
+    "RL-4ebf8cb4a6244ca38ccb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-4ec0907af44a73e4d9f8": {
+      "folder_path": [
+        "联络线",
+        "高速联络线"
+      ],
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "track_role": "unknown",
+        "verification_status": "user_verified"
+      }
+    },
+    "RL-4ed4008a21f8755c663e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4f19aea0388d856de8a7": {
       "directory_view": "facilities",
@@ -4901,6 +5901,13 @@
       "station_assignment": "manual",
       "station_id": "node/4982418820"
     },
+    "RL-4f5c56a2ac66a244331f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-4f71d594ea4965153256": {
       "folder_path": [
         "高速铁路",
@@ -4908,6 +5915,13 @@
         "其他/速度待核对"
       ],
       "track_type": "高速铁路线"
+    },
+    "RL-4f9af2a304027e756aa7": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-4faca7bf9dab1f710de3": {
       "directory_view": "facilities",
@@ -4964,6 +5978,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-5094d4b01da9b002db42": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-50c66f746a1d3bb960d5": {
       "directory_view": "facilities",
       "folder_path": [
@@ -4981,6 +6002,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1569661841"
+    },
+    "RL-51350161ec356a41d519": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-514ea7a646318909814d": {
       "directory_view": "facilities",
@@ -5085,6 +6113,13 @@
       "station_assignment": "manual",
       "station_id": "node/9186758544"
     },
+    "RL-52ab8cc1c65b441b0e2d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-52b61da9dfb43b7f0485": {
       "rail_semantics": {
         "line_role": "main_line",
@@ -5094,6 +6129,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "普速铁路线"
+    },
+    "RL-531c73b7b33d365a8a71": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-532843cdc4c40d23d977": {
       "directory_view": "facilities",
@@ -5203,6 +6245,13 @@
       "station_assignment": "manual",
       "station_id": "node/7705012465"
     },
+    "RL-546b87828612c2932a66": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-547cd5f8c8d8229e7dfa": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5259,6 +6308,13 @@
       "station_assignment": "manual",
       "station_id": "node/8524219190"
     },
+    "RL-54d0b9aef0e103b681cf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-550a3434ff40e56b8846": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5267,6 +6323,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2616718117"
+    },
+    "RL-551df0a4705240f2f11c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-556564f3491476087f05": {
       "directory_view": "facilities",
@@ -5277,6 +6340,13 @@
       "station_assignment": "manual",
       "station_id": "node/3157348619"
     },
+    "RL-5570e55dc2c9776dd52b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-557e674b50c829cfc388": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5285,6 +6355,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1202941467"
+    },
+    "RL-55cba6bb7f0333e6e726": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-55d370b3b82e9a794c93": {
       "directory_view": "facilities",
@@ -5309,6 +6386,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-560fcb9babc5cb988afe": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-562a40f004133a57fc50": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5323,6 +6407,13 @@
         "高速铁路",
         "中南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-56455f3350e6dae58199": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-56b9016b867c63987128": {
@@ -5388,6 +6479,13 @@
       "station_assignment": "manual",
       "station_id": "node/1407516493"
     },
+    "RL-57aebcd6c677f1761048": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-57b1e0bbbc22316b9d10": {
       "folder_path": [
         "高速铁路",
@@ -5396,6 +6494,20 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-57c9e5604d2958fa222d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-58566c001bd25b40ed7d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-586de0d1e69009b06402": {
       "folder_path": [
         "高速铁路",
@@ -5403,6 +6515,13 @@
         "其他/速度待核对"
       ],
       "track_type": "高速铁路线"
+    },
+    "RL-592e18c12902f1f90143": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-594bbc0a7b617bf5f2d5": {
       "directory_view": "facilities",
@@ -5439,6 +6558,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2958239140"
+    },
+    "RL-59bd9fbe5feede342afd": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-59c8784cb7638a353963": {
       "directory_view": "facilities",
@@ -5482,6 +6608,27 @@
         "其他铁路",
         "矿山铁路",
         "线路归属待核实"
+      ]
+    },
+    "RL-5a082902a217e23a190f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-5a1a8002f9f7a86abe2c": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
+    "RL-5a97e7c2bad6ac589ba9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-5a98cedd9f866196b17d": {
@@ -5610,6 +6757,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-5bf1355269b027701c9a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-5c213bcedcb5c470bddc": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5618,6 +6772,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2349438766"
+    },
+    "RL-5c52d6aed96e8f98eed1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-5c5c5ce2ecb4a399ccc1": {
       "directory_view": "facilities",
@@ -5711,6 +6872,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7364331421"
+    },
+    "RL-5d250846953f4daec2d5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-5d2918393dd998ade73b": {
       "directory_view": "facilities",
@@ -5842,6 +7010,20 @@
       },
       "track_type": "高速铁路线"
     },
+    "RL-5eef0388301bac7d3bb9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-5f69723d870f51d9f444": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-5f700e0f05a14306114e": {
       "rail_semantics": {
         "line_role": "main_line",
@@ -5860,6 +7042,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2662698113"
+    },
+    "RL-5f966643230bdc2b1fe5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-5fa49c12e1ef321af556": {
       "directory_view": "facilities",
@@ -5915,6 +7104,14 @@
       "station_assignment": "manual",
       "station_id": "node/7128808621"
     },
+    "RL-600c7e4e3ff442df7c6a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-60284439b7e3a29bde38": {
       "directory_view": "facilities",
       "folder_path": [
@@ -5923,6 +7120,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9176129499"
+    },
+    "RL-603aed5a3745e31daa46": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-6092671966c8ff649be5": {
       "directory_view": "facilities",
@@ -6050,6 +7254,13 @@
       "station_assignment": "manual",
       "station_id": "node/7555690994"
     },
+    "RL-629b20c62128e7452c67": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-62d0633989262e4fc337": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6058,6 +7269,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2349438766"
+    },
+    "RL-62ebc271d8c6645b8686": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-6309394e7f164111b6ac": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-630ac4013220f6324f7f": {
       "directory_view": "facilities",
@@ -6086,6 +7311,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2662698080"
+    },
+    "RL-632206d080c9e7bad022": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-6354032e7ffc4a7b7be3": {
       "directory_view": "facilities",
@@ -6139,6 +7371,13 @@
         "其他铁路",
         "矿山铁路",
         "线路归属待核实"
+      ]
+    },
+    "RL-64a26be041e9429200a1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-64aede264904df77d67b": {
@@ -6223,6 +7462,13 @@
       "station_assignment": "manual",
       "station_id": "node/2324108333"
     },
+    "RL-65465cf0d019f5ea40c9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6581f7a7800eeae0108c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6237,6 +7483,13 @@
         "高速铁路",
         "华东",
         "其他/速度待核对"
+      ]
+    },
+    "RL-659dfc6913ce9ee827c6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-65eff4aa616034c97d5a": {
@@ -6293,6 +7546,13 @@
       "station_assignment": "manual",
       "station_id": "node/5033589222"
     },
+    "RL-6670e5c4c4a5e33c8705": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6672be48f212ba4cf385": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6301,6 +7561,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9171411679"
+    },
+    "RL-668be0fbcaa9d6549eac": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-66af3be16db671716168": {
       "directory_view": "facilities",
@@ -6431,6 +7698,13 @@
       "station_assignment": "manual",
       "station_id": "node/9069910629"
     },
+    "RL-67f72a2ea00dd8c42000": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6819e79d1c7534e03e04": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6482,6 +7756,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9169253668"
+    },
+    "RL-68c25804e0aeca20fdeb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-68d207abbef3316d6590": {
       "directory_view": "facilities",
@@ -6617,6 +7898,13 @@
       "station_assignment": "manual",
       "station_id": "node/7036495784"
     },
+    "RL-6a592ccc31c8465fc94c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6a60c1e44e91964960b5": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6665,6 +7953,20 @@
         "verification_status": "user_verified"
       },
       "track_type": "货运铁路线"
+    },
+    "RL-6b0b6c9802f346b23064": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-6b0eb6c31215c4b6cb6e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-6b99d9d03c0a3cdfad6c": {
       "directory_view": "facilities",
@@ -6836,6 +8138,13 @@
       "station_assignment": "manual",
       "station_id": "node/12734050176"
     },
+    "RL-6ccfaf2a346b825478c9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6cd8cb188463895ccedc": {
       "folder_path": [
         "高速铁路",
@@ -6926,10 +8235,10 @@
       "station_id": "node/3965162822"
     },
     "RL-6daba7a71bf468e4f314": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "刘桥一矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690967"
@@ -6943,6 +8252,20 @@
       "station_assignment": "manual",
       "station_id": "node/7014731879"
     },
+    "RL-6df69d78b76b03e83925": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-6e4ed256b8ccb6a0c2ec": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6e7d5f8bf44a0f90b184": {
       "directory_view": "facilities",
       "folder_path": [
@@ -6951,6 +8274,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8163363245"
+    },
+    "RL-6ead704e2535eebaa79e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-6ebcfd473d8dfb2e1319": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-6ebff57bbf972c2ad7e4": {
       "directory_view": "facilities",
@@ -7006,6 +8343,13 @@
       "station_assignment": "manual",
       "station_id": "node/2091582393"
     },
+    "RL-6f95ee0d55eaac402ab5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6f9ae34d986116c2fb0b": {
       "folder_path": [
         "高速铁路",
@@ -7013,14 +8357,28 @@
         "其他/速度待核对"
       ]
     },
+    "RL-6fb5e9f0f4236a075253": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-6fbce24f09252fb016c6": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
         "车站设施",
         "刘店站"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690954"
+    },
+    "RL-6ff40709bcf94caf5e1a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-703bad66517dfbb2ff16": {
       "directory_view": "facilities",
@@ -7138,6 +8496,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-717d3acf9e55ee0573c6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-718396b261663c6e513c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7173,6 +8538,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7682078574"
+    },
+    "RL-71eb61833b1688de4fdc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-71f36f1795dc6a15db5e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
     },
     "RL-7207c14a6dc101a44469": {
       "directory_view": "facilities",
@@ -7217,6 +8596,20 @@
       "station_assignment": "manual",
       "station_id": "node/6322614509"
     },
+    "RL-72a6006571c952cf7fb8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-72d7c6365ceb24636c0e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-72f1ade3b7912e17796c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7243,6 +8636,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2958239140"
+    },
+    "RL-735b60813c141217ce3a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7360d9a25e0e8169ec63": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
     },
     "RL-737a103aad190890c3c7": {
       "directory_view": "facilities",
@@ -7280,6 +8687,20 @@
       "station_assignment": "manual",
       "station_id": "node/5385397988"
     },
+    "RL-73dcf9be2ae98b89ea5c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-73f81324f4e5016b8d7b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-73f872be5e9bd14bbf9f": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7297,10 +8718,10 @@
       ]
     },
     "RL-740df8d9103aed2bf5b0": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "刘元头站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9728700883"
@@ -7367,6 +8788,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1545968418"
+    },
+    "RL-74a5258bf5a317693cd2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-74ae2a21f97d96485ea8": {
       "directory_view": "facilities",
@@ -7449,10 +8877,10 @@
       ]
     },
     "RL-76454b5feb94601bcc6d": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "车集站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690971"
@@ -7510,6 +8938,20 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-771c8d1d7a2727fc5931": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-773f3d076ab1f4548a52": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-775d1e70813c6c621d2b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7535,11 +8977,32 @@
       "station_assignment": "manual",
       "station_id": "node/9111251405"
     },
+    "RL-78002ba8bc0c07c550b2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7807e4f466fa01e8604f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-7844b11db196b754ac27": {
       "folder_path": [
         "高速铁路",
         "中南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-78493dde1aa5e7cbe0c3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-7877d75ca610dec35934": {
@@ -7560,11 +9023,32 @@
       "station_assignment": "manual",
       "station_id": "node/9282598408"
     },
+    "RL-78c4b39d9ba86b6b2d6c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "不确定铁路"
+      ]
+    },
     "RL-78d14cc7f03e7518b7c5": {
       "folder_path": [
         "高速铁路",
         "东北",
         "其他/速度待核对"
+      ]
+    },
+    "RL-78df6b4daee11a6b4679": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-78fc293bc05f8ea4c060": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-7925bc8af484bd3c6077": {
@@ -7601,6 +9085,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2349495346"
+    },
+    "RL-798e36608c57781e968b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-7997c38425e8350c2bdb": {
       "directory_view": "facilities",
@@ -7699,6 +9190,13 @@
       "station_assignment": "manual",
       "station_id": "node/9320122097"
     },
+    "RL-7a30c95b3ba5c8882bf0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-7a6a34c0783e19780acf": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7752,6 +9250,13 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-7ae67923333dc062ea88": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-7b12c5fe7ade52245b5d": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7787,6 +9292,14 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-7b7c67c3fa3bbfa267bc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-7b8e4b248336ecec2880": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7814,6 +9327,34 @@
       "station_assignment": "manual",
       "station_id": "node/1273440762"
     },
+    "RL-7bba1830bb6c16a8afa5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7be8a6d29e2ad3c80ac3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7be9b2744f09af9c8ca9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7c11815a1784841960a0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-7c2797aa849ecf3860fc": {
       "directory_view": "lines",
       "display_name": "桃林铅锌矿未命名轨道·w462836225",
@@ -7821,6 +9362,27 @@
         "其他铁路",
         "矿山铁路",
         "线路归属待核实"
+      ]
+    },
+    "RL-7c2fb8b9379ea3e57be9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7cb1ff0be91901092393": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
+    "RL-7cd2d03edf7d798a879a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-7cdc97b1022552f771ca": {
@@ -7831,6 +9393,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4693191075"
+    },
+    "RL-7cfd47a49675c876263b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-7cfe2410c5065ab8aa75": {
       "rail_semantics": {
@@ -7843,10 +9412,10 @@
       "track_type": "货运铁路线"
     },
     "RL-7d418f7d122640500fd1": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
@@ -7869,6 +9438,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6322614509"
+    },
+    "RL-7da8e0d79b514d960bbf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-7e8520982ce9309a6f2e": {
       "directory_view": "facilities",
@@ -7914,6 +9490,20 @@
       "station_assignment": "manual",
       "station_id": "node/6308157535"
     },
+    "RL-7f3963c97b5ad20ca555": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-7f9ffb5573ac4669a82f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-7fca264b6fac6043b0d1": {
       "directory_view": "facilities",
       "folder_path": [
@@ -7951,10 +9541,10 @@
       "station_id": "node/7296224591"
     },
     "RL-803c9e6b01f5ba168d9d": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "谢桥矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664084"
@@ -8002,6 +9592,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-808d3f4b0c3c0cb8d735": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-80970000e6eca10c12ed": {
       "rail_semantics": {
         "line_role": "main_line",
@@ -8012,6 +9609,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-80f6dce530df1f60a4de": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-812d5c67a4a276946a2a": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8020,6 +9624,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7319251385"
+    },
+    "RL-814ef74a077f0c5bb92e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-816230ffca1f0662bb25": {
       "directory_view": "facilities",
@@ -8066,6 +9677,13 @@
       "station_assignment": "manual",
       "station_id": "node/2349495346"
     },
+    "RL-821e09c751a753cde148": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
     "RL-8240ec060f68fd3f1323": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8074,6 +9692,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8236492544"
+    },
+    "RL-827f71806fe3e95e4c31": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-82d0adafbb9953444fe7": {
       "folder_path": [
@@ -8090,6 +9715,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1550539257"
+    },
+    "RL-834b7ffc4b1a1c194053": {
+      "folder_path": [
+        "车站设施",
+        "沈阳站",
+        "渡线"
+      ]
     },
     "RL-83aeae118fff1cb3554c": {
       "directory_view": "facilities",
@@ -8152,6 +9784,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-84ed486696e3eb04c002": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-852ff1eb1a4bae1a70d0": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8162,10 +9801,10 @@
       "station_id": "node/1583788094"
     },
     "RL-856ff1096dbeb6f0c9da": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
@@ -8207,6 +9846,13 @@
       "station_assignment": "manual",
       "station_id": "node/1720956449"
     },
+    "RL-85f6d99aad49d708b65a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-860c81eee5b3031b3e58": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8215,6 +9861,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7726031896"
+    },
+    "RL-86224a2acea14fbbfdf9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-863b5bde05133e5eb9e6": {
       "folder_path": [
@@ -8238,6 +9891,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7781469270"
+    },
+    "RL-86ceaefaffdb572f19e1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-8708fd5e7e757772f069": {
       "directory_view": "facilities",
@@ -8310,6 +9970,18 @@
       "station_assignment": "manual",
       "station_id": "node/1407516493"
     },
+    "RL-87e653f02e2957e7126c": {
+      "folder_path": [
+        "普速铁路",
+        "西北",
+        "货运"
+      ],
+      "rail_semantics": {
+        "railway_class": "industrial",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-882ec620700e4fd82e27": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8318,6 +9990,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9111251394"
+    },
+    "RL-885d9b088dce537688cf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
     },
     "RL-889a26573abb6a1502bd": {
       "directory_view": "facilities",
@@ -8346,6 +10025,13 @@
       "station_assignment": "manual",
       "station_id": "node/2990496476"
     },
+    "RL-896d774a92648af3acbc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-897fef29998315ecfd71": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8354,6 +10040,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3645320713"
+    },
+    "RL-89f1f5dc79d7d634c0ad": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-89f3dfaf7e6209b307ce": {
       "directory_view": "facilities",
@@ -8382,6 +10075,13 @@
       "station_assignment": "manual",
       "station_id": "node/7212001156"
     },
+    "RL-8a17afc2ccd3ff36330b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-8a3cb617c6ad409e6563": {
       "folder_path": [
         "高速铁路",
@@ -8397,6 +10097,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664093"
+    },
+    "RL-8a531dfc0332e5396b11": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-8a5871bc4adccd553636": {
       "directory_view": "facilities",
@@ -8458,11 +10165,32 @@
       "station_assignment": "manual",
       "station_id": "node/8344240485"
     },
+    "RL-8b8e1c26b4ba0c2165ee": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-8b96e3df37824c3f2d16": {
       "folder_path": [
         "高速铁路",
         "东北",
         "其他/速度待核对"
+      ]
+    },
+    "RL-8b975743316100cdcaf9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-8b9b19d4a1029c425790": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-8b9db433e0001f0d6efd": {
@@ -8491,6 +10219,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3169909565"
+    },
+    "RL-8c061a7dfdcec4ae4852": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-8c1e824aeee4ebf53977": {
       "directory_view": "facilities",
@@ -8553,6 +10288,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9189836489"
+    },
+    "RL-8d5ef6ffd42866098e69": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-8d9191c71373ca3b8ec6": {
       "directory_view": "facilities",
@@ -8643,6 +10385,13 @@
       "station_assignment": "manual",
       "station_id": "node/9081732782"
     },
+    "RL-8eb2f6c922808051bfdc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-8ed87233d1df9ff15359": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8689,6 +10438,13 @@
       "station_assignment": "manual",
       "station_id": "node/9287647730"
     },
+    "RL-8f4b5848de75411fb7ff": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-8f5a2f73c1aa1f896d7f": {
       "folder_path": [
         "高速铁路",
@@ -8724,10 +10480,10 @@
       "station_id": "node/1550539257"
     },
     "RL-8f8196ca07cb19b14eed": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "田集站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228775815"
@@ -8760,6 +10516,13 @@
       "station_assignment": "manual",
       "station_id": "node/4066214772"
     },
+    "RL-8fec7e288518cdd686ae": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-8fec992a609bdf782b42": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8768,6 +10531,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4261930501"
+    },
+    "RL-8ff6b712507c87d5fe33": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-8ff6e82cb305f4e30a05": {
       "directory_view": "facilities",
@@ -8832,6 +10602,13 @@
       "station_assignment": "manual",
       "station_id": "node/10885904305"
     },
+    "RL-90e319db80f9122d1cb5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "不确定铁路"
+      ]
+    },
     "RL-90f3634d70faf75f678a": {
       "directory_view": "lines",
       "folder_path": [
@@ -8848,6 +10625,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9320122102"
+    },
+    "RL-91385250587f338e31cd": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-9149a66cdb91070b6dfb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-91728b155e918f0eba6f": {
       "directory_view": "facilities",
@@ -8874,6 +10665,20 @@
         "其他/速度待核对"
       ]
     },
+    "RL-91a2f5cd669c51ae129d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-91c733d0be23c4c93c2c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-920e5f099952e5a27c4a": {
       "folder_path": [
         "普速铁路",
@@ -8885,6 +10690,13 @@
         "source": "workspace_override",
         "verification_status": "user_verified"
       }
+    },
+    "RL-9212bb88121d818c77d9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-92453e7d72d8f64f54a7": {
       "directory_view": "facilities",
@@ -8930,6 +10742,13 @@
       "station_assignment": "manual",
       "station_id": "node/1720956490"
     },
+    "RL-9277ab225ab633fa8e07": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9280fb9dd45cc18656c2": {
       "directory_view": "facilities",
       "folder_path": [
@@ -8965,6 +10784,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2988925896"
+    },
+    "RL-93b23f36e1e17d7933ed": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-93ec36f4589792c2fffb": {
       "directory_view": "facilities",
@@ -9027,6 +10853,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-94c65aa12dd962176343": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-94eda0a172c95f1aa5d8": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9035,6 +10868,18 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4440864400"
+    },
+    "RL-951d7220517a892bfc6b": {
+      "folder_path": [
+        "联络线",
+        "普速联络线"
+      ],
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "track_role": "unknown",
+        "verification_status": "user_verified"
+      }
     },
     "RL-9526bf2f9ffcd6e4a9bb": {
       "directory_view": "lines",
@@ -9105,6 +10950,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2336082786"
+    },
+    "RL-95dee63ba60746359c82": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-95ef56e74fa7c9e1ca26": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-96149e40386be80a6a58": {
       "directory_view": "facilities",
@@ -9180,6 +11039,20 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-96c79a8cfb796e0ffab9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-96cbfdac67fd2ce82e85": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-96e98865b87f093b94e4": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9198,6 +11071,13 @@
       "station_assignment": "manual",
       "station_id": "node/1273439109"
     },
+    "RL-970abe38314a81f85c91": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9746bebd381708f65e42": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9206,6 +11086,15 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5262662317"
+    },
+    "RL-978715026a6e16dd1a4b": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "track_role": "unknown",
+        "verification_status": "user_verified"
+      }
     },
     "RL-978fa785c8e45d8f6286": {
       "directory_view": "facilities",
@@ -9224,6 +11113,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4507807331"
+    },
+    "RL-97a034ac800660ab41c9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-97a729e1ca9d0996dc32": {
       "directory_view": "facilities",
@@ -9244,6 +11140,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-980e337a07caf2e0a8ca": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9821e804e0411bedf78a": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9252,6 +11155,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/10885904305"
+    },
+    "RL-986320b71e79c3a0421d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-9866af9bc3e9495ec4e9": {
       "rail_semantics": {
@@ -9262,6 +11172,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "普速铁路线"
+    },
+    "RL-988dbede8be248dabaf2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-989bc65932d9168f3d11": {
       "directory_view": "facilities",
@@ -9308,6 +11225,13 @@
       "station_assignment": "manual",
       "station_id": "node/1532826990"
     },
+    "RL-993ecbf83a9617bb077e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-996ff5d99a9eefa492ec": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9335,6 +11259,14 @@
       "station_assignment": "manual",
       "station_id": "node/2662698018"
     },
+    "RL-999637f9bc804f0ed721": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-99a32b3216462845e741": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9353,6 +11285,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-99ac44256f1a32ce714f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-99b799ae9e1e589f2da9": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9362,11 +11301,32 @@
       "station_assignment": "manual",
       "station_id": "node/6322614509"
     },
+    "RL-99ce50fdd3d8fc530ac5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-99dbe078da55d93b917b": {
       "directory_view": "lines",
       "folder_path": [
         "其他铁路",
         "港口铁路"
+      ]
+    },
+    "RL-99e3145d8343350b4a1a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-99fadbb323b0469f8e3f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-9a25f88b4d6251675f89": {
@@ -9405,6 +11365,13 @@
       "station_assignment": "manual",
       "station_id": "node/7301477442"
     },
+    "RL-9ab83acae2efbde059d6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9ae3608bc1c9a6d4eeda": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9430,6 +11397,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "普速铁路线"
+    },
+    "RL-9b3d81ead26889fbd6d8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
     },
     "RL-9b4025811c1e2ad77da3": {
       "directory_view": "facilities",
@@ -9493,6 +11467,20 @@
       "station_assignment": "manual",
       "station_id": "node/2349495346"
     },
+    "RL-9c4413371d2956153e0d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-9c5695c487d7eea53591": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9c581bde203fd81d47c6": {
       "folder_path": [
         "普速铁路",
@@ -9505,6 +11493,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "货运铁路线"
+    },
+    "RL-9c74bf25fdbd4a1a345c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-9cb5f03752cb006ce5ec": {
       "directory_view": "facilities",
@@ -9549,6 +11544,20 @@
       "station_assignment": "manual",
       "station_id": "node/3010140151"
     },
+    "RL-9d11daca2cfda7006d86": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-9d1636f93982fe2df2ca": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9d18bacede8266b8f65e": {
       "folder_path": [
         "高速铁路",
@@ -9575,6 +11584,13 @@
       "station_assignment": "manual",
       "station_id": "node/8012738238"
     },
+    "RL-9d36b06a6481ed414f9e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9d4fa5965c51817ea444": {
       "rail_semantics": {
         "line_role": "connecting_line",
@@ -9598,6 +11614,13 @@
       "station_assignment": "manual",
       "station_id": "node/8009300158"
     },
+    "RL-9d7bd252d4126ca31aeb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9d7de226f402c7db30dc": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9606,6 +11629,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9111251391"
+    },
+    "RL-9da49d9d85f13b822ecc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-9e5baa964865d7e13c00": {
       "directory_view": "facilities",
@@ -9633,6 +11663,13 @@
       "station_assignment": "manual",
       "station_id": "node/7692210515"
     },
+    "RL-9f11fbc62220b3e2f4f3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9f57f58d274c8a7c6ed6": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9651,6 +11688,13 @@
       "station_assignment": "manual",
       "station_id": "node/7232690208"
     },
+    "RL-9f774b9b3167ebf5e135": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-9f9137d7a6d0108bc6cf": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9659,6 +11703,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8454361470"
+    },
+    "RL-9fcacac8ba7f62abe361": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-9ff3076f71719faa9288": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a01c306a7f19331c1102": {
       "directory_view": "facilities",
@@ -9677,6 +11735,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4074623469"
+    },
+    "RL-a02879b651970ea92c0e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a039b75b711ab5f3b1ff": {
       "directory_view": "facilities",
@@ -9728,6 +11793,13 @@
         "非官方铁路"
       ]
     },
+    "RL-a0cbc912534ae17b29f8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a0d8af4700193d5a1af3": {
       "directory_view": "facilities",
       "folder_path": [
@@ -9745,6 +11817,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4074637458"
+    },
+    "RL-a1119b079752c9dab770": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a117e737279dd6b3e3cf": {
       "directory_view": "facilities",
@@ -9764,6 +11843,13 @@
       "station_assignment": "manual",
       "station_id": "node/8431451881"
     },
+    "RL-a16537324816cb9c3799": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a17cb7eb6cc4bbc0341c": {
       "folder_path": [
         "高速铁路",
@@ -9779,6 +11865,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3465652749"
+    },
+    "RL-a188a8e140a3bae71057": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-a1a13db9111b8b989ce3": {
       "directory_view": "facilities",
@@ -9817,10 +11910,10 @@
       "station_id": "node/4074637458"
     },
     "RL-a23a62583aa86056ba05": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
@@ -9862,10 +11955,10 @@
       "station_id": "node/7714110159"
     },
     "RL-a2d1a4eea326e97dfd4f": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "赵固二矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9320122084"
@@ -9882,6 +11975,14 @@
         "高速铁路",
         "西南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-a2d514ee1f6fc85b103c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
       ]
     },
     "RL-a2d5c980fbda7b803353": {
@@ -9992,6 +12093,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-a464b5aa2ab05d81e2b8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a48df4ad4f255d7b6d09": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10019,6 +12127,13 @@
       "station_assignment": "manual",
       "station_id": "node/2990496476"
     },
+    "RL-a4be3ea3ab9c5ee42618": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a4c9d788a3b1f4600c0e": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10036,6 +12151,41 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/14156675336"
+    },
+    "RL-a4ff8608360ac6f0e61f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a50d924187b298eed092": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a529014b810f7c0696f9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a52ce95ccbf71c302a05": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a53cb7bffa257ba954c0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a5cc96116faf484e5132": {
       "folder_path": [
@@ -10062,6 +12212,13 @@
       "station_assignment": "manual",
       "station_id": "node/8756066326"
     },
+    "RL-a60c49c38af381a9738d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a65caa3c137a36ff9498": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10070,6 +12227,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2323529333"
+    },
+    "RL-a68c1897deab514e339b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a6b3932be585ba892391": {
       "directory_view": "facilities",
@@ -10132,6 +12296,13 @@
       "station_assignment": "manual",
       "station_id": "node/8390304459"
     },
+    "RL-a764ccb84bf1f9d59fab": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a7744fa5485adbcc3fdc": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10149,6 +12320,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8375244252"
+    },
+    "RL-a7ab3990fc282571b4c0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a7e627264c624a13a57b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a819e1f16f9e891fbbc3": {
       "folder_path": [
@@ -10181,6 +12366,13 @@
       "station_assignment": "manual",
       "station_id": "node/9282598407"
     },
+    "RL-a856f9cd0596eab292e7": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a861e11b3e9ba3a1d019": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10190,6 +12382,9 @@
       "station_assignment": "manual",
       "station_id": "node/8452913703"
     },
+    "RL-a8632a5befbe0381bd85": {
+      "archived": true
+    },
     "RL-a8923193b58333d97338": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10198,6 +12393,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9193526292"
+    },
+    "RL-a892fda61248f34c014f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-a8b7d9fc5a935cb116bc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a8cd13adc8bcc61bcdd0": {
       "directory_view": "facilities",
@@ -10251,6 +12460,13 @@
       "station_assignment": "manual",
       "station_id": "node/7272083199"
     },
+    "RL-a9866012034b118634b0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-a9bdc9af8347dd9ebaf7": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10259,6 +12475,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9282598408"
+    },
+    "RL-a9be71a4ba65ce525fe1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-a9d7be7ef5481ecbcecd": {
       "directory_view": "lines",
@@ -10303,6 +12526,13 @@
       "station_assignment": "manual",
       "station_id": "node/2662698018"
     },
+    "RL-aa1ef681fd90d7957507": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-aa4462f5cc84a6372fc4": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10311,6 +12541,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3501736632"
+    },
+    "RL-aa461e3f5ba5e78294ab": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-aa9437c033bd24a812b3": {
       "directory_view": "facilities",
@@ -10375,6 +12612,13 @@
       "station_assignment": "manual",
       "station_id": "node/2958219633"
     },
+    "RL-ab15b3156e9e810f131d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ab3419aba555059e1cc9": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10383,6 +12627,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3909327374"
+    },
+    "RL-ab3bfcb26406ab6a263d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-ab505b62b4a7e8f16e97": {
       "directory_view": "facilities",
@@ -10403,10 +12654,10 @@
       "station_id": "node/9226690946"
     },
     "RL-ab7868409451f927bd80": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "马栅站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/3699740707"
@@ -10457,6 +12708,13 @@
       "station_assignment": "manual",
       "station_id": "node/7365811214"
     },
+    "RL-abd4b6d93ce0e27d7ae0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-abd5475ab06dad0a6102": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10465,6 +12723,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4373641710"
+    },
+    "RL-abe523ef6555e7a65a39": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-abeeed195d6d0aa4b6bd": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-abfa69aa83799eddaccb": {
       "rail_semantics": {
@@ -10509,6 +12781,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8869317179"
+    },
+    "RL-acb2c3b5d295267b3612": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-acb71bdcefdb6695887f": {
       "directory_view": "facilities",
@@ -10574,11 +12853,32 @@
       "station_assignment": "manual",
       "station_id": "node/2958239140"
     },
+    "RL-ad4c909bd012b7b9550b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ae06d52cb880eca5a31c": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
+      ]
+    },
+    "RL-ae11dc2fc40e756c4cf0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ae4aeaebdab3a2f26297": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-ae689a751543ba70ba9c": {
@@ -10598,6 +12898,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3628302021"
+    },
+    "RL-ae95f0db8d7c1949d8df": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ae9778fd453a75bf4226": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-aec19438b99067efaf2d": {
       "directory_view": "facilities",
@@ -10633,6 +12947,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-af3957d8f46160151550": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-af5529b1bdc8f9ee5a36": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10650,6 +12971,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6322614509"
+    },
+    "RL-af71184eaf0e9a4b38a6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-af873da8147f2c312f05": {
       "display_name": "广深港高速线",
@@ -10699,6 +13027,20 @@
       "station_assignment": "manual",
       "station_id": "node/2349495346"
     },
+    "RL-b02fc78f25773a29d10d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-b055fb0987090977a589": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "不确定铁路"
+      ]
+    },
     "RL-b05ac13d385fb8e2066e": {
       "folder_path": [
         "高速铁路",
@@ -10717,10 +13059,10 @@
       "station_id": "node/3156146729"
     },
     "RL-b0a8dc2529d9351b3a50": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
@@ -10733,6 +13075,14 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6322614509"
+    },
+    "RL-b1519dd2e1ecc41973df": {
+      "rail_semantics": {
+        "line_role": "unknown",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "渡线 / 道岔连接轨"
     },
     "RL-b166d3c0c6ed05c0dcc2": {
       "directory_view": "facilities",
@@ -10805,6 +13155,13 @@
       "station_assignment": "manual",
       "station_id": "node/3045632030"
     },
+    "RL-b24ba200593e19efe2e9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b26421629ed64b40fd6b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10830,6 +13187,13 @@
       "station_assignment": "manual",
       "station_id": "node/8727079046"
     },
+    "RL-b2af34e5a7a820676629": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b2be86525835e1a112c4": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10840,10 +13204,10 @@
       "station_id": "node/840033678"
     },
     "RL-b2dea094e2d9bb0185aa": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "汤店站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664083"
@@ -10866,6 +13230,13 @@
       "station_assignment": "manual",
       "station_id": "node/7368932420"
     },
+    "RL-b334b191c3b68c58afbc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b34278efe768431a92fb": {
       "directory_view": "facilities",
       "folder_path": [
@@ -10874,6 +13245,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7781469272"
+    },
+    "RL-b3850d3adc445d9988c7": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-b386cf056d117f864465": {
       "directory_view": "facilities",
@@ -10929,6 +13307,13 @@
       "station_assignment": "manual",
       "station_id": "node/2958219633"
     },
+    "RL-b492237915e2c82504b8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b4b6ba09fd0cd2c33a27": {
       "rail_semantics": {
         "line_role": "connecting_line",
@@ -10966,11 +13351,18 @@
       "station_assignment": "manual",
       "station_id": "node/5229679253"
     },
-    "RL-b553ac1f0f0243554e3f": {
-      "directory_view": "facilities",
+    "RL-b53a2eeb0ff4cb72c95a": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "顾桥站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-b553ac1f0f0243554e3f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664076"
@@ -10984,6 +13376,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "货运铁路线"
+    },
+    "RL-b593253e53f92835f0a0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-b594938112a4c6c111c4": {
       "directory_view": "facilities",
@@ -11002,6 +13401,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/12519624557"
+    },
+    "RL-b5ae084cb73a88c577b5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-b5d90b53f8a6d3c3ebec": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-b5d99773177bc56e0c71": {
       "folder_path": [
@@ -11168,6 +13581,20 @@
       "station_assignment": "manual",
       "station_id": "node/4072824047"
     },
+    "RL-b8b84927a62986037c0e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-b8d3c744d00e9c434a09": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b8e0b3e183f9e059bb39": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11176,6 +13603,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7639802001"
+    },
+    "RL-b8e7bed51bda8abe9351": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-b8eb283e8b4988b0b7eb": {
       "directory_view": "facilities",
@@ -11232,10 +13666,10 @@
       "station_id": "node/1932590001"
     },
     "RL-b96308bf14a057c40bc1": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "潘一矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228775814"
@@ -11293,6 +13727,13 @@
       "station_assignment": "manual",
       "station_id": "node/1865551023"
     },
+    "RL-b9c0a3e101acb302d20d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-b9e17063c71d7975887c": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11342,6 +13783,27 @@
       "station_assignment": "manual",
       "station_id": "node/7239070179"
     },
+    "RL-ba47ed6e4d2bab27d635": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ba52b9cb61eedb87daa9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ba5336835f3bb1b217b1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ba706e3ca9c79692cbeb": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11368,6 +13830,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/10885904305"
+    },
+    "RL-badb8d55b81a12aead80": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-badbbcd481ced9d83b14": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-bae2591fe67984b51bba": {
       "directory_view": "facilities",
@@ -11451,6 +13927,13 @@
       "station_assignment": "manual",
       "station_id": "node/2958239140"
     },
+    "RL-bb68d9aea0ab44b84262": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-bb74681110d272bdc389": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11470,6 +13953,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-bbb323868f7ae8f18269": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-bbc23e5f4a95ed6763a8": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11479,6 +13969,13 @@
       "station_assignment": "manual",
       "station_id": "node/9125461495"
     },
+    "RL-bbd7c0f974c78d8ba8fc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-bc112312a82c17cb81c1": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11487,6 +13984,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8163363248"
+    },
+    "RL-bc1234f07fbe26190f72": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-bc123ba76ffae8fcb889": {
       "directory_view": "facilities",
@@ -11559,6 +14063,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9523224051"
+    },
+    "RL-bc7be678818ee75999d9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-bc894d44d0c7e285991d": {
       "directory_view": "facilities",
@@ -11639,6 +14150,20 @@
         "港口铁路"
       ]
     },
+    "RL-bdf91c19ca2f746e6dd0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-be12a78a58f58b6edcb3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-be221a666b6d637f84cf": {
       "directory_view": "lines",
       "folder_path": [
@@ -11646,11 +14171,18 @@
         "港口铁路"
       ]
     },
-    "RL-be7cc70b8609e11ca6da": {
-      "directory_view": "facilities",
+    "RL-be5db0c6a64f9bae95d1": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "马栅站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-be7cc70b8609e11ca6da": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/3699740707"
@@ -11691,6 +14223,13 @@
       "station_assignment": "manual",
       "station_id": "node/3644667948"
     },
+    "RL-beb18e4a88727c529bee": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-bec7eae3fcab955c57c0": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11719,6 +14258,20 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-bf22191e699b963c7947": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-bf42a199c9f7e06c47e3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-bf631021e7b99c79282d": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11727,6 +14280,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9312908622"
+    },
+    "RL-bf704f3b6ec4f7bb801f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-bfa8ff43f81750711db0": {
       "folder_path": [
@@ -11743,6 +14303,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9118892105"
+    },
+    "RL-bfefeb4f18db25241387": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c00fbc2575108aadc663": {
       "folder_path": [
@@ -11804,6 +14371,13 @@
       "station_assignment": "manual",
       "station_id": "node/2266601966"
     },
+    "RL-c0b27409fa0e3b02429e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-c0c1fa36b7e0d921a760": {
       "directory_view": "facilities",
       "folder_path": [
@@ -11812,6 +14386,20 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7740322568"
+    },
+    "RL-c0c950d47051b4ada450": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-c14f674e0db07fbcc360": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c15a92fa39e7a04269e5": {
       "directory_view": "facilities",
@@ -11830,6 +14418,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7714110148"
+    },
+    "RL-c1a79491cd4d8df1fe89": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c1d200afa7ea365ecd1c": {
       "folder_path": [
@@ -11892,6 +14487,13 @@
       "station_assignment": "manual",
       "station_id": "node/4507807331"
     },
+    "RL-c2dd4a23c96d8efd01af": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-c3005b351d85038530f4": {
       "folder_path": [
         "高速铁路",
@@ -11925,6 +14527,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/13509452388"
+    },
+    "RL-c348d38ae075e4b26f92": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c35ca360b049d6ccdfa5": {
       "directory_view": "facilities",
@@ -11989,6 +14598,13 @@
       "station_assignment": "manual",
       "station_id": "node/8453216528"
     },
+    "RL-c41d273ddf5eaf65f11c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-c4449c516b09da26244f": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12034,6 +14650,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3156146729"
+    },
+    "RL-c49fa5fb688a6c6de79b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c4b1b52108dd46f667b5": {
       "directory_view": "facilities",
@@ -12173,6 +14796,13 @@
       "station_assignment": "manual",
       "station_id": "node/9287647753"
     },
+    "RL-c6136310caf745af76b6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-c635eb0b12a5cb0a94fe": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12181,6 +14811,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7733885002"
+    },
+    "RL-c665fda02b27eacac75a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c6668d52d0f7a8d9e965": {
       "directory_view": "facilities",
@@ -12278,6 +14915,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2584265429"
+    },
+    "RL-c819c6a535c2945cdbe9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c84d0c8cb7c0283f9a5f": {
       "directory_view": "facilities",
@@ -12435,6 +15079,28 @@
       "station_assignment": "manual",
       "station_id": "node/1607767362"
     },
+    "RL-c961927879a005dbdca9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-c96655b3be1564dce0e0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-c96b5ff272d9b391343c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-c9a3f9bbe801289411d3": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12443,6 +15109,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3006154441"
+    },
+    "RL-c9a8614ea5a9c9c48bc8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-c9d2755f1d0942eea3c1": {
       "rail_semantics": {
@@ -12464,10 +15137,10 @@
       "station_id": "node/3698187689"
     },
     "RL-ca561c36a179f0e7e5bc": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "顾桥矿站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664077"
@@ -12515,6 +15188,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3561638564"
+    },
+    "RL-caf6fb2ddc07db7cfed2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-cb4aaaa4fd4bbf7f2527": {
       "folder_path": [
@@ -12576,6 +15256,27 @@
       "station_assignment": "manual",
       "station_id": "node/9076173199"
     },
+    "RL-cc79d1bb15ce32cdf18c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
+    "RL-cc7f9961e15ca9141e2e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-cc83030ac57dc50a8d88": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ccc9ba18fe6ab5d72a39": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12593,6 +15294,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7296234981"
+    },
+    "RL-ccf738f2099f642bee05": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-cd1b724cf3d3c819dc1f": {
       "directory_view": "facilities",
@@ -12702,6 +15410,13 @@
       "station_assignment": "manual",
       "station_id": "node/7236131503"
     },
+    "RL-ce9f89b1b6c9c8575ac1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-cef2335b3bfda8923bed": {
       "folder_path": [
         "高速铁路",
@@ -12753,6 +15468,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-cfa37203574bafc1b747": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-cfe75e81ee4dff2c5055": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12761,6 +15483,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7555690994"
+    },
+    "RL-cff135c0fe07dd85abe6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-cff518b5c8e2ecfb639e": {
       "directory_view": "facilities",
@@ -12779,6 +15508,9 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/2092851690"
+    },
+    "RL-d02b22f97736d18dcd69": {
+      "archived": true
     },
     "RL-d02f285f34cc97b41f17": {
       "directory_view": "facilities",
@@ -12832,6 +15564,13 @@
       "station_assignment": "manual",
       "station_id": "node/7252546312"
     },
+    "RL-d0a9619fd43512ab364b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d0cb15ef20bce70274f2": {
       "directory_view": "facilities",
       "folder_path": [
@@ -12858,6 +15597,14 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7252546313"
+    },
+    "RL-d0fea622bea8c0b6630c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
     },
     "RL-d10264a01029a25c65c9": {
       "directory_view": "facilities",
@@ -12893,6 +15640,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1630423910"
+    },
+    "RL-d177e23e6de6cc112fb6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d1a53c3d82dc535e1c63": {
       "directory_view": "facilities",
@@ -12939,6 +15693,27 @@
       "station_assignment": "manual",
       "station_id": "node/2328308916"
     },
+    "RL-d23f94fd92c73b0266ae": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-d2939f9a8cfa3d8f4a63": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-d2b6036c56bd54f01bcf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d31bbac9e29d8f273ad6": {
       "rail_semantics": {
         "line_role": "main_line",
@@ -12966,6 +15741,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8078137602"
+    },
+    "RL-d3700e5b70dfc43e3565": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d39769365c8e2fef0fe6": {
       "display_name": "桃林铅锌矿未命名轨道·w462836231"
@@ -12996,6 +15778,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7706586838"
+    },
+    "RL-d3efcd8a124490139215": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d418fa70350923a5c0e6": {
       "directory_view": "facilities",
@@ -13054,10 +15843,10 @@
       "station_id": "node/12732718442"
     },
     "RL-d4bd4bbddb5c2bb17294": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "顾桥站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664076"
@@ -13114,6 +15903,13 @@
       "station_assignment": "manual",
       "station_id": "node/2001914253"
     },
+    "RL-d4fc89272b8e4d56d7a1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d50be4d9c14789272023": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13151,6 +15947,13 @@
       "station_assignment": "manual",
       "station_id": "node/7740322581"
     },
+    "RL-d57d2278e72cbdcff202": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d59b76923993567ecdb5": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13159,6 +15962,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9223366454"
+    },
+    "RL-d5a46df1341cd507de76": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d5cc73a17d20fe431850": {
       "directory_view": "facilities",
@@ -13204,6 +16014,13 @@
         "verification_status": "user_verified"
       }
     },
+    "RL-d6bc97c4e5fa185d641b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d6bf937d90c029984a7a": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13212,6 +16029,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8431451881"
+    },
+    "RL-d6c308a727d7651f9c8d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d6e3a251f6cb852c0bb0": {
       "directory_view": "facilities",
@@ -13250,6 +16074,13 @@
       "station_assignment": "manual",
       "station_id": "node/4066597470"
     },
+    "RL-d851d2d15eb042b47c64": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-d8fc791ecac10b8a3cab": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13267,6 +16098,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7212001156"
+    },
+    "RL-d92250d0d3abb1f6381a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-d93aeaa56fee160a8ccd": {
       "directory_view": "facilities",
@@ -13312,6 +16150,14 @@
       ],
       "track_type": "高速铁路线"
     },
+    "RL-da2f0e03a803c0f0b8da": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-da63ac5a570820725961": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13320,6 +16166,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7740376253"
+    },
+    "RL-da7eed2abe00dbf10a0f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-da821dd8b5839a547f4e": {
       "directory_view": "facilities",
@@ -13384,6 +16237,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3159071367"
+    },
+    "RL-db502745751b720529bb": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-db719e8a3a603f6f34d7": {
       "directory_view": "facilities",
@@ -13456,6 +16316,13 @@
       "station_assignment": "manual",
       "station_id": "node/3697044158"
     },
+    "RL-dc543e1ae89a04dd4804": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-dc5a2a8cc31cd7281815": {
       "rail_semantics": {
         "line_role": "main_line",
@@ -13465,6 +16332,20 @@
         "verification_status": "user_verified"
       },
       "track_type": "普速铁路线"
+    },
+    "RL-dc6525517a21f172f1e1": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
+    "RL-dcae257d6d1803d02fc9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-dccff22dd5eecad102a6": {
       "directory_view": "facilities",
@@ -13485,13 +16366,20 @@
       "station_id": "node/7252546312"
     },
     "RL-dcd47880a9052b859efd": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "顾桥站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226664076"
+    },
+    "RL-dcd4e91bf88c714aa020": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-dced2bfa89ad3e9bd8b2": {
       "directory_view": "facilities",
@@ -13501,6 +16389,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8375244252"
+    },
+    "RL-dd02929275a7fc2bd92f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-dd3471cd8a523a2af07f": {
       "directory_view": "facilities",
@@ -13548,6 +16443,14 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-ddc743b18c6beaf94999": {
+      "directory_view": "lines",
+      "folder_path": [
+        "普速铁路",
+        "华东",
+        "客货运"
+      ]
+    },
     "RL-dde2fa9acdba5cffac96": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13567,10 +16470,10 @@
       }
     },
     "RL-ddfbabb922f3ee1869bb": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "戴楼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228801017"
@@ -13647,6 +16550,13 @@
       "station_assignment": "manual",
       "station_id": "node/9226690950"
     },
+    "RL-debdf143cfb0b520e2b3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-def13cd15853a46855bb": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13674,6 +16584,13 @@
       "station_assignment": "manual",
       "station_id": "node/4615476306"
     },
+    "RL-df23bdb8f8cd82060976": {
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-df47e27bba80d2640481": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13683,6 +16600,13 @@
       "station_assignment": "manual",
       "station_id": "node/9223366454"
     },
+    "RL-df522b7b8e4913415f2a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-df60cfcf2c86fce1a158": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13691,6 +16615,27 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5670951192"
+    },
+    "RL-df6ff1f29e99c323a17d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-df881a65413a8550d7d3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-df8ac56847d990594d45": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-df9e28116e2bd79dca20": {
       "directory_view": "facilities",
@@ -13738,10 +16683,10 @@
       "station_id": "node/3698187689"
     },
     "RL-e078ba6bdce941390ac6": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "田集站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228775815"
@@ -13755,6 +16700,13 @@
       "station_assignment": "manual",
       "station_id": "node/4074637458"
     },
+    "RL-e07cfbcd98e32bb70f29": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e08070911158cb1a192f": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13763,6 +16715,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4072824075"
+    },
+    "RL-e0a94f93a71944e51058": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-e0a9bb8ca5735ee13829": {
       "directory_view": "facilities",
@@ -13837,6 +16796,13 @@
       "station_assignment": "manual",
       "station_id": "node/2719758933"
     },
+    "RL-e23d0b6ff3082b90afdd": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e251ca37fbffa64b50f8": {
       "directory_view": "facilities",
       "folder_path": [
@@ -13883,10 +16849,10 @@
       "station_id": "node/9258885993"
     },
     "RL-e2ef08885c1c8b0c2860": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "凤洼站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9320122086"
@@ -13980,6 +16946,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-e415eb11bdb63c57d470": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e42ce5951aeb6acc7413": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14070,11 +17043,25 @@
       "station_assignment": "manual",
       "station_id": "node/9174531416"
     },
+    "RL-e576625d4c2094e7bdf2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e5a3c54c13dbba1c491a": {
       "folder_path": [
         "高速铁路",
         "华东",
         "其他/速度待核对"
+      ]
+    },
+    "RL-e5ae7741c03e7e0edda3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-e5f5d2678e272beb95bd": {
@@ -14085,6 +17072,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7342408837"
+    },
+    "RL-e603fffb4771490d8756": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-e606bb3126220c9fc53c": {
       "directory_view": "facilities",
@@ -14157,6 +17151,13 @@
       "station_assignment": "manual",
       "station_id": "node/8324623917"
     },
+    "RL-e6699d708aa87a3b4c69": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e68993a0e6e43c2e91c3": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14174,6 +17175,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8859072629"
+    },
+    "RL-e6a8037b4edca02fae6c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-e6c0f11e298375312fe4": {
       "rail_semantics": {
@@ -14201,6 +17209,13 @@
       "station_assignment": "manual",
       "station_id": "node/4718362793"
     },
+    "RL-e7315044a8444482f78f": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e737c0fec9fdbf2713e0": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14209,6 +17224,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7161749775"
+    },
+    "RL-e74cafb2d2c097e4b7f9": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-e74f69af9bbdf1c95d7d": {
       "folder_path": [
@@ -14285,6 +17307,13 @@
       "station_assignment": "manual",
       "station_id": "node/3010140312"
     },
+    "RL-e854f1f386f8ecd29da2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e8640cd7d6b72800dbf4": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14340,6 +17369,13 @@
       "station_assignment": "manual",
       "station_id": "node/6322614509"
     },
+    "RL-e9183c07d30fe1c8a033": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-e94a072de91d4e90027a": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14375,6 +17411,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/6339864765"
+    },
+    "RL-e9e465ecf3d8739887a5": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-e9f9b3d53289c2ce5f82": {
       "directory_view": "facilities",
@@ -14419,6 +17462,20 @@
       "station_assignment": "manual",
       "station_id": "node/8310212465"
     },
+    "RL-ea503b4d6f9fde32034b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ea529168ac22b5480e42": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
     "RL-ea646beddb8f996fb772": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14437,6 +17494,20 @@
       "station_assignment": "manual",
       "station_id": "node/1826090372"
     },
+    "RL-eb0924e2f74d232b6c6a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "港口铁路"
+      ]
+    },
+    "RL-eb3dc8ee1d71b169ad17": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-eb7d1f798b4619e3b18e": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14451,6 +17522,13 @@
         "高速铁路",
         "中南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-ebb2cfabaac3d4ddd004": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-ebe17165e9fe2244bb63": {
@@ -14478,11 +17556,18 @@
         "verification_status": "user_verified"
       }
     },
-    "RL-ec15053c5361bf74ed5c": {
-      "directory_view": "facilities",
+    "RL-ec10982ef867fa1e5ca6": {
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "潘二矿站"
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-ec15053c5361bf74ed5c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9228775809"
@@ -14520,6 +17605,13 @@
       },
       "track_type": "普速铁路线"
     },
+    "RL-ed99a2029f0c97f0ed8d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ed9ba8f9420e2676209b": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14544,6 +17636,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8041771716"
+    },
+    "RL-ee19d375ae8113bde52c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-ee471c913526987b8347": {
       "directory_view": "facilities",
@@ -14581,6 +17680,13 @@
       "station_assignment": "manual",
       "station_id": "node/3084370953"
     },
+    "RL-ee935ca0f3595bd63087": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-eea1b03df3a852d4e386": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14598,6 +17704,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5261887335"
+    },
+    "RL-eec7f4d3b9b69b3a91a1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-eec7f8db34e05e176b53": {
       "directory_view": "facilities",
@@ -14644,6 +17757,13 @@
       "station_assignment": "manual",
       "station_id": "node/7036495786"
     },
+    "RL-ef33c565c69d5d928a60": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-ef691235cca597bbd1a8": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14661,6 +17781,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9118904622"
+    },
+    "RL-ef7e08591c76ebababaa": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-ef8e261bab32b5642d0e": {
       "directory_view": "lines",
@@ -14689,6 +17816,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7826309938"
+    },
+    "RL-efb75c954a9d57152124": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-efc779bd3418872e6b6f": {
       "directory_view": "facilities",
@@ -14725,6 +17859,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7036495786"
+    },
+    "RL-f0322907fbdc55d2380e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f03b2571168c8bf88af6": {
       "directory_view": "facilities",
@@ -14796,6 +17937,13 @@
       "station_assignment": "manual",
       "station_id": "node/9081732813"
     },
+    "RL-f0e43c9df86061e5f631": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f0eaafada6c71a8d0c35": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14814,6 +17962,13 @@
       "station_assignment": "manual",
       "station_id": "node/7238976159"
     },
+    "RL-f11a0f348c6788f4d150": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f11ea4f31515191ad16a": {
       "directory_view": "facilities",
       "folder_path": [
@@ -14831,6 +17986,34 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/8410712138"
+    },
+    "RL-f140e62fb2a5106ed96e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-f144a6bee57bc0b8c068": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-f14b61fa5f16b5638214": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-f1877607c874bba83f72": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f193eb5602557f3e4233": {
       "directory_view": "facilities",
@@ -14858,6 +18041,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/9193526306"
+    },
+    "RL-f1a307f5e34f2d7a4f54": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f1a8a62769e624f62b2d": {
       "directory_view": "facilities",
@@ -14966,6 +18156,13 @@
       "station_assignment": "manual",
       "station_id": "node/8690142673"
     },
+    "RL-f294fb7033c8b0494094": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f2b1dec5971012fc9df6": {
       "display_name": "京沪高速线",
       "folder_path": [
@@ -15018,6 +18215,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/12627525332"
+    },
+    "RL-f3b9e44556b770ae52b4": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f3ce4790bc9a1d809635": {
       "directory_view": "facilities",
@@ -15072,6 +18276,20 @@
       "station_assignment": "manual",
       "station_id": "node/3501736671"
     },
+    "RL-f42a804c5afc35d07876": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-f4611535270ad012a622": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f4aaf6dfd1215a518bb8": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15106,6 +18324,20 @@
       "station_assignment": "manual",
       "station_id": "node/12627525341"
     },
+    "RL-f4f96d79a0d83fa418d2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-f5226d8639cc41945a68": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f52b521b65c5696dedf3": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15123,6 +18355,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/3698187690"
+    },
+    "RL-f54ae76dc6c63469ebd0": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f562b552b0acee13e237": {
       "folder_path": [
@@ -15167,6 +18406,13 @@
       },
       "track_type": "货运铁路线"
     },
+    "RL-f634cf785338e449d337": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-f642c0143e22e9fa5b07": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15175,6 +18421,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7934242278"
+    },
+    "RL-f6689ad10f993e082492": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f66c14af81d3c8be6f74": {
       "directory_view": "facilities",
@@ -15193,6 +18446,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/7036495786"
+    },
+    "RL-f6d9ed0c9724012b836e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-f6e970a214b054ef12bf": {
       "directory_view": "facilities",
@@ -15289,6 +18549,13 @@
         "高速铁路",
         "中南",
         "其他/速度待核对"
+      ]
+    },
+    "RL-f8bb7b8c2c6d3a635eb2": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
       ]
     },
     "RL-f8c3223c6b0c697e522e": {
@@ -15537,6 +18804,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-fb75c094480cf37c35e8": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-fb8128edda138811ce31": {
       "rail_semantics": {
         "line_role": "connecting_line",
@@ -15561,6 +18835,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/4072824047"
+    },
+    "RL-fbcc52c614993d16d51e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-fbe0bf3ed87d9cbaf0a1": {
       "folder_path": [
@@ -15601,6 +18882,13 @@
       "station_assignment": "manual",
       "station_id": "node/7236131503"
     },
+    "RL-fc9379780bc479fb5173": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-fca249e42dc83b6e7b85": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15636,6 +18924,20 @@
       "station_assignment": "manual",
       "station_id": "node/8324623917"
     },
+    "RL-fcc24304c3185d805072": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "RL-fd21f9ed04a942db4fcc": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-fd88d933b145412f3f51": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15644,6 +18946,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5157238246"
+    },
+    "RL-fdb3228ad4f3ae937a5d": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-fdb56efd6d96ea68e105": {
       "directory_view": "facilities",
@@ -15664,10 +18973,10 @@
       "station_id": "node/2662698018"
     },
     "RL-fdc0cb3926034c2296e0": {
-      "directory_view": "facilities",
+      "directory_view": "lines",
       "folder_path": [
-        "车站设施",
-        "车集站"
+        "其他铁路",
+        "矿区铁路"
       ],
       "station_assignment": "manual",
       "station_id": "node/9226690971"
@@ -15779,6 +19088,13 @@
         "其他/速度待核对"
       ]
     },
+    "RL-fec273cc902b167d6bdf": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "RL-fee5950ae1f2305742b2": {
       "directory_view": "facilities",
       "folder_path": [
@@ -15797,6 +19113,13 @@
         "verification_status": "user_verified"
       },
       "track_type": "货运铁路线"
+    },
+    "RL-ff30c10da0b9d17efff3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-ff36d23d4e0ffeb8db7c": {
       "directory_view": "facilities",
@@ -15833,6 +19156,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/1657245403"
+    },
+    "RL-ff825ad72ab51f6a9aed": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "RL-ff8ad44e7ee7601d68d5": {
       "directory_view": "facilities",
@@ -15891,6 +19221,20 @@
     "ST-00ab6eb0de16ceaedf1d": {
       "track_type": "普速铁路站场股道"
     },
+    "ST-0eb124eae1679f7fb598": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-17fb60b3cdeca77ec2d6": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "ST-222fabedc5a0c8da7738": {
       "folder_path": [
         "站台线&股道线",
@@ -15932,6 +19276,48 @@
       "station_assignment": "manual",
       "station_id": "node/7212021583"
     },
+    "ST-5d09ef94c355f398acc3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-60593a1d2e2678d9395c": {
+      "folder_path": [
+        "车站设施",
+        "沈阳站",
+        "用途待核实"
+      ]
+    },
+    "ST-613ce51b15727a999d9a": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-641998c38b5825896936": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-6710aebe51e0100e9bf1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-6cfd5b1743485b2e1262": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "ST-735677005e3c1d9df746": {
       "rail_semantics": {
         "source": "workspace_override",
@@ -15939,11 +19325,46 @@
         "verification_status": "user_verified"
       }
     },
+    "ST-7a293e2daa0549529ba3": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-8035592489c609789ffe": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "ST-823ed2d03fbbebcfe47e": {
       "track_type": "支线 / 岔道"
     },
     "ST-884bfb9a90f8ea4d95c9": {
       "track_type": "高速铁路站场股道"
+    },
+    "ST-896e332996f70b069cf7": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-93273f8a84127851a0ab": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-99d2a09bbfcc5768956e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "ST-9bfd7473d1f19ff22ed8": {
       "rail_semantics": {
@@ -15952,8 +19373,29 @@
         "verification_status": "user_verified"
       }
     },
+    "ST-9efa5fac808cd828a543": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "ST-9ff13a036e8e84eae576": {
       "track_type": "高速铁路站场股道"
+    },
+    "ST-a5662a261eaa2850f81b": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-ab4cbdd509cab4b79124": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "ST-ac0f30c62c2eb90eb05f": {
       "folder_path": [
@@ -15965,6 +19407,55 @@
         "track_role": "maintenance_track",
         "verification_status": "user_verified"
       }
+    },
+    "ST-adedbea3cafff148ce14": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-aeea8da88865c8a4b947": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-b253fb1924b5cbf05a48": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-b7479eb4e4e784e8251e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-c369d81898366d4f8f4c": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-c76d48b750ccc270a965": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-cc3a628d15435b1a9f1e": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "ST-d703201077ec46822901": {
       "rail_semantics": {
@@ -15981,6 +19472,13 @@
         "华东"
       ]
     },
+    "ST-de431d106bf6ee3b0d66": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
     "ST-e623e620cb8c2ec945e5": {
       "rail_semantics": {
         "source": "workspace_override",
@@ -15989,6 +19487,20 @@
       },
       "station_assignment": "manual",
       "station_id": "node/7197518162"
+    },
+    "ST-f0ebdc13ddf3628b49f1": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
+    },
+    "ST-f72ae581dcbc18e4b037": {
+      "directory_view": "lines",
+      "folder_path": [
+        "其他铁路",
+        "矿区铁路"
+      ]
     },
     "ST-fc3dfe5841dcf831ad50": {
       "folder_path": [
