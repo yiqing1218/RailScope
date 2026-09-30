@@ -533,7 +533,8 @@ class RailDirectoryView(QTreeView):
         if event.button() == Qt.MouseButton.RightButton:
             index = self.indexAt(event.position().toPoint())
             if index.isValid() and self.selectionModel() is not None:
-                self.setCurrentIndex(index)
+                if not self.selectionModel().isSelected(index):
+                    self.setCurrentIndex(index)
         super().mousePressEvent(event)
 
     def startDrag(self,actions):

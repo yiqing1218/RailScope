@@ -8,6 +8,26 @@ from desktop.metro_store import StationLookup
 from launcher import Desk
 
 
+def test_right_click_on_selected_row_keeps_multiselection(qtbot):
+    from PySide6.QtCore import QItemSelectionModel, Qt
+    from PySide6.QtGui import QStandardItem, QStandardItemModel
+    from PySide6.QtTest import QTest
+    from desktop.rail_catalog_model import RailDirectoryView
+    model = QStandardItemModel()
+    model.appendRow(QStandardItem('第一条'))
+    model.appendRow(QStandardItem('第二条'))
+    view = RailDirectoryView()
+    qtbot.addWidget(view)
+    view.setModel(model)
+    view.show()
+    flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+    for row in range(2):
+        view.selectionModel().select(model.index(row, 0), flags)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.RightButton,
+                     pos=view.visualRect(model.index(1, 0)).center())
+    assert len(view.selectionModel().selectedRows()) == 2
+
+
 def test_map_multiselect_uses_indexed_physical_station_lookup(tmp_path, monkeypatch):
     path = tmp_path / 'metro.sqlite'
     with sqlite3.connect(path) as db:
