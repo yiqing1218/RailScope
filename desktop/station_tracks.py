@@ -82,6 +82,15 @@ def track_sections(sections, by_edge, overrides):
     return [tuple(sorted(group)) for group in joined.values()]
 
 
+def station_assets(db, source):
+    """All source-associated platforms/areas, even outside track bounding boxes."""
+    source_node = str(source).removeprefix('node/')
+    return [json.loads(raw) for (raw,) in db.execute(
+        "SELECT data FROM features WHERE kind IN ('railPlatforms','railStationAreas') AND EXISTS "
+        "(SELECT 1 FROM json_each(json_extract(data,'$.properties.associated_station_ids')) WHERE CAST(value AS TEXT) IN (?,?))",
+        (source,source_node))]
+
+
 def load_station_tracks(directory, identity_path, station, overrides):
     """Return repository + source bindings + real platform/switch geometries."""
     directory = Path(directory)
@@ -94,7 +103,7 @@ def load_station_tracks(directory, identity_path, station, overrides):
                 name = row[0].removesuffix('站')
         groups = [(key, json.loads(raw)) for key, raw in db.execute(
             "SELECT id,data FROM catalog WHERE station_name IN (?,?)", (name, name + '站'))]
-        source = station.get('infrastructure_id') if station.get('kind') in ('station', 'halt') else station.get('station_source')
+        source = station.get('station_source_id') or station.get('infrastructure_id') or station.get('station_source')
         if source:
             groups = [(key, row) for key, row in groups
                       if not overrides.get(key, {}).get('station_source')
@@ -117,7 +126,39 @@ def load_station_tracks(directory, identity_path, station, overrides):
             features.extend(json.loads(row[0]) for row in db.execute(
                 'SELECT f.data FROM rail_feature_groups g JOIN features f ON f.id=g.feature_id WHERE g.group_id=?', (key,)))
         if not features:
-            raise ValueError('该站尚无已关联的站场股道，请先整理车站与股道关系')
+            # A station may have real platforms/area and passing tracks without
+            # an ST catalog group (e.g. source ways carry only a railway name).
+            # Export uses its own source assets instead of requiring a manual
+            # directory move, which must never move the main line under a station.
+            with closing(sqlite3.connect(directory/'rail_lines.sqlite')) as index:
+                candidates = index.execute('SELECT source_id,data FROM station_directory WHERE source_id=?' if source
+                    else 'SELECT source_id,data FROM station_directory WHERE name IN (?,?)',
+                    (source,) if source else (name,name+'站')).fetchall()
+            if len(candidates) != 1:
+                raise ValueError('未找到唯一车站实体，请从地图选择具体车站')
+            source, raw_station = candidates[0]
+            feature = json.loads(raw_station)
+            assets = station_assets(db,source)
+            from shapely.geometry import shape
+            boxes = [shape(asset['geometry']).bounds for asset in assets]
+            if boxes:
+                west,south = min(b[0] for b in boxes),min(b[1] for b in boxes)
+                east,north = max(b[2] for b in boxes),max(b[3] for b in boxes)
+                latitude = (south+north)/2
+                dx,dy = 150/(111320*math.cos(math.radians(latitude))),150/111320
+                west -= dx; east += dx; south -= dy; north += dy
+            else:
+                x,y = feature['geometry']['coordinates']
+                # Selection window only, never a fabricated station boundary.
+                dx,dy = 600/(111320*math.cos(math.radians(y))),600/111320
+                west,east,south,north = x-dx,x+dx,y-dy,y+dy
+            features = [json.loads(raw) for (raw,) in db.execute(
+                "SELECT f.data FROM bounds b JOIN features f ON f.id=b.id WHERE f.kind='rail' "
+                "AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? "
+                "AND json_extract(f.data,'$.properties.network_edge_id') IS NOT NULL",
+                (west,east,south,north))]
+            if not features:
+                raise ValueError('该站尚无可导出的真实轨道数据')
         edge_ids = {f['properties']['network_edge_id'] for f in features}
         edges = [json.loads(db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()[0]) for key in sorted(edge_ids)]
         coords = [p for edge in edges for p in edge['coordinates']]
@@ -125,19 +166,41 @@ def load_station_tracks(directory, identity_path, station, overrides):
         east, north = max(p[0] for p in coords), max(p[1] for p in coords)
         # Context is bounded by the identified station yard, not a generic radius.
         context = [json.loads(raw) for (raw,) in db.execute(
-            "SELECT f.data FROM bounds b JOIN features f ON f.id=b.id WHERE b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? AND f.kind IN ('railPlatforms','railPoints','rail')",
+            "SELECT f.data FROM bounds b JOIN features f ON f.id=b.id WHERE b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=? AND f.kind IN ('railPlatforms','railStationAreas','railPoints','rail')",
             (west, east, south, north))]
-        yard_nodes = {node for e in edges for node in e.get('node_ids', (e['from_node'], e['to_node']))}
         access_ids = {f['properties']['network_edge_id'] for f in context
-                      if f['geometry']['type'] == 'LineString' and f['properties'].get('network_edge_id')
-                      and {f['properties'].get('from_node_id'), f['properties'].get('to_node_id')} & yard_nodes} - edge_ids
+                      if f['geometry']['type'] == 'LineString' and f['properties'].get('network_edge_id')} - edge_ids
         for key in sorted(access_ids):
             edges.append(json.loads(db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()[0]))
     document = {'schema': 'railscope.rail-plan.v2', 'routes': [], 'trains': [], 'extensions': {},
                 'required_capabilities': [], 'service_date': '2026-01-01', 'timezone': 'Asia/Shanghai', 'source': 'station infrastructure'}
-    repo, bindings = build_repository({'edges': edges, 'points': []}, document, identity_path)
+    repo, bindings = build_repository({'edges': edges, 'points': []}, document, identity_path, overrides=overrides)
+    # Apply workspace railway names to the presentation adapter without changing
+    # its shared infrastructure identities or source geometry.
+    for source_line, line_id in bindings['lines'].items():
+        edit = overrides.get(source_line, overrides.get(line_id, {}))
+        if edit.get('line_kind') != 'station':
+            label = edit.get('assembly_name') or edit.get('line_name') or edit.get('display_name')
+            if label:
+                repo.lines[line_id] = replace(repo.lines[line_id], name=label)
+    for feature in features + context:
+        props = feature.get('properties', {})
+        edit = overrides.get(props.get('catalog_group_id'), {})
+        if not edit or edit.get('line_kind') == 'station':
+            continue
+        source_edge = props.get('network_edge_id')
+        edge = repo.edges.get(bindings['edges'].get(source_edge))
+        if edge and edge.infrastructure_line_id in repo.lines:
+            line = repo.lines[edge.infrastructure_line_id]
+            label = edit.get('assembly_name') or edit.get('line_name') or edit.get('display_name')
+            if label or edit.get('technical_attributes'):
+                repo.lines[line.id] = replace(line, name=label or line.name,
+                    provenance={**line.provenance, 'workspace_presentation': {
+                        'technical_attributes': edit.get('technical_attributes', {}),
+                        'source_group_id': props.get('catalog_group_id'),
+                        'source': 'workspace_override', 'verification_status': 'user_edited'}})
     registry = IdentityRegistry(identity_path)
-    source = station.get('infrastructure_id') if station.get('kind') in ('station','halt') else None
+    source = source or station.get('station_source_id') or station.get('infrastructure_id') or station.get('station_source')
     if not source:
         with closing(sqlite3.connect(directory / 'rail_lines.sqlite')) as db:
             candidates = [(key, json.loads(raw)) for key, raw in db.execute(
@@ -148,8 +211,19 @@ def load_station_tracks(directory, identity_path, station, overrides):
             raise ValueError('站场尚未唯一关联到车站实体，请从地图车站对象进入')
         source = candidates[0][0]
     station_id = registry.resolve_alias('station', 'osm/' + source, 'ST')
-    anchor = next(iter(repo.nodes.values()))
-    repo.stations[station_id] = Station(station_id, name + '站', anchor.lon, anchor.lat, anchor.id,
+    with closing(sqlite3.connect(directory / 'rail_lines.sqlite')) as db:
+        source_record = db.execute('SELECT data FROM station_directory WHERE source_id=?', (source,)).fetchone()
+    station_coordinate = (json.loads(source_record[0])['geometry']['coordinates'] if source_record
+                          else (next(iter(repo.nodes.values())).lon, next(iter(repo.nodes.values())).lat))
+    anchor = min(repo.nodes.values(), key=lambda node:
+                 ((node.lon-station_coordinate[0])*math.cos(math.radians(station_coordinate[1])))**2
+                 + (node.lat-station_coordinate[1])**2)
+    try:
+        from .rail_station_directory import display_name
+    except ImportError:
+        from rail_station_directory import display_name
+    full_name = overrides.get('station:' + str(source), {}).get('display_name') or display_name(name)
+    repo.stations[station_id] = Station(station_id, full_name, *station_coordinate, anchor.id,
                                        source_member_ids=(source,), verification_status='automatic_reference')
     sections = defaultdict(set)
     for feature in features:
@@ -170,7 +244,7 @@ def load_station_tracks(directory, identity_path, station, overrides):
             values = {getattr(repo.edges[ref.edge_id], attribute) for ref in refs}
             return next(iter(values)) if len(values) == 1 else default
         role = shared_attribute('track_role', 'unknown')
-        saved = migrate_track_override(saved, name + '站', role)
+        saved = migrate_track_override(saved, full_name, role)
         raw = saved.get('station_track', {})
         if raw.get('edge_refs') and {ref['edge_id'] for ref in raw['edge_refs']} != {ref.edge_id for ref in refs}:
             raise ValueError('股道物理引用发生变化，需要迁移核对：' + (saved.get('display_name') or ident))
@@ -189,7 +263,8 @@ def load_station_tracks(directory, identity_path, station, overrides):
         if number and 'track_number' not in provenance:
             provenance['track_number'] = {'source': 'workspace_override' if saved.get('track_number') else 'osm_explicit',
                 'evidence': number, 'verification_status': saved.get('verification_status', 'osm_explicit')}
-        entity = StationTrack(raw.get('id') or ident, station_id, track_name or semantic_track_name(name + '站', role), number or None,
+        track_name = track_name.replace('（参考）', '').replace('(参考)', '').strip()
+        entity = StationTrack(raw.get('id') or ident, station_id, track_name or semantic_track_name(full_name, role), number or None,
             length_m=refs[-1].end_distance_m, is_virtual=False, edge_refs=refs,
             track_role=raw.get('track_role', role), railway_class=shared_attribute('railway_class', 'unknown'),
             infrastructure_line_id=shared_attribute('infrastructure_line_id'),
@@ -204,13 +279,80 @@ def load_station_tracks(directory, identity_path, station, overrides):
         points = [p for edge in source_edges for p in edge['coordinates']]
         rows[ident] = {'keys': keys, 'source_edges': tuple(sorted(members)),
                        'saved_overrides': {key: overrides.get(key, {}) for key in keys},
-                       'station_source': source, 'station_name': name + '站',
+                       'station_source': source, 'station_name': full_name,
                        'bounds': [[min(p[0] for p in points), min(p[1] for p in points)],
                                   [max(p[0] for p in points), max(p[1] for p in points)]]}
     source_node = str(source).removeprefix('node/')
-    context = [f for f in context if f['geometry']['type'] not in ('Polygon', 'MultiPolygon')
+    with closing(sqlite3.connect(directory/'rail.sqlite')) as db:
+        # Sparse source track ways can have zero-width bounds. Their platforms
+        # still belong to the station through real OSM membership/association.
+        context.extend(f for f in station_assets(db,source) if f not in context)
+    context = [f for f in context if not f['properties'].get('associated_station_ids')
                or source_node in set(map(str, f['properties'].get('associated_station_ids', [])))]
     return repo, rows, context
+
+
+def schematic_station_info(directory, repo, rows, overrides):
+    """Known station attributes and full railway termini, never nearby nodes."""
+    try:
+        from .catalog_metadata import station_type, station_overview
+        from .station_schematic import station_projection
+        from .rail_line_terminals import nominal_terminals
+    except ImportError:
+        from catalog_metadata import station_type, station_overview
+        from station_schematic import station_projection
+        from rail_line_terminals import nominal_terminals
+    station = next(iter(repo.stations.values()))
+    source = next((row.get('station_source') for row in rows.values() if row.get('station_source')), None)
+    custom = overrides.get('station:' + str(source), {})
+    with closing(sqlite3.connect(Path(directory) / 'rail_lines.sqlite')) as db:
+        row = db.execute('SELECT data FROM station_directory WHERE source_id=?', (source,)).fetchone()
+        props = json.loads(row[0]).get('properties', {}) if row else {}
+        attributes = station_overview(props, {'name': station.name}, custom)
+        kind = custom.get('station_type') or props.get('station_type_hint') or station_type(props.get('node_tags', {}), props.get('kind', ''))
+        summary = [kind if kind != '未定义' else '类型待核实']
+        for key, title in (('platform_count','站台'), ('track_count','股道'), ('platform_scale','站场规模'), ('station_grade','等级')):
+            if attributes.get(key): summary.append(title + '：' + attributes[key])
+        local, *_ = station_projection(repo)
+        destinations = {}
+        for line in repo.lines.values():
+            if line.name.startswith('未命名'):
+                continue
+            edit = overrides.get(line.source_id, overrides.get(line.id, {}))
+            for key, assembly in overrides.items():
+                if key.startswith('line-assembly:') and line.source_id in assembly.get('members', []):
+                    edit = assembly.get('attributes', {})
+                    break
+            attributes = {**line.provenance.get('workspace_presentation', {}).get('technical_attributes', {}),
+                          **edit.get('technical_attributes', {})}
+            tags = next((edge.source_tags for edge in repo.edges.values()
+                         if edge.infrastructure_line_id == line.id
+                         and edge.source_tags.get('from') and edge.source_tags.get('to')), {})
+            start = attributes.get('start_terminal') or tags.get('from')
+            end = attributes.get('end_terminal') or tags.get('to')
+            reference = nominal_terminals(line.name)
+            evidence = ('workspace_railway_terminals' if attributes.get('start_terminal') or attributes.get('end_terminal')
+                        else 'osm_explicit_route_termini' if tags else reference[2] if reference else None)
+            if not start and reference:
+                start = reference[0][0]
+            if not end and reference:
+                end = reference[1][0]
+            if not start or not end:
+                continue
+            def coordinate(label, fallback):
+                # Only look up the specified terminus, never choose an adjacent station.
+                values = db.execute('SELECT name,data FROM station_directory WHERE name=? OR name=? OR name LIKE ?',
+                    (label, label+'站', label+'%站')).fetchall()
+                exact = [raw for name,raw in values if name in (label,label+'站')]
+                points = [json.loads(raw)['geometry']['coordinates'] for raw in (exact or [raw for _,raw in values])]
+                return tuple(sum(p[i] for p in points)/len(points) for i in (0,1)) if points else fallback
+            a = coordinate(start, reference[0][1] if reference and start==reference[0][0] else None)
+            b = coordinate(end, reference[1][1] if reference and end==reference[1][0] else None)
+            left, right = (start, end) if not a or not b or local(a)[0] <= local(b)[0] else (end, start)
+            destinations[line.id] = {'left': left, 'right': right, 'source': evidence,
+                'snapshot': str((Path(directory)/'rail_lines.sqlite').stat().st_mtime_ns),
+                'verification_status': 'nominal_route_reference', 'confidence': None}
+    return {'summary': ' · '.join(summary), 'line_destinations': destinations}
 
 
 def track_overrides(repo, rows):

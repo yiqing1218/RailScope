@@ -1505,7 +1505,6 @@ class Desk(QMainWindow):
             QMessageBox.warning(self, '站场股道无法载入', str(error))
 
     def export_station_schematic(self):
-        from station_tracks import track_overrides, automatic_numbering
         from station_schematic import station_svg, ensure_export_font
         try:
             selected = self.selected_station_tracks()
@@ -1514,10 +1513,10 @@ class Desk(QMainWindow):
             name = next(iter(repo.stations.values())).name
             path, kind = QFileDialog.getSaveFileName(self, '导出站场示意图', str(ROOT / 'data/logs' / (name + '-站场.svg')), '矢量 SVG (*.svg);;高清 PNG (*.png);;矢量 PDF (*.pdf)')
             if not path: return
-            automatic_numbering(repo)
-            self.rail_catalog_widget._save_local_overrides(track_overrides(repo, rows))
-            self.rail_catalog_widget.metadata_changed.emit()
-            svg = station_svg(repo, context).encode('utf-8')
+            from station_tracks import schematic_station_info
+            info = schematic_station_info(self.rail_catalog_widget.directory, repo, rows,
+                                          self.rail_catalog_widget.overrides)
+            svg = station_svg(repo, context, station_info=info).encode('utf-8')
             if Path(path).suffix.lower() == '.svg':
                 Path(path).write_bytes(svg)
             else:
@@ -2562,6 +2561,7 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_map_names)
         self.rail_catalog_widget.presentation_changed.connect(self.refresh_catalog_presentation)
+        self.rail_catalog_widget.directory_changed.connect(self.refresh_directory_overrides)
         self.rail_catalog_widget.station_presentation_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
         self.refresh_switch_names()
@@ -3227,6 +3227,11 @@ class Desk(QMainWindow):
             apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
                         self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
 
+    def refresh_directory_overrides(self):
+        """A directory move has no effect on topology, labels or simulation."""
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        self.rail_operations.retain_line_library_for_directory_move()
+
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
             key.removeprefix("switch:node/"): value["display_name"]
@@ -3388,6 +3393,16 @@ class Desk(QMainWindow):
                     object_edit.get("technical_attributes", catalog_meta.get("technical_attributes", {})),
                 )
             )
+            from rail_semantics import semantic_record
+            from rail_style_resolver import (line_selection, GROUP_LABELS, CATEGORY_LABELS,
+                                            TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS)
+            facts = {**props, **catalog_meta}
+            facts.update(semantic_record(facts, {} if catalog_meta.get('assembly_id') else object_edit))
+            group, category, function, band = line_selection(facts)
+            props['line_kind_label'] = GROUP_LABELS[group]
+            props['railway_category_label'] = CATEGORY_LABELS[category]
+            props['line_function_label'] = (TRACK_LINE_LABELS if group=='track' else STATION_LINE_LABELS).get(function, '线路功能待核实')
+            if band: props['speed_band_label'] = SPEED_BANDS[band]
         merged_groups = props.get("merged_catalog_ids", [])
         # National line relationships can traverse thousands of topology nodes.
         # The editor loads them when needed; map selection must remain immediate.
@@ -3421,17 +3436,20 @@ class Desk(QMainWindow):
                     except ValueError:
                         associated = []
                 if len(associated) == 1:
-                    props["osm_node_id"] = associated[0]
+                    if str(associated[0]).startswith(('way/','relation/')):
+                        props['station_source_id'] = associated[0]
+                    else:
+                        props["osm_node_id"] = associated[0]
             props.setdefault(
                 "station_type",
                 station_type(props.get("node_tags", {}), props.get("kind", "")),
             )
             osm_node_id = props.get("osm_node_id")
-            station_id = str(props.get("infrastructure_id") or "")
-            if not station_id.startswith(("node/", "signalbox/")):
+            station_id = str(props.get('station_source_id') or props.get('station_id') or props.get("infrastructure_id") or "")
+            if not station_id.startswith(("node/", "signalbox/", 'way/', 'relation/')):
                 station_id = f"node/{osm_node_id}"
             record = self.rail_catalog_widget.station_record_by_id.get(station_id)
-            if record is None and station_id.startswith(("node/", "signalbox/")):
+            if record is None and station_id.startswith(("node/", "signalbox/", 'way/', 'relation/')):
                 record = self.rail_catalog_widget.station_record(station_id)
             if record:
                 station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
@@ -3532,6 +3550,10 @@ class Desk(QMainWindow):
             "to_node": "终端点编号",
             "to_name": "终端点",
             "track_type": "轨道类型",
+            'line_kind_label': '线的种类',
+            'railway_category_label': '铁路类别',
+            'line_function_label': '线路功能',
+            'speed_band_label': '速度范围',
             "display_track_type": "地图显示样式类型",
             "kind": "对象种类",
             "station_type": "车站类型",
@@ -3558,6 +3580,8 @@ class Desk(QMainWindow):
         }
         station_detail = bool(props.get("station_overview") and props.get("folder_path"))
         for key in translated:
+            if props.get('line_kind_label') and key in ('track_type','display_track_type','design_speed_kmh','speed_band'):
+                continue
             if key in props and props[key] is not None:
                 if station_detail and key in ("province", "city"):
                     continue
@@ -3660,7 +3684,8 @@ class Desk(QMainWindow):
             except ValueError:
                 associated = []
         if isinstance(associated, list) and len(associated) == 1:
-            candidates.append("node/" + str(associated[0]).removeprefix("node/"))
+            value = str(associated[0])
+            candidates.append(value if value.startswith(('way/','relation/')) else "node/" + value.removeprefix("node/"))
         for candidate in candidates:
             if candidate:
                 record = self.rail_catalog_widget.station_record(str(candidate))
@@ -3692,6 +3717,8 @@ class Desk(QMainWindow):
             primary = self.rail_catalog_widget.meta(rail_groups[0])
             facility_edit = rail_groups[0] in self.rail_catalog_widget.station_track_keys()
             selected_object = object_key(props) if props.get("network_edge_id") or props.get("section_id") else None
+            if primary.get('assembly_id'):
+                selected_object = None
             if selected_object and not facility_edit:
                 # 线路目录中的长线路按整条业务线编辑：选中其中一个线段修改类型，
                 # 应作用到整条同名/同 line_id 线路，而不是只改选中线段。
@@ -3824,11 +3851,14 @@ class Desk(QMainWindow):
                     changed["folder_path"] = value["folder_path"]
                 if value["directory_view"] != ("facilities" if facility_edit else "lines"):
                     changed["directory_view"] = value["directory_view"]
+                from rail_style_resolver import line_selection
+                if value['line_kind'] != line_selection(primary)[0]:
+                    changed['line_kind'] = value['line_kind']
                 if not selected_object and value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
                 if not selected_object and value["track_type"] != current_track_type:
                     changed["track_type"] = value["track_type"]
-                if not selected_object and value["line_name"] != current_line_name:
+                if not selected_object and value["line_name"] != (current_line_name or display_name):
                     changed["line_name"] = value["line_name"]
                 if value.get('rail_semantics'):
                     from railscope.rail_semantics import validate_semantic_fields

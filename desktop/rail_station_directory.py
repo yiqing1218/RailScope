@@ -22,7 +22,7 @@ except ImportError:
 def display_name(name):
     value = str(name or '').strip()
     if value and any('\u4e00' <= c <= '\u9fff' for c in value) and not value.endswith(
-            ('站', '线路所', '信号所', '乘降所', '）', ')')):
+            ('站', '线路所', '信号所', '乘降所', '车辆段', '机务段', '动车段', '动车所', '客整所', '整备所', '检修所', '检修段', '场', '）', ')')):
         value += '站'
     return value
 
@@ -42,24 +42,44 @@ def compatible_area(props, station):
 
 
 def build_station_directory(db, source):
+    try:
+        from .catalog_metadata import station_type
+    except ImportError:
+        from catalog_metadata import station_type
     db.execute('CREATE TABLE IF NOT EXISTS station_directory(source_id TEXT PRIMARY KEY, name TEXT, data TEXT)')
     db.execute('DELETE FROM station_directory')
     db.execute('CREATE TABLE IF NOT EXISTS station_track_positions(source_id TEXT,edge_id TEXT,data TEXT,PRIMARY KEY(source_id,edge_id))')
     db.execute('DELETE FROM station_track_positions')
     stations = {}
     with closing(sqlite3.connect(Path(source).resolve().as_uri() + '?mode=ro', uri=True)) as src:
+        type_evidence = {}
+        for (raw,) in src.execute("SELECT data FROM features WHERE kind='railStationAreas'"):
+            area = json.loads(raw)['properties']
+            hint = station_type(area.get('way_tags', {}))
+            if hint == '未定义':
+                continue
+            for member in area.get('associated_station_ids', []):
+                source_key = str(member) if str(member).startswith(('node/','way/','relation/')) else 'node/' + str(member)
+                type_evidence.setdefault(source_key, {}).setdefault(hint, []).append(area.get('infrastructure_id'))
         for (raw,) in src.execute("SELECT data FROM features WHERE kind='railPoints'"):
             feature = json.loads(raw)
             p = feature.get('properties', {})
-            if p.get('kind') not in ('station', 'halt', 'signal_box', 'junction', 'crossing'):
+            if p.get('kind') not in ('station', 'halt', 'signal_box', 'junction', 'crossing', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
                 continue
             if other_transport(p.get('node_tags', {})):
                 db.execute('DELETE FROM station_aliases WHERE source_id=?', ('node/' + str(p.get('osm_node_id')),))
                 continue
-            source_id = 'node/' + str(p['osm_node_id'])
+            source_id = p.get('station_source_id') or 'node/' + str(p['osm_node_id'])
+            hints = type_evidence.get(source_id, {})
+            if station_type(p.get('node_tags', {}), p.get('kind','')) == '未定义' and len(hints) == 1:
+                p['station_type_hint'] = next(iter(hints))
+                p['station_type_provenance'] = {'source':'associated_osm_area',
+                    'source_member_ids':next(iter(hints.values())), 'verification_status':'automatic_reference',
+                    'snapshot':str(Path(source).stat().st_mtime_ns)}
+                raw = json.dumps(feature, ensure_ascii=False)
             stations[source_id] = p
             db.execute('INSERT OR REPLACE INTO station_directory VALUES(?,?,?)',
-                       (source_id, display_name(p.get('name') or f"节点 {p['osm_node_id']}"), raw))
+                       (source_id, display_name(p.get('name') or source_id), raw))
     # Old indexes accepted every nearby building's name as a station alias.
     # Keep only names actually belonging to this source station, including its
     # explicit old/alternative names. This changes the derived lookup only.
@@ -78,7 +98,7 @@ def build_station_directory(db, source):
                            (source_id, position['edge_id'], json.dumps(position)))
                 for alias in source_names(p):
                     db.execute('INSERT OR REPLACE INTO station_aliases VALUES(?,?,?,?,?,?,?,?,?)',
-                        (source_id, alias, p['osm_node_id'], position['anchor_node'], position['gap_m'],
+                        (source_id, alias, p.get('osm_node_id', source_id), position['anchor_node'], position['gap_m'],
                          'automatic_track_projection', max(.5, 1-position['gap_m']/1600), *coordinate))
 
 
@@ -139,13 +159,15 @@ def load_directory(index):
 
 
 def station_key(props):
+    if props.get('station_source_id'):
+        return props['station_source_id']
     key = props.get('station_key') or props.get('station_id')
     if str(key).startswith(('station:', 'node/', 'way/', 'relation/')):
         return str(key).removeprefix('station:')
     source = props.get('source_station_node')
     if source is not None:
         return 'node/' + str(source)
-    if props.get('kind') in ('station', 'halt', 'signal_box', 'junction', 'crossing'):
+    if props.get('kind') in ('station', 'halt', 'signal_box', 'junction', 'crossing', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
         return props.get('infrastructure_id') or ('node/' + str(props.get('osm_node_id')))
     return None
 

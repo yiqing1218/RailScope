@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 try:
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
-    from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory
+    from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
     from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from .rail_semantics import semantic_record
     from .provinces import geographic_catalog, VERSION
@@ -47,7 +47,7 @@ try:
 except ImportError:
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
-    from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory
+    from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
     from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
     from rail_semantics import semantic_record
     from provinces import geographic_catalog, VERSION
@@ -67,7 +67,7 @@ MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
 LINE_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_line_directory.json"
 STATION_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_station_directory.json"
-DIRECTORY_FIELDS = {"folder_path", "directory_view", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
+DIRECTORY_FIELDS = {"folder_path", "directory_view", "line_kind", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
 
 
 def line_directory_overrides(overrides):
@@ -242,28 +242,13 @@ def _read_catalog_overrides(path):
         and isinstance(value.get("archived", False), bool)
         and (
             "folder_path" not in value
+            or value['folder_path'] is None
             or isinstance(value["folder_path"], list)
             and bool(value["folder_path"])
             and all(isinstance(part, str) and part.strip() for part in value["folder_path"])
         )
     }
-    # The former automatic folders are no longer meaningful in the new
-    # taxonomy. Keep every other manual path and every other override field.
-    for key, value in records.items():
-        folder = value.get("folder_path")
-        if not key.startswith("station:") and isinstance(folder, list) and len(folder) == 3 and folder[:2] == ["高速铁路", "区域高速铁路"]:
-            region = folder[2].lstrip("123456 ")
-            if region in {"华北", "东北", "华东", "中南", "西南", "西北"}:
-                records[key] = {**value, "folder_path": ["高速铁路", region, "其他/速度待核对"]}
-        elif not key.startswith("station:") and isinstance(folder, list) and len(folder) == 3 and folder[:2] == ["高速铁路", "八纵八横"]:
-            records[key] = {**value, "folder_path": ["高速铁路", "干线", "其他/速度待核对"]}
-        elif not key.startswith("station:") and folder in (
-            ["高速铁路", "区域高速铁路"],
-            ["高速铁路", "八纵八横"],
-            ["普速铁路", "区域干线"],
-            ["普速铁路", "国家铁路干线"],
-        ):
-            records[key] = {field: content for field, content in value.items() if field != "folder_path"}
+    # Classification/style migration must not rewrite saved directory choices.
     return records
 
 
@@ -398,6 +383,7 @@ class RailCatalog(QWidget):
     metadata_changed = Signal()
     presentation_changed = Signal()
     station_presentation_changed = Signal()
+    directory_changed = Signal()
     switch_names_changed = Signal()
     feature_activated = Signal(dict)
 
@@ -449,6 +435,14 @@ class RailCatalog(QWidget):
             for key, values in directory_overrides.items():
                 self.local_overrides[key] = {**self.local_overrides.get(key, {}), **values}
             self._merge_catalog_overrides()
+            try:
+                from .rail_line_workspace import migrate_assembly_attributes
+            except ImportError:
+                from rail_line_workspace import migrate_assembly_attributes
+            assembly_changes = migrate_assembly_attributes(self.overrides, self.catalog)
+            if assembly_changes:
+                self._save_local_overrides(assembly_changes)
+                self.catalog_undo.clear()
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "国铁分类设置未载入", str(error))
         layout = QVBoxLayout(self)
@@ -644,7 +638,7 @@ class RailCatalog(QWidget):
             if (str(key).startswith('ST-') and station and station != '未关联站场'
                     and not self.overrides.get(key, {}).get('display_name')):
                 changes[key] = {
-                    'display_name': station.removesuffix('站') + '站 · 站场股道（参考）',
+                    'display_name': station + ('' if station.endswith(('站','所','段','场')) else '站') + ' · 站场股道',
                     'source': 'automatic_station_group', 'snapshot': snapshot,
                     'verification_status': 'automatic_reference',
                     'confidence': record.get('station_assignment_confidence'),
@@ -659,6 +653,11 @@ class RailCatalog(QWidget):
         return len(changes)
 
     def _save_local_overrides(self, changes):
+        try:
+            from .rail_line_workspace import expand_assembly_changes
+        except ImportError:
+            from rail_line_workspace import expand_assembly_changes
+        changes = expand_assembly_changes(self.overrides, changes)
         before = {key: deepcopy(self.local_overrides.get(key)) for key in changes}
         proposed = {**self.local_overrides}
         for key, change in changes.items():
@@ -704,7 +703,6 @@ class RailCatalog(QWidget):
             save_line_directory(self.line_directory_path, self.overrides)
         if any(key.startswith("station:") for key in changed):
             save_station_directory(self.station_directory_path, self.overrides)
-        self.metadata_changed.emit()
         if any(key.startswith("switch:node/") for key in changed):
             self._refresh_switch_labels()
             self.switch_names_changed.emit()
@@ -715,12 +713,22 @@ class RailCatalog(QWidget):
              if previous.get(key, {}).get(field) != value.get(key, {}).get(field)} <= {"folder_path"}
             for key in line_keys
         )
+        marker_keys = changed - line_keys
+        marker_folder_only = all(key.startswith('line-assembly:') and
+            {field for field in set(previous.get(key,{})) | set(value.get(key,{}))
+             if previous.get(key,{}).get(field) != value.get(key,{}).get(field)} <= {'attributes'} and
+            {field for field in set(previous.get(key,{}).get('attributes',{})) | set(value.get(key,{}).get('attributes',{}))
+             if previous.get(key,{}).get('attributes',{}).get(field) != value.get(key,{}).get('attributes',{}).get(field)} <= {'folder_path'}
+            for key in marker_keys)
+        placement_only = bool(line_keys) and not station_ids and folder_only and marker_folder_only
+        (self.directory_changed if placement_only else self.metadata_changed).emit()
         if line_keys and not (folder_only and self._move_line_items_in_tree(line_keys)):
             self.populate()
         if station_ids:
             self._refresh_station_items(station_ids)
-        self.send_visibility(False)
-        self.send_station_visibility()
+        if not placement_only:
+            self.send_visibility(False)
+            self.send_station_visibility()
 
     def undo_catalog(self):
         if self.catalog_undo:
@@ -781,8 +789,16 @@ class RailCatalog(QWidget):
                 ),
             ),
         }
-        if result.get("rail_semantics"):
+        result.update(semantic_record(record, result))
+        assembly = result.get('assembly_id')
+        shared = self.overrides.get('line-assembly:' + str(assembly), {}).get('attributes', {}) if assembly else {}
+        if shared:
+            result.update(shared)
             result.update(semantic_record(record, result))
+        if facility_path(result) or result.get('station_name') or str(key).startswith('ST-'):
+            for field in ('display_name', 'line_name', 'name'):
+                if isinstance(result.get(field), str):
+                    result[field] = result[field].replace('（参考）', '').replace('(参考)', '').strip()
         return result
 
     def _merge_changed_overrides(self, keys):
@@ -813,7 +829,8 @@ class RailCatalog(QWidget):
             self._resolve_directory_record, self.mode.currentIndex(), self.way_names)
         if not directory_changed:
             return False
-        self._station_track_keys_cache = None
+        if facility_changed:
+            self._station_track_keys_cache = None
         for model in (getattr(self, "line_model", None), getattr(self, "facility_model", None)):
             if model is None:
                 continue
@@ -1444,6 +1461,8 @@ class RailCatalog(QWidget):
 
     def _record_parents(self, meta):
         folders = meta.get("folder_path")
+        if meta.get('track_role') == 'main_track' and folders and folders[0] == '车站设施':
+            folders = None
         parents = (
             tuple(folders)
             if isinstance(folders, list) and folders
@@ -1898,6 +1917,9 @@ class RailCatalog(QWidget):
     def _station_path(self, record):
         custom = self.overrides.get("station:" + record["id"], {})
         path = station_directory_path(record, custom)
+        kind = custom.get('station_type') or record.get('station_type')
+        if kind in ('编组站','车辆段','检修站','机务段','存车场','动车所/客整所','货场'):
+            path = (*path, kind)
         return ("已归档", *path) if record.get("archived") else path
 
     @staticmethod
@@ -2041,6 +2063,7 @@ class RailCatalog(QWidget):
             for value in hidden_ids
             if value.startswith("node/") and value.split("/", 1)[1].isdigit()
         ]
+        hidden.extend(value for value in hidden_ids if value.startswith(('way/','relation/')))
         hidden.extend(
             int(switch_id)
             for station_id in hidden_ids
@@ -2049,7 +2072,7 @@ class RailCatalog(QWidget):
             )
             if str(switch_id).isdigit()
         )
-        hidden = sorted(set(hidden))
+        hidden = sorted(set(hidden), key=str)
         self.map.call("setRailPointExclusions", hidden or None)
         def directly_visible():
             return [
@@ -2058,7 +2081,8 @@ class RailCatalog(QWidget):
                 if station_id.startswith("node/")
                 and station_id.split("/", 1)[1].isdigit()
                 and not self.overrides.get("station:" + station_id, {}).get("archived", False)
-            ]
+            ] + [value for value in self.station_direct_visible if value.startswith(('way/','relation/'))
+                 and not self.overrides.get('station:' + value, {}).get('archived',False)]
         visible_stations = directly_visible()
         visible_controls = sorted({
             int(switch_id)
@@ -2790,7 +2814,7 @@ class RailCatalog(QWidget):
         if not delta:
             return
         self._save_local_overrides({key: delta})
-        placement_changed = bool({"folder_path", "archived"} & delta.keys())
+        placement_changed = bool({"folder_path", "archived", "station_type"} & delta.keys())
         if not placement_changed and hasattr(self, "station_model"):
             if "display_name" in delta:
                 if update_station_label(self.catalog.path, station_id, change["display_name"]):
@@ -2825,7 +2849,7 @@ class RailCatalog(QWidget):
                 raise ValueError("请选择有效的目标文件夹")
             changes["folder_path"] = [value.strip() for value in folder]
         self._save_local_overrides({"station:" + station_id: changes for station_id in station_ids})
-        placement_changed = bool({"folder_path", "archived"} & set(changes))
+        placement_changed = bool({"folder_path", "archived", "station_type"} & set(changes))
         self.metadata_changed.emit()
         self._refresh_station_items(station_ids)
         if placement_changed and hasattr(self, "station_model"):
@@ -2855,6 +2879,12 @@ class RailCatalog(QWidget):
 
     def save_overrides(self, changes, object_changes=None):
         """Persist presentation metadata atomically; never write the GIS source."""
+        try:
+            from .rail_line_workspace import expand_assembly_changes
+        except ImportError:
+            from rail_line_workspace import expand_assembly_changes
+        changes = {key: value for key, value in expand_assembly_changes(self.overrides, changes).items()
+                   if key in self.catalog}
         effective = {}
         for key, change in changes.items():
             if key not in self.catalog:
@@ -2878,6 +2908,12 @@ class RailCatalog(QWidget):
                 effective[key] = values
         object_changes = object_changes or {}
         if not effective and not object_changes:
+            return
+
+        if effective and not object_changes and all(set(change) <= {'folder_path', 'assembly_name'} for change in effective.values()):
+            self._save_local_overrides(effective)
+            self._move_line_items_in_tree(set(effective))
+            self.directory_changed.emit()
             return
 
         reclassifying = any({"rail_semantics", "directory_view", "station_id", "station_source"} & set(change)
@@ -2967,6 +3003,7 @@ class RailCatalog(QWidget):
                     line_name = edit.get("line_name") if "line_name" in edit else props.get("line_name")
                     parent = index_db.execute("SELECT label FROM rail_station_nodes WHERE id=?", (parent_id,)).fetchone()
                     name = line_name or edit.get("display_name") or (parent[0] if parent else props.get("display_name"))
+                    name = str(name or object_id).replace('（参考）', '').replace('(参考)', '').strip()
                     endpoints = "→".join(str(props.get(key) or "?") for key in ("from_name", "to_name"))
                     label = str(name or object_id) + " · " + endpoints
                     index_db.execute("UPDATE rail_station_nodes SET label=?,searchable=? WHERE id=?",
@@ -2996,10 +3033,7 @@ class RailCatalog(QWidget):
         for key in keys:
             if key not in self.catalog:
                 raise ValueError("目录项已变化，请重新选择")
-        self._save_local_overrides({key: {"folder_path": folders} for key in keys})
-        self.metadata_changed.emit()
-        if not self._move_line_items_in_tree(keys):
-            self.populate()
+        self.save_overrides({key: {"folder_path": folders} for key in keys})
         self.note.setText(
             "已移动目录项：" + " / ".join(folders) + "；原始分类和数据保留。"
         )
@@ -3025,20 +3059,29 @@ class RailCatalog(QWidget):
             return list(path[1:] if path and path[0] == "已归档" else path)
         # 合并后所有成员共用同一元素的所有属性，以首段属性为准。
         primary = self.meta(first_key)
+        try:
+            from .rail_style_resolver import line_selection, speed_band
+        except ImportError:
+            from rail_style_resolver import line_selection, speed_band
         shared = {"display_name": name, "line_name": name}
+        shared['archived'] = bool(primary.get('archived', False))
         semantic = {}
         for field in ("railway_class", "line_role", "track_role"):
             value = primary.get(field)
-            if value not in (None, "", "unknown"):
-                semantic[field] = value
+            semantic[field] = value or 'unknown'
         if semantic:
             semantic["source"] = "workspace_override"
-            semantic["verification_status"] = "user_verified"
+            semantic["verification_status"] = "user_grouping_unverified"
             shared["rail_semantics"] = semantic
         if primary.get("track_type") and primary.get("track_type") != "未确认类型":
             shared["track_type"] = primary["track_type"]
-        if primary.get("technical_attributes"):
-            shared["technical_attributes"] = primary["technical_attributes"]
+        shared["technical_attributes"] = dict(primary.get("technical_attributes") or {})
+        if primary.get('railway_class') == 'high_speed':
+            shared['technical_attributes']['speed_band'] = speed_band(primary)
+        for field in ('line_kind', 'directory_view', 'station_id', 'station_source', 'station_name'):
+            shared[field] = primary.get(field)
+        shared['line_kind'] = line_selection(primary)[0]
+        shared['directory_view'] = 'facilities' if shared['line_kind'] == 'station' else 'lines'
         changes = {
             key: {
                 "assembly_id": ident,
@@ -3143,9 +3186,10 @@ class RailCatalog(QWidget):
         control.blockSignals(False)
 
     def _move_line_items_in_tree(self, keys):
-        self._populate_paged_directory()
+        if not self._update_paged_directory(keys):
+            self._populate_paged_directory()
         if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
-            return False
+            return True
         items = {id(self.items[key]): self.items[key] for key in keys if key in self.items}
         moves = []
         for item in items.values():

@@ -324,16 +324,17 @@ async function updateRailViewport(){
 function addLayer(layer) { if (!map.getLayer(layer.id)) map.addLayer(layer); }
 function applyRailStyles(){
   const styles=config.railStyles||{};
-  const entries=Object.entries(styles).filter(([type,style])=>type!=='_zoom_width_curve'&&style&&typeof style==='object');
+  const entries=Object.entries(styles).filter(([type,style])=>!type.startsWith('_')&&style&&typeof style==='object'&&!Array.isArray(style));
+  const fallback=styles._default||{color:'#667887',width:2,pattern:'alternating'};
   const curve=Array.isArray(styles._zoom_width_curve)&&styles._zoom_width_curve.length>=2
     ?styles._zoom_width_curve
     :[{zoom:3,scale:.8},{zoom:5,scale:.9},{zoom:8,scale:1.05},{zoom:12,scale:1.25},{zoom:16,scale:1.5},{zoom:19,scale:1.8}];
-  const role=['coalesce',['get','rail_style_key'],'class.unknown'];
+  const role=['coalesce',['get','rail_style_key'],'_default'];
   const colors=['match',role],widths=['match',role];
   for(const [type,style] of entries){
     colors.push(type,style.color);widths.push(type,Number(style.width));
   }
-  colors.push('#667887');widths.push(2);
+  colors.push(fallback.color);widths.push(Number(fallback.width));
   const baseWidth=entries.length?widths:2;
   const widthCurve=['interpolate',['linear'],['zoom']];
   for(const point of curve)widthCurve.push(Number(point.zoom),['*',baseWidth,Number(point.scale)]);
@@ -345,13 +346,15 @@ function applyRailStyles(){
   if(map.getLayer('rail')){
     const dash=['match',role];
     for(const [type,style] of entries)dash.push(type,['literal',patterns[style.pattern]||patterns.solid]);
-    dash.push(['literal',patterns.solid]);
+    dash.push(['literal',patterns[fallback.pattern]||patterns.solid]);
     map.setPaintProperty('rail','line-dasharray',entries.length?dash:[1,0]);
   }
   if(map.getLayer('rail-construction'))map.setPaintProperty('rail-construction','line-opacity',.65);
   if(map.getLayer('rail-stripes')){
     const solid=entries.filter(([,style])=>style.pattern!=='alternating').map(([type])=>type);
-    map.setPaintProperty('rail-stripes','line-opacity',['case',['in',role,['literal',solid]],0,1]);
+    const known=entries.map(([type])=>type);
+    map.setPaintProperty('rail-stripes','line-opacity',['case',['in',role,['literal',solid]],0,
+      ['in',role,['literal',known]],1,fallback.pattern==='alternating'?1:0]);
   }
 }
 function applyMetroStyles(){
@@ -424,8 +427,8 @@ function installLayers() {
   addLayer({id:'rail-stripes',type:'line',source:'rail',minzoom:13,layout:{'line-cap':'round','line-join':'round'},filter:['!=',['get','construction'],true],paint:{'line-color':'#ffffff','line-width':2,'line-dasharray':[2,2]}});
   addLayer({id:'rail-construction',type:'line',source:'rail',layout:{'line-cap':'round','line-join':'round'},filter:['==',['get','construction'],true],paint:{'line-color':'#475569','line-width':['interpolate',['linear'],['zoom'],4,.5,8,1,12,2.5,16,3.5],'line-dasharray':[2,1.5]}});
   addLayer({id:'rail-points',type:'circle',source:'railPoints',minzoom:10,paint:{'circle-radius':['case',['==',['get','kind'],'switch'],2,4],'circle-color':'#ffffff','circle-stroke-color':'#466979','circle-stroke-width':1.5}});
-  addLayer({id:'rail-detail-points',type:'circle',source:'railPoints',minzoom:15,filter:['!', ['in',['get','kind'],['literal',['station','halt']]]],paint:{'circle-radius':2,'circle-color':'#ffffff','circle-stroke-color':'#466979','circle-stroke-width':1}});
-  addLayer({id:'rail-station-labels',type:'symbol',source:'railPoints',minzoom:7,filter:['any',['in',['get','kind'],['literal',['station','halt','signal_box','junction','crossing']]],['has','display_name']],layout:{'text-field':['coalesce',['get','display_name'],['get','name']],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-optional':true},paint:{'text-color':'#263f4d','text-halo-color':'#ffffff','text-halo-width':1.8}});
+  addLayer({id:'rail-detail-points',type:'circle',source:'railPoints',minzoom:15,filter:['!', ['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed']]]],paint:{'circle-radius':2,'circle-color':'#ffffff','circle-stroke-color':'#466979','circle-stroke-width':1}});
+  addLayer({id:'rail-station-labels',type:'symbol',source:'railPoints',minzoom:7,filter:['any',['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed','signal_box','junction','crossing']]],['has','display_name']],layout:{'text-field':['coalesce',['get','display_name'],['get','name']],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-optional':true},paint:{'text-color':'#263f4d','text-halo-color':'#ffffff','text-halo-width':1.8}});
   addLayer({id:'rail-line-labels',type:'symbol',source:'rail',minzoom:5,layout:{'symbol-placement':'line','symbol-spacing':320,'text-field':['coalesce',['get','line_display_name'],['get','line_name'],['get','name']],'text-font':vectorAvailable?['Noto Sans Bold']:['Open Sans Bold'],'text-size':11,'text-optional':true},paint:{'text-color':'#425d6b','text-halo-color':'#ffffff','text-halo-width':2}});
   addLayer({id:'rail-platform-fill',type:'fill',source:'railPlatforms',filter:['==',['geometry-type'],'Polygon'],minzoom:12,paint:{'fill-color':'#466979','fill-opacity':.22}});
   addLayer({id:'rail-platform-outline',type:'line',source:'railPlatforms',minzoom:12,paint:{'line-color':'#466979','line-width':1.5}});
@@ -505,9 +508,9 @@ function railOwnersVisibleFilter(){
 function sharedRailStationFilter(){
   if(!map.getLayer('rail-points'))return;
   const nodes=visibility.railPlan?(config.sources.railPlan?.features||[]).filter(f=>f.geometry.type==='Point').map(f=>f.properties.osm_node_id):[];
-  const allowed=['!', ['in',['get','osm_node_id'],['literal',railPointExclusions||[]]]];
+  const allowed=['!', ['in',['coalesce',['get','osm_node_id'],['get','station_source_id']],['literal',railPointExclusions||[]]]];
   const ownerAllowed=railOwnersVisibleFilter();
-  const directlySelected=railPointIncludes===null?['==',['literal',1],1]:railPointIncludes.length?['in',['get','osm_node_id'],['literal',railPointIncludes]]:['==',['literal',1],0];
+  const directlySelected=railPointIncludes===null?['==',['literal',1],1]:railPointIncludes.length?['in',['coalesce',['get','osm_node_id'],['get','station_source_id']],['literal',railPointIncludes]]:['==',['literal',1],0];
   const directlySelectedArea=railPointIncludes===null?['==',['literal',1],1]:railPointIncludes.length?['any',...railPointIncludes.map(id=>['in',id,['coalesce',['get','associated_station_ids'],['literal',[]]]])]:['==',['literal',1],0];
   const controlIds=[...new Set([...(railControlPointIncludes||[]),...railAssetSelection.switches])];
   const directlySelectedControl=['all',
@@ -515,9 +518,9 @@ function sharedRailStationFilter(){
     railControlPointIncludes===null?['==',['literal',1],1]:['in',['get','osm_node_id'],['literal',controlIds]]];
   const stationAllowed=['all',directlySelected,railPointIncludes===null?ownerAllowed:['literal',true]];
   const controlAllowed=['all',directlySelectedControl,railControlPointIncludes===null?ownerAllowed:['literal',true]];
-  map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]],allowed,stationAllowed]);
-  if(map.getLayer('rail-detail-points'))map.setFilter('rail-detail-points',['all',['!', ['in',['get','kind'],['literal',['station','halt']]]],allowed,controlAllowed]);
-  if(map.getLayer('rail-station-labels'))map.setFilter('rail-station-labels',['all',['any',['in',['get','kind'],['literal',['station','halt','signal_box','junction','crossing']]],['has','display_name']],allowed,['case',['in',['get','kind'],['literal',['station','halt']]],stationAllowed,controlAllowed]]);
+  map.setFilter('rail-points',['all',['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed']]],['!', ['in',['get','osm_node_id'],['literal',nodes]]],allowed,stationAllowed]);
+  if(map.getLayer('rail-detail-points'))map.setFilter('rail-detail-points',['all',['!', ['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed']]]],allowed,controlAllowed]);
+  if(map.getLayer('rail-station-labels'))map.setFilter('rail-station-labels',['all',['any',['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed','signal_box','junction','crossing']]],['has','display_name']],allowed,['case',['in',['get','kind'],['literal',['station','halt','yard','depot','workshop','works','engine_shed']]],stationAllowed,controlAllowed]]);
   const areasAllowed=(railPointExclusions||[]).length?['!', ['any',...(railPointExclusions||[]).map(id=>['in',id,['coalesce',['get','associated_station_ids'],['literal',[]]]])]]:['==',['literal',1],1];
   for(const id of ['rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline'])if(map.getLayer(id)){
     const geometry=id.endsWith('-fill')?['==',['geometry-type'],'Polygon']:['==',['literal',1],1];
@@ -540,7 +543,7 @@ function refreshSelection(){
     if(group&&!visibility[group]&&!(group==='rail'&&visibility.railStationTracks)&&!(layer==='rail-line-labels'&&(visibility.railConstruction||visibility.railStationTracks)))return false;
     if(p.service_id)return roadVisibleServices.includes(p.service_id);
     if(group==='railStations'&&Array.isArray(p.line_ids)&&p.line_ids.length){
-      const explicit=(railPointIncludes||[]).includes(p.osm_node_id)||(railControlPointIncludes||[]).includes(p.osm_node_id);
+      const explicit=(railPointIncludes||[]).includes(p.osm_node_id??p.station_source_id)||(railControlPointIncludes||[]).includes(p.osm_node_id);
       const owners=[...(visibility.rail?(p.operating_line_ids||[]):[]),...(visibility.railConstruction?(p.construction_line_ids||[]):[])];
       if(!explicit&&!owners.some(id=>railLineIds===null?!railHiddenLineIds.includes(id):railLineIds.includes(id)))return false;
     }

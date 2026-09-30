@@ -471,7 +471,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     elif kind in ("railPoints", "railPlatforms", "railStationAreas") and features:
         if kind == "railPoints":
             node_ids = [
-                feature["properties"].get("osm_node_id") for feature in features
+                feature['properties'].get('osm_node_id', feature['properties'].get('station_source_id')) for feature in features
             ]
         else:
             node_ids = sorted({
@@ -479,7 +479,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 for feature in features
                 for node in feature["properties"].get("associated_station_ids", [])
                 if node is not None
-            })
+            }, key=str)
         line_path = Path(directory) / "rail_lines.sqlite"
         if line_path.exists():
             line_map = {node_id: set() for node_id in node_ids}
@@ -510,7 +510,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
             for feature in features:
                 props = feature["properties"]
                 associated = (
-                    [props.get("osm_node_id")]
+                    [props.get('osm_node_id', props.get('station_source_id'))]
                     if kind == "railPoints"
                     else props.get("associated_station_ids", [])
                 )

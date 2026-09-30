@@ -28,8 +28,14 @@ STATION_TYPES = (
     "会让站",
     "动车所/客整所",
     "货场",
+    "车辆段",
+    "检修站",
+    "机务段",
+    "存车场",
     "未定义",
 )
+STATION_KINDS = ('station', 'halt', 'signal_box', 'junction', 'crossing',
+                 'yard', 'depot', 'workshop', 'works', 'engine_shed')
 
 STATION_OVERVIEW_FIELDS = (
     ("chinese_name", "中文名"),
@@ -115,6 +121,11 @@ def station_type(tags, kind=""):
         for key in ("name", "name:zh", "description", "railway:station_category")
     )
     facility = tags.get("railway:facility", "")
+    railway = tags.get('railway', kind)
+    if facility in ('maintenance', 'repair', 'workshop') or railway in ('workshop', 'works') or any(w in text for w in ('检修站','检修段','检修所','维修基地')):
+        return '检修站'
+    if facility == 'locomotive_depot' or railway == 'engine_shed' or '机务段' in text:
+        return '机务段'
     if kind in {"signal_box", "junction", "crossing"} or "线路所" in text:
         return "线路所"
     if any(word in text for word in ("编组站", "编组场")) or facility == "classification_yard":
@@ -129,6 +140,10 @@ def station_type(tags, kind=""):
         return "乘降所"
     if any(word in text for word in ("动车所", "动车段", "客整所", "客车整备所")):
         return "动车所/客整所"
+    if railway == 'depot' or facility in ('depot', 'rolling_stock_depot') or '车辆段' in text:
+        return '车辆段'
+    if facility in ('stabling_yard', 'stabling') or any(word in text for word in ('存车场', '停车场')):
+        return '存车场'
     if "货场" in text or facility in {"freight_terminal", "freight_yard"}:
         return "货场"
     passenger = tags.get("passenger")
@@ -462,7 +477,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         return [], 0
     where = (
         "kind='railPoints' AND json_extract(data,'$.properties.kind') "
-        "IN ('station','halt','signal_box','junction','crossing')"
+        "IN ('station','halt','signal_box','junction','crossing','yard','depot','workshop','works','engine_shed')"
     )
     args = []
     normalized_query = query.strip().removesuffix("市").removesuffix("站").casefold()
@@ -518,7 +533,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 [*args, limit * 4 if region_match else limit],
             ).fetchall()
         features = [json.loads(row[0]) for row in rows]
-    node_ids = [f["properties"].get("osm_node_id") for f in features]
+    node_ids = [f['properties'].get('osm_node_id', f['properties'].get('station_source_id')) for f in features]
     line_map = defaultdict(set)
     line_names = {}
     line_db = directory / "rail_lines.sqlite"
@@ -554,19 +569,22 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         coordinates = feature["geometry"]["coordinates"]
         tags = props.get("node_tags", {})
         province = index.locate(coordinates)
-        node_id = props.get("osm_node_id")
+        node_id = props.get("osm_node_id", props.get('station_source_id'))
+        source_id = props.get('station_source_id') or f'node/{node_id}'
         lines = sorted(line_map.get(node_id, set()))
         result.append(
             {
-                "id": f"node/{node_id}",
-                "name": station_directory.get(f'node/{node_id}', {}).get('name') or display_name(props.get("name") or f"节点 {node_id}"),
-                "station_key": f"station:node/{node_id}",
+                "id": source_id,
+                "name": station_directory.get(source_id, {}).get('name') or display_name(props.get("name") or f"节点 {node_id}"),
+                "station_key": 'station:' + source_id,
                 "kind": props.get("kind", ""),
-                "station_type": station_type(tags, props.get("kind", "")),
+                "station_type": station_directory.get(source_id, {}).get('feature', {}).get('properties', {}).get('station_type_hint')
+                                or station_type(tags, props.get("kind", "")),
                 "province": province,
                 "city": nearest_city(coordinates, province, regions, tags),
                 "coordinates": coordinates,
-                "osm_node_id": node_id,
+                "osm_node_id": props.get('osm_node_id'),
+                'station_source_id': props.get('station_source_id'),
                 "line_ids": lines,
                 "line_names": [line_names.get(line, line) for line in lines],
                 "properties": props,

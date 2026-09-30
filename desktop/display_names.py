@@ -125,15 +125,16 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         for key in (props.get('line_id'), props.get('catalog_group_id'), object_key(props)):
             if key in overrides:
                 props.update(semantic_record(props, overrides[key]))
+                if overrides[key].get('line_kind'):
+                    props['line_kind'] = overrides[key]['line_kind']
+                technical = overrides[key].get('technical_attributes', {})
+                if technical.get('speed_band'):
+                    props['speed_band'] = technical['speed_band']
+        group_edit = overrides.get(props.get('catalog_group_id'), {})
+        if group_edit.get('assembly_id'):
+            props.update(semantic_record(props, group_edit))
+            props['speed_band'] = group_edit.get('technical_attributes', {}).get('speed_band')
         props['rail_style_key'] = style_key(props)
-        # Historical user style classifications remain presentation only.
-        legacy = next((overrides[key].get('track_type') for key in
-            (object_key(props), props.get('catalog_group_id'), props.get('line_id'))
-            if key in overrides and overrides[key].get('track_type')), None)
-        if legacy:
-            props['rail_style_key'] = style_key({
-                **semantic_record({'track_type': legacy}),
-                'design_speed_kmh': props.get('design_speed_kmh')})
     return collection
 
 
@@ -148,7 +149,7 @@ def generated_line_name(meta):
         folder = meta.get("folder_path") or []
         if folder and folder[0] == "车站设施" and len(folder) > 1:
             station = folder[1]
-    if role not in ("main_track", "unknown") or meta.get("facility_only") or station:
+    if role != 'main_track' and (role not in ("main_track", "unknown") or meta.get("facility_only") or station):
         return semantic_track_name(station, role)
     track_kind = meta.get("track_type")
     if track_kind and track_kind != "未确认类型":
@@ -205,7 +206,11 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
                 line_name = ''
             label = (line_name or object_edit.get('display_name') or group_edit.get('display_name') or
                      props.get('display_name') or track.get('display_name'))
+            if group_edit.get('assembly_id'):
+                label = group_edit.get('assembly_name') or group_edit.get('display_name') or label
+                props['line_name'] = group_edit.get('line_name') or label
             if label:
+                label = label.replace('（参考）','').replace('(参考)','').strip()
                 props['display_name'] = label
                 props['line_display_name'] = label
             continue
@@ -218,6 +223,9 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
             keys.append('station:' + str(props['infrastructure_id']))
         keys += [props.get('catalog_group_id'), props.get('line_id'), props.get('catalog_id'),
                  props.get('station_id'), str(props.get('route_relation_id')), str(props.get('osm_relation_id'))]
+        group_edit = overrides.get(props.get('catalog_group_id'), {})
+        if group_edit.get('assembly_id'):
+            keys.insert(0, props.get('catalog_group_id'))
         custom = next((overrides[key] for key in keys if key in overrides and overrides[key].get('display_name')), {})
         custom = migrate_track_override(custom, station_name=props.get('station_name', ''),
                                         track_role=props.get('track_role', 'unknown'))
@@ -229,6 +237,8 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
             name = line_names.get(props['line_id']) or way_names.get(str(props.get('osm_way_id')))
         if not name:
             continue
+        if props.get('station_name') or yard_track_key(props):
+            name = name.replace('（参考）', '').replace('(参考)', '').strip()
         # Old name exports include the identity suffix. The ID remains a
         # separate property and is never needed in the on-map text label.
         for ident in (props.get('line_id'), props.get('catalog_group_id')):

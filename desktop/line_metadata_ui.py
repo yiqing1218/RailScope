@@ -18,10 +18,10 @@ from PySide6.QtWidgets import (
 
 try:
     from .line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+    from .rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
 except ImportError:
     from line_metadata import METRO_LINE_FIELDS, RAIL_LINE_FIELDS, normalize_line_attributes
-    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+    from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS, GROUP_LABELS, CATEGORY_LABELS, TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS, line_selection
 
 
 class CascadingPathEditor(QWidget):
@@ -113,6 +113,7 @@ class LineMetadataDialog(QDialog):
                  path_options=None):
         super().__init__(parent)
         self.kind = kind
+        self._original_attributes = dict(attributes)
         self.setWindowTitle(("地铁" if kind == "metro" else "国铁") + "线路信息")
         self.resize(720, 700)
         layout = QVBoxLayout(self)
@@ -149,19 +150,43 @@ class LineMetadataDialog(QDialog):
             if track_type and self.track_type.findText(track_type) < 0:
                 self.track_type.addItem(track_type)
             self.track_type.setCurrentText(track_type)
-            general_form.addRow("轨道类型", self.track_type)
+            self.track_type.hide()
         self.rail_semantics = {}
         self._original_semantics = dict(rail_semantics or {})
         if kind == 'rail':
-            for key, title, labels in (('railway_class','铁路类别',CLASS_LABELS),
-                                       ('line_role','线路网络角色',LINE_ROLE_LABELS),
-                                       ('track_role','物理轨道用途',ROLE_LABELS)):
+            facts = {**self._original_semantics, 'technical_attributes': attributes}
+            group, category, function, band = line_selection(facts)
+            self.line_kind = QComboBox()
+            for ident, label in GROUP_LABELS.items():
+                self.line_kind.addItem(label, ident)
+            self.line_kind.setCurrentIndex(self.line_kind.findData(group))
+            general_form.addRow('线的种类', self.line_kind)
+            for key, title, labels in (('railway_class','铁路类别',CATEGORY_LABELS),
+                                       ('line_role','线路功能',TRACK_LINE_LABELS),
+                                       ('track_role','站线功能',STATION_LINE_LABELS)):
                 control = QComboBox()
                 for ident, label in labels.items():
                     control.addItem(label, ident)
-                control.setCurrentIndex(max(0, control.findData(self._original_semantics.get(key, 'unknown'))))
+                value = category if key == 'railway_class' else self._original_semantics.get(key, 'unknown')
+                if key == 'line_role' and control.findData(value) < 0:
+                    control.addItem(LINE_ROLE_LABELS.get(value, '功能待核实'), value)
+                if key == 'railway_class' and self._original_semantics.get(key, 'unknown') not in CATEGORY_LABELS:
+                    value = self._original_semantics.get(key, 'unknown')
+                    control.addItem(CLASS_LABELS.get(value, '其他铁路（待核实）'), value)
+                control.setCurrentIndex(max(0, control.findData(value)))
                 general_form.addRow(title, control)
                 self.rail_semantics[key] = control
+            self.speed_band = QComboBox()
+            for ident, label in SPEED_BANDS.items():
+                self.speed_band.addItem(label, ident)
+            self.speed_band.setCurrentIndex(self.speed_band.findData(band or 'unknown'))
+            general_form.addRow('速度范围', self.speed_band)
+            self._general_form = general_form
+            self._original_group = group
+            self._original_band = band or 'unknown'
+            self.line_kind.currentIndexChanged.connect(self._sync_line_controls)
+            self.rail_semantics['railway_class'].currentIndexChanged.connect(self._sync_line_controls)
+            self._sync_line_controls()
         tabs.addTab(general, "名称与目录")
 
         detail_host = QWidget()
@@ -169,6 +194,8 @@ class LineMetadataDialog(QDialog):
         self.attribute_controls = {}
         fields = METRO_LINE_FIELDS if kind == "metro" else RAIL_LINE_FIELDS
         for key, label, hint in fields:
+            if kind == 'rail' and key in ('speed_band', 'design_speed_kmh'):
+                continue
             control = QPlainTextEdit() if key == "remarks" else QLineEdit()
             if isinstance(control, QPlainTextEdit):
                 control.setMaximumHeight(90)
@@ -194,8 +221,17 @@ class LineMetadataDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _sync_line_controls(self):
+        station = self.line_kind.currentData() == 'station'
+        self._general_form.setRowVisible(self.rail_semantics['line_role'], not station)
+        self._general_form.setRowVisible(self.rail_semantics['track_role'], station)
+        self._general_form.setRowVisible(self.speed_band, self.rail_semantics['railway_class'].currentData() == 'high_speed')
+        self.directory_view.setCurrentIndex(self.directory_view.findData('facilities' if station else 'lines'))
+        self.directory_view.setEnabled(False)
+
     def save(self):
         try:
+            self.values()
             if self.relationship_validator:
                 self.relationship_updates = self.relationship_validator()
             self.accept()
@@ -204,10 +240,29 @@ class LineMetadataDialog(QDialog):
 
     def values(self):
         attributes = {}
+        # Keep factual speed metadata from old versions; styling now uses a range.
+        for key in (('design_speed_kmh', 'speed_band') if self.kind == 'rail' else ()):
+            if key in self._original_attributes:
+                attributes[key] = self._original_attributes[key]
         for key, control in self.attribute_controls.items():
             attributes[key] = (
                 control.toPlainText() if isinstance(control, QPlainTextEdit) else control.text()
             )
+        semantics = {key: control.currentData() for key, control in self.rail_semantics.items()
+                     if control.currentData() != self._original_semantics.get(key, 'unknown')}
+        if self.kind == 'rail':
+            station = self.line_kind.currentData() == 'station'
+            if station:
+                semantics.pop('line_role', None)
+                if self._original_group != 'station':
+                    semantics['track_role'] = self.rail_semantics['track_role'].currentData()
+            else:
+                semantics.pop('track_role', None)
+                if self._original_group == 'station':
+                    semantics['track_role'] = 'main_track'
+            if self.rail_semantics['railway_class'].currentData() == 'high_speed' and (
+                    self.speed_band.currentData() != self._original_band):
+                attributes['speed_band'] = self.speed_band.currentData()
         if self.path_editor is not None:
             folder_path = self.path_editor.path()
         else:
@@ -225,6 +280,6 @@ class LineMetadataDialog(QDialog):
             "line_name": self.name.text().strip(),
             "directory_view": self.directory_view.currentData() if self.directory_view else None,
             "technical_attributes": normalize_line_attributes(attributes, self.kind),
-            "rail_semantics": {key: control.currentData() for key, control in self.rail_semantics.items()
-                               if control.currentData() != self._original_semantics.get(key, 'unknown')},
+            "rail_semantics": semantics,
+            "line_kind": self.line_kind.currentData() if self.kind == 'rail' else None,
         }

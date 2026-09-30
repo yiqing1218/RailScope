@@ -41,6 +41,7 @@ def extract(pbf, output, identity_path=None):
                 "signal_box",
                 "buffer_stop",
                 "signal",
+                "yard", "depot", "workshop", "works", "engine_shed",
             ):
                 return
             if other_transport(tags):

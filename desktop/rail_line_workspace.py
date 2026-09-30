@@ -11,6 +11,74 @@ import json
 
 ASSEMBLY_PREFIX = "line-assembly:"
 MEMBERSHIP_KEY = "railscope.org/line-membership"
+SHARED_LINE_FIELDS = frozenset({'display_name', 'line_name', 'track_type', 'archived', 'rail_semantics',
+    'technical_attributes', 'folder_path', 'directory_view', 'line_kind', 'station_id',
+    'station_source', 'station_name', 'station_assignment'})
+
+
+def expand_assembly_changes(overrides, changes):
+    """A grouped object has one editable attribute set across all source members."""
+    from copy import deepcopy
+    expanded = deepcopy(changes)
+    groups = {}
+    for key, change in changes.items():
+        assembly = change.get('assembly_id') or overrides.get(key, {}).get('assembly_id')
+        shared = {k: v for k, v in change.items() if k in SHARED_LINE_FIELDS}
+        if assembly and shared and change.get('assembly_id', assembly) is not None:
+            if 'display_name' in shared:
+                shared.setdefault('line_name', shared['display_name'])
+            existing = groups.setdefault(assembly, {})
+            if any(k in existing and existing[k] != v for k, v in shared.items()):
+                raise ValueError('同一合并线路不能保存互相冲突的属性')
+            existing.update(shared)
+    for assembly, shared in groups.items():
+        members = {key for key, value in overrides.items() if value.get('assembly_id') == assembly}
+        members.update(key for key, value in changes.items() if value.get('assembly_id') == assembly)
+        for key in members:
+            expanded.setdefault(key, {}).update(deepcopy(shared))
+            if 'display_name' in shared:
+                expanded[key]['assembly_name'] = shared['display_name']
+        marker = ASSEMBLY_PREFIX + assembly
+        attrs = {**overrides.get(marker, {}).get('attributes', {}), **shared}
+        expanded.setdefault(marker, {}).update(attributes=attrs)
+        if 'display_name' in shared:
+            expanded[marker]['name'] = shared['display_name']
+    return expanded
+
+
+def migrate_assembly_attributes(overrides, catalog):
+    """Fill the shared attribute set of assemblies saved by older versions."""
+    try:
+        from .rail_semantics import semantic_record
+        from .rail_style_resolver import line_selection, speed_band
+    except ImportError:
+        from rail_semantics import semantic_record
+        from rail_style_resolver import line_selection, speed_band
+    groups = defaultdict(list)
+    for key, value in overrides.items():
+        if value.get('assembly_id') and key in catalog:
+            groups[value['assembly_id']].append(key)
+    changes = {}
+    for assembly, members in groups.items():
+        marker = overrides.get(ASSEMBLY_PREFIX + assembly, {})
+        if marker.get('attributes'):
+            continue
+        primary_key = sorted(members)[0]
+        primary = {**catalog[primary_key], **overrides[primary_key]}
+        primary.update(semantic_record(catalog[primary_key], primary))
+        name = marker.get('name') or primary.get('assembly_name') or primary.get('display_name') or primary['name']
+        shared = {field: primary.get(field) for field in SHARED_LINE_FIELDS}
+        shared.update(display_name=name, line_name=name, line_kind=line_selection(primary)[0],
+            archived=bool(primary.get('archived', False)),
+            rail_semantics={field: primary.get(field, 'unknown') for field in ('railway_class','line_role','track_role')},
+            technical_attributes=dict(primary.get('technical_attributes') or {}))
+        shared['rail_semantics'].update(source='workspace_assembly_migration',
+            verification_status='user_grouping_unverified')
+        if primary.get('railway_class') == 'high_speed':
+            shared['technical_attributes']['speed_band'] = speed_band(primary)
+        for key in members:
+            changes[key] = dict(shared)
+    return expand_assembly_changes(overrides, changes)
 
 
 def membership_targets(value):

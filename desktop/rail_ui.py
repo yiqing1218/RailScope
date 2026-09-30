@@ -942,6 +942,15 @@ class RailEditor(OperationsEditor):
         self._line_library_signature = signature
         return self._line_library
 
+    def retain_line_library_for_directory_move(self):
+        """Folder edits change the file stamp, but not any routing-library input."""
+        signature = getattr(self, '_line_library_signature', None)
+        if signature is None:
+            return
+        metadata = self.catalog_metadata_path
+        stamp = metadata.stat().st_mtime_ns if metadata.exists() else None
+        self._line_library_signature = (*signature[:3], stamp, *signature[4:])
+
     def invalidate_line_library(self):
         self._line_library_signature = None
 

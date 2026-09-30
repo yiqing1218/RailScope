@@ -142,19 +142,19 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
     catalog, _ = _index(tmp_path, records)
     lines = RailDirectoryModel(catalog.path)
     facilities = RailDirectoryModel(catalog.path, "facilities")
-    assert not lines.reveal_catalog_id("main").isValid()
-    assert facilities.reveal_catalog_id("main").isValid()
+    assert lines.reveal_catalog_id("main").isValid()
+    assert not facilities.reveal_catalog_id("main").isValid()
     assert not lines.reveal_catalog_id("yard-a").isValid()
     assert not lines.reveal_catalog_id("unknown").isValid()
-    assert not lines.reveal_catalog_id("station-main").isValid()
-    assert facilities.reveal_catalog_id("station-main").isValid()
+    assert lines.reveal_catalog_id("station-main").isValid()
+    assert not facilities.reveal_catalog_id("station-main").isValid()
     facilities.fetchMore()
     with sqlite3.connect(catalog.path) as db:
         paths = {key: json.loads(path) for key, path in db.execute(
             "SELECT m.catalog_id,d.path FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id WHERE view='facilities'")}
     assert paths["yard-a"][1] != paths["yard-b"][1]
     assert paths["unknown"][1] == "设施归属待核实"
-    assert paths["yard-linked"][1] == "人工关联站 · ST-C"
+    assert "yard-linked" not in paths  # explicitly classified main tracks stay with lines
     changes = {"yard-a": {"directory_view": "lines", "folder_path": ["普速铁路", "人工归线"]},
                "line-to-yard": {"directory_view": "facilities", "station_id": "ST-A"}}
     def moved(key, raw):
@@ -163,10 +163,10 @@ def test_facility_partition_uses_roles_and_stable_facility_ids(qtbot, tmp_path):
     sync_catalog_directory(catalog, changes, moved)
     lines.reset_from_disk()
     facilities.reset_from_disk()
-    assert lines.reveal_catalog_id("yard-a").isValid()
-    assert not facilities.reveal_catalog_id("yard-a").isValid()
-    assert facilities.reveal_catalog_id("line-to-yard").isValid()
-    assert not lines.reveal_catalog_id("line-to-yard").isValid()
+    assert not lines.reveal_catalog_id("yard-a").isValid()
+    assert facilities.reveal_catalog_id("yard-a").isValid()
+    assert not facilities.reveal_catalog_id("line-to-yard").isValid()
+    assert lines.reveal_catalog_id("line-to-yard").isValid()
 
 
 def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qtbot, tmp_path, monkeypatch):

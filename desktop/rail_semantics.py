@@ -19,7 +19,7 @@ def semantic_record(value, override=None):
         '渡线 / 道岔连接轨', '车辆段 / 检修线', '折返线'}
     result['facility_only'] = bool(value.get('facility_only') or
         tags.get('service') in ('yard', 'siding') or
-        (not any(key in value for key in ('railway_class', 'track_role')) and legacy_facility))
+        legacy_facility or str(value.get('catalog_group_id', '')).startswith('ST-'))
     custom = (override or {}).get('rail_semantics', {})
     if not isinstance(custom, dict):
         raise ValueError('铁路语义覆盖必须是对象')
@@ -36,6 +36,29 @@ def semantic_record(value, override=None):
     if confidence is not None and (type(confidence) not in (int,float) or not math.isfinite(confidence) or not 0 <= confidence <= 1):
         raise ValueError('置信度必须位于 0–1')
     result['provenance'] = deepcopy(result.get('provenance', {}))
+    # Decode old presentation labels into the SAME canonical fields. Keep the
+    # migration evidence explicit; directory placement never determines a fact.
+    legacy_type = str((override or {}).get('track_type') or value.get('track_type') or '')
+    name = str(value.get('source_name') or value.get('line_name') or value.get('name') or '')
+    hints = {}
+    if result['railway_class'] == 'unknown':
+        hints['railway_class'] = {'高速铁路线': 'high_speed', '高速铁路站场股道': 'high_speed',
+            '普速铁路线': 'conventional', '普速铁路站场股道': 'conventional',
+            '货运铁路线': 'freight', '货运站场股道': 'freight'}.get(legacy_type, 'unknown')
+    if legacy_type == '联络线 / 匝道' or any(s in name for s in ('联络', '疏解', '联结线', '联线', '货联', '下联', '上联')):
+        hints['line_role'] = 'connecting_line'
+    elif legacy_type == '支线 / 岔道' and result['line_role'] == 'unknown':
+        hints['line_role'] = 'branch_line'
+    if result['track_role'] == 'unknown':
+        hints['track_role'] = {'渡线 / 道岔连接轨': 'crossover',
+            '车辆段 / 检修线': 'maintenance_track', '折返线': 'turnback_track'}.get(legacy_type, 'unknown')
+    for key, hint in hints.items():
+        if hint != 'unknown' and key not in custom:
+            result[key] = hint
+            result['provenance'][key] = {'value': hint, 'source': 'legacy_migration',
+                'snapshot_id': value.get('snapshot_id') or value.get('source_version'),
+                'evidence': '旧线路属性/来源名称: ' + legacy_type + ' / ' + name,
+                'verification_status': 'inferred', 'confidence': .3}
     for key in SEMANTIC_FIELDS:
         if key not in custom:
             continue
@@ -47,6 +70,14 @@ def semantic_record(value, override=None):
             'verification_status': custom.get('verification_status', 'user_verified'),
             'confidence': custom.get('confidence'),
         }
+    if result['track_role'] == 'main_track':
+        result['facility_only'] = False
+    elif custom.get('track_role') not in (None, 'unknown'):
+        result['facility_only'] = True
+    elif (override or {}).get('line_kind') == 'station':
+        result['facility_only'] = True
+    elif (override or value).get('line_kind') == 'track' and result['track_role'] == 'unknown':
+        result['facility_only'] = False
     return result
 
 

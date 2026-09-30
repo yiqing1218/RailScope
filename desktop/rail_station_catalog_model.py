@@ -28,9 +28,9 @@ def station_catalog_signature(directory, catalog_path, overrides):
     source = directory / "rail_lines.sqlite"
     if not source.exists():
         return None
-    station_edits = {k: {field: v[field] for field in ("folder_path", "archived") if field in v}
+    station_edits = {k: {field: v[field] for field in ("folder_path", "archived", "station_type") if field in v}
                      for k, v in overrides.items()
-                     if k.startswith("station:") and any(field in v for field in ("folder_path", "archived"))}
+                     if k.startswith("station:") and any(field in v for field in ("folder_path", "archived", "station_type"))}
     facility_edits = {k: {field: v[field] for field in ("station_id", "station_assignment") if field in v}
                       for k, v in overrides.items() if "station_id" in v or "station_assignment" in v}
     segment_edits = {k: {field: v[field] for field in ("display_name", "line_name", "track_type") if field in v}
@@ -38,7 +38,7 @@ def station_catalog_signature(directory, catalog_path, overrides):
                      any(field in v for field in ("display_name", "line_name", "track_type"))}
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
-    return hashlib.sha256(_key([7, source.stat().st_mtime_ns,
+    return hashlib.sha256(_key([8, source.stat().st_mtime_ns,
                                  catalog_version[0] if catalog_version else "",
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
 
@@ -84,6 +84,9 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
             custom = overrides.get("station:" + sid, {})
             name = custom.get("display_name") or record["name"]
             folder = station_directory_path(record, custom)
+            station_kind = custom.get('station_type') or record.get('station_type')
+            if not custom.get('folder_path') and station_kind in ('编组站', '车辆段', '检修站', '机务段', '动车所/客整所', '货场', '存车场'):
+                folder = (*folder, station_kind)
             archived = bool(custom.get("archived"))
             path = root + (["已归档"] if archived else []) + list(folder)
             parent = ""
@@ -178,6 +181,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides):
                     custom = overrides.get(object_key, {})
                     line_name = custom.get("line_name") if "line_name" in custom else props.get("line_name")
                     name = (line_name or custom.get("display_name") or props.get("display_name") or str(edge_id))
+                    name = str(name).replace('（参考）', '').replace('(参考)', '').strip()
                     endpoints = "→".join(str(props.get(key) or "?") for key in ("from_name", "to_name"))
                     parent_id, parent_path, archived = parent_info
                     rows.append(("segment:" + str(feature_id), parent_id,

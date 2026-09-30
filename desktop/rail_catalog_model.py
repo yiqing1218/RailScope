@@ -21,7 +21,7 @@ except ImportError:
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 9
+PRESENTATION_VERSION = 10
 LABEL_ONLY_FIELDS = {"display_name"}
 
 
@@ -33,6 +33,8 @@ def facility_path(record):
     """Present explicit facility identity; never merge unknown owners by name."""
     facts = semantic_record(record, record)
     role = facts.get("track_role", "unknown")
+    if role == 'main_track' or record.get('line_kind') == 'track' and role == 'unknown':
+        return None
     facility = facts.get("facility_id")
     is_facility = bool(facility or facts.get("yard_id") or facts.get("zone_id") or facts.get("facility_only")
                        or record.get("station_id") or record.get("station_source"))
@@ -72,12 +74,11 @@ def _directory_signature(overrides, mode):
 def _facility_views(key, record, line_path, label):
     """Return the same presentation rows the full directory cache would emit."""
     facts_path = facility_path({"id": key, **record})
-    if facts_path is None and line_path and line_path[0] == "车站设施":
+    main = record.get('track_role') == 'main_track' or record.get('line_kind') == 'track'
+    if not main and facts_path is None and line_path and line_path[0] == "车站设施":
         facts_path = tuple(line_path[1:])
     directory_view = record.get("directory_view")
-    if directory_view == "lines":
-        facts_path = None
-    elif directory_view == "facilities" and facts_path is None:
+    if not main and directory_view == "facilities" and facts_path is None:
         facts_path = tuple(line_path)
     views = []
     if facts_path is None:
@@ -151,6 +152,7 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
     affected_object_ids = set()
     affected_folders = set()
     removed_facilities = set()
+    folder_deltas = {}
 
     # 1) Remove the old rows for the changed keys.
     for key in changed_keys:
@@ -166,7 +168,9 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
             if view == "facilities":
                 removed_facilities.add((node_id, path_value))
             for depth in range(2, len(full_path) + 1):
-                affected_folders.add("folder:" + json.dumps(full_path[:depth], ensure_ascii=False))
+                folder_id = 'folder:' + json.dumps(full_path[:depth], ensure_ascii=False)
+                affected_folders.add(folder_id)
+                folder_deltas[folder_id] = folder_deltas.get(folder_id, 0) - 1
             affected_object_ids.add(node_id)
         db.execute("DELETE FROM rail_directory_members WHERE catalog_id=?", (key,))
     for node_id in affected_object_ids:
@@ -189,6 +193,9 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
         inserted_object_ids.update(object_ids)
         affected_folders.update(folder_ids)
         for row in rows:
+            for depth in range(2, len(row['full_path']) + 1):
+                folder_id = 'folder:' + json.dumps(row['full_path'][:depth], ensure_ascii=False)
+                folder_deltas[folder_id] = folder_deltas.get(folder_id, 0) + 1
             if row["view"] == "facilities":
                 inserted_facilities.add((row["node_id"], json.dumps(row["full_path"], ensure_ascii=False)))
 
@@ -215,12 +222,10 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
             "SELECT path FROM rail_directory_nodes WHERE id=?", (folder_id,)).fetchone()
         if path_row is None:
             continue
-        path = path_row[0]
-        total = db.execute(
-            "SELECT count(*) FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id "
-            "WHERE d.path=? OR substr(d.path,1,length(?)-1)=substr(?,1,length(?)-1)",
-            (path, path, path, path)).fetchone()[0]
-        db.execute("UPDATE rail_directory_nodes SET total=? WHERE id=?", (total, folder_id))
+        # Existing totals are authoritative. Apply changed memberships only;
+        # prefix/substr scans used to reread the whole national tree per folder.
+        db.execute('UPDATE rail_directory_nodes SET total=max(0,total+?) WHERE id=?',
+                   (folder_deltas.get(folder_id, 0), folder_id))
     pending = set(affected_folders)
     while True:
         for folder_id in list(pending):
@@ -298,12 +303,11 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
         for key, raw in db.execute("SELECT id,data FROM catalog ORDER BY id"):
             record, line_path, label = resolve(key, json.loads(raw))
             facts_path = facility_path({"id": key, **record})
-            if facts_path is None and line_path and line_path[0] == "车站设施":
+            main = record.get('track_role') == 'main_track' or record.get('line_kind') == 'track'
+            if not main and facts_path is None and line_path and line_path[0] == "车站设施":
                 facts_path = tuple(line_path[1:])
             directory_view = record.get("directory_view")
-            if directory_view == "lines":
-                facts_path = None
-            elif directory_view == "facilities" and facts_path is None:
+            if not main and directory_view == "facilities" and facts_path is None:
                 facts_path = tuple(line_path)
             views = []
             if facts_path is None:

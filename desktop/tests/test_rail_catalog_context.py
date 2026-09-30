@@ -636,7 +636,8 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
         if len(observed) == 2:
             return QDialog.DialogCode.Rejected
         dialog.name.setText("甲线新名")
-        for key, value in (("railway_class", "freight"), ("line_role", "branch_line"),
+        dialog.line_kind.setCurrentIndex(dialog.line_kind.findData('station'))
+        for key, value in (("railway_class", "freight"),
                            ("track_role", "arrival_departure_track")):
             control = dialog.rail_semantics[key]
             control.setCurrentIndex(control.findData(value))
@@ -646,9 +647,10 @@ def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monke
     feature = {"layer": "rail", "properties": {"catalog_group_id": "RL-main"}}
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
     launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
-    assert observed[1] == ("甲线新名", "freight", "branch_line", "arrival_departure_track")
+    assert observed[1][0:2] == ("甲线新名", "freight")
+    assert observed[1][3] == "arrival_departure_track"
     assert widget.meta("RL-main")["railway_class"] == "freight"
-    assert widget.meta("RL-main")["line_role"] == "branch_line"
+    assert widget.meta("RL-main")["line_role"] == "unknown"
     def edit_one_segment(dialog):
         assert dialog.directory_view.currentData() == "facilities"
         dialog.name.setText("单段显示名")

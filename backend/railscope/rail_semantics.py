@@ -10,7 +10,7 @@ from copy import deepcopy
 import math
 
 
-RAILWAY_CLASSES = frozenset({"high_speed", "conventional", "freight", "metro", "industrial", "unknown"})
+RAILWAY_CLASSES = frozenset({"high_speed", "conventional", "freight", "other", "metro", "industrial", "unknown"})
 LINE_ROLES = frozenset({"main_line", "branch_line", "connecting_line", "dedicated_line", "industrial_line", "unknown"})
 TRACK_ROLES = frozenset({
     "main_track", "arrival_departure_track", "shunting_track", "lead_track", "freight_track",

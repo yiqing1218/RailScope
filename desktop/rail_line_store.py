@@ -27,7 +27,7 @@ except ImportError:
     import rail_semantic_index
     from rail_semantics import semantic_record, is_business_line
 
-INDEX_VERSION = 17
+INDEX_VERSION = 18
 
 
 def fingerprint(source, extras):
@@ -60,6 +60,20 @@ def index_ready(path, signature):
         return False
 
 
+def refresh_station_index(source, destination, previous_signature, progress=lambda value: None):
+    """Refresh station adapters after a boundary-only import; retain edge IDs."""
+    if not index_ready(destination, previous_signature):
+        return False
+    updated_signature = fingerprint(source, [])
+    progress('更新车站与段场目录，保留物理轨道索引…')
+    with closing(sqlite3.connect(destination)) as db, db:
+        build_station_directory(db, source)
+        if fingerprint(source, []) != updated_signature:
+            raise ValueError('站区更新期间源文件发生变化，请重新导入')
+        db.execute("UPDATE metadata SET value=? WHERE key='source'", (updated_signature,))
+    return True
+
+
 def build_line_index(source, destination, extras, points, progress=lambda value: None):
     """Stream source rows; cancellation/failure leaves the previous complete index intact."""
     signature = fingerprint(source, extras)
@@ -76,10 +90,15 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             base_tables = {name for (name,) in existing.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('edges','lines','nodes','station_aliases')")}
             if (isinstance(old_signature, list) and old_signature and
-                    old_signature[0] in (13, 14, 15, 16) and
+                    old_signature[0] in (13, 14, 15, 16, 17) and
                     old_signature[1:] == json.loads(signature)[1:] and
                     base_tables == {'edges', 'lines', 'nodes', 'station_aliases'}):
                 progress("升级铁路语义索引…")
+                if old_signature[0] == 17:
+                    with existing:
+                        build_station_directory(existing, source)
+                        existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
+                    return destination
                 rail_semantic_index.create_schema(existing)
                 with existing:
                     existing.execute("DELETE FROM edge_semantics")

@@ -207,7 +207,7 @@ def catalog_parents(meta, mode):
     }
     station_name_hints = ('进站线', '出站线', '到发线', '发车线', '环到线', '环发线',
                           '到达线', '牵出线', '走行线', '机走线', '机待线', '整备线')
-    if (facts.get('facility_only') or role not in ('main_track', 'unknown')
+    if role != 'main_track' and (facts.get('facility_only') or role not in ('main_track', 'unknown')
             or track_kind in station_track_types
             or any(word in name for word in station_name_hints)):
         return prefix + ('车站设施', meta.get('station_name') or facts.get('facility_id') or '未关联设施',

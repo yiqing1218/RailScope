@@ -39,6 +39,11 @@ def migrate_track_override(value, station_name='', track_role='unknown'):
     """Return a copy. Preserve old generated numbers only as display metadata."""
     result = deepcopy(value)
     raw = result.get('station_track', {})
+    for field in ('display_name', 'line_name'):
+        if isinstance(result.get(field), str):
+            result[field] = result[field].replace('（参考）', '').replace('(参考)', '').strip()
+    if isinstance(raw.get('name'), str):
+        raw['name'] = raw['name'].replace('（参考）', '').replace('(参考)', '').strip()
     manual = result.get('source') == 'manual' or result.get('verification_status') in (
         'user_named', 'user_verified', 'official_confirmed')
     number = result.get('track_number') or raw.get('track_number')

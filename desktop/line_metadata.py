@@ -1,8 +1,11 @@
 """Editable line facts stored in the workspace layer, separate from OSM."""
 
 RAIL_LINE_FIELDS = (
+    ("start_terminal", "全线起点", "整条铁路的起点城市或车站，用于布置图方向；不是相邻节点"),
+    ("end_terminal", "全线终点", "整条铁路的终点城市或车站，用于布置图方向；不是相邻节点"),
     ("operating_status", "运营状态", "如：运营中、在建、规划、停运"),
     ("design_speed_kmh", "设计速度（km/h）", "如 350、250、200、160；独立于运营限速和建设状态"),
+    ("speed_band", "样式速度范围", "高速铁路使用范围匹配样式；不替代实际运行限速"),
     ("max_speed_kmh", "最高运行速度（km/h）", "当前允许的最高运行速度"),
     ("construction_start_date", "开工时间", "可填写 YYYY、YYYY-MM 或完整日期"),
     ("opening_date", "开通时间", "可填写分期开通信息"),
@@ -46,6 +49,8 @@ def source_line_attributes(properties, kind, custom=None):
     tags = {**properties.get("way_tags", {}), **properties.get("relation_tags", {})}
     from railscope.presentation import source_design_speed
     result = {
+        "start_terminal": tags.get('from', ''),
+        "end_terminal": tags.get('to', ''),
         "operating_status": "在建" if properties.get("construction") else "运营中",
         "max_speed_kmh": tags.get("maxspeed", ""),
         "design_speed_kmh": properties.get('design_speed_kmh') or source_design_speed(tags) or '',
@@ -93,6 +98,13 @@ def normalize_line_attributes(values, kind):
         if len(text) > limit or any(ord(character) < 32 and character not in "\n\t" for character in text):
             raise ValueError("线路概览属性内容过长或包含控制字符")
         if text:
+            if key == 'speed_band':
+                try:
+                    from .rail_style_resolver import SPEED_BANDS
+                except ImportError:
+                    from rail_style_resolver import SPEED_BANDS
+                if text not in SPEED_BANDS:
+                    raise ValueError('未知速度范围')
             if key == 'design_speed_kmh':
                 from railscope.presentation import design_speed
                 text = str(design_speed(text))
