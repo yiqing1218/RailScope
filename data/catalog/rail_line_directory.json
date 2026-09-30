@@ -157,11 +157,25 @@
       "station_id": "node/2092929428"
     },
     "RL-01ddf8daf404b96810d3": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-01f68f6381479503ac15": {
       "directory_view": "facilities",
@@ -729,11 +743,25 @@
       "track_type": "普速铁路线"
     },
     "RL-08d07738cf0db9a587ab": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-08e8ed97e34f7c394c64": {
       "rail_semantics": {
@@ -967,6 +995,13 @@
       "station_assignment": "manual",
       "station_id": "node/3698187690"
     },
+    "RL-0adf7c2063571e3a4d11": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
+    },
     "RL-0ae7be4ffb39dc24e609": {
       "directory_view": "facilities",
       "folder_path": [
@@ -1027,11 +1062,25 @@
       "station_id": "node/7555690994"
     },
     "RL-0bc15c6edf111064af7b": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-0c2928268c67357fca23": {
       "directory_view": "lines",
@@ -1541,11 +1590,25 @@
       "station_id": "node/9513113927"
     },
     "RL-148ca021714c72735e1b": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-149d1c668eb03708e164": {
       "directory_view": "facilities",
@@ -2227,6 +2290,13 @@
       ],
       "station_assignment": "manual",
       "station_id": "node/5356894179"
+    },
+    "RL-1d38c89568ecb582df51": {
+      "rail_semantics": {
+        "line_role": "connecting_line",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      }
     },
     "RL-1d694ac24663dfe15024": {
       "directory_view": "facilities",
@@ -3680,11 +3750,25 @@
       "station_id": "node/3045632030"
     },
     "RL-328220e022e45396d437": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-3297250381b5be9ac30f": {
       "directory_view": "facilities",
@@ -4950,7 +5034,13 @@
         "普速铁路",
         "华东",
         "客货运"
-      ]
+      ],
+      "rail_semantics": {
+        "railway_class": "conventional",
+        "source": "workspace_override",
+        "verification_status": "user_verified"
+      },
+      "track_type": "普速铁路线"
     },
     "RL-443cb84595ecc00c77a5": {
       "directory_view": "facilities",
@@ -5181,11 +5271,25 @@
       "station_id": "node/2318026357"
     },
     "RL-4730c476b97d7839bd02": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-473ad7dc63e61919c97e": {
       "directory_view": "lines",
@@ -5582,11 +5686,25 @@
       "station_id": "node/5603764275"
     },
     "RL-4bfbb4f8084284b17533": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-4c089d8857bcbe88e2fb": {
       "directory_view": "facilities",
@@ -6046,19 +6164,25 @@
       "station_id": "node/3698187689"
     },
     "RL-518c6682370220c53d63": {
+      "archived": false,
       "directory_view": "lines",
-      "display_name": "邳州港口线",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
       ],
+      "line_kind": "track",
       "rail_semantics": {
-        "railway_class": "freight",
-        "source": "workspace_override",
-        "track_role": "freight_track",
-        "verification_status": "user_verified"
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
       },
-      "track_type": "货运铁路线"
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-51a7645f8811f0594e96": {
       "directory_view": "facilities",
@@ -8711,11 +8835,25 @@
       "station_id": "node/1666058769"
     },
     "RL-740bec54e6c5fcf62d0c": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-740df8d9103aed2bf5b0": {
       "directory_view": "lines",
@@ -8962,11 +9100,25 @@
       "station_id": "node/1651805298"
     },
     "RL-7773bd9567322247a5c7": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-77cadff814a2935ce780": {
       "directory_view": "facilities",
@@ -10882,11 +11034,25 @@
       }
     },
     "RL-9526bf2f9ffcd6e4a9bb": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-953b114f314e8fcf0fca": {
       "directory_view": "facilities",
@@ -11309,11 +11475,25 @@
       ]
     },
     "RL-99dbe078da55d93b917b": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-99e3145d8343350b4a1a": {
       "directory_view": "lines",
@@ -12484,11 +12664,25 @@
       ]
     },
     "RL-a9d7be7ef5481ecbcecd": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-a9dbcfb417e621339906": {
       "directory_view": "facilities",
@@ -13496,11 +13690,25 @@
       "station_id": "node/6322614510"
     },
     "RL-b752dbfb247cc573df09": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-b7c81dcf0ad7d214e956": {
       "directory_view": "facilities",
@@ -14144,11 +14352,25 @@
       "station_id": "node/5295061428"
     },
     "RL-bdeafe9354dae34cc701": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-bdf91c19ca2f746e6dd0": {
       "directory_view": "lines",
@@ -14165,11 +14387,25 @@
       ]
     },
     "RL-be221a666b6d637f84cf": {
+      "archived": false,
       "directory_view": "lines",
+      "display_name": "邳州港线",
       "folder_path": [
         "其他铁路",
         "港口铁路"
-      ]
+      ],
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-be5db0c6a64f9bae95d1": {
       "directory_view": "lines",
@@ -17790,13 +18026,24 @@
       ]
     },
     "RL-ef8e261bab32b5642d0e": {
+      "archived": false,
       "directory_view": "lines",
       "folder_path": [
         "其他铁路",
         "港口铁路"
       ],
-      "station_assignment": "manual",
-      "station_id": "node/12023247143"
+      "line_kind": "track",
+      "rail_semantics": {
+        "line_role": "branch_line",
+        "railway_class": "unknown",
+        "source": "workspace_assembly_migration",
+        "track_role": "unknown",
+        "verification_status": "user_grouping_unverified"
+      },
+      "station_assignment": null,
+      "station_id": null,
+      "technical_attributes": {},
+      "track_type": "未确认类型"
     },
     "RL-efaa21ebba8c80a91d3a": {
       "rail_semantics": {
