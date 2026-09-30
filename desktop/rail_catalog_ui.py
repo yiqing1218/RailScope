@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .catalog_workspace import CatalogWorkspace, read_overrides
+    from .catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
@@ -46,7 +46,7 @@ try:
         station_directory_path,
     )
 except ImportError:
-    from catalog_workspace import CatalogWorkspace, read_overrides
+    from catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
@@ -974,21 +974,18 @@ class RailCatalog(QWidget):
         if not owner and not pending:
             return
         facilities = {key for node in nodes for key in self.station_model.ids_below(node)[1]}
-        if facilities:
-            QTimer.singleShot(0, lambda: self._assign_station_facilities(facilities, owner))
         tracks = {key for node in nodes for key in self.station_model.track_ids_below(node)}
-        if tracks:
-            QTimer.singleShot(0,lambda:self.save_overrides({},object_changes={key:{
-                'station_id':owner or '', 'station_assignment':'manual' if owner else 'pending'} for key in tracks}))
+        if facilities or tracks:
+            QTimer.singleShot(0, lambda: self._assign_station_assets(facilities, tracks, owner))
 
     def _assign_station_facilities(self, facilities, station_id):
+        self._assign_station_assets(facilities, set(), station_id)
+
+    def _assign_station_assets(self, facilities, tracks, station_id):
         record = self.station_record(station_id) if station_id else None
-        folder = ["车站设施", record["name"] if record else "待核对"]
-        changes = {key: {"station_id": station_id or "",
-                         "station_assignment": "manual" if station_id else "pending",
-                         "directory_view": "facilities", "folder_path": folder}
-                   for key in facilities}
-        self.save_overrides(changes)
+        changes, object_changes = station_assignment_changes(
+            facilities, tracks, station_id, record['name'] if record else None)
+        self.save_overrides(changes, object_changes=object_changes)
 
     def _station_paged_context_menu(self, point):
         index = self.station_browser.indexAt(point)

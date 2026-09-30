@@ -36,6 +36,15 @@ def validate_overrides(payload, path):
     return payload
 
 
+def station_assignment_changes(facilities, tracks, station_id, station_name):
+    """Prepare one mixed assignment, leaving persistence and Qt to the caller."""
+    owner = {'station_id': station_id or '',
+             'station_assignment': 'manual' if station_id else 'pending'}
+    folder = ['车站设施', station_name or '待核对']
+    return ({key: {**owner, 'directory_view': 'facilities', 'folder_path': list(folder)}
+             for key in facilities}, {key: dict(owner) for key in tracks})
+
+
 class CatalogWorkspace:
     def __init__(self, path):
         self.path = Path(path)
