@@ -85,13 +85,14 @@ class SqliteDirectoryModel(QAbstractItemModel):
             return ""
         # Directory paths are materialised in the cache. A matching descendant
         # keeps every ancestor visible without creating its Qt item.
-        return (f" AND (label LIKE ? OR EXISTS(SELECT 1 FROM {self.table} d "
-                f"WHERE (d.path={self.table}.path OR d.path LIKE "
-                f"substr({self.table}.path,1,length({self.table}.path)-1)||',%') "
-                "AND d.kind='object' AND d.label LIKE ?))")
+        return (f" AND (label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM {self.table} d "
+                f"WHERE (d.path={self.table}.path OR substr(d.path,1,length({self.table}.path))="
+                f"substr({self.table}.path,1,length({self.table}.path)-1)||',') "
+                "AND d.kind='object' AND d.label LIKE ? ESCAPE '\\'))")
 
     def _search_args(self):
-        value = f"%{self.search}%"
+        literal = self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        value = f"%{literal}%"
         return (value, value) if self.search else ()
 
     def canFetchMore(self, parent=QModelIndex()):
@@ -227,10 +228,11 @@ class SqliteDirectoryModel(QAbstractItemModel):
             kind, object_id, path = row
             if kind == "object":
                 return {object_id}
+            prefix = path[:-1] + ','
             return {value for (value,) in db.execute(
                 f"SELECT DISTINCT object_id FROM {self.table} WHERE kind='object' "
-                "AND (path=? OR path LIKE substr(?,1,length(?)-1)||',%')",
-                (path, path, path),
+                "AND (path=? OR substr(path,1,?)=?)",
+                (path, len(prefix), prefix),
             )}
 
     def refresh_affected(self, keys):

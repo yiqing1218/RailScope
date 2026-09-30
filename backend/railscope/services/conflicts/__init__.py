@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections import defaultdict
 from ...domain import Conflict, TrackOccupancy
 from ...repository import RailRepository
 
@@ -11,9 +12,17 @@ def _overlap(a: TrackOccupancy, b: TrackOccupancy) -> tuple[int, int] | None:
 def detect_conflicts(repo: RailRepository, scenario_id: str) -> list[Conflict]:
     occupancies = [o for o in repo.occupancies if o.scenario_id == scenario_id]
     conflicts: list[Conflict] = []
+    resources = defaultdict(list)
+    for index, occupancy in enumerate(occupancies):
+        resources[occupancy.resource_type, occupancy.resource_id].append((index, occupancy))
+    default_rule = next((r for r in repo.headway_rules if r.block_id is None), None)
+    rules = {r.block_id: r for r in reversed(repo.headway_rules) if r.block_id is not None}
     for index, a in enumerate(occupancies):
-        for b in occupancies[index + 1:]:
-            if a.train_run_id == b.train_run_id or a.resource_type != b.resource_type or a.resource_id != b.resource_id:
+        for other_index, b in resources[a.resource_type, a.resource_id]:
+            # Source order remains stable for conflict IDs and API consumers.
+            if other_index <= index:
+                continue
+            if a.train_run_id == b.train_run_id:
                 continue
             shared = _overlap(a, b)
             if shared:
@@ -28,7 +37,7 @@ def detect_conflicts(repo: RailRepository, scenario_id: str) -> list[Conflict]:
                 continue
             if a.resource_type != "block" or a.direction != b.direction:
                 continue
-            rule = next((r for r in repo.headway_rules if r.block_id == a.resource_id), None)
+            rule = rules.get(a.resource_id, default_rule)
             min_s = rule.same_direction_min_s if rule else 180
             first, second = sorted((a, b), key=lambda o: o.start_time_s)
             if second.start_time_s - first.start_time_s < min_s:

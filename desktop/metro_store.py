@@ -530,6 +530,19 @@ class StationLookup(Mapping):
             record["archived"] = bool(custom.get("archived", False))
             yield key, record
 
+    def aliases_for_physical(self, physical_ids):
+        """Batch reverse lookup through station_aliases_physical, without loading records."""
+        identifiers = sorted({str(value) for value in physical_ids})
+        result = set()
+        if identifiers:
+            with closing(sqlite3.connect(self.path)) as db:
+                for offset in range(0, len(identifiers), 800):
+                    batch = identifiers[offset:offset + 800]
+                    placeholders = ','.join('?' for _ in batch)
+                    result.update(row[0] for row in db.execute(
+                        f'SELECT DISTINCT id FROM station_aliases WHERE physical_id IN ({placeholders})', batch))
+        return result
+
     def get(self, key, default=None):
         try:
             return self[key]

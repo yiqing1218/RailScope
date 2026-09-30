@@ -2822,6 +2822,7 @@ class Desk(QMainWindow):
 
     def _selected_catalog_objects(self):
         rail_lines, rail_stations, metro_lines, metro_stations = set(), set(), set(), set()
+        physical_station_ids = set()
         for feature in self.selected_features:
             props, layer = feature.get("properties", {}), feature.get("layer", "")
             group = props.get("catalog_group_id")
@@ -2840,10 +2841,8 @@ class Desk(QMainWindow):
                 metro_lines.add(int(relation))
             physical = props.get("infrastructure_id") or props.get("station_id")
             if physical:
-                metro_stations.update(
-                    key for key, record in self.station_lookup.items()
-                    if record.get("physical_station_id") == str(physical)
-                )
+                physical_station_ids.add(str(physical))
+        metro_stations = self.station_lookup.aliases_for_physical(physical_station_ids)
         return rail_lines, rail_stations, metro_lines, metro_stations
 
     def move_map_selection(self):
