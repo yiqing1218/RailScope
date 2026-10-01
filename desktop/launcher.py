@@ -896,6 +896,31 @@ class Desk(QMainWindow):
         menu.addAction(action)
         return action
 
+    def import_china_emu_references(self):
+        from china_emu import import_references
+        from import_china_emu import local_station_names
+        from background_work import prepare_with_progress
+        try:
+            def work(progress):
+                progress("读取本地车站名称，保留原始底图…")
+                names = local_station_names(active_rail_directory(ROOT))
+                return import_references(station_names=names, progress=progress)
+            result = prepare_with_progress(self, "补全线路、站场与车型参考属性", work)
+            self.rail_catalog_widget.metadata_changed.emit()
+            if self.selected_data:
+                self.display_feature(self.selected_data)
+            counts = result["counts"]
+            QMessageBox.information(self, "参考资料已导入",
+                f"线路 {counts['line']} · 车站 {counts['station']} · 车型 {counts['vehicle']}。\n"
+                f"未成功读取 {len(result['errors'])} 个页面。已有人工属性优先，差异显示在对象详情。\n"
+                "区段参数与站场编号仅作为参考，未用于调度进路或仿真限速。")
+        except (OSError, ValueError, RuntimeError) as error:
+            QMessageBox.warning(self, "参考资料未更新", str(error))
+
+    def show_china_emu_references(self):
+        from china_emu_ui import ReferenceDialog
+        ReferenceDialog(self).exec()
+
     def save_workspace(self):
         """Flush independent plans; catalog overrides are written on each edit."""
         self.operations.save()
@@ -1100,6 +1125,9 @@ class Desk(QMainWindow):
             self.rail_operations if self.run_mode.currentIndex() == 1 else self.operations
         ).save())
         data = bar.addMenu("数据")
+        self.add_action(data, "从中国动车组补全参考属性…", self.import_china_emu_references)
+        self.add_action(data, "线路、站场与车型参考资料…", self.show_china_emu_references)
+        data.addSeparator()
         self.add_action(data, "从全国 OSM 建立高速公路目录…", self.start_road_import)
         self.add_action(data, "从全国 OSM 建立省市县行政边界…", self.start_admin_import)
         for kind, title in (
@@ -3055,7 +3083,8 @@ class Desk(QMainWindow):
 
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
-        props = dict(feature.get("properties", {}))
+        from china_emu import without_previous_reference
+        props = without_previous_reference(feature.get("properties", {}))
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             props["display_name"] = self.rail_catalog_widget.switch_name(props["osm_node_id"])
         if props.get("corridor_id"):
@@ -3115,6 +3144,8 @@ class Desk(QMainWindow):
                 "track_type", props.get("track_type", "未确认类型")
             )
             props["folder_path"] = list(self.rail_catalog_widget.parents(rail_group))
+            if catalog_meta.get("external_reference"):
+                props["external_reference"] = catalog_meta["external_reference"]
             props.update(
                 source_line_attributes(
                     props,
@@ -3309,6 +3340,28 @@ class Desk(QMainWindow):
             label = dict(STATION_OVERVIEW_FIELDS).get(key, key)
             if not any(existing == label for existing, _value in rows):
                 rows.append((label, str(value)))
+        reference = props.get("external_reference")
+        if isinstance(reference, dict):
+            reference_labels = dict(STATION_OVERVIEW_FIELDS) if reference["kind"] == "station" else FIELD_LABELS
+            rows.append(("参考资料来源", reference["source_url"]))
+            rows.append(("资料获取时间", reference["retrieved_at"]))
+            rows.append(("参考资料核验状态", "未核验的外部参考"))
+            for scope in reference.get("scopes", []):
+                label = "参考区段" if reference["kind"] == "line" else "参考站场"
+                description = scope.get("name", "") + " · " + scope.get("span", "")
+                details = [f"{reference_labels.get(k, k)}：{v}"
+                           for k, v in scope.get("attributes", {}).items()]
+                if scope.get("source_notes"):
+                    details.insert(0, "来源条件说明：" + scope["source_notes"])
+                if scope.get("lines"):
+                    details.insert(0, "适用线路：" + "、".join(scope["lines"]))
+                details.extend(y["name"] + " · " + y.get("lines", "") for y in scope.get("yards", []))
+                if scope.get("platform_numbers"):
+                    details.append("来源标注站台编号：" + "、".join(scope["platform_numbers"]))
+                rows.append((label + " · " + description.strip(" ·"), "\n".join(details)))
+            for key, conflict in props.get("reference_conflicts", {}).items():
+                label = reference_labels.get(key, key)
+                rows.append(("资料差异 · " + label, f"已有：{conflict['existing']}；网站参考：{conflict['reference']}"))
         tags = {**props.get("way_tags", {}), **props.get("relation_tags", {})}
         for key, title in [
             ("from", "起点"),
@@ -3334,7 +3387,7 @@ class Desk(QMainWindow):
             rows.append(("开放街图关系成员数量", str(len(props["relation_members"]))))
         unknown = {}
         for key, value in props.items():
-            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members", "station_overview"):
+            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members", "station_overview", "external_reference", "reference_conflicts", "reference_provenance"):
                 continue
             unknown[key] = value
         if unknown:

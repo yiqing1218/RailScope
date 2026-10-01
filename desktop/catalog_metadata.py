@@ -40,6 +40,15 @@ STATION_OVERVIEW_FIELDS = (
     ("main_lines", "主要线路"),
     ("regional_management", "区域管理"),
     ("platform_scale", "站台规模"),
+    ("platform_count", "站台数"),
+    ("platform_track_count", "邻靠站台股道数"),
+    ("track_count", "股道数"),
+    ("through_mainline_count", "贯通正线数"),
+    ("independent_mainline_count", "独立正线数"),
+    ("station_yards", "站场及站台编号范围"),
+    ("platform_numbers", "来源标注站台编号"),
+    ("reference_source_url", "参考资料链接"),
+    ("reference_status", "资料核验状态"),
     ("annual_freight_volume", "年货运量"),
     ("address", "车站地址"),
 )
@@ -80,6 +89,18 @@ def station_overview(properties, record=None, custom=None):
     }
     result.update(custom.get("overview_attributes", {}))
     result.update(custom.get("custom_attributes", {}))
+    try:
+        from .china_emu import station_reference, fill_missing
+    except ImportError:
+        from china_emu import station_reference, fill_missing
+    reference = station_reference(properties, record, custom)
+    if reference:
+        result, conflicts, provenance = fill_missing(result, reference, {key for key, _ in STATION_OVERVIEW_FIELDS})
+        result["reference_source_url"] = reference["source_url"]
+        result["reference_status"] = "网站参考，尚未核验；示意图不代表实际进路"
+        properties["external_reference"] = reference
+        properties["reference_conflicts"] = conflicts
+        properties["reference_provenance"] = provenance
     # Older workspaces may contain a separate region value. The directory wins.
     result["region"] = "".join(folder[:2])
     return {key: str(value).strip() for key, value in result.items() if value not in (None, "")}

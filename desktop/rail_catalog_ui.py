@@ -647,7 +647,7 @@ class RailCatalog(QWidget):
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        return {
+        effective = {
             **record,
             **self.overrides.get(
                 key,
@@ -656,6 +656,14 @@ class RailCatalog(QWidget):
                 ),
             ),
         }
+        try:
+            from .china_emu import line_reference
+        except ImportError:
+            from china_emu import line_reference
+        reference = line_reference(effective)
+        if reference:
+            effective["external_reference"] = reference
+        return effective
 
     def populate(self):
         if not hasattr(self, "tree"):

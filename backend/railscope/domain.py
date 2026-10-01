@@ -8,6 +8,23 @@ ResourceType = Literal["edge", "block", "station_track", "platform"]
 
 
 @dataclass(frozen=True)
+class ReferenceProfile:
+    """Source facts only; never a physical path or a verified station route."""
+    id: str
+    kind: str
+    name: str
+    source_url: str
+    snapshot_id: str
+    retrieved_at: str
+    attributes: dict = field(default_factory=dict)
+    scopes: tuple[dict, ...] = ()
+    verification_status: str = "external_reference_unverified"
+    confidence: float | None = None
+    source: str = "中国动车组 china-emu.cn"
+    license: str = "CC BY-NC-SA 3.0 CN; https://china-emu.cn/About/Agreement/"
+
+
+@dataclass(frozen=True)
 class DataSource:
     id: str
     name: str
