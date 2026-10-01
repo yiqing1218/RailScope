@@ -10,10 +10,14 @@ import math
 import re
 from pathlib import Path
 import sqlite3
+try:
+    from . import workspace_sqlite as layered
+except ImportError:
+    import workspace_sqlite as layered
 
 
 def edit_database(path):
-    return Path(path).with_suffix('.edits.sqlite')
+    return layered.database_path(path)
 
 
 def override_stamp(path):
@@ -32,8 +36,8 @@ def _read_seed(path):
     return validate_overrides(payload, path)
 
 
-def _read_entries(path):
-    database = edit_database(path)
+def _read_legacy_entries(path):
+    database = Path(path).with_suffix('.edits.sqlite')
     if not database.exists():
         return {}
     try:
@@ -49,8 +53,14 @@ def _read_entries(path):
 
 
 def read_overrides(path):
+    if edit_database(path).exists():
+        try:
+            values, _, _ = layered.read_database(edit_database(path))
+            return validate_overrides({key: value for key, value in values.items() if value is not None}, path)
+        except sqlite3.Error as error:
+            raise ValueError(f'工作区增量数据库未载入：{edit_database(path)} / {error}') from error
     values = _read_seed(path)
-    for key, value in _read_entries(path).items():
+    for key, value in _read_legacy_entries(path).items():
         if value is None:
             values.pop(key, None)
         else:
@@ -95,22 +105,35 @@ class CatalogWorkspace:
         self.load_failed = False
         self.dirty = False
         self.edited_keys = set()
+        self.revisions = {name: 0 for name in layered.REVISION_NAMES}
+        self.last_change = None
 
     def load(self, seeds=()):
         proposed = {}
         self.load_failed = True
-        for seed in (*seeds, self.path):
-            for key, value in _read_seed(seed).items():
-                proposed[key] = {**proposed.get(key, {}), **value}
-        entries = _read_entries(self.path)
-        for key, value in entries.items():
-            if value is None:
-                proposed.pop(key, None)
-            else:
-                proposed[key] = value
+        if edit_database(self.path).exists():
+            try:
+                proposed, self.revisions, self.edited_keys = layered.read_database(edit_database(self.path))
+            except sqlite3.Error as error:
+                raise ValueError(f'工作区增量数据库未载入：{error}') from error
+            validate_overrides({key: value for key, value in proposed.items() if value is not None}, self.path)
+            proposed = {key: value for key, value in proposed.items() if value is not None}
+        else:
+            for seed in (*seeds, self.path):
+                for key, value in _read_seed(seed).items():
+                    proposed[key] = {**proposed.get(key, {}), **value}
+            entries = _read_legacy_entries(self.path)
+            for key, value in entries.items():
+                if value is None:
+                    proposed.pop(key, None)
+                else:
+                    proposed[key] = value
+            layered.migrate(edit_database(self.path), proposed,
+                            [key for key, value in entries.items() if value is None], entries,
+                            (*seeds, self.path, self.path.with_suffix('.edits.sqlite')))
+            self.edited_keys = set(entries)
         self.values.clear()
         self.values.update(proposed)
-        self.edited_keys = set(entries)
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.load_failed = False
@@ -122,12 +145,19 @@ class CatalogWorkspace:
         # A command commits only the changed owners; no geometry or seed rewrite.
         try:
             with closing(sqlite3.connect(database, timeout=1)) as db, db:
-                db.execute('CREATE TABLE IF NOT EXISTS overrides(entity_id TEXT PRIMARY KEY,data TEXT)')
-                db.execute('PRAGMA user_version=1')
-                db.executemany('INSERT OR REPLACE INTO overrides VALUES(?,?)',
-                    ((key, json.dumps(value, ensure_ascii=False, allow_nan=False,
-                        separators=(',', ':')) if value is not None else None)
-                     for key, value in entries.items()))
+                kinds = set()
+                delta = {}
+                for key, value in entries.items():
+                    before = self.values.get(key)
+                    layered.write_owner(db, key, value, before)
+                    kinds.update(layered.change_types(before, value))
+                    delta[key] = {'before': before, 'after': value}
+                for kind in kinds:
+                    db.execute('UPDATE revisions SET value=value+1 WHERE kind=?', (kind,))
+                db.execute('INSERT INTO command_history(created_at,kinds,delta) VALUES(datetime(\'now\'),?,?)',
+                           (layered.encoded(sorted(kinds)), layered.encoded(delta)))
+                # Edited IDs are rows, never an O(all edits) JSON rewrite per command.
+                db.executemany("UPDATE object_aliases SET status='edited' WHERE entity_id=?", ((key,) for key in entries))
         except sqlite3.Error as error:
             raise OSError(f'工作区增量保存失败：{error}') from error
 
@@ -136,6 +166,10 @@ class CatalogWorkspace:
             raise ValueError('工作区未成功载入；请先修复文件并重新载入，原文件保留')
         validate_overrides({key: value for key, value in entries.items() if value is not None}, self.path)
         self._write_entries(entries)
+        self.revisions = layered.revisions(edit_database(self.path))
+        self.last_change = {'ids': set(entries), 'types': set().union(*(
+            layered.change_types(self.values.get(key), value) for key, value in entries.items())),
+            'revisions': dict(self.revisions)}
         self.edited_keys.update(entries)
         for key, value in entries.items():
             if value is None:
