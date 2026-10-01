@@ -333,7 +333,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
         strict_fields(
             route,
             {"id", "station_id", "entry_node_id", "exit_node_id", "edge_refs"},
-            {"verification_status"},
+            {"verification_status", "source", "provenance", "snapshot_id", "confidence"},
             "车站进路",
         )
         if (
@@ -385,6 +385,27 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             train, {"id", "path", "stops", "extensions"}, {"station_paths"}, "国铁车次"
         )
         train["path"] = train_path(train["path"], train.get("station_paths", []), edges)
+        if not isinstance(train['path'],list) or not train['path'] or not isinstance(train['stops'],list):
+            raise ValueError('车次须有明确径路')
+        for leg in train['path']:
+            strict_fields(leg,{'edge_id','direction'},set(),'径路区间')
+            if leg['edge_id'] not in edge_lookup:raise ValueError('径路区间不存在或尚在建设，不能运营')
+            if leg['direction'] not in ('forward','reverse'):raise ValueError('区间方向无效')
+        # This is a derived display DTO; saved Corridors stay shared.
+        replacements=[]
+        base_nodes=[edge_lookup[train['path'][0]['edge_id']]['from_node' if train['path'][0]['direction']=='forward' else 'to_node']]
+        base_nodes.extend(edge_lookup[leg['edge_id']]['to_node' if leg['direction']=='forward' else 'from_node'] for leg in train['path'])
+        for stop in train['stops']:
+            if not stop.get('station_route_id'): continue
+            route=station_routes.get(stop['station_route_id'])
+            if not route: raise ValueError('车次引用的车站进路不存在')
+            candidates=[(a,b) for a,n in enumerate(base_nodes) if str(n)==str(route['entry_node_id'])
+                        for b in range(a+1,len(base_nodes)) if str(base_nodes[b])==str(route['exit_node_id'])]
+            if len(candidates)!=1: raise ValueError('车站进路必须有唯一且有序的通道入口和出口')
+            a,b=candidates[0]
+            if any(a<end and start<b for start,end,_ in replacements): raise ValueError('车站进路范围重叠')
+            replacements.append((a,b,deepcopy(route['edge_refs'])))
+        for a,b,refs in sorted(replacements,reverse=True): train['path'][a:b]=refs
         if (
             not isinstance(train["path"], list)
             or not train["path"]
@@ -454,7 +475,15 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                 # Several edge-offset stops may legitimately share one sparse
                 # topology anchor. Directed metre positions below govern order.
                 positioned = stop.get('extensions', {}).get('railscope.org/track-position')
-                index = node_ids.index(stop["node_id"], 0 if positioned else offset)
+                if stop.get('station_route_id') and stop.get('station_track_id') and not positioned:
+                    track=edge_lookup.get(stop['station_track_id'])
+                    if track is None:raise ValueError('指定到发线不存在')
+                    path_index=next((i for i,leg in enumerate(train['path']) if leg['edge_id']==stop['station_track_id']),None)
+                    if path_index is None:raise ValueError('到发线不在本站有效进路上')
+                    positioned={'edge_id':track['id'],'offset_m':sum(distance_m(a,b) for a,b in zip(track['coordinates'],track['coordinates'][1:]))/2,'path_index':path_index}
+                    stop.setdefault('extensions',{})['railscope.org/track-position']=positioned
+                index = node_ids.index(stop["node_id"], 0 if positioned else offset) if stop['node_id'] in node_ids else (
+                    node_ids.index(edge_lookup[stop['station_track_id']]['from_node']) if positioned and stop.get('station_route_id') else node_ids.index(stop['node_id'],offset))
             except ValueError as error:
                 label = stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('display_name', str(stop['node_id']))
                 reason = '站序倒退：完整通道未包含下一次经过该站的路径' if stop['node_id'] in node_ids else '轨道节点不在完整通道中'
@@ -468,7 +497,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                     leg["edge_id"] for leg in train["path"]
                 }:
                     raise ValueError("到发线必须引用本通道上的真实轨道")
-                if stop["node_id"] not in track.get(
+                if not positioned and stop["node_id"] not in track.get(
                     "node_ids", [track["from_node"], track["to_node"]]
                 ):
                     raise ValueError("停靠节点不在指定到发线上")
@@ -497,7 +526,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
                         ],
                     )
                 }
-                if stop["node_id"] not in route_nodes:
+                if not positioned and stop["node_id"] not in route_nodes:
                     raise ValueError("停靠节点不在车站进路上")
             if "platform_id" in stop and (
                 type(stop["platform_id"]) is not int
@@ -561,7 +590,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
         trains.append(
             {
                 "id": train["id"],
-                "vehicle_id": train["id"],
+                "vehicle_id": train['extensions'].get('railscope.org/vehicle',{}).get('vehicle_id') or train["id"],
                 "line_id": line_id,
                 "direction": "forward",
                 "enabled": True,
@@ -579,6 +608,7 @@ def compile_rail_plan(payload, edges, points, platforms=()):
             }
         )
     plan = Plan(lines, "rail")
+    plan.service_date=payload['service_date']
     plan.validate(trains)
     plan.trains = trains
     plan.extensions = payload["extensions"]

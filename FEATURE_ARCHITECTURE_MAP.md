@@ -2,6 +2,8 @@
 
 以下是当前代码与目标 UI 的映射；“目标 UI”不代表已经实现。产品含义见 [概览](PRODUCT_OVERVIEW.md)，行为见 [规格](FEATURE_SPECIFICATION.md)。
 
+2026-09-30 增量实现：六模块与统一详情已接入；历史、站台进路、车辆和分析的模型—存储—代码—UI 对应关系见 [交付记录](docs/features/HISTORY_OPERATIONS_DELIVERY.md)。Dock / Workspace 仍按后续目标迁移。
+
 | 功能 | 数据模型 / 契约 | 当前代码归属 | 目标 UI 信息位置 | 视觉与反馈 |
 |---|---|---|---|---|
 | F01 数据与工作区 | DatasetSnapshot、DataSource、覆盖层、IdentityRegistry、conflict | `desktop/data_install.py`、`catalog_workspace.py`；`backend/railscope/identity.py`、`workspace.py` | 数据维护空间；文件 > 工作区 / 交换 | 来源 / 快照 / 未保存 / 错误标记，任务进度 |

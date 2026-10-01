@@ -194,7 +194,7 @@ class RailEditor(OperationsEditor):
                 values[key] = {**values.get(key, {}), **value}
         return build_repository(self.graph if graph is None else graph,
             self.document() if payload is None else payload,
-            identity_path, values, self.directory / 'rail.sqlite')
+            identity_path, values, self.directory / 'rail.sqlite', self.catalog_metadata_path.parent/'workspace.sqlite')
 
     def play(self):
         if not self.plan.trains:
@@ -245,6 +245,12 @@ class RailEditor(OperationsEditor):
             if (self.directory / "rail.sqlite").exists()
             else []
         )
+        from railscope.workspace import WorkspaceObjects
+        try:
+            from .temporal_adapter import temporal_edges
+        except ImportError:
+            from temporal_adapter import temporal_edges
+        edges=temporal_edges(edges,WorkspaceObjects(self.catalog_metadata_path.parent/'workspace.sqlite').collection('lifecycles'),original_payload['service_date'])
         original_payload = resolve_edge_aliases(original_payload, edges)
         found = {e["id"] for e in edges} | {
             e["requested_edge_alias"] for e in edges if e.get("requested_edge_alias")
@@ -1488,7 +1494,7 @@ class RailEditor(OperationsEditor):
                 "目标股道",
                 "道岔节点",
                 "变道时刻",
-                "站台 OSM 编号",
+                "真实站台引用",
                 "到发线编号",
                 "车站进路编号",
             ]

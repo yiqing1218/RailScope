@@ -19,7 +19,7 @@ def validate_timetables(repo):
                 if item is None or item.station_id != stop.station_id:
                     errors.append(f'stop {stop.train_run_id}: invalid {collection} reference {ident}')
                 elif collection == 'station_routes' and item.verification_status not in {
-                        'official', 'official_confirmed', 'user_verified', 'manual_override'}:
+                        'official', 'official_confirmed', 'user_verified', 'manual_override', 'automatic_reference'}:
                     errors.append(f'stop {stop.train_run_id}: station route is unverified')
         if stop.stop_edge_id is not None or stop.stop_offset_m is not None:
             edge = repo.edges.get(stop.stop_edge_id)

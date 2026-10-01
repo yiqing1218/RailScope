@@ -110,6 +110,8 @@ class TrainRun:
     source_id: str | None = None
     source_version: str | None = None
     verification_status: str = "unverified"
+    vehicle_id: str | None = None
+    traffic_type: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -265,6 +267,10 @@ class StationRoute:
     entry_node_id: str
     exit_node_id: str
     verification_status: str = "unverified"
+    source: str = "manual"
+    snapshot_id: str | None = None
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -293,6 +299,8 @@ class Platform:
     name: str
     area_id: str | None = None
     source_id: str | None = None
+    station_track_ids: tuple[str, ...] = ()
+    verification_status: str = "unverified"
 
 
 @dataclass(frozen=True)
@@ -462,6 +470,38 @@ class ImportReport:
     objects_skipped: int = 0
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InfrastructureLifecycle:
+    """An optional calendar interval owned by an existing stable infrastructure ID."""
+    id: str
+    construction_started: str | None = None
+    opened: str | None = None
+    closed: str | None = None
+    parent_id: str | None = None
+    mode: str = "rail"
+    source: str = "manual"
+    snapshot_id: str | None = None
+    verification_status: str = "user_defined"
+    confidence: float | None = None
+    source_aliases: tuple[str, ...] = ()
+    display_name: str = ""
+
+
+@dataclass(frozen=True)
+class Vehicle:
+    """A real numbered vehicle/unit, independently referenced by train instances."""
+    id: str
+    name: str
+    mode: str = "rail"
+    model: str = ""
+    code: str = ""
+    infrastructure_line_id: str | None = None
+    photo_asset: str | None = None
+    parameters: dict = field(default_factory=dict)
+    source: str = "manual"
+    verification_status: str = "user_defined"
 
 
 def shifted_stop(stop: StopTime, seconds: int) -> StopTime:

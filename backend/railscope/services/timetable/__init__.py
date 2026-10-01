@@ -38,7 +38,9 @@ def route_distances(repo: RailRepository, effective: EffectiveRun) -> tuple[Stop
     from .canonical import stop_distances
     if not effective.corridor_id:
         return effective.stops
-    path = repo.corridors[effective.corridor_id]
-    distances = stop_distances(repo, path.edge_refs, effective.stops)
+    from ..station_routing import effective_path, positioned_stops
+    refs = effective_path(repo, effective.corridor_id, effective.stops)
+    stops = positioned_stops(repo, refs, effective.stops)
+    distances = stop_distances(repo, refs, stops)
     return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": distance})
-                 for s, distance in zip(effective.stops, distances))
+                 for s, distance in zip(stops, distances))

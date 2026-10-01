@@ -43,6 +43,7 @@ def _install_in_place(target, replacement):
 
 def build_index(directory, catalog=None):
     directory = Path(directory)
+    directory.mkdir(parents=True,exist_ok=True)
     topology = directory / "rail_catalog.topology.json"
     fallback = directory / "rail_catalog.json"
     source = fallback

@@ -25,7 +25,7 @@ LEGACY_COLUMNS = (
     "via_node",
     "change_time",
 )
-COLUMNS = LEGACY_COLUMNS[:3] + ("stop_name",) + LEGACY_COLUMNS[3:]
+COLUMNS = LEGACY_COLUMNS[:3] + ("stop_name",) + LEGACY_COLUMNS[3:] + ('platform_ref','station_track_id','station_route_id','vehicle_id','traffic_type')
 
 
 def merge_csv(text, payload, choices=None):
@@ -116,6 +116,8 @@ def merge_csv(text, payload, choices=None):
                 if not row['platform_id'].isdigit():
                     raise ValueError(f'第 {line} 行站台编号无效')
                 stop['platform_id'] = int(row['platform_id'])
+            for key in ('platform_ref','station_track_id','station_route_id'):
+                if row[key]:stop[key]=row[key]
         result['trains'].append({'id': ident, 'route_id': route['id'], 'stops': stops,
             'extensions': {'railscope.org/provenance': {'source': '用户导入的车次 CSV；非官方计划',
                 'method': 'station_name_match' if any(not row['node_id'] for _, row in rows) else 'explicit_node',
@@ -123,6 +125,11 @@ def merge_csv(text, payload, choices=None):
                 'confidence': None,
                 'matched_stops': [row['stop_name'] for _, row in rows],
                 'snapshot': route.get('extensions', {}).get('railscope.org/line-resolution', {}).get('snapshot', 'portable_reference')}}})
+        vehicles={row['vehicle_id'] for _,row in rows if row['vehicle_id']}
+        traffic={row['traffic_type'] for _,row in rows if row['traffic_type']}
+        if len(vehicles)>1 or len(traffic)>1:raise ValueError(f'{ident} 的车辆或客货类型不一致')
+        if vehicles:result['trains'][-1]['extensions']['railscope.org/vehicle']={'vehicle_id':next(iter(vehicles))}
+        if traffic:result['trains'][-1]['extensions']['railscope.org/traffic']={'type':next(iter(traffic))}
     return result  # Caller compiles the whole batch before replacing its active model.
 
 
@@ -142,10 +149,6 @@ def export_csv(payload):
         if train.get("station_paths"):
             raise ValueError("含站场径路的车次请导出 JSON；CSV 不能无损保存嵌套路径")
         for sequence, stop in enumerate(train["stops"], 1):
-            if stop.get("platform_ref"):
-                raise ValueError(
-                    "含统一站台引用 platform_ref 的车次请导出 JSON；旧 CSV 无法无损保存"
-                )
             change = stop.get("track_change", {})
             shared = next(
                 (
@@ -175,6 +178,9 @@ def export_csv(payload):
                         for k in ("from_track", "to_track", "via_node")
                     },
                     "change_time": change.get("time", ""),
+                    **{key:stop.get(key,'') for key in ('platform_ref','station_track_id','station_route_id')},
+                    'vehicle_id':train.get('extensions',{}).get('railscope.org/vehicle',{}).get('vehicle_id',''),
+                    'traffic_type':train.get('extensions',{}).get('railscope.org/traffic',{}).get('type',''),
                 }
             )
     return output.getvalue()

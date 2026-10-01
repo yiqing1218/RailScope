@@ -21,6 +21,7 @@ from .rail_semantics import edge_semantics, legacy_semantics
 SCHEMA_VERSION = 2
 
 TYPES={
+    'lifecycles':d.InfrastructureLifecycle,'vehicles':d.Vehicle,
     'service_areas':d.ServiceArea,'service_area_geometries':d.ServiceAreaGeometry,
     'sources':d.DataSource,'snapshots':d.DatasetSnapshot,'lines':d.InfrastructureLine,
     'nodes':d.NetworkNode,'edges':d.NetworkEdge,'stations':d.Station,
@@ -82,7 +83,7 @@ def decode(cls, raw):
             raw.setdefault(key, old[key])
     if cls is d.StationTrack:
         _migrate_track_number(raw)
-    for key in ('osm_node_ids','source_node_ids','source_member_ids','node_ids'):
+    for key in ('osm_node_ids','source_node_ids','source_member_ids','node_ids','source_aliases','station_track_ids'):
         if key in raw: raw[key]=tuple(raw[key])
     if 'coordinates' in raw: raw['coordinates']=tuple(tuple(p) for p in raw['coordinates'])
     if 'edge_refs' in raw: raw['edge_refs']=tuple(d.DirectedEdgeRef(**r) for r in raw['edge_refs'])
@@ -100,6 +101,45 @@ def _rows(repo):
             continue
         result[(collection,'@list')]=json.dumps([asdict(v) for v in getattr(repo,collection)],ensure_ascii=False,sort_keys=True)
     return result
+
+
+class WorkspaceObjects:
+    """Small typed collections in the canonical workspace, without loading geometry."""
+    collections = frozenset({'lifecycles', 'vehicles', 'platforms'})
+
+    def __init__(self, path):
+        self.path = SQLiteWorkspace(path).path
+
+    def collection(self, kind, db=None):
+        if kind not in self.collections:
+            raise ValueError('Unsupported small workspace collection')
+        if db is None:
+            with closing(sqlite3.connect(self.path)) as connection:
+                return self.collection(kind, connection)
+        rows = dict(db.execute('SELECT id,data FROM workspace_source WHERE kind=?', (kind,)))
+        rows.update(dict(db.execute('SELECT id,data FROM workspace_override WHERE kind=?', (kind,))))
+        return {key: decode(TYPES[kind], json.loads(raw)) for key, raw in rows.items() if raw is not None}
+
+    def put(self, kind, value):
+        if kind not in self.collections or not isinstance(value, TYPES[kind]):
+            raise ValueError('Workspace object type mismatch')
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            if kind == 'lifecycles':
+                from .services.history import validate_lifecycle, effective_lifecycle
+                validate_lifecycle(value)
+                records = self.collection(kind, db)
+                records[value.id] = value
+                for ident in records:
+                    effective_lifecycle(records, ident)
+            elif kind == 'vehicles':
+                from .services.vehicles import validate_vehicle
+                validate_vehicle(value)
+            elif not value.id or not value.station_id:
+                raise ValueError('Platform requires stable platform and station IDs')
+            db.execute('INSERT OR REPLACE INTO workspace_override VALUES(?,?,?)',
+                       (kind, value.id, json.dumps(asdict(value), ensure_ascii=False, sort_keys=True)))
+            db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
 
 
 class SQLiteWorkspace:

@@ -734,6 +734,14 @@ class Desk(QMainWindow):
             ROOT / "data/processed/operations/rail_plan.json",
             ROOT / "data/user_settings/rail_catalog.json",
         )
+        from session_time import SessionTime
+        from operations_workbench import Workbench
+        from history_ui import HistoryController
+        self.session_time=SessionTime(self)
+        self.operations.bind_session(self.session_time)
+        self.rail_operations.bind_session(self.session_time)
+        self.workbench=Workbench(self,ROOT/'data/user_settings/workspace.sqlite',self.session_time)
+        self.history=HistoryController(self,self.workbench.store,self.session_time)
         self.build()
         self.switches["vehicles"] = self.operations.vehicle_switch
         self.operations.vehicle_switch.toggled.connect(
@@ -1220,7 +1228,7 @@ class Desk(QMainWindow):
         self.add_action(topology, "清除地图选择", lambda: self.map.call("clearSelection"))
         self.add_action(topology, "由所选道岔新建线路所…", self.create_signal_box_from_selection)
         topology.addSeparator()
-        self.add_action(topology, "打开国铁运行通道编排", lambda: self.open_sidebar(2))
+        self.add_action(topology, "打开国铁运行通道编排", self.open_rail_operations)
         self.add_action(
             topology,
             "导出铁路拓扑图（端点—线路—端点）…",
@@ -1605,6 +1613,11 @@ class Desk(QMainWindow):
             self.map.call("captureMap")
 
     def save_map_capture(self, data):
+        callback=getattr(self,'_archive_capture',None)
+        if callback:
+            self._archive_capture=None
+            callback(data)
+            return
         if not getattr(self, "_capture_path", None):
             return
         try:
@@ -1692,6 +1705,11 @@ class Desk(QMainWindow):
             ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所", "站场股道", "服务区"]
         )
         self.search_type.setMinimumWidth(105)
+        history_button=QToolButton()
+        history_button.setText('时间回溯')
+        history_button.setToolTip('查看不同日期的建设、运营与停运状态')
+        history_button.clicked.connect(self.history.show)
+        layout.addWidget(history_button)
         layout.addWidget(self.search_type)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索名称或稳定编号   Ctrl+F")
@@ -1726,6 +1744,11 @@ class Desk(QMainWindow):
         )
         layout.addWidget(self.map_rail)
         layout.addWidget(self.run_rail)
+        self.module_buttons=[self.map_rail,self.run_rail]
+        for index,title in enumerate(('车辆','分析','编辑','导入\n导出'),2):
+            button=self.rail_button(title,title.replace('\n','')+'工作台',lambda checked=False,i=index:self.open_or_toggle(i))
+            self.module_buttons.append(button)
+            layout.addWidget(button)
         layout.addStretch()
         self.detail_rail = self.rail_button(
             "详情", "展开或收起右侧对象详情", self.toggle_right
@@ -1776,6 +1799,8 @@ class Desk(QMainWindow):
         self.side_pages = QStackedWidget()
         self.side_pages.addWidget(self.map_controls())
         self.side_pages.addWidget(self.run_controls())
+        for index in range(2,6):
+            self.side_pages.addWidget(self.workbench.page(index))
         layout.addWidget(self.side_pages, 1)
         return panel
 
@@ -2670,6 +2695,16 @@ class Desk(QMainWindow):
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
         self.detail_tabs.addTab(self.properties, "概览")
+        self.detail_views={}
+        for title in ('地图','基础设施','运行','统计','历史'):
+            body=QWidget();body_layout=QVBoxLayout(body);body_layout.setContentsMargins(0,4,0,4)
+            info=PropertyOverview();body_layout.addWidget(info,1);self.detail_views[title]=info
+            if title=='地图':self.workbench.button(body_layout,'地图定位',self.workbench.locate_selected)
+            elif title=='基础设施':self.workbench.button(body_layout,'线路技术视图',self.workbench.show_line_technical)
+            elif title=='运行':self.workbench.button(body_layout,'车站时刻表与站场状态',self.workbench.show_station)
+            elif title=='统计':self.workbench.button(body_layout,'跨通道区间统计',self.workbench.show_section_statistics)
+            else:self.workbench.button(body_layout,'编辑对象历史',self.history.edit_selected)
+            self.detail_tabs.addTab(body,title)
         self.detail_tabs.addTab(self.raw, "全部属性")
         layout.addWidget(self.detail_tabs, 1)
         copy = QPushButton("复制对象属性")
@@ -2736,6 +2771,7 @@ class Desk(QMainWindow):
         self.map.call(
             "setBase", BASE_TYPES[self.base_combo.currentIndex()]
         )
+        self.history.publish()
         for key, control in self.base_switches.items():
             self.map.call("setBaseDetail", key, control.isChecked())
         for key, action in self.overlay_actions.items():
@@ -3095,16 +3131,15 @@ class Desk(QMainWindow):
         self.rail_operations.show_corridor(corridor_id, train_id)
 
     def open_sidebar(self, index):
-        if index == 2:
-            self.open_rail_operations()
-            return
         self.left.show()
         self.side_pages.setCurrentIndex(index)
         self.map_rail.setChecked(index == 0)
         self.run_rail.setChecked(index == 1)
-        self.side_title.setText(["图层控制", "运行控制", "国铁运行通道"][index])
+        for i,button in enumerate(self.module_buttons):button.setChecked(i==index)
+        if index==2:self.workbench.refresh_vehicles()
+        self.side_title.setText(["图层控制", "运行控制", "车辆档案", "铁路分析", "编辑工作台", "导入导出"][index])
         self.side_subtitle.setText(
-            ["按要素与线路组织地图", "列车展示与车辆图层", "共享单向径路与股道衔接"][
+            ["按要素与线路组织地图", "列车展示与车辆图层", "车辆、车型与车次担当", "通道运行图、站场与区间统计", "对象、历史、站内进路与样式", "复用统一数据与专业成果出口"][
                 index
             ]
         )
@@ -3131,6 +3166,7 @@ class Desk(QMainWindow):
         self.run_rail.setChecked(
             self.left.isVisible() and self.side_pages.currentIndex() == 1
         )
+        for index,button in enumerate(self.module_buttons):button.setChecked(self.left.isVisible() and self.side_pages.currentIndex()==index)
 
     def toggle_right(self):
         opening = not self.right.isVisible()
@@ -3334,7 +3370,7 @@ class Desk(QMainWindow):
                 if layer != "rail-plan-path"
                 else ""
             )
-            self.open_sidebar(2)
+            self.open_rail_operations()
             self.corridor_panel.focus_item(props["corridor_id"], train_id)
             self.rail_operations.show_corridor(props["corridor_id"], train_id)
         elif layer in ("rail", "rail-stripes", "rail-construction", "rail-line-labels") and props.get(
@@ -4295,6 +4331,7 @@ class Desk(QMainWindow):
 
     def set_property_rows(self, rows):
         self.properties.set_rows(rows)
+        if hasattr(self,'detail_views'):self.workbench.refresh_details(rows)
 
     def _show_demo_details(self):
         if self.demo_error:
@@ -4359,7 +4396,7 @@ class Desk(QMainWindow):
             self._last_operating_detail = signature
             self.properties.update_value("已行驶里程（千米）", properties["distance_km"])
             self.properties.update_value("运行状态", properties["state"])
-            if self.detail_tabs.currentIndex() == 1:
+            if self.detail_tabs.currentIndex() == self.detail_tabs.indexOf(self.raw):
                 raw = json.dumps(self.selected_data, ensure_ascii=False, indent=2)
                 if self.raw.toPlainText() != raw:
                     self.raw.setPlainText(raw)
@@ -4822,7 +4859,7 @@ def main():
                             window.rail_catalog_widget.mode.currentText()
                             == "全国铁路业务分类 → 整条线路"
                         )
-                        window.open_sidebar(2)
+                        window.open_rail_operations()
                         app.processEvents()
                         checks["corridor_navigation_replaces_location"] = (
                             window.side_pages.currentIndex() == 1

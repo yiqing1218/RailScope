@@ -7,11 +7,14 @@ from .domain import (
     NetworkEdge, Station, TrainRun, StopTime, BlockSection, BlockEdge,
     StationTrack, HeadwayRule, DispatchScenario, DispatchEvent, TrackOccupancy,
     Conflict, OperationalPoint, Yard, StationZone, StationTrackEdge, RouteIntent,
+    InfrastructureLifecycle, Vehicle,
 )
 
 
 @dataclass
 class RailRepository:
+    lifecycles: dict[str, InfrastructureLifecycle] = field(default_factory=dict)
+    vehicles: dict[str, Vehicle] = field(default_factory=dict)
     service_areas: dict[str, ServiceArea] = field(default_factory=dict)
     service_area_geometries: dict[str, ServiceAreaGeometry] = field(default_factory=dict)
     snapshots: dict[str, DatasetSnapshot] = field(default_factory=dict)

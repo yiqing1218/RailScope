@@ -103,6 +103,8 @@ def references(repo, kind, ident):
         result['train_runs'] += [t.id for t in repo.train_runs.values() if ident in (t.origin_station_id,t.destination_station_id)]
     elif kind=='corridor':
         result['corridors']=[ident]
+    elif kind=='vehicle':
+        result['train_runs']=[t.id for t in repo.train_runs.values() if t.vehicle_id==ident]
     elif kind=='yard':
         result['station_tracks'] = [t.id for t in repo.station_tracks.values() if t.yard_id==ident]
         result['station_zones'] = [z.id for z in repo.station_zones.values() if z.yard_id==ident]
@@ -131,6 +133,14 @@ def references(repo, kind, ident):
 
 def validate_repository(repo):
     errors=[]
+    from .services.history import effective_lifecycle
+    from .services.vehicles import validate_vehicle_assignments
+    try:
+        for ident in repo.lifecycles:
+            effective_lifecycle(repo.lifecycles, ident)
+        validate_vehicle_assignments(repo)
+    except ValueError as exc:
+        errors.append(str(exc))
     from .timetable_validation import validate_timetables
     try:
         validate_timetables(repo)
@@ -294,6 +304,10 @@ def validate_repository(repo):
         for obj in getattr(repo,collection).values():
             if obj.station_id not in repo.stations:
                 errors.append(f'{collection} {obj.id}: station missing')
+    for platform in repo.platforms.values():
+        if any(track_id not in repo.station_tracks or repo.station_tracks[track_id].station_id != platform.station_id
+               for track_id in platform.station_track_ids):
+            errors.append(f'platform {platform.id}: associated track missing or belongs to another station')
     for run in repo.train_runs.values():
         if run.service_id and run.service_id not in repo.train_services:
             errors.append(f'run {run.id}: service missing')
@@ -309,7 +323,9 @@ def validate_repository(repo):
             continue
         try:
             from .services.timetable.canonical import stop_distances
-            stop_distances(repo, path.edge_refs, repo.stops_for(run.id))
+            from .services.station_routing import effective_path, positioned_stops
+            refs = effective_path(repo, path.id, repo.stops_for(run.id))
+            stop_distances(repo, refs, positioned_stops(repo, refs, repo.stops_for(run.id)))
         except (KeyError, ValueError) as exc:
             errors.append(f'run {run.id}: {exc}')
     if errors:

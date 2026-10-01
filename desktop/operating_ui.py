@@ -105,6 +105,26 @@ class DiagramView(QGraphicsView):
 
 
 class OperationsEditor(QFrame):
+    @property
+    def clock(self):
+        return self.session_time.seconds if getattr(self,'session_time',None) else self._clock
+
+    @clock.setter
+    def clock(self,value):
+        if getattr(self,'session_time',None):
+            self.session_time.set_seconds(value)
+        else:
+            self._clock=value
+
+    def bind_session(self,session):
+        self.session_time=session
+        session.changed.connect(self._session_changed)
+        session.calendar_changed.connect(self._session_changed)
+
+    def _session_changed(self):
+        self.push_positions(throttled=True)
+        self.update_sidebar(0)
+
     updated = Signal()
     expand_requested = Signal()
     closed = Signal()
@@ -768,6 +788,12 @@ class OperationsEditor(QFrame):
     def play(self):
         self.set_enabled(True)
         self.playing = True
+        if getattr(self,'session_time',None):
+            if getattr(self.plan,'service_date',None) and self.plan.service_date!=self.session_time.day:
+                self.session_time.set_day(self.plan.service_date)
+            if self.session_time.driver and self.session_time.driver is not self:
+                self.session_time.driver.pause()
+            self.session_time.driver=self
         self._last_tick = monotonic()
         self.update_sidebar(0)
         self.push_positions()
@@ -854,7 +880,7 @@ class OperationsEditor(QFrame):
         now = monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
-        advancing = self.enabled and self.playing
+        advancing = self.enabled and self.playing and (not getattr(self,'session_time',None) or self.session_time.driver is self)
         if advancing:
             self.clock = min(172799, self.clock + self.speed * elapsed)
         if self.clock >= 172799:
@@ -877,7 +903,8 @@ class OperationsEditor(QFrame):
         self._last_vehicle_push = now
         features = []
         for train, position in (
-            self.plan.vehicle_positions(self.clock) if self.enabled else []
+            self.plan.vehicle_positions(self.clock) if self.enabled and (not getattr(self,'session_time',None)
+                or not getattr(self.plan,'service_date',None) or self.plan.service_date==self.session_time.day) else []
         ):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
@@ -886,7 +913,7 @@ class OperationsEditor(QFrame):
                     {
                         "type": "Feature",
                         "properties": {
-                            "vehicle_id": train.get("vehicle_id", train["id"]),
+                            "vehicle_id": train.get('extensions',{}).get('railscope.org/vehicle',{}).get('vehicle_id') or train.get("vehicle_id", train["id"]),
                             "trip_id": train["id"],
                             "name": train["id"] + " · " + line["name"],
                             "line_ref": line["ref"],

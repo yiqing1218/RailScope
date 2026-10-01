@@ -21,7 +21,8 @@ def calculate_occupancies(repo: RailRepository, scenario_id: str) -> list[TrackO
         stops = route_distances(repo, effective)
         if len(stops) < 2:
             continue
-        path = repo.corridors[effective.corridor_id]
+        from ..station_routing import effective_path
+        refs = effective_path(repo, effective.corridor_id, effective.stops)
         for left, right in zip(stops, stops[1:]):
             start = left.departure_time_s if left.departure_time_s is not None else left.arrival_time_s
             end = right.arrival_time_s if right.arrival_time_s is not None else right.departure_time_s
@@ -30,7 +31,7 @@ def calculate_occupancies(repo: RailRepository, scenario_id: str) -> list[TrackO
             a = left.scheduled_distance_m or 0.0
             b = right.scheduled_distance_m or a
             span = max(1.0, b - a)
-            for ref in path.edge_refs:
+            for ref in refs:
                 overlap_start = max(a, ref.start_distance_m)
                 overlap_end = min(b, ref.end_distance_m)
                 if overlap_end <= overlap_start:

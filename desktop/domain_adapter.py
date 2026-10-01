@@ -14,7 +14,7 @@ import json
 from railscope.domain import (
     Corridor, DatasetSnapshot, InfrastructureLine, LineMembership, NetworkEdge, NetworkNode,
     Station, StationRoute, StationTrack, StationTrackEdge, OperationalPoint, StopTime, TrainRun, TrainService,
-    RouteIntent, RouteIntentStep,
+    RouteIntent, RouteIntentStep, Platform,
 )
 from railscope.identity import IdentityRegistry
 from railscope.integrity import ordered_path_nodes, path_refs, validate_repository
@@ -42,13 +42,20 @@ def _length(edge):
     return sum(distance_m(a, b) for a, b in zip(edge["coordinates"], edge["coordinates"][1:]))
 
 
-def build_repository(graph, payload, identity_path, overrides=None, source_database=None):
+def build_repository(graph, payload, identity_path, overrides=None, source_database=None, metadata_path=None):
     """Return `(RailRepository, bindings)` without mutating desktop DTOs."""
     registry = IdentityRegistry(Path(identity_path))
     overrides = overrides or {}
+    # Load the small dependency closure of platforms bordering several tracks.
+    from railscope.workspace import WorkspaceObjects
+    platform_sources = {stop.get('platform_ref') or ('way/'+str(stop['platform_id']) if stop.get('platform_id') is not None else None)
+                        for train in payload.get('trains', []) for stop in train.get('stops', [])}
+    required_tracks = {track_id for platform in WorkspaceObjects(metadata_path or identity_path).collection('platforms').values()
+                       if platform.source_id in platform_sources for track_id in platform.station_track_ids}
     selected = {edge['id'] for edge in graph['edges']}
     named = {value['station_track']['id']: value for value in overrides.values()
-             if value.get('station_track') and selected.intersection(value.get('source_edge_ids', []))}
+             if value.get('station_track') and (value['station_track']['id'] in required_tracks
+                 or selected.intersection(value.get('source_edge_ids', [])))}
     missing = set().union(*(set(value.get('source_edge_ids', [])) for value in named.values())) - selected if named else set()
     if missing and source_database and Path(source_database).exists():
         extra = []
@@ -60,12 +67,22 @@ def build_repository(graph, payload, identity_path, overrides=None, source_datab
                 extra.append(json.loads(row[0]))
         graph = {**graph, 'edges': [*graph['edges'], *extra]}
     with closing(sqlite3.connect(registry.path)) as identity_db, identity_db:
-        return _build_repository(graph, payload, registry, identity_db, overrides, named)
+        return _build_repository(graph, payload, registry, identity_db, overrides, named, metadata_path or identity_path)
 
 
-def _build_repository(graph, payload, registry, identity_db, overrides=None, named=None):
+def _build_repository(graph, payload, registry, identity_db, overrides=None, named=None, metadata_path=None):
     document = migrate_legacy_train_paths(shared_document(payload), graph["edges"])
     repo, bindings = RailRepository(), defaultdict(dict)
+    from railscope.workspace import WorkspaceObjects
+    store=WorkspaceObjects(metadata_path)
+    repo.vehicles=store.collection('vehicles')
+    repo.lifecycles=store.collection('lifecycles')
+    saved_platforms=store.collection('platforms')
+    try:
+        from .temporal_adapter import temporal_edges
+    except ImportError:
+        from temporal_adapter import temporal_edges
+    graph={**graph,'edges':temporal_edges(graph['edges'],repo.lifecycles,document['service_date'])}
     from railscope.presentation import design_speed, source_design_speed
     overrides = overrides or {}
     named_by_edge = {}
@@ -289,6 +306,9 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
         )
         repo.corridors[corridor_id] = corridor
         route_by_source[source_id] = corridor
+    for track in {t.id:t for t in named_by_edge.values()}.values():
+        if track.station_id in repo.stations and all(r.edge_id in repo.edges for r in track.edge_refs):
+            repo.station_tracks[track.id]=track
     for value in document.get("station_routes", []):
         source_id = value["id"]
         station_route_id = registry.resolve_alias("station_route", source_id, "SR", identity_db)
@@ -301,6 +321,8 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
             station_route_id, bindings["stations"][route_station_source], refs,
             bindings["nodes"][str(value["entry_node_id"])], bindings["nodes"][str(value["exit_node_id"])],
             value.get("verification_status", "unverified"),
+            source=value.get('source','manual'), provenance=value.get('provenance',{}),
+            snapshot_id=value.get('snapshot_id'), confidence=value.get('confidence'),
         )
     service_date = document["service_date"]
     corridor_nodes = {}
@@ -319,6 +341,8 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
             corridor_id=corridor_id, source_id=document["source"],
             source_version=provenance.get('source_version'),
             verification_status=provenance.get('verification_status', 'unverified'),
+            vehicle_id=train.get('extensions',{}).get('railscope.org/vehicle',{}).get('vehicle_id'),
+            traffic_type=train.get('extensions',{}).get('railscope.org/traffic',{}).get('type','unknown'),
         )
         for sequence, stop in enumerate(stops, 1):
             station_route_id = bindings["station_routes"].get(stop.get("station_route_id"))
@@ -358,7 +382,7 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
             offset = position.get("offset_m")
             station_id = stop_station(stop)
             stop_node = bindings["nodes"][str(stop["node_id"])]
-            if not position and repo.stations[station_id].anchor_node_id != stop_node:
+            if not position and not track_id and repo.stations[station_id].anchor_node_id != stop_node:
                 # A logical station can serve several tracks. Preserve this
                 # stop's selected physical node instead of borrowing its anchor.
                 refs = repo.corridors[corridor_id].edge_refs
@@ -371,10 +395,18 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
                 stop_edge = ref.edge_id
                 offset = (distance - ref.start_distance_m if ref.forward
                           else ref.end_distance_m - distance)
+            platform_id=None
+            platform_source=stop.get('platform_ref') or ('way/'+str(stop['platform_id']) if stop.get('platform_id') is not None else None)
+            if platform_source:
+                platform_id=registry.resolve_alias('platform',station_id+'/'+platform_source,'PL',identity_db)
+                saved=saved_platforms.get(platform_id)
+                repo.platforms[platform_id]=saved or Platform(platform_id,station_id,platform_source,source_id=platform_source,
+                    station_track_ids=(track_id,) if track_id else (),verification_status='user_defined' if track_id else 'unverified')
             repo.stops.append(StopTime(
                 run_id, station_id, sequence,
                 stop["arrival_s"], stop["departure_s"], station_track_id=track_id,
                 station_route_id=station_route_id,
+                platform_id=platform_id,
                 stop_edge_id=stop_edge, stop_offset_m=offset,
                 stop_edge_sequence=position['path_index'] + 1 if 'path_index' in position else None,
             ))
