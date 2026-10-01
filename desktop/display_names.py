@@ -2,11 +2,13 @@
 import json
 
 try:
+    from .rail_line_workspace import effective_override
     from .yard_track_names import yard_track_key
     from .rail_semantics import semantic_record
     from .rail_style_resolver import style_key
     from .station_track_semantics import migrate_track_override, semantic_track_name
 except ImportError:
+    from rail_line_workspace import effective_override
     from yard_track_names import yard_track_key
     from rail_semantics import semantic_record
     from rail_style_resolver import style_key
@@ -131,7 +133,7 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         props = feature.get('properties', {})
         for field, display_field in (('color', 'rail_display_color'), ('width', 'rail_display_width')):
             for key in (object_key(props), props.get('catalog_group_id'), props.get('line_id')):
-                value = overrides.get(key, {}).get(field)
+                value = effective_override(overrides, key, {}).get(field)
                 if value is not None:
                     props[display_field] = value
                     break
@@ -183,8 +185,9 @@ def apply_rail_presentation(collection, presentation, overrides=None):
                 technical = overrides[key].get('technical_attributes', {})
                 if technical.get('speed_band'):
                     props['speed_band'] = technical['speed_band']
-        group_edit = overrides.get(props.get('catalog_group_id'), {})
+        group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
         if group_edit.get('assembly_id'):
+            props['assembly_id'] = group_edit['assembly_id']
             props.update(semantic_record(props, group_edit))
             props['speed_band'] = group_edit.get('technical_attributes', {}).get('speed_band')
         props['rail_style_key'] = style_key(props)
@@ -239,24 +242,24 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
         remember_presentation(props, overrides)
-        group_line_edit = overrides.get(props.get('catalog_group_id'), {})
-        object_line_edit = overrides.get(object_key(props), {})
+        group_line_edit = effective_override(overrides, props.get('catalog_group_id'), {})
+        object_line_edit = effective_override(overrides, object_key(props), {})
         if 'line_name' in group_line_edit:
             props['line_name'] = group_line_edit['line_name']
         if 'line_name' in object_line_edit:
             props['line_name'] = object_line_edit['line_name']
         yard_key = yard_track_key(props)
-        track = migrate_track_override(overrides.get(yard_key, {}),
+        track = migrate_track_override(effective_override(overrides, yard_key, {}),
             station_name=props.get('station_name', ''), track_role=props.get('track_role', 'unknown'))
         if track.get('station_track_id'):
             props['station_track_id'] = track['station_track_id']
             props['track_number'] = track.get('track_number')
             props['track_name'] = track.get('display_name')
         if yard_key:
-            object_edit = overrides.get(object_key(props), {})
+            object_edit = effective_override(overrides, object_key(props), {})
             if 'line_name' in object_edit:
                 props['line_name'] = object_edit['line_name']
-            group_edit = overrides.get(props.get('catalog_group_id'), {})
+            group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
             line_name = str(props.get('line_name') or group_edit.get('line_name') or '').strip()
             if line_name.startswith('未命名'):
                 line_name = ''
@@ -280,7 +283,7 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         keys += [props.get('catalog_group_id'), props.get('line_id'), props.get('catalog_id'),
                  props.get('station_id'), str(props.get('route_relation_id')), str(props.get('osm_relation_id'))]
         keys += sorted(presentation_keys(props))
-        group_edit = overrides.get(props.get('catalog_group_id'), {})
+        group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
         if group_edit.get('assembly_id'):
             keys.insert(0, props.get('catalog_group_id'))
         custom = next((overrides[key] for key in keys if key in overrides and overrides[key].get('display_name')), {})

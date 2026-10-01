@@ -86,3 +86,34 @@ def test_facility_folder_does_not_rebuild_ownership(qtbot, tmp_path, monkeypatch
     with sqlite3.connect(widget.catalog.path) as db:
         assert db.execute("SELECT parent_id FROM rail_station_nodes WHERE id='facility:ST-yard'").fetchone() == before
     assert widget.map.calls == []
+
+
+def test_assembly_move_undo_and_shared_style_are_local(qtbot, tmp_path, monkeypatch):
+    widget = widget_with_stations(qtbot, tmp_path, monkeypatch)
+    assembly = widget.merge_line_segments({'RL-0', 'RL-1'}, 'Shared')
+    widget.map.calls.clear()
+    forbid_full_work(monkeypatch, widget)
+    widget.move_items({'RL-0'}, ['Custom', 'Assembly'])
+    assert widget.parents('RL-1') == ('Custom', 'Assembly')
+    assert widget._last_saved_keys == {'line-assembly:' + assembly}
+    widget.undo_catalog()
+    widget.redo_catalog()
+    widget.save_overrides({'RL-0': {'color': '#123456', 'display_name': 'Renamed'}})
+    assert widget.overrides['RL-1']['display_name'] == 'Renamed'
+    assert widget.overrides['RL-1']['color'] == '#123456'
+    assert widget.line_model.reveal_catalog_id('RL-1').isValid()
+
+
+def test_explicit_assignment_and_history_update_only_related_stations(qtbot, tmp_path, monkeypatch):
+    widget = widget_with_stations(qtbot, tmp_path, monkeypatch)
+    forbid_full_work(monkeypatch, widget)
+    widget._assign_station_assets({'ST-yard'}, set(), 'node/2')
+    with sqlite3.connect(widget.catalog.path) as db:
+        parent = db.execute("SELECT parent_id FROM rail_station_nodes WHERE id='facility:ST-yard'").fetchone()[0]
+        assert 'node/2' in parent
+    widget.undo_catalog()
+    widget.redo_catalog()
+    widget._assign_station_assets({'ST-yard'}, set(), None)
+    with sqlite3.connect(widget.catalog.path) as db:
+        assert '待核对' in db.execute("SELECT parent_id FROM rail_station_nodes WHERE id='facility:ST-yard'").fetchone()[0]
+    assert widget.map.calls == []

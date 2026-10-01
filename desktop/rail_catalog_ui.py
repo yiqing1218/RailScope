@@ -607,11 +607,19 @@ class RailCatalog(QWidget):
         )
 
     def _merge_catalog_overrides(self):
+        try:
+            from .rail_line_workspace import EffectiveOverrides
+        except ImportError:
+            from rail_line_workspace import EffectiveOverrides
         keys = sorted(self.shared_overrides.keys() | self.local_overrides.keys())
-        self.overrides = {
+        self.overrides = EffectiveOverrides({
             key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
             for key in keys
-        }
+        })
+        self.assembly_representatives = {}
+        for key, value in self.overrides.items():
+            if value.get('assembly_id') and key in self.catalog:
+                self.assembly_representatives.setdefault(value['assembly_id'], key)
 
     def name_identified_yards(self):
         """Name already-associated yard groups in the workspace, never in OSM."""
@@ -644,13 +652,33 @@ class RailCatalog(QWidget):
         except ImportError:
             from rail_line_workspace import expand_assembly_changes
         changes = expand_assembly_changes(self.overrides, changes)
+        before = {key: self.local_overrides.get(key, {}) for key in changes}
         self.workspace.update(changes)
         self._merge_changed_overrides(changes)
+        self._last_saved_keys = set(changes)
+        self._last_saved_deltas = {key: field_delta(before[key].get('attributes', {}) if key.startswith('line-assembly:') else before[key],
+            self.local_overrides.get(key, {}).get('attributes', {}) if key.startswith('line-assembly:') else self.local_overrides.get(key, {})) for key in changes}
+        for key in changes:
+            value = self.local_overrides.get(key, {})
+            if value.get('assembly_id') and key in self.catalog:
+                self.assembly_representatives.setdefault(value['assembly_id'], key)
 
     def _refresh_restored_overrides(self, previous, changed):
         value = self.local_overrides
         self._merge_changed_overrides(changed)
         deltas = {key: field_delta(previous.get(key), value.get(key)) for key in changed}
+        if any({'station_id', 'station_source', 'station_assignment'} & delta.keys() for delta in deltas.values()) and all(set(delta) <= {'station_id', 'station_source', 'station_assignment', 'folder_path', 'directory_view'} for delta in deltas.values()):
+            self._refresh_assignment_changes(deltas)
+            return
+        if changed and all(key.startswith('line-assembly:') for key in changed) and all(set(delta) <= {'attributes', 'name'} for delta in deltas.values()):
+            representatives = {self.assembly_representatives[key.removeprefix('line-assembly:')] for key in changed}
+            self._update_paged_directory(representatives)
+            flattened = {key: field_delta(previous.get(key, {}).get('attributes', {}), value.get(key, {}).get('attributes', {})) for key in changed}
+            if all(set(delta) <= {'folder_path'} for delta in flattened.values()):
+                self.directory_changed.emit()
+            else:
+                self.entities_changed.emit(flattened)
+            return
         if all(key.startswith('station:') for key in changed):
             self._refresh_station_changes(deltas)
             return
@@ -939,6 +967,11 @@ class RailCatalog(QWidget):
         self.station_model.refresh_labels(station_keys)
 
     def _prepare_station_catalog(self):
+        try:
+            from .rail_station_catalog_model import ensure_ownership_baseline
+        except ImportError:
+            from rail_station_catalog_model import ensure_ownership_baseline
+        ensure_ownership_baseline(self.catalog.path)
         with closing(sqlite3.connect(self.catalog.path)) as db:
             token = db.execute("SELECT value FROM metadata WHERE key='station_cache_revision'").fetchone()
             if token and token[0] == self._station_token():
@@ -2912,7 +2945,9 @@ class RailCatalog(QWidget):
                     update_station_label(self.catalog.path, sid, record['name'])
         if hasattr(self, 'station_model'):
             if placement_changed:
+                selection = self.station_model.capture_membership(station_ids)
                 affected = update_station_directory(self.catalog.path, placements)
+                self.station_model.reconcile_membership(selection)
                 self.station_model.refresh_affected(affected)
                 self._mark_station_fresh()
             elif visible_ids:
@@ -2972,8 +3007,7 @@ class RailCatalog(QWidget):
             from .rail_line_workspace import expand_assembly_changes
         except ImportError:
             from rail_line_workspace import expand_assembly_changes
-        changes = {key: value for key, value in expand_assembly_changes(self.overrides, changes).items()
-                   if key in self.catalog}
+        changes = {key: value for key, value in changes.items() if key in self.catalog}
         effective = {}
         for key, change in changes.items():
             if key not in self.catalog:
@@ -3003,6 +3037,10 @@ class RailCatalog(QWidget):
                   for key, change in effective.items()}
         deltas.update({key: field_delta(self.overrides.get(key),
                       {**self.overrides.get(key, {}), **change}) for key, change in object_changes.items()})
+        if any({'station_id','station_source','station_assignment'} & delta.keys() for delta in deltas.values()) and all(set(delta) <= {'station_id','station_source','station_assignment','folder_path','directory_view'} for delta in deltas.values()):
+            self._save_local_overrides({**effective, **object_changes})
+            self._refresh_assignment_changes(deltas)
+            return
         if all(ordinary_attributes(delta) for delta in deltas.values()):
             self._save_local_overrides({**effective, **object_changes})
             self.entities_changed.emit(deltas)
@@ -3014,7 +3052,7 @@ class RailCatalog(QWidget):
             self._refresh_line_labels({key for key in effective if NAME_FIELDS & deltas[key].keys()})
             if object_changes and any(NAME_FIELDS & deltas[key].keys() for key in object_changes):
                 self._update_segment_labels(object_changes)
-            self.entities_changed.emit(deltas)
+            self.entities_changed.emit(self._last_saved_deltas)
             return
 
         if effective and not object_changes and all(set(change) <= {'folder_path', 'assembly_name'} for change in effective.values()):
@@ -3095,8 +3133,30 @@ class RailCatalog(QWidget):
         # branches above. Structural changes retain canonical path revalidation.
         self.metadata_changed.emit()
 
+    def _refresh_assignment_changes(self, deltas):
+        try:
+            from .rail_station_catalog_model import update_station_assignments
+        except ImportError:
+            from rail_station_catalog_model import update_station_assignments
+        asset_ids = set(deltas)
+        if hasattr(self, 'station_model'):
+            asset_ids.update(self.station_model.track_ids_for_catalog({key for key in deltas if key in self.catalog}))
+            selection = self.station_model.capture_membership(asset_ids)
+        affected = update_station_assignments(self.catalog.path, deltas, self.overrides)
+        catalog_keys = {key for key in deltas if key in self.catalog}
+        if catalog_keys:
+            self._update_paged_directory(catalog_keys)
+        if hasattr(self, 'station_model'):
+            self.station_model.reconcile_membership(selection)
+            self.station_model.refresh_affected(affected)
+        self._mark_station_fresh()
+        self.directory_changed.emit()
+
     def _refresh_line_labels(self, keys):
         if not keys:
+            return
+        if hasattr(self, 'line_model') and any(self.meta(key).get('assembly_id') for key in keys):
+            self._update_paged_directory(keys)
             return
         if hasattr(self, 'line_model'):
             if update_directory_labels(self.catalog, keys, self._resolve_directory_record):

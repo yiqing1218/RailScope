@@ -37,6 +37,18 @@ test('all linked station and yard representations have owner keys',()=>{
   assert(ownerKeys({catalog_group_id:'ST-1',section_id:'IS-1',network_edge_id:'NE-1'}).includes('object:section_id:IS-1'));
 });
 
+test('logical shared edits repaint resident members without expanding source IDs',async()=>{
+  const requests=[];
+  const presentation=new EntityPresentation(async features=>{requests.push(features);return features.map(f=>({...f.properties,rail_display_color:'#123456'}));},()=>{},error=>{throw error;});
+  const a={geometry:{type:'LineString',coordinates:[[120,30],[121,31]]},properties:{catalog_group_id:'RL-a',assembly_id:'RLU-shared'}};
+  const b={geometry:{type:'LineString',coordinates:[[121,31],[122,32]]},properties:{catalog_group_id:'RL-b',assembly_id:'RLU-shared'}};
+  presentation.register('rail',{features:[a,b]});
+  await presentation.patch({'line-assembly:RLU-shared':{attributes:{color:'#123456'}}});
+  assert.equal(requests[0].length,2);
+  assert.equal(a.properties.rail_display_color,b.properties.rail_display_color);
+  assert.deepEqual(b.geometry.coordinates,[[121,31],[122,32]]);
+});
+
 test('a transient bridge failure recovers without a manual refresh',async()=>{
   let calls=0;const paints=[],errors=[];
   const p=new EntityPresentation(async f=>{if(++calls===1)throw new Error('temporary');return f.map(v=>({...v.properties,display_name:'已恢复'}));},

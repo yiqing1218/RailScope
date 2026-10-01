@@ -96,6 +96,23 @@ def station_assignment_changes(facilities, tracks, station_id, station_name):
              for key in facilities}, {key: dict(owner) for key in tracks})
 
 
+def _snapshot(value):
+    # Values are replaced on every command. Share immutable membership arrays,
+    # never duplicate all M physical members for a one-field logical edit.
+    if isinstance(value, dict) and 'members' in value:
+        return {key: val if key == 'members' else deepcopy(val) for key, val in value.items()}
+    return deepcopy(value)
+
+
+def _history_delta(before, after):
+    if before is None or after is None:
+        return {'before': before, 'after': after}
+    fields = {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)}
+    return {'before': {key: before[key] for key in fields if key in before},
+            'after': {key: after[key] for key in fields if key in after},
+            'removed': sorted(fields - after.keys()), 'added': sorted(fields - before.keys())}
+
+
 class CatalogWorkspace:
     def __init__(self, path):
         self.path = Path(path)
@@ -107,6 +124,7 @@ class CatalogWorkspace:
         self.edited_keys = set()
         self.revisions = {name: 0 for name in layered.REVISION_NAMES}
         self.last_change = None
+        self.identity = 'unloaded:' + str(self.path.resolve())
 
     def load(self, seeds=()):
         proposed = {}
@@ -152,7 +170,7 @@ class CatalogWorkspace:
                     before = self.values.get(key)
                     layered.write_owner(db, key, value, before)
                     kinds.update(layered.change_types(before, value))
-                    delta[key] = {'before': before, 'after': value}
+                    delta[key] = _history_delta(before, value)
                 for kind in kinds:
                     db.execute('UPDATE revisions SET value=value+1 WHERE kind=?', (kind,))
                 db.execute('INSERT INTO command_history(created_at,kinds,delta) VALUES(datetime(\'now\'),?,?)',
@@ -182,7 +200,7 @@ class CatalogWorkspace:
     def update(self, changes):
         if not changes:
             return
-        before = {key: deepcopy(self.values.get(key)) for key in changes}
+        before = {key: _snapshot(self.values.get(key)) for key in changes}
         proposed = {}
         for key, change in changes.items():
             if not isinstance(key, str) or not isinstance(change, dict):
@@ -202,8 +220,8 @@ class CatalogWorkspace:
         if not source:
             return None
         command = source[-1]
-        old = {key: deepcopy(self.values.get(key, {})) for key in command}
-        reverse = {key: deepcopy(self.values.get(key)) for key in command}
+        old = {key: _snapshot(self.values.get(key, {})) for key in command}
+        reverse = {key: _snapshot(self.values.get(key)) for key in command}
         proposed = {}
         for key, value in command.items():
             if value is None:
@@ -212,7 +230,7 @@ class CatalogWorkspace:
                 if key.startswith('line-assembly:') and old.get(key):
                     proposed[key] = {**old[key], 'active': False}
             else:
-                proposed[key] = deepcopy(value)
+                proposed[key] = _snapshot(value)
         changed = {key for key in command if old.get(key) != proposed.get(key)}
         self._commit(proposed)
         source.pop()

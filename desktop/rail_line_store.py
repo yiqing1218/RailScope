@@ -464,12 +464,16 @@ class _DirectoryMapping(Mapping):
 
 class DiskRailLineLibrary:
     def __init__(self, path, names=None, metadata=None):
+        try:
+            from .rail_line_workspace import EffectiveOverrides
+        except ImportError:
+            from rail_line_workspace import EffectiveOverrides
         self.path, self.names = Path(path), dict(names or {})
-        self.metadata = {
+        self.metadata = EffectiveOverrides({
             key: value
             for key, value in dict(metadata or {}).items()
             if isinstance(value, dict)
-        }
+        })
         self._station_groups = {}
         self._station_group_labels = {}
         self._parallel_anchors = {}

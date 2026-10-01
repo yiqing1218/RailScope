@@ -286,7 +286,51 @@ def update_catalog_directory(catalog, keys, overrides, resolve, mode=0, aliases=
             return DirectoryDelta()
         db.execute("BEGIN")
         try:
-            delta = _update_directory_rows(db, catalog, list(keys), resolve)
+            keys = set(keys)
+            delta = DirectoryDelta()
+            grouped = {}
+            for key in keys:
+                if key not in catalog:
+                    continue
+                record, path, label = resolve(key, catalog[key])
+                if record.get('assembly_id'):
+                    grouped.setdefault(record['assembly_id'], (key, record, path, label))
+            for assembly, (key, record, path, label) in grouped.items():
+                for projection in _facility_views(key, record, path, label):
+                    old = db.execute('SELECT parent_id,path,total FROM rail_directory_nodes WHERE id=?',
+                                     (projection['node_id'],)).fetchone()
+                    if old is None:
+                        continue
+                    old_parent, old_path, total = old
+                    old_path = json.loads(old_path)
+                    parent = 'folder:' + json.dumps([projection['view']], ensure_ascii=False)
+                    new_path = projection['full_path']
+                    for depth in range(2, len(new_path) + 1):
+                        ident = 'folder:' + json.dumps(new_path[:depth], ensure_ascii=False)
+                        db.execute("INSERT OR IGNORE INTO rail_directory_nodes(id,parent_id,label,kind,path,archived,view) VALUES(?,?,?,'folder',?,?,?)",
+                            (ident, parent, new_path[depth-1], json.dumps(new_path[:depth], ensure_ascii=False), projection['archived'], projection['view']))
+                        parent = ident
+                    db.execute('UPDATE rail_directory_nodes SET parent_id=?,path=?,label=?,archived=? WHERE id=?',
+                        (parent, json.dumps(new_path, ensure_ascii=False), label, projection['archived'], projection['node_id']))
+                    db.execute('UPDATE rail_directory_nodes SET searchable=searchable||? WHERE id=?', (' '+label.casefold(), projection['node_id']))
+                    old_folders = {'folder:' + json.dumps(old_path[:d], ensure_ascii=False) for d in range(2, len(old_path)+1)}
+                    new_folders = {'folder:' + json.dumps(new_path[:d], ensure_ascii=False) for d in range(2, len(new_path)+1)}
+                    for sign, folders in ((-1, old_folders-new_folders), (1, new_folders-old_folders)):
+                        for ident in folders:
+                            db.execute('UPDATE rail_directory_nodes SET total=total+? WHERE id=?', (sign*total, ident))
+                    for ident in sorted(old_folders | new_folders, key=len, reverse=True):
+                        db.execute('UPDATE rail_directory_nodes SET child_count=(SELECT count(*) FROM rail_directory_nodes WHERE parent_id=?) WHERE id=?', (ident, ident))
+                        db.execute("DELETE FROM rail_directory_nodes WHERE id=? AND total=0 AND child_count=0", (ident,))
+                    delta.changed = True
+                    delta.nodes.add(projection['node_id'])
+                    delta.ancestors.update(old_folders | new_folders | {old_parent, parent, 'folder:' + json.dumps([projection['view']], ensure_ascii=False)})
+            plain = {key for key in keys if key in catalog and not resolve(key, catalog[key])[0].get('assembly_id')}
+            if plain:
+                other = _update_directory_rows(db, catalog, plain, resolve)
+                delta.changed |= other.changed
+                delta.facility_changed |= other.facility_changed
+                delta.nodes.update(other.nodes)
+                delta.ancestors.update(other.ancestors)
             if delta.changed:
                 db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)",
                            (revision or 'incremental',))

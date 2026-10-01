@@ -205,8 +205,14 @@ class SqliteDirectoryModel(QAbstractItemModel):
         loaded branches then let the existing paged query find the new results.
         """
         if self.search:
-            self.reset_from_disk()
-            self.fetchMore()
+            affected = set(keys)
+            with self._connect() as db:
+                for key in keys:
+                    affected.update(row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                        f'SELECT id,parent_id FROM {self.table} WHERE id=? UNION ALL '
+                        f'SELECT n.id,n.parent_id FROM {self.table} n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,)))
+            affected.add(self.root.key)
+            self.refresh_affected(affected)
             return
         pending = [self.root]
         with self._connect() as db:

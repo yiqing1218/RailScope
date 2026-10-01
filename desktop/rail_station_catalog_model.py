@@ -86,6 +86,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides, signature=
         if 'catalog_id' not in {row[1] for row in db.execute('PRAGMA table_info(rail_facility_track_owners)')}:
             db.execute('ALTER TABLE rail_facility_track_owners ADD COLUMN catalog_id TEXT')
         db.execute('CREATE INDEX IF NOT EXISTS rail_facility_track_catalog ON rail_facility_track_owners(catalog_id)')
+        db.execute('CREATE TABLE IF NOT EXISTS rail_facility_track_baseline(object_id TEXT PRIMARY KEY,station_id TEXT,data TEXT,catalog_id TEXT)')
+        db.execute('CREATE INDEX IF NOT EXISTS rail_facility_baseline_catalog ON rail_facility_track_baseline(catalog_id)')
         db.execute('DELETE FROM rail_facility_track_owners')
         rows = []
         folders = set()
@@ -235,6 +237,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides, signature=
                          (station_name+' '+label+' '+category+' '+str(edge_id)).casefold()))
             db.execute('INSERT INTO rail_facility_track_owners(object_id,station_id,data,catalog_id) VALUES(?,?,?,?)',
                 (owner['object_key'],owner['station_id'],json.dumps({k:v for k,v in owner.items() if k!='properties'},ensure_ascii=False),owner.get('catalog_id')))
+            db.execute('INSERT OR IGNORE INTO rail_facility_track_baseline VALUES(?,?,?,?)',
+                (owner['object_key'],owner.get('source_station_id',owner['station_id']),json.dumps({k:v for k,v in owner.items() if k!='properties'},ensure_ascii=False),owner.get('catalog_id')))
             ancestors = [station_node,'facility-folder:'+_key(base_path),parent]
             ancestors += ['folder:'+_key(station_path[:depth]) for depth in range(2,len(station_path))]
             for ancestor in ancestors:
@@ -268,6 +272,19 @@ def update_station_label(catalog_path, station_id, label):
     return True
 
 
+def ensure_ownership_baseline(catalog_path):
+    """Adopt a legacy projection once at startup, without another polygon scan."""
+    with closing(sqlite3.connect(catalog_path)) as db, db:
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_facility_track_baseline'").fetchone():
+            return
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_facility_track_owners'").fetchone():
+            return
+        db.execute('CREATE TABLE rail_facility_track_baseline(object_id TEXT PRIMARY KEY,station_id TEXT,data TEXT,catalog_id TEXT)')
+        db.execute('CREATE INDEX rail_facility_baseline_catalog ON rail_facility_track_baseline(catalog_id)')
+        db.execute('INSERT INTO rail_facility_track_baseline SELECT * FROM rail_facility_track_owners')
+        db.execute("INSERT OR REPLACE INTO metadata VALUES('ownership_baseline_origin','legacy_complete_projection;source_verification_required')")
+
+
 def update_station_placement(catalog_path, record, custom):
     """Move one owner and its cached children; no nationwide ownership scan."""
     return bool(update_station_directory(catalog_path, [(record, custom)]))
@@ -283,6 +300,71 @@ def update_station_directory(catalog_path, records):
     return affected
 
 
+def update_station_assignments(catalog_path, changes, overrides):
+    """Reparent explicit assets using indexed cached owners; never infer geometry."""
+    affected = set()
+    with closing(sqlite3.connect(catalog_path)) as db, db:
+        db.row_factory = sqlite3.Row
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
+            return affected
+
+        def ancestors(parent):
+            return [row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                'SELECT id,parent_id FROM rail_station_nodes WHERE id=? UNION ALL '
+                'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (parent,))]
+
+        for key in changes:
+            custom = overrides.get(key, {})
+            is_track = key.startswith('object:')
+            roots = db.execute('SELECT * FROM rail_station_nodes WHERE object_id=? AND kind IN (\'facility\',\'segment\',\'facility_track\')', (key,)).fetchall()
+            if not is_track:
+                owned = db.execute('SELECT object_id FROM rail_facility_track_owners WHERE catalog_id=?', (key,)).fetchall()
+                for (object_id,) in owned:
+                    roots += db.execute("SELECT * FROM rail_station_nodes WHERE object_id=? AND kind='facility_track'", (object_id,)).fetchall()
+            for row in roots:
+                object_id = row['object_id']
+                owner = custom.get('station_id') or custom.get('station_source')
+                if custom.get('station_assignment') == 'pending':
+                    owner = None
+                elif 'station_id' not in custom and 'station_source' not in custom:
+                    if is_track or row['kind'] == 'facility_track':
+                        baseline = db.execute('SELECT station_id FROM rail_facility_track_baseline WHERE object_id=?', (object_id,)).fetchone()
+                        if not baseline:
+                            baseline = db.execute('SELECT station_id FROM rail_facility_track_owners WHERE object_id=?', (object_id,)).fetchone()
+                        owner = baseline[0] if baseline else None
+                    else:
+                        raw = db.execute('SELECT data FROM catalog WHERE id=?', (key,)).fetchone()
+                        source = json.loads(raw[0]) if raw else {}
+                        owner = source.get('station_id') or source.get('station_source')
+                station = db.execute("SELECT id,path FROM rail_station_nodes WHERE id=?", ('station:' + str(owner),)).fetchone() if owner else None
+                if station:
+                    parent, path = station['id'], json.loads(station['path'])
+                    path += ['站内轨道']
+                    ident = 'facility-folder:' + _key(path)
+                else:
+                    parent, path = '', ['stations', '待核对']
+                    ident = 'folder:' + _key(path)
+                db.execute("INSERT OR IGNORE INTO rail_station_nodes(id,parent_id,label,kind,path,searchable) VALUES(?,?,?,'folder',?,?)",
+                    (ident, parent, path[-1], _key(path), path[-1].casefold()))
+                old_ancestors, new_ancestors = set(ancestors(row['parent_id'])), set(ancestors(ident))
+                counts = [row['station_total'], max(row['facility_total'], int(row['kind']=='facility')),
+                          max(row['track_total'], int(row['kind']=='facility_track'))]
+                total = max(row['total'], sum(counts))
+                db.execute('UPDATE rail_station_nodes SET parent_id=?,path=? WHERE id=?', (ident, _key(path+[object_id]), row['id']))
+                if row['kind'] == 'facility_track':
+                    db.execute('UPDATE rail_facility_track_owners SET station_id=? WHERE object_id=?', (owner or '', object_id))
+                for sign, keys in ((-1, old_ancestors-new_ancestors), (1, new_ancestors-old_ancestors)):
+                    for ancestor in keys:
+                        db.execute('UPDATE rail_station_nodes SET total=max(0,total+?),station_total=max(0,station_total+?),facility_total=max(0,facility_total+?),track_total=max(0,track_total+?) WHERE id=?',
+                            (sign*total, *[sign*n for n in counts], ancestor))
+                affected.update(old_ancestors | new_ancestors | {row['id'], ''})
+        # Leaves before parents. Keep real stations even when their assets leave.
+        for ident in sorted(affected, key=len, reverse=True):
+            db.execute('UPDATE rail_station_nodes SET child_count=(SELECT count(*) FROM rail_station_nodes WHERE parent_id=?) WHERE id=?', (ident, ident))
+            db.execute("DELETE FROM rail_station_nodes WHERE id=? AND kind='folder' AND child_count=0", (ident,))
+    return affected
+
+
 def _update_station_directory(db, record, custom):
     ident = 'station:' + record['id']
     folder = station_directory_path(record, custom)
@@ -295,6 +377,8 @@ def _update_station_directory(db, record, custom):
         return set()
     old_path = json.loads(row['path'])
     totals = {column: row[column] for column in ('total', 'station_total', 'facility_total', 'track_total')}
+    totals['station_total'] = max(1, totals['station_total'])
+    totals['total'] = max(totals['total'], sum(totals[column] for column in ('station_total', 'facility_total', 'track_total')))
     old_folders = ['folder:' + _key(old_path[:depth]) for depth in range(2, len(old_path))]
     new_folders = ['folder:' + _key(new_path[:depth]) for depth in range(2, len(new_path))]
     parent = ''
@@ -357,6 +441,31 @@ class StationCatalogModel(SqliteDirectoryModel):
             ).fetchall()
         return {(key, kind): count for key, kind, count in rows}
 
+    def capture_membership(self, object_ids):
+        captured = {}
+        with self._connect() as db:
+            for object_id in object_ids:
+                for (key,) in db.execute('SELECT id FROM rail_station_nodes WHERE object_id=?', (object_id,)):
+                    chain = [row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                        'SELECT id,parent_id FROM rail_station_nodes WHERE id=? UNION ALL '
+                        'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,))]
+                    weights = [{kind: counts.get((key, kind), 0) for kind in ('station','facility','facility_track')}
+                               for counts in (self._direct_counts, self._excluded_counts)]
+                    captured[key] = (set(chain), weights)
+        return captured
+
+    def reconcile_membership(self, captured):
+        with self._connect() as db:
+            for key, (before, weights) in captured.items():
+                after = {row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                    'SELECT id,parent_id FROM rail_station_nodes WHERE id=? UNION ALL '
+                    'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,))}
+                for counts, weight in zip((self._direct_counts, self._excluded_counts), weights):
+                    for sign, ancestors in ((-1, before-after), (1, after-before)):
+                        for ancestor in ancestors:
+                            for kind, number in weight.items():
+                                counts[(ancestor, kind)] = max(0, counts.get((ancestor, kind), 0)+sign*number)
+
     def _totals(self, key):
         if key not in self._folder_totals:
             with self._connect() as db:
@@ -396,21 +505,9 @@ class StationCatalogModel(SqliteDirectoryModel):
 
     def refresh_labels(self, keys):
         if self.search:
-            # Repair materialised match membership only along affected ancestors.
-            with self._connect() as db, db:
-                for key in keys:
-                    rows = db.execute('WITH RECURSIVE ancestors(id,parent_id,kind,searchable) AS ('
-                        'SELECT id,parent_id,kind,searchable FROM rail_station_nodes WHERE id=? UNION ALL '
-                        'SELECT p.id,p.parent_id,p.kind,p.searchable FROM rail_station_nodes p JOIN ancestors a ON p.id=a.parent_id) '
-                        'SELECT id,kind,searchable FROM ancestors', (key,)).fetchall()
-                    for ident, kind, searchable in rows:
-                        direct = kind in ('station','facility','segment','facility_track') and self.search in searchable
-                        child = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON n.id=m.id WHERE n.parent_id=? LIMIT 1', (ident,)).fetchone()
-                        if direct or child:
-                            db.execute('INSERT OR IGNORE INTO rail_station_matches VALUES(?)', (ident,))
-                        else:
-                            db.execute('DELETE FROM rail_station_matches WHERE id=?', (ident,))
-        super().refresh_labels(keys)
+            self.refresh_affected(keys)
+        else:
+            super().refresh_labels(keys)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if index.isValid() and role == Qt.ItemDataRole.CheckStateRole:
@@ -482,26 +579,24 @@ class StationCatalogModel(SqliteDirectoryModel):
         for key in keys:
             self._folder_totals.pop(key, None)
         if self.search:
-            literal = '%' + self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
             with self._connect() as db, db:
-                for key in keys:
-                    db.execute('DELETE FROM rail_station_matches WHERE id=?', (key,))
-                    row = db.execute("SELECT kind,searchable FROM rail_station_nodes WHERE id=?", (key,)).fetchone()
+                depths = {}
+                for key in list(keys):
+                    chain = [row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                        'SELECT id,parent_id FROM rail_station_nodes WHERE id=? UNION ALL '
+                        'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,))]
+                    keys.update(chain)
+                    for position, ident in enumerate(chain):
+                        depths[ident] = max(depths.get(ident, 0), len(chain)-position)
+                db.executemany('DELETE FROM rail_station_matches WHERE id=?', ((key,) for key in keys))
+                for key in sorted(keys, key=lambda value: depths.get(value, 0), reverse=True):
+                    row = db.execute('SELECT kind,searchable FROM rail_station_nodes WHERE id=?', (key,)).fetchone()
                     if row is None:
                         continue
-                    if row[0] in ('folder', 'station'):
-                        match = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.parent_id=? LIMIT 1', (key,)).fetchone()
-                    else:
-                        match = None
-                    direct = db.execute("SELECT 1 FROM rail_station_nodes WHERE id=? AND kind<>'folder' AND searchable LIKE ? ESCAPE '\\'", (key, literal)).fetchone()
-                    if match or direct:
+                    direct = row[0] != 'folder' and self.search in row[1]
+                    child = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.parent_id=? LIMIT 1', (key,)).fetchone()
+                    if direct or child:
                         db.execute('INSERT OR IGNORE INTO rail_station_matches VALUES(?)', (key,))
-                # New matching station leaves make only their own ancestor chain visible.
-                for key in keys:
-                    db.execute('WITH RECURSIVE parents(id,parent_id) AS ('
-                        'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.id=? '
-                        'UNION ALL SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN parents p ON n.id=p.parent_id) '
-                        'INSERT OR IGNORE INTO rail_station_matches SELECT id FROM parents', (key,))
         super().refresh_affected(keys)
 
     def ids_below(self, key):

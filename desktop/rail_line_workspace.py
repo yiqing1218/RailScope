@@ -13,13 +13,13 @@ ASSEMBLY_PREFIX = "line-assembly:"
 MEMBERSHIP_KEY = "railscope.org/line-membership"
 SHARED_LINE_FIELDS = frozenset({'display_name', 'line_name', 'track_type', 'archived', 'rail_semantics',
     'technical_attributes', 'folder_path', 'directory_view', 'line_kind', 'station_id',
-    'station_source', 'station_name', 'station_assignment'})
+    'station_source', 'station_name', 'station_assignment', 'color', 'width'})
 
 
 def expand_assembly_changes(overrides, changes):
     """A grouped object has one editable attribute set across all source members."""
     from copy import deepcopy
-    expanded = deepcopy(changes)
+    expanded = {key: deepcopy(value) for key, value in changes.items()}
     groups = {}
     for key, change in changes.items():
         assembly = change.get('assembly_id') or overrides.get(key, {}).get('assembly_id')
@@ -32,18 +32,58 @@ def expand_assembly_changes(overrides, changes):
                 raise ValueError('同一合并线路不能保存互相冲突的属性')
             existing.update(shared)
     for assembly, shared in groups.items():
-        members = {key for key, value in overrides.items() if value.get('assembly_id') == assembly}
-        members.update(key for key, value in changes.items() if value.get('assembly_id') == assembly)
-        for key in members:
-            expanded.setdefault(key, {}).update(deepcopy(shared))
-            if 'display_name' in shared:
-                expanded[key]['assembly_name'] = shared['display_name']
+        for key, change in changes.items():
+            target = change.get('assembly_id') or overrides.get(key, {}).get('assembly_id')
+            if target == assembly:
+                for field in SHARED_LINE_FIELDS:
+                    expanded[key].pop(field, None)
+                if not expanded[key]:
+                    expanded.pop(key)
         marker = ASSEMBLY_PREFIX + assembly
         attrs = {**overrides.get(marker, {}).get('attributes', {}), **shared}
         expanded.setdefault(marker, {}).update(attributes=attrs)
         if 'display_name' in shared:
             expanded[marker]['name'] = shared['display_name']
     return expanded
+
+
+class EffectiveOverrides(dict):
+    """Compatibility mapping; shared attributes have exactly one writable owner."""
+    def get(self, key, default=None):
+        raw = super().get(key, default)
+        if not isinstance(raw, dict) or not raw.get('assembly_id'):
+            return raw
+        marker = super().get(ASSEMBLY_PREFIX + raw['assembly_id'], {})
+        if not marker.get('attributes'):
+            return raw
+        if marker.get('active', True) is False:
+            return raw
+        shared = marker.get('attributes', {})
+        return {**raw, **shared, 'assembly_name': shared.get('display_name', marker.get('name'))}
+
+    def __getitem__(self, key):
+        if key not in self:
+            raise KeyError(key)
+        return self.get(key)
+
+    def items(self):
+        return ((key, self.get(key)) for key in self)
+
+    def values(self):
+        return (self.get(key) for key in self)
+
+
+def effective_override(overrides, key, default=None):
+    raw = overrides.get(key, default)
+    if not isinstance(raw, dict) or not raw.get('assembly_id'):
+        return raw
+    marker = overrides.get(ASSEMBLY_PREFIX + raw['assembly_id'], {})
+    if not marker.get('attributes'):
+        return raw
+    if marker.get('active', True) is False:
+        return raw
+    return {**raw, **marker.get('attributes', {}),
+            'assembly_name': marker.get('attributes', {}).get('display_name', marker.get('name'))}
 
 
 def migrate_assembly_attributes(overrides, catalog):

@@ -17,7 +17,9 @@ ASSIGNMENT_FIELDS = frozenset(('station_id', 'station_source', 'station_assignme
 
 def database_path(path):
     path = Path(path)
-    return path.with_name('workspace.sqlite') if path.name == 'rail_catalog.json' else path.with_suffix('.workspace.sqlite')
+    # workspace.sqlite already belongs to the canonical operating Repository.
+    # Catalog overlays must never open or overwrite that domain database.
+    return path.with_suffix('.workspace.sqlite')
 
 
 def encoded(value):

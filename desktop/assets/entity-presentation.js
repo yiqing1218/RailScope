@@ -2,6 +2,7 @@
 (function(root){
   function ownerKeys(p){
     const keys=[p.catalog_group_id,p.line_id];
+    if(p.assembly_id)keys.push('line-assembly:'+p.assembly_id);
     for(const field of ['service_id','network_edge_id','network_node_id','section_id','infrastructure_id','catalog_id','station_id','route_key','osm_node_id','osm_way_id','osm_relation_id'])
       if(p[field]!==undefined&&p[field]!==null){keys.push('object:'+field+':'+p[field]);break;}
     const tags=typeof p.way_tags==='object'?p.way_tags:{};

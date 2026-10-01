@@ -77,6 +77,7 @@ def connected_access_tracks(db,index_path,owners,overrides,station_ids):
                 assigned=(None if edit.get('station_assignment')=='pending' else explicit if explicit in station_ids
                           else evidence['station_id'] if not explicit else None)
                 record={**evidence,'station_id':assigned,'feature_id':feature_id,'object_key':object_key,
+                        'source_station_id': evidence.get('source_station_id', evidence['station_id']),
                         'catalog_id':track.get('catalog_group_id'),
                         'source':'workspace_override' if explicit else 'connected_facility_access_track',
                         'properties':{field:track.get(field) for field in
@@ -149,6 +150,7 @@ def facility_track_owners(directory, stations, overrides):
                 if line.geom_type!='LineString' or not line.length or line.intersection(geometry).length/line.length < .98:
                     continue
                 evidence = {'station_id':assigned,'feature_id':feature_id,'object_key':key,
+                    'source_station_id': owner,
                     'catalog_id':track.get('catalog_group_id'),
                     'properties':{field:track.get(field) for field in
                         ('line_name','display_name','track_type','track_role','from_name','to_name')},
