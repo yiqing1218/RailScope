@@ -198,6 +198,30 @@ class SqliteDirectoryModel(QAbstractItemModel):
         self.root.fetched = False
         self.endResetModel()
 
+    def refresh_labels(self, keys):
+        """Patch materialised rows without losing expansion or selection.
+
+        An active filter may change membership after rename: invalidate only
+        loaded branches then let the existing paged query find the new results.
+        """
+        if self.search:
+            self.reset_from_disk()
+            self.fetchMore()
+            return
+        pending = [self.root]
+        with self._connect() as db:
+            while pending:
+                parent = pending.pop()
+                for row, node in enumerate(parent.children):
+                    pending.append(node)
+                    if node.key not in keys:
+                        continue
+                    value = db.execute(f'SELECT label FROM {self.table} WHERE id=?', (node.key,)).fetchone()
+                    if value:
+                        node.label = value[0]
+                        index = self.createIndex(row, 0, node)
+                        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole])
+
     def index_for_key(self, key):
         with self._connect() as db:
             row = db.execute(f"SELECT path FROM {self.table} WHERE id=?", (key,)).fetchone()

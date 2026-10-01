@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import closing
 import hashlib
 import json
 import math
@@ -407,7 +408,14 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         from .rail_station_directory import load_directory, display_name
     except ImportError:
         from rail_station_directory import load_directory, display_name
-    station_directory = load_directory(directory / 'rail_lines.sqlite')
+    lookup = query.strip().removeprefix('station:')
+    index_path = directory / 'rail_lines.sqlite'
+    if lookup.startswith(('node/', 'way/', 'relation/')) and index_path.exists():
+        with closing(sqlite3.connect(index_path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            row = db.execute('SELECT name,data FROM station_directory WHERE source_id=?', (lookup,)).fetchone()
+        station_directory = {lookup: {'name': row[0], 'feature': json.loads(row[1])}} if row else {}
+    else:
+        station_directory = load_directory(index_path)
     source = directory / "rail.sqlite"
     if not source.exists():
         return [], 0
@@ -485,11 +493,12 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 for node, line_id in db.execute(sql, batch):
                     line_map[node].add(line_id)
                 alias_sql = (
-                    "SELECT a.station_node_id,l.line_id FROM station_aliases a "
+                    "SELECT a.source_id,l.line_id FROM station_aliases a "
                     "JOIN line_nodes l ON l.node_id=a.anchor_node "
-                    f"WHERE a.station_node_id IN ({marks})"
+                    f"WHERE a.source_id IN ({marks})"
                 )
-                for node, line_id in db.execute(alias_sql, batch):
+                sources = [str(node) if str(node).startswith(('node/', 'way/', 'relation/')) else 'node/' + str(node) for node in batch]
+                for node, line_id in db.execute(alias_sql, sources):
                     line_map[node].add(line_id)
             matched_lines = sorted({line for values in line_map.values() for line in values})
             for start in range(0, len(matched_lines), 800):
@@ -507,7 +516,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         province = index.locate(coordinates)
         node_id = props.get("osm_node_id", props.get('station_source_id'))
         source_id = props.get('station_source_id') or f'node/{node_id}'
-        lines = sorted(line_map.get(node_id, set()))
+        lines = sorted(line_map.get(node_id, set()) | line_map.get(source_id, set()))
         source_props = station_directory.get(source_id, {}).get('feature', {}).get('properties', {})
         source_type = station_type({'name': props.get('name', ''), **tags}, props.get('kind', ''))
         type_provenance = {

@@ -15,7 +15,7 @@ try:
     from .rail_categories import track_type
     from .geometry import distance_m
     from .rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
-    from .rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
+    from .rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
     from . import rail_semantic_index
     from .rail_semantics import semantic_record, is_business_line
 except ImportError:
@@ -23,7 +23,7 @@ except ImportError:
     from rail_categories import track_type
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
-    from rail_station_directory import build_station_directory, read_directory, display_name, compatible_area, nearby_tracks
+    from rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
     import rail_semantic_index
     from rail_semantics import semantic_record, is_business_line
 
@@ -478,7 +478,7 @@ class DiskRailLineLibrary:
         self._reference_cache = OrderedDict()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
-            self.station_directory = read_directory(db)
+            self.station_directory = load_directory(self.path)
             self._has_station_directory = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone())
             self._has_semantics = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='edge_semantics'").fetchone())
             self._semantic_cache = OrderedDict()
@@ -556,8 +556,8 @@ class DiskRailLineLibrary:
 
     def line_name(self, ident, source_name):
         return (
-            self.names.get(ident)
-            or self.metadata.get(ident, {}).get("display_name")
+            self.metadata.get(ident, {}).get("display_name")
+            or self.names.get(ident)
             or self.workspace.names.get(ident)
             or source_name
         )

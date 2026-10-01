@@ -14,6 +14,52 @@ except ImportError:
 
 
 _EDGE_ROLES_CACHE = {}
+PRESENTATION_FIELDS = ('display_name', 'line_display_name', 'line_name', 'name', 'station_name',
+    'station_type', 'track_type', 'rail_style_key', 'railway_class', 'line_role', 'track_role',
+    'line_kind', 'speed_band', 'design_speed_kmh', 'display_name_source',
+    'display_name_verification_status', 'display_name_snapshot', 'display_name_confidence',
+    'rail_display_color', 'rail_display_width', 'display_track_type', 'display_style_provenance')
+
+
+def presentation_keys(props):
+    keys = {object_key(props), yard_track_key(props), props.get('catalog_group_id'), props.get('line_id')}
+    for field in ('station_source_id', 'infrastructure_id', 'station_key', 'station_id'):
+        if props.get(field):
+            keys.add('station:' + str(props[field]).removeprefix('station:'))
+    node = props.get('osm_node_id')
+    if node is not None:
+        keys.update((f'switch:node/{node}', f'node:{node}', f'station:node/{node}'))
+    associated = props.get('associated_station_ids', [])
+    if isinstance(associated, str):
+        try:
+            associated = json.loads(associated)
+        except ValueError:
+            associated = []
+    if len(associated) == 1:
+        keys.add('station:' + str(associated[0]).removeprefix('station:'))
+    return keys - {None, ''}
+
+
+def remember_presentation(props, overrides):
+    if '_presentation_base' not in props and any(key in overrides for key in presentation_keys(props)):
+        props['_presentation_base'] = {key: props[key] for key in PRESENTATION_FIELDS if key in props}
+
+
+def restore_presentation(props):
+    """Restore raw presentation before replay, including Undo after a viewport fetch."""
+    base = props.get('_presentation_base')
+    if isinstance(base, str):
+        # MapLibre picked features encode nested properties as JSON strings.
+        try:
+            base = json.loads(base)
+        except ValueError:
+            return
+        if isinstance(base, dict):
+            props['_presentation_base'] = base
+    if isinstance(base, dict):
+        for field in PRESENTATION_FIELDS:
+            props.pop(field, None)
+        props.update(base)
 
 
 def _edge_roles(library):
@@ -81,7 +127,14 @@ def apply_rail_presentation(collection, presentation, overrides=None):
     overrides = overrides or {}
     decode_properties(collection)
     for feature in collection.get('features', []):
+        remember_presentation(feature.get('properties', {}), overrides or {})
         props = feature.get('properties', {})
+        for field, display_field in (('color', 'rail_display_color'), ('width', 'rail_display_width')):
+            for key in (object_key(props), props.get('catalog_group_id'), props.get('line_id')):
+                value = overrides.get(key, {}).get(field)
+                if value is not None:
+                    props[display_field] = value
+                    break
         for field in ('line_ids', 'operating_line_ids', 'construction_line_ids'):
             if field in props:
                 props[field] = sorted({presentation.get(key, {}).get('line_id', key) for key in props[field]})
@@ -176,6 +229,8 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
     overrides, line_names, way_names = overrides or {}, line_names or {}, way_names or {}
     decode_properties(collection)
     if station_directory is not None:
+        for feature in collection.get('features', []):
+            remember_presentation(feature.get('properties', {}), overrides)
         try:
             from .rail_station_directory import apply_station_names
         except ImportError:
@@ -183,6 +238,7 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         apply_station_names(collection, station_directory, overrides)
     for feature in collection.get('features', []):
         props = feature.get('properties', {})
+        remember_presentation(props, overrides)
         group_line_edit = overrides.get(props.get('catalog_group_id'), {})
         object_line_edit = overrides.get(object_key(props), {})
         if 'line_name' in group_line_edit:
@@ -223,10 +279,15 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
             keys.append('station:' + str(props['infrastructure_id']))
         keys += [props.get('catalog_group_id'), props.get('line_id'), props.get('catalog_id'),
                  props.get('station_id'), str(props.get('route_relation_id')), str(props.get('osm_relation_id'))]
+        keys += sorted(presentation_keys(props))
         group_edit = overrides.get(props.get('catalog_group_id'), {})
         if group_edit.get('assembly_id'):
             keys.insert(0, props.get('catalog_group_id'))
         custom = next((overrides[key] for key in keys if key in overrides and overrides[key].get('display_name')), {})
+        station_edit = next((overrides[key] for key in presentation_keys(props)
+                             if key.startswith('station:') and key in overrides), {})
+        if station_edit.get('station_type'):
+            props['station_type'] = station_edit['station_type']
         custom = migrate_track_override(custom, station_name=props.get('station_name', ''),
                                         track_role=props.get('track_role', 'unknown'))
         name = custom.get('display_name')

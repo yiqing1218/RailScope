@@ -129,6 +129,20 @@ async function updateAdminViewport(){
 let railRequest=0;
 let railController=null,railTimer=null;
 const railSourceKeys=new Map();
+const entityPresentation=new RailScopeEntityPresentation.EntityPresentation(
+  async features=>{
+    const values=[];
+    // A long visible line can own thousands of features. Bound each read-only
+    // request; the presentation controller paints once after the full reply.
+    for(let start=0;start<features.length;start+=200){
+      const response=await fetch('/api/entity-presentation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(features.slice(start,start+200))});
+      if(!response.ok)throw new Error('对象地图更新失败：'+response.status);
+      values.push(...await response.json());
+    }
+    return values;
+  },
+  (source,data)=>{map.getSource(source)?.setData(data);refreshSelection();},
+  error=>report('mapError',String(error)));
 let roadRequest=0,roadController=null,roadTimer=null,roadRouteSelection=null,roadVisibleRoutes=null;
 let roadSourceKey=null;
 let roadServiceKey=null,roadVisibleServices=[];
@@ -228,6 +242,7 @@ function scheduleRailViewport(){
   ++railRequest;
   for(const kind of populatedRailSources){
     if(!railSourceVisible(kind)){
+      entityPresentation.register(kind,empty);
       map.getSource(kind)?.setData(empty);
       populatedRailSources.delete(kind);
       railSourceKeys.delete(kind);
@@ -327,6 +342,7 @@ async function updateRailViewport(){
       const data=await queryViewport('/api/rail',params,controller.signal);
       if(request!==railRequest||!railSourceVisible(kind))return;
       if(data.busy){railTimer=setTimeout(updateRailViewport,350);return;}
+      entityPresentation.register(kind,data);
       map.getSource(kind)?.setData(data);populatedRailSources.add(kind);railSourceKeys.set(kind,key);
       if(data.truncated)document.getElementById('camera-status').textContent='已限制地图细节量，请放大查看';
       if(kind==='rail')document.getElementById('map-status').title=data.truncated?'已达到视窗数据预算，放大查看完整股道':'国铁按当前地图范围加载';
@@ -347,11 +363,11 @@ function applyRailStyles(){
     colors.push(type,style.color);widths.push(type,Number(style.width));
   }
   colors.push(fallback.color);widths.push(Number(fallback.width));
-  const baseWidth=entries.length?widths:2;
+  const baseWidth=['coalesce',['get','rail_display_width'],entries.length?widths:2];
   const widthCurve=['interpolate',['linear'],['zoom']];
   for(const point of curve)widthCurve.push(Number(point.zoom),['*',baseWidth,Number(point.scale)]);
   for(const id of ['rail','rail-stripes','rail-construction'])if(map.getLayer(id)){
-    map.setPaintProperty(id,'line-color',id==='rail-stripes'?'#ffffff':entries.length?colors:'#667887');
+    map.setPaintProperty(id,'line-color',id==='rail-stripes'?'#ffffff':['coalesce',['get','rail_display_color'],entries.length?colors:'#667887']);
     map.setPaintProperty(id,'line-width',widthCurve);
   }
   const patterns={solid:[1,0],alternating:[1,0],dashed:[3,2],long_dash:[8,3],dotted:[.3,2],dash_dot:[6,2,.3,2]};
@@ -806,6 +822,7 @@ async function init() {
     },
     setRailWays(ids){railWays=ids;railSections=null;railGroups=null;railExclude=false;applyRailWays();refreshSelection();scheduleRailViewport();},
     reloadRailViewport(){railSourceKeys.clear();scheduleRailViewport();},
+    patchRailEntities(changes){entityPresentation.patch(changes);},
     reloadMetroViewport(){metroSourceKeys.clear();scheduleMetroViewport();},
     reloadRoadViewport(){roadSourceKey=null;roadServiceKey=null;scheduleRoadViewport();},
     reloadAdminViewport(){adminSourceKey=null;scheduleAdminViewport();},

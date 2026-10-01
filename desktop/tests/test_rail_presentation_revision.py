@@ -334,5 +334,6 @@ def test_folder_change_retains_line_library_until_other_inputs_change(tmp_path):
     host=SimpleNamespace(catalog_metadata_path=metadata,
         _line_library_signature=('original-source','original-extra','original-index',1,'original-plan'))
     RailEditor.retain_line_library_for_directory_move(host)
+    from desktop.catalog_workspace import override_stamp
     assert host._line_library_signature==('original-source','original-extra','original-index',
-                                          metadata.stat().st_mtime_ns,'original-plan')
+                                          override_stamp(metadata),'original-plan')

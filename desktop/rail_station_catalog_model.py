@@ -49,9 +49,9 @@ def station_catalog_signature(directory, catalog_path, overrides):
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
 
 
-def sync_station_catalog(directory, catalog_path, regions, overrides):
+def sync_station_catalog(directory, catalog_path, regions, overrides, signature=None):
     """Build one disk-backed tree; do nothing when its inputs are unchanged."""
-    signature = station_catalog_signature(directory, catalog_path, overrides)
+    signature = signature or station_catalog_signature(directory, catalog_path, overrides)
     if signature is None:
         return
     with closing(sqlite3.connect(catalog_path)) as db:
@@ -268,6 +268,57 @@ def update_station_label(catalog_path, station_id, label):
     return True
 
 
+def update_station_placement(catalog_path, record, custom):
+    """Move one owner and its cached children; no nationwide ownership scan."""
+    ident = 'station:' + record['id']
+    folder = station_directory_path(record, custom)
+    kind = custom.get('station_type') or record.get('station_type')
+    if not custom.get('folder_path') and kind in FACILITY_TYPES:
+        folder = (*folder, kind)
+    new_path = ['stations'] + (['已归档'] if custom.get('archived') else []) + list(folder) + [record['id']]
+    with closing(sqlite3.connect(catalog_path)) as db, db:
+        db.row_factory = sqlite3.Row
+        row = db.execute('SELECT * FROM rail_station_nodes WHERE id=?', (ident,)).fetchone()
+        if row is None:
+            return False
+        old_path = json.loads(row['path'])
+        totals = {column: row[column] for column in ('total', 'station_total', 'facility_total', 'track_total')}
+        old_folders = ['folder:' + _key(old_path[:depth]) for depth in range(2, len(old_path))]
+        new_folders = ['folder:' + _key(new_path[:depth]) for depth in range(2, len(new_path))]
+        parent = ''
+        for depth, key in zip(range(2, len(new_path)), new_folders):
+            db.execute("INSERT OR IGNORE INTO rail_station_nodes(id,parent_id,label,kind,path,archived,searchable) VALUES(?,?,?,'folder',?,0,?)",
+                (key, parent, new_path[depth-1], _key(new_path[:depth]), new_path[depth-1].casefold()))
+            parent = key
+        if old_path != new_path:
+            rows = db.execute('WITH RECURSIVE subtree(id) AS (SELECT ? UNION ALL '
+                'SELECT n.id FROM rail_station_nodes n JOIN subtree s ON n.parent_id=s.id) '
+                'SELECT n.* FROM rail_station_nodes n JOIN subtree s ON n.id=s.id', (ident,)).fetchall()
+            renamed = {}
+            for item in rows:
+                if item['id'].startswith('facility-folder:'):
+                    path = new_path + json.loads(item['path'])[len(old_path):]
+                    renamed[item['id']] = 'facility-folder:' + _key(path)
+            for item in rows:
+                path = new_path + json.loads(item['path'])[len(old_path):]
+                parent_id = parent if item['id'] == ident else renamed.get(item['parent_id'], item['parent_id'])
+                db.execute('UPDATE rail_station_nodes SET id=?,parent_id=?,path=? WHERE id=?',
+                    (renamed.get(item['id'], item['id']), parent_id, _key(path), item['id']))
+            for sign, keys in ((-1, set(old_folders) - set(new_folders)), (1, set(new_folders) - set(old_folders))):
+                for key in keys:
+                    db.execute('UPDATE rail_station_nodes SET ' + ','.join(f'{column}={column}+?' for column in totals) + ' WHERE id=?',
+                               (*[sign * value for value in totals.values()], key))
+        label = custom.get('display_name') or record['name']
+        db.execute('UPDATE rail_station_nodes SET label=?,archived=?,searchable=? WHERE id=?',
+            (label, int(bool(custom.get('archived'))), (label+' '+record['id']+' '+' '.join(folder)).casefold(), ident))
+        for key in reversed(old_folders):
+            if not db.execute('SELECT 1 FROM rail_station_nodes WHERE parent_id=? LIMIT 1', (key,)).fetchone():
+                db.execute('DELETE FROM rail_station_nodes WHERE id=?', (key,))
+        for key in set(old_folders) | set(new_folders):
+            db.execute('UPDATE rail_station_nodes SET child_count=(SELECT count(*) FROM rail_station_nodes WHERE parent_id=?) WHERE id=?', (key, key))
+    return True
+
+
 class StationCatalogModel(SqliteDirectoryModel):
     """The station tree only instantiates the currently expanded 128-row page."""
 
@@ -340,6 +391,24 @@ class StationCatalogModel(SqliteDirectoryModel):
                 )
                 db.commit()
         super().set_search(query)
+
+    def refresh_labels(self, keys):
+        if self.search:
+            # Repair materialised match membership only along affected ancestors.
+            with self._connect() as db, db:
+                for key in keys:
+                    rows = db.execute('WITH RECURSIVE ancestors(id,parent_id,kind,searchable) AS ('
+                        'SELECT id,parent_id,kind,searchable FROM rail_station_nodes WHERE id=? UNION ALL '
+                        'SELECT p.id,p.parent_id,p.kind,p.searchable FROM rail_station_nodes p JOIN ancestors a ON p.id=a.parent_id) '
+                        'SELECT id,kind,searchable FROM ancestors', (key,)).fetchall()
+                    for ident, kind, searchable in rows:
+                        direct = kind in ('station','facility','segment','facility_track') and self.search in searchable
+                        child = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON n.id=m.id WHERE n.parent_id=? LIMIT 1', (ident,)).fetchone()
+                        if direct or child:
+                            db.execute('INSERT OR IGNORE INTO rail_station_matches VALUES(?)', (ident,))
+                        else:
+                            db.execute('DELETE FROM rail_station_matches WHERE id=?', (ident,))
+        super().refresh_labels(keys)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if index.isValid() and role == Qt.ItemDataRole.CheckStateRole:

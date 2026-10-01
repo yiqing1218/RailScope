@@ -65,19 +65,15 @@ def test_failed_undo_preserves_data_and_both_history_stacks(qtbot, tmp_path, mon
     widget = catalog(qtbot, tmp_path)
     widget.rename_item('RL-1', '新名字')
     previous = deepcopy((widget.local_overrides, widget.catalog_undo, widget.catalog_redo))
-    disk = widget.path.read_bytes()
-    original = Path.replace
-
-    def fail_replace(path, target):
-        if Path(target) == widget.path:
-            raise OSError('simulated disk failure')
-        return original(path, target)
-
-    monkeypatch.setattr(Path, 'replace', fail_replace)
+    from desktop.catalog_workspace import read_overrides
+    disk = read_overrides(widget.path)
+    def fail_write(entries):
+        raise OSError('simulated disk failure')
+    monkeypatch.setattr(widget.workspace, '_write_entries', fail_write)
     with pytest.raises(OSError, match='disk failure'):
         widget.undo_catalog()
     assert (widget.local_overrides, widget.catalog_undo, widget.catalog_redo) == previous
-    assert widget.path.read_bytes() == disk
+    assert read_overrides(widget.path) == disk
 
 
 @pytest.mark.parametrize('raw', ['{broken', '{"RL-1": {"archived": "bad"}}'])

@@ -1,0 +1,212 @@
+{
+  "dataset": {
+    "rail.sqlite": 3163963392,
+    "rail_catalog.sqlite": 479928320,
+    "rail_lines.sqlite": 2703171584
+  },
+  "timings_ms": {
+    "sync_station_catalog": [
+      56448.325,
+      52100.556
+    ],
+    "populate": [
+      56996.678,
+      52353.796
+    ],
+    "catalog_initialization": [
+      58277.944
+    ],
+    "line_library": [
+      1480.635,
+      0.515,
+      1440.575,
+      1578.636,
+      1674.962,
+      1553.127,
+      1561.547,
+      0.772,
+      1039.017,
+      1057.095
+    ],
+    "rail_station_records": [
+      2404.747,
+      276.45,
+      214.047
+    ],
+    "station_lookup": [
+      2404.791,
+      276.508,
+      214.1
+    ],
+    "connection_selector.__init__": [
+      68.685,
+      26.064,
+      90.714
+    ],
+    "connection_selector.connections": [
+      48.712,
+      0.012,
+      9.909
+    ],
+    "write_json_atomic": [
+      3003.956,
+      2877.668,
+      2936.437,
+      2717.174,
+      2921.669,
+      3276.705,
+      2897.445,
+      2922.847,
+      2389.617,
+      2153.98
+    ],
+    "_save_local_overrides": [
+      3042.929,
+      2919.926,
+      2979.527,
+      2753.321,
+      2976.579,
+      3352.384,
+      2958.824,
+      2994.161,
+      2433.701,
+      2199.969
+    ],
+    "update_station_label": [
+      19.084,
+      8.581,
+      18.302
+    ],
+    "_refresh_station_items": [
+      0.099,
+      0.074,
+      0.107,
+      0.057,
+      0.034
+    ],
+    "save_station_override": [
+      3069.833,
+      2941.172,
+      3011.569,
+      2441.483,
+      55724.304
+    ],
+    "editor_save_click": [
+      3124.483,
+      2946.383,
+      3026.683,
+      58.145
+    ],
+    "open_edit_save_total": [
+      3207.94,
+      4421.149,
+      4702.804
+    ],
+    "update_catalog_directory": [
+      69.34,
+      53.662,
+      59.659,
+      62.527
+    ],
+    "_update_paged_directory": [
+      631.32,
+      942.861,
+      671.254,
+      639.319
+    ],
+    "save_overrides": [
+      7303.546,
+      3002.603,
+      6028.913,
+      5392.128,
+      4820.79
+    ],
+    "line_remarks_save": [
+      7303.573
+    ],
+    "update_directory_labels": [
+      7.519
+    ],
+    "line_rename_save": [
+      3002.637
+    ],
+    "line_color_save": [
+      6028.941
+    ],
+    "line_width_save": [
+      5392.157
+    ],
+    "line_open_edit_save_total": [
+      6654.906
+    ],
+    "station_remarks_save": [
+      2441.497
+    ],
+    "station_type_save": [
+      55724.312
+    ]
+  },
+  "stations": [
+    {
+      "id": "node/10003809933",
+      "cache_updated": false,
+      "persisted": true
+    },
+    {
+      "id": "node/10010678106",
+      "cache_updated": false,
+      "persisted": true
+    },
+    {
+      "id": "node/10011281789",
+      "cache_updated": false,
+      "persisted": true
+    }
+  ],
+  "errors": [],
+  "exceptions": [
+    "AttributeError: 'RailCatalog' object has no attribute 'station_items'",
+    "AttributeError: 'RailCatalog' object has no attribute 'station_items'",
+    "AttributeError: 'RailCatalog' object has no attribute 'station_items'",
+    "AttributeError: 'RailCatalog' object has no attribute 'station_items'",
+    "AttributeError: 'RailCatalog' object has no attribute 'station_items'"
+  ],
+  "pbf_accesses": [],
+  "line_entity_id": "RL-003763f8c776e2dfa17a",
+  "source_ref": "c61f003",
+  "map_commands": [
+    "reloadRailViewport",
+    "reloadRailViewport",
+    "reloadRailViewport",
+    "setRailFacilityMode",
+    "setRailSelection",
+    "setRailLineSelection",
+    "reloadRailViewport",
+    "reloadMetroViewport",
+    "reloadRoadViewport",
+    "reloadRailViewport",
+    "setRailFacilityMode",
+    "setRailSelection",
+    "setRailLineSelection",
+    "reloadRailViewport",
+    "reloadMetroViewport",
+    "reloadRoadViewport",
+    "setRailFacilityMode",
+    "setRailSelection",
+    "setRailLineSelection",
+    "reloadRailViewport",
+    "reloadMetroViewport",
+    "reloadRoadViewport",
+    "setRailFacilityMode",
+    "setRailSelection",
+    "setRailLineSelection",
+    "reloadRailViewport",
+    "reloadMetroViewport",
+    "reloadRoadViewport",
+    "reloadRailViewport",
+    "reloadRailViewport",
+    "reloadMetroViewport",
+    "reloadRoadViewport"
+  ],
+  "boundary": "Production Qt slots / SQLite; MapStub excludes browser paint and full active TrainRun load."
+}

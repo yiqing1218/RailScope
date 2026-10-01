@@ -223,8 +223,8 @@ def test_failed_directory_save_leaves_state_and_map_unchanged(
     widget.toggle("track20", True)
     previous_calls = list(widget.map.calls)
     monkeypatch.setattr(
-        Path,
-        "replace",
+        widget.workspace,
+        "_write_entries",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("保存失败")),
     )
     with pytest.raises(OSError):
@@ -454,7 +454,8 @@ def test_switch_rename_uses_workspace_override_and_keeps_directory(qtbot, tmp_pa
     widget.save_switch_name(101, "东咽喉 1 号岔")
     assert widget.tabs.currentWidget() is before
     assert widget.switch_name(101) == "东咽喉 1 号岔"
-    assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["switch:node/101"]["display_name"] == "东咽喉 1 号岔"
+    from desktop.catalog_workspace import read_overrides
+    assert read_overrides(tmp_path / "settings.json")["switch:node/101"]["display_name"] == "东咽喉 1 号岔"
 
 
 def test_station_connection_override_persists_and_updates_station_directory(
@@ -488,7 +489,8 @@ def test_station_connection_override_persists_and_updates_station_directory(
         "verification_status": "user_verified",
     }
     widget.save_station_override("node/100", connected_lines=[connection])
-    stored = json.loads(settings.read_text(encoding="utf-8"))
+    from desktop.catalog_workspace import read_overrides
+    stored = read_overrides(settings)
     assert stored["station:node/100"]["connected_lines"] == [
         {**connection, "distance_m": 52.1, "anchor_policy": "auto_reachable",
          "anchor_verification_status": "automatic_nearest_hint"}
@@ -564,7 +566,8 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     widget.save_station_changes({"node/100"}, archived=True)
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
     assert widget.station_items["node/100"].parent().parent().text(0).startswith("已归档")
-    stored = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    from desktop.catalog_workspace import read_overrides
+    stored = read_overrides(tmp_path / "settings.json")
     assert stored["station:node/100"]["overview_attributes"]["foreign_name"].startswith("Yanzhoubei")
     assert stored["station:node/100"]["custom_attributes"]["年货运量"] == "611.9百万吨"
     from desktop.catalog_metadata import station_overview

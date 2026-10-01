@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from .catalog_workspace import read_overrides, override_stamp
     from .persistence import write_json_atomic
     from .operating_ui import OperationsEditor
     from .operating import Plan, read_plan
@@ -40,6 +41,7 @@ try:
     from .rail_station_directory import refresh_plan_names
     from .route_intent import promote_route, reresolve_route
 except ImportError:
+    from catalog_workspace import read_overrides, override_stamp
     from persistence import write_json_atomic
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -188,11 +190,8 @@ class RailEditor(OperationsEditor):
         shared = Path(__file__).resolve().parents[1] / 'data/catalog/rail_catalog_overrides.json'
         values = {}
         for path in (shared, self.catalog_metadata_path):
-            try:
-                for key, value in json.loads(Path(path).read_text(encoding='utf-8')).items():
-                    values[key] = {**values.get(key, {}), **value}
-            except (OSError, ValueError):
-                continue
+            for key, value in read_overrides(path).items():
+                values[key] = {**values.get(key, {}), **value}
         return build_repository(self.graph if graph is None else graph,
             self.document() if payload is None else payload,
             identity_path, values, self.directory / 'rail.sqlite')
@@ -915,7 +914,7 @@ class RailEditor(OperationsEditor):
             str(database),
             stamp,
             names_path.stat().st_mtime_ns if names_path.exists() else None,
-            metadata_path.stat().st_mtime_ns if metadata_path.exists() else None,
+            override_stamp(metadata_path),
             shared_metadata_path.stat().st_mtime_ns if shared_metadata_path.exists() else None,
         )
         if getattr(self, "_line_library_signature", None) == signature:
@@ -926,9 +925,7 @@ class RailEditor(OperationsEditor):
             else {}
         )
         metadata = (
-            json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata_path.exists()
-            else {}
+            read_overrides(metadata_path)
         )
         shared_metadata = (json.loads(shared_metadata_path.read_text(encoding="utf-8"))
                            if shared_metadata_path.exists() else {})
@@ -959,11 +956,33 @@ class RailEditor(OperationsEditor):
         if signature is None:
             return
         metadata = self.catalog_metadata_path
-        stamp = metadata.stat().st_mtime_ns if metadata.exists() else None
+        stamp = override_stamp(metadata)
         self._line_library_signature = (*signature[:3], stamp, *signature[4:])
 
     def invalidate_line_library(self):
         self._line_library_signature = None
+
+    def patch_catalog_metadata(self, overrides, changes):
+        """Patch names/notes on the live library; topology changes still invalidate."""
+        try:
+            from .entity_refresh import ROUTING_FIELDS
+        except ImportError:
+            from entity_refresh import ROUTING_FIELDS
+        if any(ROUTING_FIELDS & change.keys() for change in changes.values()):
+            self.invalidate_line_library()
+            return
+        library = getattr(self, '_line_library', None)
+        if library is not None and hasattr(library, 'metadata'):
+            for key in changes:
+                if key in overrides:
+                    library.metadata[key] = overrides[key]
+                else:
+                    library.metadata.pop(key, None)
+            # Names and remarks do not change traversal permissions.
+            if any({'rail_semantics', 'track_type', 'line_kind'} & delta.keys()
+                   for delta in changes.values()):
+                library._semantic_cache.clear()
+        self.retain_line_library_for_directory_move()
 
     def show_corridor(self, corridor_id, train_id=""):
         route = next(r for r in self.rail_payload["routes"] if r["id"] == corridor_id)
@@ -1347,6 +1366,14 @@ class RailEditor(OperationsEditor):
             for key, name in names.items()
         ):
             raise ValueError("编号不存在或名称为空")
+        editor = getattr(self, 'catalog_editor', None)
+        if editor is not None:
+            changes = {member: {'display_name': name.strip(), 'line_name': name.strip()}
+                       for key, name in names.items() for member in library.workspace.members(key)
+                       if member in editor.catalog}
+            editor.save_overrides(changes)
+            self.updated.emit()
+            return
         path = Path(self.path).parent / "rail_line_names.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".json.tmp")

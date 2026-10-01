@@ -30,11 +30,12 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from .entity_refresh import field_delta, ordinary_attributes, PLACEMENT_FIELDS, NAME_FIELDS
     from .catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
-    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
+    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement
     from .rail_semantics import semantic_record
     from .rail_station_types import FACILITY_TYPES
     from .provinces import geographic_catalog, VERSION
@@ -47,11 +48,12 @@ try:
         station_directory_path,
     )
 except ImportError:
+    from entity_refresh import field_delta, ordinary_attributes, PLACEMENT_FIELDS, NAME_FIELDS
     from catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
-    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature
+    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement
     from rail_semantics import semantic_record
     from rail_station_types import FACILITY_TYPES
     from provinces import geographic_catalog, VERSION
@@ -71,7 +73,7 @@ MAX_STATION_TREE_ITEMS = 25000
 SHARED_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_catalog_overrides.json"
 LINE_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_line_directory.json"
 STATION_DIRECTORY_PATH = Path(__file__).resolve().parents[1] / "data/catalog/rail_station_directory.json"
-DIRECTORY_FIELDS = {"folder_path", "directory_view", "line_kind", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment"}
+DIRECTORY_FIELDS = {"folder_path", "directory_view", "line_kind", "display_name", "track_type", "archived", "technical_attributes", "rail_semantics", "station_id", "station_assignment", "color", "width"}
 
 
 def line_directory_overrides(overrides):
@@ -369,6 +371,7 @@ class RailCatalog(QWidget):
     directory_changed = Signal()
     switch_names_changed = Signal()
     feature_activated = Signal(dict)
+    entities_changed = Signal(dict)
 
     def __init__(self, directory, settings, map_view, parent=None, regions=None, shared_path=None):
         super().__init__(parent)
@@ -647,6 +650,25 @@ class RailCatalog(QWidget):
     def _refresh_restored_overrides(self, previous, changed):
         value = self.local_overrides
         self._merge_changed_overrides(changed)
+        deltas = {key: field_delta(previous.get(key), value.get(key)) for key in changed}
+        if all(key.startswith('station:') for key in changed):
+            self._refresh_station_changes(deltas)
+            return
+        if all(not (PLACEMENT_FIELDS | {'rail_semantics', 'track_type', 'assembly_id', 'members', 'active', 'geometry', 'connected_lines', 'connected_line_ids'}) & delta.keys()
+               for delta in deltas.values()):
+            station_ids = {key.removeprefix('station:') for key in changed if key.startswith('station:')}
+            self._refresh_station_items(station_ids)
+            for sid in station_ids:
+                record = self.station_record_by_id.get(sid)
+                if record and 'display_name' in deltas['station:' + sid] and hasattr(self, 'station_model'):
+                    update_station_label(self.catalog.path, sid, record['name'])
+                    self.station_model.refresh_labels({'station:' + sid})
+            line_keys = {key for key in changed if key in self.catalog and NAME_FIELDS & deltas[key].keys()}
+            self._refresh_line_labels(line_keys)
+            self.entities_changed.emit(deltas)
+            if any(key.startswith('signalbox/') for key in station_ids):
+                self.station_presentation_changed.emit()
+            return
         if any(key.startswith("switch:node/") for key in changed):
             self._refresh_switch_labels()
             self.switch_names_changed.emit()
@@ -783,8 +805,7 @@ class RailCatalog(QWidget):
                 model.fetchMore()
         if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (self.directory / "rail_lines.sqlite").exists():
             if facility_changed:
-                station_changed = sync_station_catalog(self.directory, self.catalog.path,
-                                                       self.regions, self.overrides)
+                station_changed = self._prepare_station_catalog()
                 station_model = getattr(self, "station_model", None)
                 if station_model is not None and station_changed:
                     station_model.reset_from_disk()
@@ -853,7 +874,7 @@ class RailCatalog(QWidget):
             if not model.root.children:
                 model.fetchMore()
         if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (self.directory / "rail_lines.sqlite").exists():
-            station_changed = sync_station_catalog(self.directory, self.catalog.path, self.regions, self.overrides)
+            station_changed = self._prepare_station_catalog()
             if not hasattr(self, "station_model"):
                 self.station_model = StationCatalogModel(self.catalog.path, self.station_browser)
                 self.station_browser.setModel(self.station_model)
@@ -882,6 +903,49 @@ class RailCatalog(QWidget):
                     "SELECT path FROM rail_directory_nodes WHERE kind='folder' AND view='lines' AND archived=0")
             }
         self._sync_paged_visibility()
+
+        if not getattr(self, '_workspace_labels_replayed', False):
+            self._replay_workspace_labels()
+            self._workspace_labels_replayed = True
+
+    def _replay_workspace_labels(self):
+        """Recover derived labels if the app stopped after the edit transaction.
+
+        Only owners in the incremental store are visited. Cached labels are
+        never more authoritative than a successfully persisted edit or Undo.
+        """
+        keys = self.workspace.edited_keys
+        self._refresh_line_labels({key for key in keys if key in self.catalog})
+        if not hasattr(self, 'station_model'):
+            return
+        station_keys = {key for key in keys if key.startswith('station:')}
+        if not station_keys:
+            return
+        source = self.directory / 'rail_lines.sqlite'
+        with closing(sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            for key in station_keys:
+                custom = self.overrides.get(key, {})
+                row = db.execute('SELECT name FROM station_directory WHERE source_id=?',
+                                 (key.removeprefix('station:'),)).fetchone()
+                if row:
+                    update_station_label(self.catalog.path, key.removeprefix('station:'),
+                                         custom.get('display_name') or row[0])
+        self.station_model.refresh_labels(station_keys)
+
+    def _prepare_station_catalog(self):
+        signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            old = db.execute("SELECT value FROM metadata WHERE key='station_catalog_signature'").fetchone()
+        if old and old[0] == signature:
+            return False
+        try:
+            from .background_work import prepare_with_progress
+        except ImportError:
+            from background_work import prepare_with_progress
+        def build(report):
+            report('正在准备站场设施目录；此步骤只在快照或归属结构变化后执行，不读取 PBF。')
+            return sync_station_catalog(self.directory, self.catalog.path, self.regions, self.overrides, signature)
+        return prepare_with_progress(self, '准备铁路设施目录', build)
 
     def _sync_paged_visibility(self):
         facilities = self.station_track_keys()
@@ -2374,7 +2438,20 @@ class RailCatalog(QWidget):
         self.station_tree.schedule_height()
         return item
 
-    def _refresh_station_items(self, station_ids):
+    def _refresh_station_items(self, station_ids, tree_ids=None):
+        for station_id in station_ids:
+            record = self.station_record_by_id.get(station_id)
+            if record is not None:
+                record.setdefault('_source_name', record['name'])
+                record.setdefault('_source_station_type', record['station_type'])
+                record.setdefault('_source_line_ids', list(record['line_ids']))
+                record.setdefault('_source_line_names', list(record['line_names']))
+                self._apply_station_override(record)
+        if not hasattr(self, 'station_items'):
+            return
+        station_ids = station_ids if tree_ids is None else tree_ids
+        if not station_ids:
+            return
         affected_paths = set()
         self.station_tree.setCurrentItem(None)
         self.station_tree.setUpdatesEnabled(False)
@@ -2802,26 +2879,44 @@ class RailCatalog(QWidget):
         if not delta:
             return
         self._save_local_overrides({key: delta})
-        placement_changed = bool({"folder_path", "archived", "station_type"} & delta.keys())
-        if not placement_changed and hasattr(self, "station_model"):
-            if "display_name" in delta:
-                if update_station_label(self.catalog.path, station_id, change["display_name"]):
-                    self.station_model.reset_from_disk()
-                    self.station_model.fetchMore()
-                else:
-                    with closing(sqlite3.connect(self.catalog.path)) as db:
-                        db.execute("DELETE FROM metadata WHERE key='station_catalog_signature'")
-                        db.commit()
-                    self.populate()
-            self.presentation_changed.emit()
-        else:
-            self.metadata_changed.emit()
-            if hasattr(self, "station_model"):
-                self.populate()
-        self._refresh_station_items({station_id})
-        self.station_presentation_changed.emit()
+        self._refresh_station_changes({key: delta})
+
+    def _refresh_station_changes(self, deltas):
+        station_ids = {key.removeprefix('station:') for key in deltas}
+        visible_ids = {key.removeprefix('station:') for key, delta in deltas.items()
+                       if {'display_name', 'folder_path', 'archived', 'station_type', 'connected_lines'} & delta.keys()}
+        self._refresh_station_items(station_ids, tree_ids=visible_ids)
+        placement_changed = False
+        for sid in station_ids:
+            record = self.station_record_by_id.get(sid)
+            delta = deltas['station:' + sid]
+            placement = bool({'folder_path', 'archived', 'station_type'} & delta.keys())
+            placement_changed |= placement
+            if hasattr(self, 'station_model') and record:
+                if placement:
+                    update_station_placement(self.catalog.path, record, self.overrides.get('station:' + sid, {}))
+                elif 'display_name' in delta:
+                    update_station_label(self.catalog.path, sid, record['name'])
+        if hasattr(self, 'station_model'):
+            if placement_changed:
+                self.station_model.reset_from_disk()
+                self.station_model.search = ''
+                self.station_model.set_search(self.station_query)
+                self.station_model.fetchMore()
+                signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
+                with closing(sqlite3.connect(self.catalog.path)) as db, db:
+                    db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)", (signature,))
+            elif visible_ids:
+                self.station_model.refresh_labels({'station:' + sid for sid in visible_ids})
+        self.entities_changed.emit(deltas)
+        if any(sid.startswith('signalbox/') for sid in visible_ids):
+            self.station_presentation_changed.emit()
         if placement_changed:
             self.send_station_visibility()
+        if any('connected_lines' in delta for delta in deltas.values()):
+            # A changed connection can alter canonical routing/active plans.
+            # Keep the existing dependency revalidation for this structural edit.
+            self.metadata_changed.emit()
 
     def save_station_changes(self, station_ids, **changes):
         station_ids = set(station_ids)
@@ -2837,12 +2932,7 @@ class RailCatalog(QWidget):
                 raise ValueError("请选择有效的目标文件夹")
             changes["folder_path"] = [value.strip() for value in folder]
         self._save_local_overrides({"station:" + station_id: changes for station_id in station_ids})
-        placement_changed = bool({"folder_path", "archived", "station_type"} & set(changes))
-        self.metadata_changed.emit()
-        self._refresh_station_items(station_ids)
-        if placement_changed and hasattr(self, "station_model"):
-            self.populate()
-        self.send_station_visibility()
+        self._refresh_station_changes({'station:' + sid: changes for sid in station_ids})
 
     def prefix_station_names(self, station_ids, prefix):
         """Rename a station batch with one atomic write and one tree refresh."""
@@ -2861,9 +2951,7 @@ class RailCatalog(QWidget):
             for station_id in station_ids
         }
         self._save_local_overrides(changes)
-        self.metadata_changed.emit()
-        self._refresh_station_items(station_ids)
-        self.send_station_visibility()
+        self._refresh_station_changes(changes)
 
     def save_overrides(self, changes, object_changes=None):
         """Persist presentation metadata atomically; never write the GIS source."""
@@ -2898,6 +2986,24 @@ class RailCatalog(QWidget):
         if not effective and not object_changes:
             return
 
+        deltas = {key: field_delta(self.meta(key), {**self.meta(key), **change})
+                  for key, change in effective.items()}
+        deltas.update({key: field_delta(self.overrides.get(key),
+                      {**self.overrides.get(key, {}), **change}) for key, change in object_changes.items()})
+        if all(ordinary_attributes(delta) for delta in deltas.values()):
+            self._save_local_overrides({**effective, **object_changes})
+            self.entities_changed.emit(deltas)
+            return
+
+        if all(set(delta) <= NAME_FIELDS | {'source', 'verification_status', 'technical_attributes', 'color', 'width'}
+               for delta in deltas.values()):
+            self._save_local_overrides({**effective, **object_changes})
+            self._refresh_line_labels({key for key in effective if NAME_FIELDS & deltas[key].keys()})
+            if object_changes and any(NAME_FIELDS & deltas[key].keys() for key in object_changes):
+                self._update_segment_labels(object_changes)
+            self.entities_changed.emit(deltas)
+            return
+
         if effective and not object_changes and all(set(change) <= {'folder_path', 'assembly_name'} for change in effective.values()):
             self._save_local_overrides(effective)
             self._move_line_items_in_tree(set(effective))
@@ -2914,7 +3020,7 @@ class RailCatalog(QWidget):
                 self.populate()
             else:
                 self._update_segment_labels(object_changes)
-            self.presentation_changed.emit()
+            self.metadata_changed.emit()
             return
         name_only = all(set(change) <= {"display_name"} for change in effective.values())
         presentation_only = name_only and all(
@@ -2972,7 +3078,29 @@ class RailCatalog(QWidget):
                 self.tree.setCurrentItem(item)
                 self.tree.schedule_height()
                 self.tree.scrollToItem(item)
+        # Names, notes and renderer fields returned through the incremental
+        # branches above. Structural changes retain canonical path revalidation.
         self.metadata_changed.emit()
+
+    def _refresh_line_labels(self, keys):
+        if not keys:
+            return
+        if hasattr(self, 'line_model'):
+            if update_directory_labels(self.catalog, keys, self._resolve_directory_record):
+                with closing(sqlite3.connect(self.catalog.path)) as db:
+                    marks = ','.join('?' for _ in keys)
+                    nodes = {row[0] for row in db.execute(
+                        f'SELECT node_id FROM rail_directory_members WHERE catalog_id IN ({marks})', tuple(keys))}
+                self.line_model.refresh_labels(nodes)
+                self.facility_model.refresh_labels(nodes)
+                if hasattr(self, 'station_model'):
+                    self.station_model.refresh_labels({'facility:' + key for key in keys})
+            else:
+                self._update_paged_directory(keys)
+        for key in keys:
+            item = getattr(self, 'items', {}).get(key)
+            if item is not None:
+                item.setText(0, self.display_name(key))
 
     def _update_segment_labels(self, object_changes):
         if not hasattr(self, "station_model"):

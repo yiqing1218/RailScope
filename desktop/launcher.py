@@ -80,7 +80,7 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
-from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation
+from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation, restore_presentation
 from yard_track_names import yard_track_key
 from rail_station_directory import RAIL_STATION_LAYERS
 from road_store import database_path as road_database_path, viewport as road_viewport
@@ -256,6 +256,34 @@ class LocalHandler(SimpleHTTPRequestHandler):
         return getattr(self, "_body_query", None) or parse_qs(urlsplit(self.path).query)
 
     def do_POST(self):
+        if self.valid_host() and urlsplit(self.path).path == '/api/entity-presentation':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 8_000_000:
+                    raise ValueError('Invalid body length')
+                features = json.loads(self.rfile.read(length))
+                if not isinstance(features, list) or any(not isinstance(f, dict) or
+                        not isinstance(f.get('properties'), dict) or
+                        not isinstance(f.get('geometry'), dict) for f in features):
+                    raise ValueError('Invalid presentation query')
+                collection = {'features': features}
+                for feature in features:
+                    restore_presentation(feature['properties'])
+                config = self.server.config
+                overrides = config.get('railDisplayOverrides', {})
+                apply_names(collection, overrides, config.get('railLineNames', {}), config.get('railWayNames', {}))
+                apply_rail_presentation(collection, config.get('railLinePresentation', {}), overrides)
+                payload = json.dumps([f['properties'] for f in features], ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except ConnectionError:
+                pass
+            except (ValueError, KeyError, TypeError, UnicodeError):
+                self.send_error(400)
+            return
         # Large directory selections do not fit in HTTP's request line.
         # These are read-only viewport queries; the body contains only filters.
         if not self.valid_host() or urlsplit(self.path).path not in {"/api/metro", "/api/roads", "/api/rail"}:
@@ -2554,6 +2582,7 @@ class Desk(QMainWindow):
         layout.addWidget(self.rail_catalog_widget)
         names_path = self.rail_operations.path.parent / "rail_way_names.json"
         self.rail_catalog_widget.reload_names(names_path)
+        self.rail_operations.catalog_editor = self.rail_catalog_widget
         self.rail_operations.names_changed.connect(
             lambda: self.rail_catalog_widget.reload_names(names_path)
         )
@@ -2567,6 +2596,7 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.metadata_changed.connect(self.refresh_map_names)
         self.rail_catalog_widget.presentation_changed.connect(self.refresh_catalog_presentation)
+        self.rail_catalog_widget.entities_changed.connect(self.refresh_entity_changes)
         self.rail_catalog_widget.directory_changed.connect(self.refresh_directory_overrides)
         self.rail_catalog_widget.station_presentation_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
@@ -3233,6 +3263,35 @@ class Desk(QMainWindow):
             apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
                         self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
 
+    def refresh_entity_changes(self, changes):
+        """Only touched owners enter the map bridge; notes have no map work."""
+        from entity_refresh import needs_map, NAME_FIELDS
+        overrides = self.rail_catalog_widget.overrides
+        live = self.config.setdefault('railDisplayOverrides', {})
+        for key in changes:
+            if key in overrides:
+                live[key] = overrides[key]
+            else:
+                live.pop(key, None)
+        operations = self.rail_operations
+        if hasattr(operations, 'patch_catalog_metadata'):
+            operations.patch_catalog_metadata(overrides, changes)
+        else:
+            RailEditor.patch_catalog_metadata(operations, overrides, changes)
+        map_changes = {key: overrides.get(key) for key, delta in changes.items() if needs_map(delta)}
+        if map_changes:
+            self.map.call('patchRailEntities', map_changes)
+        selected = getattr(self, 'selected_data', {})
+        from display_names import presentation_keys
+        if selected and set(presentation_keys(selected.get('properties', {}))) & changes.keys():
+            restore_presentation(selected.get('properties', {}))
+            apply_names({'features': [selected]}, live,
+                        self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
+            apply_rail_presentation({'features': [selected]}, self.config.get('railLinePresentation', {}), live)
+            self.display_feature(selected)
+        if any(NAME_FIELDS & delta.keys() for delta in changes.values()) and getattr(operations, 'rail_payload', None):
+            operations.refresh_station_names()
+
     def refresh_directory_overrides(self):
         """A directory move has no effect on topology, labels or simulation."""
         self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
@@ -3728,18 +3787,36 @@ class Desk(QMainWindow):
                     '选择一个车站，人工建立股道与车站的工作区关联；原始 OSM 数据不修改。', wrap=True))
                 dialog.tabs.addTab(station_track_selector, '关联车站')
             if line_ids:
-                relationships = line_relationships(library, line_ids)
-                station_selector = RelationshipSelector(
-                    lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
-                    zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
-                line_selector = RelationshipSelector(
-                    lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
-                    zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
-                dialog.tabs.addTab(station_selector, '途经站点')
-                dialog.tabs.addTab(line_selector, '联络 / 相接线路')
-                line_selector.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
-                dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
-                    station_selector.values(), line_selector.values())
+                station_host, line_host = QWidget(), QWidget()
+                for host in (station_host, line_host):
+                    QVBoxLayout(host).addWidget(text_label('打开此页后加载关联信息。', wrap=True))
+                relation_tabs = {dialog.tabs.addTab(station_host, '途经站点'),
+                                 dialog.tabs.addTab(line_host, '联络 / 相接线路')}
+                loaded = False
+                def load_relationships(index):
+                    nonlocal loaded
+                    if loaded or index not in relation_tabs:
+                        return
+                    from background_work import prepare_with_progress
+                    try:
+                        relationships = prepare_with_progress(dialog, '读取线路关联',
+                            lambda report: line_relationships(library, line_ids))
+                        station_selector = RelationshipSelector(
+                            lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
+                            zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
+                        line_selector = RelationshipSelector(
+                            lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
+                            zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
+                        for host, selector in ((station_host, station_selector), (line_host, line_selector)):
+                            host.layout().takeAt(0).widget().deleteLater()
+                            host.layout().addWidget(selector)
+                        line_host.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
+                        dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
+                            station_selector.values(), line_selector.values())
+                        loaded = True
+                    except (ValueError, OSError, sqlite3.Error) as error:
+                        QMessageBox.warning(dialog, '关联信息未载入', str(error))
+                dialog.tabs.currentChanged.connect(load_relationships)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -3872,7 +3949,7 @@ class Desk(QMainWindow):
             if kind == "metro":
                 self.refresh_map_names()
             self.display_feature(feature)
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, sqlite3.Error) as error:
             QMessageBox.warning(self, "线路信息未保存", str(error))
 
     def edit_selected_metadata(self, feature=None):
@@ -4202,7 +4279,7 @@ class Desk(QMainWindow):
                         or ((rail_node is not None or rail_station_id is not None) and record)):
                     self.refresh_map_names()
                 self.display_feature(feature)
-            except (ValueError, OSError) as error:
+            except (ValueError, OSError, sqlite3.Error) as error:
                 QMessageBox.warning(dialog, "目录修改未保存", str(error))
 
         buttons.accepted.connect(save)
