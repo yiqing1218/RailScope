@@ -26,6 +26,15 @@ def override_stamp(path):
                  for p in (Path(path), edit_database(path)))
 
 
+def routing_revision(path):
+    """Only routing dependencies invalidate a live line library."""
+    database = edit_database(path)
+    if not database.exists():
+        return override_stamp(path)
+    revisions = layered.revisions(database)
+    return (layered.identity(database), *[revisions[kind] for kind in ('source','geometry','topology','semantic')])
+
+
 def _read_seed(path):
     path = Path(path)
     if not path.exists():

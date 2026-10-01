@@ -11,6 +11,7 @@ import sqlite3
 from uuid import uuid4
 
 try:
+    from .artifact_manifest import manifest, install_manifest, read_manifest
     from .rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from .rail_categories import track_type
     from .geometry import distance_m
@@ -19,6 +20,7 @@ try:
     from . import rail_semantic_index
     from .rail_semantics import semantic_record, is_business_line
 except ImportError:
+    from artifact_manifest import manifest, install_manifest, read_manifest
     from rail_lines import RailLineLibrary, line_identity, edge_length, edge_endpoints, traversal_allowed
     from rail_categories import track_type
     from geometry import distance_m
@@ -50,6 +52,9 @@ def index_ready(path, signature):
                 "SELECT value FROM metadata WHERE key=?", ("source",)
             ).fetchone() != (signature,):
                 return False
+            record = read_manifest(db)
+            if record and (not record.get('complete') or record.get('algorithm_version') != INDEX_VERSION or record.get('inputs', {}).get('source') != signature):
+                return False
             required = {'edges', 'lines', 'edge_semantics', 'line_semantics',
                         'station_directory', 'station_track_positions'}
             present = {name for (name,) in db.execute(
@@ -71,6 +76,7 @@ def refresh_station_index(source, destination, previous_signature, progress=lamb
         if fingerprint(source, []) != updated_signature:
             raise ValueError('站区更新期间源文件发生变化，请重新导入')
         db.execute("UPDATE metadata SET value=? WHERE key='source'", (updated_signature,))
+        install_manifest(db, manifest('line-index', INDEX_VERSION, {'source': updated_signature}))
     return True
 
 
@@ -98,6 +104,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     with existing:
                         build_station_directory(existing, source)
                         existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
+                        install_manifest(existing, manifest('line-index', INDEX_VERSION, {'source': signature}))
                     return destination
                 rail_semantic_index.create_schema(existing)
                 with existing:
@@ -116,6 +123,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
                     rail_semantic_index.finalize(existing)
                     build_station_directory(existing, source)
                     existing.execute("UPDATE metadata SET value=? WHERE key='source'", (signature,))
+                    install_manifest(existing, manifest('line-index', INDEX_VERSION, {'source': signature}))
                 return destination
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     db = sqlite3.connect(temporary)
@@ -388,6 +396,7 @@ def build_line_index(source, destination, extras, points, progress=lambda value:
             db.execute("CREATE INDEX station_alias_anchor ON station_aliases(anchor_node)")
             build_station_directory(db, source)
         db.execute("INSERT INTO metadata VALUES(?,?)", ("source", signature))
+        install_manifest(db, manifest('line-index', INDEX_VERSION, {'source': signature}))
         progress("保存铁路索引…")
         db.commit()
         db.close()

@@ -2590,11 +2590,9 @@ class Desk(QMainWindow):
         self.rail_catalog_widget.line_names_changed.connect(
             self.rail_operations.save_line_names
         )
-        self.rail_catalog_widget.metadata_changed.connect(
-            self.rail_operations.invalidate_line_library
-        )
-        self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
-        self.rail_catalog_widget.metadata_changed.connect(self.refresh_map_names)
+        self.rail_catalog_widget.topology_changed.connect(self.refresh_topology_changes)
+        self.rail_catalog_widget.semantic_changed.connect(self.refresh_semantic_changes)
+        self.rail_catalog_widget.station_assignment_changed.connect(self.refresh_directory_overrides)
         self.rail_catalog_widget.presentation_changed.connect(self.refresh_catalog_presentation)
         self.rail_catalog_widget.entities_changed.connect(self.refresh_entity_changes)
         self.rail_catalog_widget.directory_changed.connect(self.refresh_directory_overrides)
@@ -3243,14 +3241,11 @@ class Desk(QMainWindow):
             apply_rail_presentation({'features': [selected]}, self.config['railLinePresentation'],
                                     self.config['railDisplayOverrides'])
 
-    def refresh_catalog_presentation(self):
+    def refresh_catalog_presentation(self, change=None):
         """Refresh map labels after an override edit without rebuilding line topology."""
-        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
-        self.map.call('reloadRailViewport')
-        selected = getattr(self, 'selected_data', {})
-        if selected:
-            apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
-                        self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
+        change = change or self.rail_catalog_widget.workspace.last_change or {}
+        overrides = self.rail_catalog_widget.overrides
+        self.refresh_entity_changes({key: overrides.get(key, {}) for key in change.get('ids', ())})
 
     def refresh_entity_changes(self, changes):
         """Only touched owners enter the map bridge; notes have no map work."""
@@ -3281,10 +3276,34 @@ class Desk(QMainWindow):
         if any(NAME_FIELDS & delta.keys() for delta in changes.values()) and getattr(operations, 'rail_payload', None):
             operations.refresh_station_names()
 
-    def refresh_directory_overrides(self):
+    def refresh_directory_overrides(self, change=None):
         """A directory move has no effect on topology, labels or simulation."""
-        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        change = change or self.rail_catalog_widget.workspace.last_change or {}
+        overrides = self.rail_catalog_widget.overrides
+        live = self.config.setdefault('railDisplayOverrides', {})
+        for key in change.get('ids', ()):
+            if key in overrides:
+                live[key] = overrides[key]
+            else:
+                live.pop(key, None)
         self.rail_operations.retain_line_library_for_directory_move()
+
+    def refresh_semantic_changes(self, change):
+        ids = change.get('ids', ())
+        overrides = self.rail_catalog_widget.overrides
+        deltas = {key: overrides.get(key, {}).get('attributes', overrides.get(key, {})) for key in ids}
+        self.refresh_entity_changes(deltas)
+
+    def refresh_topology_changes(self, change):
+        self.rail_operations.invalidate_line_library()
+        self.refresh_directory_overrides(change)
+        self.config['railLinePresentation'] = rail_line_presentation(self.rail_operations.line_library())
+        self.map.call('reloadRailViewport')
+        self.refresh_signal_boxes()
+        if self.rail_operations.rail_payload:
+            self.rail_operations.push_corridors()
+            self.rail_operations.domain_repo, self.rail_operations.domain_bindings = self.rail_operations.canonical_repository(
+                self.rail_operations.workspace_identity_path)
 
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {

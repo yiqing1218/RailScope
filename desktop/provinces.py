@@ -7,10 +7,12 @@ import sqlite3
 from uuid import uuid4
 
 try:
+    from .artifact_manifest import manifest
     from .geometry import distance_m
     from .rail_categories import track_type, corridor_for
     from .rail_semantics import semantic_record, aggregate_semantics
 except ImportError:
+    from artifact_manifest import manifest
     from geometry import distance_m
     from rail_categories import track_type, corridor_for
     from rail_semantics import semantic_record, aggregate_semantics
@@ -244,9 +246,13 @@ def geographic_catalog(directory, force=False):
     cache = directory / "rail_catalog.topology.json"
     if force:
         cache.unlink(missing_ok=True)
+    source_file = directory / 'rail.sqlite'
+    inputs = {'source': [source_file.stat().st_size, source_file.stat().st_mtime_ns] if source_file.exists() else None}
     if cache.exists():
         value = json.loads(cache.read_text(encoding="utf-8"))
-        if value.get("version") == VERSION:
+        record = value.get('manifest')
+        valid = record is None or record.get('complete') and record.get('inputs') == inputs and record.get('algorithm_version') == VERSION
+        if value.get("version") == VERSION and valid:
             catalog = value["catalog"]
             try:
                 from .rail_store import upgrade_render_features
@@ -374,7 +380,7 @@ def geographic_catalog(directory, force=False):
     catalog = _compact_catalog(catalog)
     temporary = cache.with_name(cache.name + "." + uuid4().hex + ".tmp")
     temporary.write_text(
-        json.dumps({"version": VERSION, "catalog": catalog}, ensure_ascii=False),
+        json.dumps({"version": VERSION, "manifest": manifest('geographic-catalog', VERSION, inputs), "catalog": catalog}, ensure_ascii=False),
         encoding="utf-8",
     )
     temporary.replace(cache)

@@ -3,8 +3,7 @@ NAME_FIELDS = {'display_name', 'line_name', 'assembly_name'}
 PLACEMENT_FIELDS = {'folder_path', 'directory_view', 'archived', 'line_kind',
                     'station_id', 'station_source', 'station_assignment', 'station_type'}
 ROUTING_FIELDS = {'connected_lines', 'connected_line_ids', 'rail_semantics',
-                  'track_type', 'line_kind', 'station_id', 'station_source',
-                  'station_assignment', 'assembly_id', 'members', 'active', 'geometry'}
+                  'track_type', 'line_kind', 'assembly_id', 'members', 'active', 'geometry'}
 STYLE_FIELDS = {'rail_semantics', 'track_type', 'color', 'width', 'line_kind'}
 
 

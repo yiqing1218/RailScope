@@ -366,12 +366,16 @@ class RailCatalog(QWidget):
     segment_edit_requested = Signal(dict)
     line_names_changed = Signal(dict)
     metadata_changed = Signal()
-    presentation_changed = Signal()
+    presentation_changed = Signal(dict)
     station_presentation_changed = Signal()
-    directory_changed = Signal()
+    directory_changed = Signal(dict)
     switch_names_changed = Signal()
     feature_activated = Signal(dict)
     entities_changed = Signal(dict)
+    semantic_changed = Signal(dict)
+    station_assignment_changed = Signal(dict)
+    topology_changed = Signal(dict)
+    operation_changed = Signal(dict)
 
     def __init__(self, directory, settings, map_view, parent=None, regions=None, shared_path=None):
         super().__init__(parent)
@@ -675,7 +679,7 @@ class RailCatalog(QWidget):
             self._update_paged_directory(representatives)
             flattened = {key: field_delta(previous.get(key, {}).get('attributes', {}), value.get(key, {}).get('attributes', {})) for key in changed}
             if all(set(delta) <= {'folder_path'} for delta in flattened.values()):
-                self.directory_changed.emit()
+                self.directory_changed.emit(self.workspace.last_change or {})
             else:
                 self.entities_changed.emit(flattened)
             return
@@ -715,7 +719,7 @@ class RailCatalog(QWidget):
              if previous.get(key,{}).get('attributes',{}).get(field) != value.get(key,{}).get('attributes',{}).get(field)} <= {'folder_path'}
             for key in marker_keys)
         placement_only = bool(line_keys) and not station_ids and folder_only and marker_folder_only
-        (self.directory_changed if placement_only else self.metadata_changed).emit()
+        self.directory_changed.emit(self.workspace.last_change or {}) if placement_only else self._emit_structural_change()
         if line_keys and not (folder_only and self._move_line_items_in_tree(line_keys)):
             self.populate()
         if station_ids:
@@ -723,6 +727,17 @@ class RailCatalog(QWidget):
         if not placement_only:
             self.send_visibility(False)
             self.send_station_visibility()
+
+    def _emit_structural_change(self):
+        change = self.workspace.last_change or {'ids': set(), 'types': {'topology'}, 'revisions': dict(self.workspace.revisions)}
+        kinds = change['types']
+        if 'topology' in kinds or 'geometry' in kinds or 'source' in kinds:
+            self.topology_changed.emit(change)
+        elif 'semantic' in kinds:
+            self.semantic_changed.emit(change)
+        elif 'operation' in kinds:
+            self.operation_changed.emit(change)
+        self.metadata_changed.emit()  # Legacy observers; no heavyweight app subscribers.
 
     def undo_catalog(self):
         result = self.workspace.undo()
@@ -852,7 +867,7 @@ class RailCatalog(QWidget):
     def _directory_token(self):
         revisions = self.workspace.revisions
         shared = self.shared_path.stat().st_mtime_ns if self.shared_path.exists() else None
-        return json.dumps([10, self.workspace.identity, shared,
+        return json.dumps([10, self.workspace.identity, shared, self.mode.currentIndex(),
                            *[revisions[name] for name in ('directory', 'semantic', 'assignment', 'topology')]])
 
     def _station_token(self):
@@ -861,9 +876,15 @@ class RailCatalog(QWidget):
         return json.dumps([12, self._directory_token(), sources])
 
     def _mark_station_fresh(self):
+        try:
+            from .artifact_manifest import manifest, install_manifest
+        except ImportError:
+            from artifact_manifest import manifest, install_manifest
         with closing(sqlite3.connect(self.catalog.path)) as db, db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
                 db.execute("INSERT OR REPLACE INTO metadata VALUES('station_cache_revision',?)", (self._station_token(),))
+                install_manifest(db, manifest('station-projection', 12, {'revision': self._station_token()},
+                    {kind: self.workspace.revisions[kind] for kind in ('directory','semantic','assignment','topology')}), 'station_manifest')
 
     def _populate_paged_directory(self):
         """Build only disk memberships; the visible views fetch individual pages."""
@@ -2347,7 +2368,7 @@ class RailCatalog(QWidget):
                                            "verification_status": "user_named"}})
         record["name"] = value.strip()
         item.setText(0, "站台线 " + value.strip())
-        self.metadata_changed.emit()
+        self._emit_structural_change()
 
     def rename_switch(self, node_id):
         name, accepted = QInputDialog.getText(self, "重命名道岔", "显示名称", text=self.switch_name(node_id))
@@ -2744,7 +2765,7 @@ class RailCatalog(QWidget):
                 "verification_status": "user_verified",
             }
         })
-        self.metadata_changed.emit()
+        self._emit_structural_change()
         self.populate_station_tree()
         self.select_station_record(ident)
         return ident
@@ -2954,7 +2975,7 @@ class RailCatalog(QWidget):
                 self.station_model.refresh_labels({'station:' + sid for sid in visible_ids})
         folder_only = all(set(delta) <= {'folder_path'} for delta in deltas.values())
         if folder_only:
-            self.directory_changed.emit()
+            self.directory_changed.emit(self.workspace.last_change or {})
         else:
             self.entities_changed.emit(deltas)
         if not folder_only and any(sid.startswith('signalbox/') for sid in visible_ids):
@@ -2964,7 +2985,7 @@ class RailCatalog(QWidget):
         if any('connected_lines' in delta for delta in deltas.values()):
             # A changed connection can alter canonical routing/active plans.
             # Keep the existing dependency revalidation for this structural edit.
-            self.metadata_changed.emit()
+            self._emit_structural_change()
 
     def save_station_changes(self, station_ids, **changes):
         station_ids = set(station_ids)
@@ -3058,7 +3079,7 @@ class RailCatalog(QWidget):
         if effective and not object_changes and all(set(change) <= {'folder_path', 'assembly_name'} for change in effective.values()):
             self._save_local_overrides(effective)
             self._move_line_items_in_tree(set(effective))
-            self.directory_changed.emit()
+            self.directory_changed.emit(self.workspace.last_change or {})
             return
 
         reclassifying = any({"rail_semantics", "directory_view", "station_id", "station_source"} & set(change)
@@ -3071,7 +3092,7 @@ class RailCatalog(QWidget):
                 self.populate()
             else:
                 self._update_segment_labels(object_changes)
-            self.metadata_changed.emit()
+            self._emit_structural_change()
             return
         name_only = all(set(change) <= {"display_name"} for change in effective.values())
         presentation_only = name_only and all(
@@ -3088,7 +3109,7 @@ class RailCatalog(QWidget):
                 if hasattr(self, "station_model"):
                     self.station_model.reset_from_disk()
                     self.station_model.fetchMore()
-            self.presentation_changed.emit()
+            self.presentation_changed.emit(self.workspace.last_change or {})
             return
         self.visible = {
             key for key in self.visible if not self.meta(key).get("archived", False)
@@ -3131,7 +3152,7 @@ class RailCatalog(QWidget):
                 self.tree.scrollToItem(item)
         # Names, notes and renderer fields returned through the incremental
         # branches above. Structural changes retain canonical path revalidation.
-        self.metadata_changed.emit()
+        self._emit_structural_change()
 
     def _refresh_assignment_changes(self, deltas):
         try:
@@ -3150,7 +3171,7 @@ class RailCatalog(QWidget):
             self.station_model.reconcile_membership(selection)
             self.station_model.refresh_affected(affected)
         self._mark_station_fresh()
-        self.directory_changed.emit()
+        self.station_assignment_changed.emit(self.workspace.last_change or {})
 
     def _refresh_line_labels(self, keys):
         if not keys:
@@ -3295,7 +3316,7 @@ class RailCatalog(QWidget):
             "verification_status": "membership_edited_topology_checked_on_use",
         }
         self._save_local_overrides(changes)
-        self.metadata_changed.emit()
+        self._emit_structural_change()
         self.pinned_line_key = sorted(keys)[0]
         self.populate()
         self.note.setText(f"已将 {len(keys)} 个目录段组合为「{name}」；通道按此归属查询，应用时校验连续性及唯一径路。")
@@ -3337,7 +3358,7 @@ class RailCatalog(QWidget):
                 "folder_path": list(custom.get("assembly_previous_folder_path") or self.parents(key)),
             }
         self._save_local_overrides(changes)
-        self.metadata_changed.emit()
+        self._emit_structural_change()
         self.populate()
         self.note.setText(f"已拆分为 {len(keys)} 个独立目录段；新通道按拆分后的归属查询，既有通道保留原始成员及路径。")
         return len(assembly_ids) or 1
@@ -4227,7 +4248,7 @@ class RailCatalog(QWidget):
         }
         try:
             self._save_local_overrides(changes)
-            self.metadata_changed.emit()
+            self._emit_structural_change()
             self.populate()
             changed_names = {
                 self.catalog[name].get("line_id"): changes[name]["display_name"]

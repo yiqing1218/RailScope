@@ -133,7 +133,7 @@ def synthetic(ui, app, probe, base):
         close_widget(widget)
         app.processEvents()
     assemblies = []
-    for member_count in (1, 100, 1000):
+    for member_count in (1, 100, 1000, 10000):
         # Isolate existing expansion/write cost; total overlay size stays 10,000.
         overrides = {f'RL-{i}': {'technical_attributes': {'remarks': 'audit'}} for i in range(10000)}
         for i in range(member_count):
@@ -141,7 +141,8 @@ def synthetic(ui, app, probe, base):
         overrides['line-assembly:RLU-audit'] = {
             'name': 'Audit assembly', 'active': True, 'members': [f'IL-{i}' for i in range(member_count)]}
         workspace = CatalogWorkspace(base / f'assembly-{member_count}.json')
-        workspace.values.update(overrides)
+        workspace.path.write_text(json.dumps(overrides), encoding='utf-8')
+        workspace.load()
         samples = []
         for repeat in range(3):
             start = perf_counter()
@@ -184,6 +185,10 @@ def national(ui, app, probe, base):
     if edit_database(seed).exists():
         with closing(sqlite3.connect(edit_database(seed).resolve().as_uri() + '?mode=ro', uri=True)) as src, \
                 closing(sqlite3.connect(edit_database(settings))) as dst:
+            src.backup(dst)
+    legacy = (ROOT / 'data/user_settings/rail_catalog.json').with_suffix('.edits.sqlite')
+    if legacy.exists() and not edit_database(settings).exists():
+        with closing(sqlite3.connect(legacy.resolve().as_uri() + '?mode=ro', uri=True)) as src, closing(sqlite3.connect(settings.with_suffix('.edits.sqlite'))) as dst:
             src.backup(dst)
     for name in ('rail_line_directory.json', 'rail_station_directory.json'):
         seed = ROOT / 'data/catalog' / name
@@ -229,10 +234,13 @@ def national(ui, app, probe, base):
         host = SimpleNamespace(rail_catalog_widget=widget, rail_operations=operations, map=widget.map,
             config={}, metro_line_overrides=SimpleNamespace(values={}), metro_station_overrides=SimpleNamespace(values={}),
             selected_data={})
-        widget.metadata_changed.connect(operations.invalidate_line_library)
-        widget.metadata_changed.connect(lambda: launcher.Desk.refresh_signal_boxes(host))
-        widget.metadata_changed.connect(lambda: launcher.Desk.refresh_map_names(host))
-        widget.directory_changed.connect(lambda: launcher.Desk.refresh_directory_overrides(host))
+        host.refresh_directory_overrides = lambda change=None: launcher.Desk.refresh_directory_overrides(host, change)
+        host.refresh_signal_boxes = lambda: launcher.Desk.refresh_signal_boxes(host)
+        host.refresh_entity_changes = lambda changes: launcher.Desk.refresh_entity_changes(host, changes)
+        widget.topology_changed.connect(lambda change: launcher.Desk.refresh_topology_changes(host, change))
+        widget.semantic_changed.connect(lambda change: launcher.Desk.refresh_semantic_changes(host, change))
+        widget.station_assignment_changed.connect(host.refresh_directory_overrides)
+        widget.directory_changed.connect(host.refresh_directory_overrides)
         widget.entities_changed.connect(lambda delta: launcher.Desk.refresh_entity_changes(host, delta))
         widget.station_presentation_changed.connect(lambda: launcher.Desk.refresh_signal_boxes(host))
         operations.line_library()
@@ -267,10 +275,24 @@ def national(ui, app, probe, base):
         for name, callback in actions:
             cases[name] = probe.operation('national/' + name, widget, callback)
             app.processEvents()
+        repeated = defaultdict(list)
+        for repeat in range(5):
+            prefix = ['Audit', 'repeat-' + str(repeat)]
+            samples = [
+                ('one_line', lambda: widget.move_items({lines[0]}, prefix + ['line'])),
+                ('one_station', lambda: widget.save_station_changes({stations[0]}, folder_path=prefix + ['station'])),
+                ('hundred_lines', lambda: widget.move_items(set(lines), prefix + ['100 lines'])),
+                ('hundred_stations', lambda: widget.save_station_changes(set(stations), folder_path=prefix + ['100 stations'])),
+                ('one_facility_folder', lambda: widget.move_items({facility[0]}, prefix + ['facility'])),
+                ('one_track_assignment', lambda: widget._assign_station_assets(set(), {track[0]}, stations[(repeat+1) % 2])),
+            ]
+            for name, callback in samples:
+                repeated[name].append(probe.operation(f'national/repeat-{repeat}/{name}', widget, callback))
+                app.processEvents()
         result = {'file_bytes': {name: value[0] for name, value in stamps.items() if name.endswith('.sqlite')},
                   'initialization_ms': round(init_ms, 3), 'row_counts_before_moves': counts,
                   'override_count_before_moves': override_count,
-                  'operations': cases}
+                  'operations': cases, 'repeated_operations': dict(repeated)}
         close_widget(widget)
         app.processEvents()
     after = {name: (source / name).stat() for name in stamps}

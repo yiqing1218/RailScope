@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .catalog_workspace import read_overrides, override_stamp
+    from .catalog_workspace import read_overrides, override_stamp, routing_revision
     from .persistence import write_json_atomic
     from .operating_ui import OperationsEditor
     from .operating import Plan, read_plan
@@ -41,7 +41,7 @@ try:
     from .rail_station_directory import refresh_plan_names
     from .route_intent import promote_route, reresolve_route
 except ImportError:
-    from catalog_workspace import read_overrides, override_stamp
+    from catalog_workspace import read_overrides, override_stamp, routing_revision
     from persistence import write_json_atomic
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
@@ -914,7 +914,7 @@ class RailEditor(OperationsEditor):
             str(database),
             stamp,
             names_path.stat().st_mtime_ns if names_path.exists() else None,
-            override_stamp(metadata_path),
+            routing_revision(metadata_path),
             shared_metadata_path.stat().st_mtime_ns if shared_metadata_path.exists() else None,
         )
         if getattr(self, "_line_library_signature", None) == signature:
@@ -956,7 +956,7 @@ class RailEditor(OperationsEditor):
         if signature is None:
             return
         metadata = self.catalog_metadata_path
-        stamp = override_stamp(metadata)
+        stamp = routing_revision(metadata)
         self._line_library_signature = (*signature[:3], stamp, *signature[4:])
 
     def invalidate_line_library(self):

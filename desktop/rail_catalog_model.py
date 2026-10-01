@@ -13,10 +13,12 @@ from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QTreeView
 
 try:
+    from .artifact_manifest import manifest, install_manifest
     from .lazy_directory import SqliteDirectoryModel
     from .rail_semantics import semantic_record
     from .components import directory_checkbox_style
 except ImportError:
+    from artifact_manifest import manifest, install_manifest
     from lazy_directory import SqliteDirectoryModel
     from rail_semantics import semantic_record
     from components import directory_checkbox_style
@@ -151,6 +153,7 @@ def _insert_rows_for_key(db, key, rows, seen_folders=None):
              row["archived"], row["view"], row["search"].casefold()))
         db.execute("INSERT OR REPLACE INTO rail_directory_members VALUES(?,?)",
                    (row["node_id"], key))
+        db.execute('UPDATE rail_directory_nodes SET total=total+1 WHERE id=?', (row['node_id'],))
         object_ids.add(row["node_id"])
     return object_ids, folder_ids
 
@@ -160,6 +163,19 @@ def _search_for(record, key, label):
                      ("name", "line_name", "station_name", "line_id",
                       "railway_class", "line_role", "track_role"))
             + " " + key + " " + label).casefold()
+
+
+def _ensure_member_search(db, resolve):
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_directory_member_search'").fetchone():
+        return
+    db.execute('CREATE TABLE rail_directory_member_search(catalog_id TEXT NOT NULL,node_id TEXT NOT NULL,searchable TEXT NOT NULL,PRIMARY KEY(catalog_id,node_id))')
+    db.execute('CREATE INDEX rail_member_search_node ON rail_directory_member_search(node_id)')
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_directory_members'").fetchone():
+        return
+    # One-time cache adapter upgrade; subsequent commands replace touched rows.
+    for key, node, raw in db.execute('SELECT m.catalog_id,m.node_id,c.data FROM rail_directory_members m JOIN catalog c ON c.id=m.catalog_id'):
+        record, _, label = resolve(key, json.loads(raw))
+        db.execute('INSERT INTO rail_directory_member_search VALUES(?,?,?)', (key,node,_search_for(record,key,label)))
 
 
 def _update_directory_rows(db, catalog, changed_keys, resolve):
@@ -188,10 +204,11 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
                 affected_folders.add(folder_id)
                 folder_deltas[folder_id] = folder_deltas.get(folder_id, 0) - 1
             affected_object_ids.add(node_id)
+            db.execute('UPDATE rail_directory_nodes SET total=max(0,total-1) WHERE id=?', (node_id,))
         db.execute("DELETE FROM rail_directory_members WHERE catalog_id=?", (key,))
+        db.execute('DELETE FROM rail_directory_member_search WHERE catalog_id=?', (key,))
     for node_id in affected_object_ids:
-        remaining = db.execute(
-            "SELECT count(*) FROM rail_directory_members WHERE node_id=?", (node_id,)).fetchone()[0]
+        remaining = db.execute('SELECT total FROM rail_directory_nodes WHERE id=?', (node_id,)).fetchone()[0]
         if remaining == 0:
             db.execute("DELETE FROM rail_directory_nodes WHERE id=?", (node_id,))
 
@@ -206,6 +223,8 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
         record, line_path, label = resolve(key, record_dict)
         rows = _facility_views(key, record, line_path, label)
         object_ids, folder_ids = _insert_rows_for_key(db, key, rows)
+        for row in rows:
+            db.execute('INSERT INTO rail_directory_member_search VALUES(?,?,?)', (key,row['node_id'],row['search'].casefold()))
         inserted_object_ids.update(object_ids)
         affected_folders.update(folder_ids)
         for row in rows:
@@ -215,23 +234,6 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
             if row["view"] == "facilities":
                 inserted_facilities.add(key)
             affected_folders.add('folder:' + json.dumps([row['view']], ensure_ascii=False))
-
-    # 3) Recompute totals and searchable text for affected object nodes.
-    for node_id in affected_object_ids | inserted_object_ids:
-        members = db.execute(
-            "SELECT catalog_id FROM rail_directory_members WHERE node_id=?", (node_id,)).fetchall()
-        if not members:
-            continue
-        search_parts = []
-        for (member_id,) in members:
-            member_raw = db.execute("SELECT data FROM catalog WHERE id=?", (member_id,)).fetchone()
-            if member_raw is None:
-                continue
-            member_record = json.loads(member_raw[0])
-            member_resolved, _, member_label = resolve(member_id, member_record)
-            search_parts.append(_search_for(member_resolved, member_id, member_label))
-        db.execute("UPDATE rail_directory_nodes SET total=?, searchable=? WHERE id=?",
-                   (len(members), " ".join(search_parts), node_id))
 
     # 4) Recompute folder totals and prune empty folders.
     for folder_id in affected_folders:
@@ -336,6 +338,7 @@ def update_catalog_directory(catalog, keys, overrides, resolve, mode=0, aliases=
                            (revision or 'incremental',))
                 if revision:
                     db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_cache_revision',?)", (revision,))
+                install_manifest(db, manifest('directory-projection', PRESENTATION_VERSION, {'revision': revision}, schema=2), 'directory_manifest')
             db.commit()
             return delta
         except Exception:
@@ -348,8 +351,11 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None, re
     # Names and overview text do not change directory membership. They are
     # updated in place so editing one track does not rebuild the national tree.
     with closing(sqlite3.connect(catalog.path)) as db:
+        _ensure_member_search(db, resolve)
+        db.commit()
         cached = db.execute("SELECT value FROM metadata WHERE key='directory_cache_revision'").fetchone()
         if revision and cached and cached[0] == revision:
+            db.commit()
             return False
         signature = _directory_signature(overrides, mode)
         old = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
@@ -365,6 +371,7 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None, re
         db.execute("CREATE TABLE IF NOT EXISTS rail_directory_members (node_id TEXT NOT NULL,catalog_id TEXT NOT NULL,PRIMARY KEY(node_id,catalog_id))")
         db.execute("CREATE INDEX IF NOT EXISTS rail_directory_catalog ON rail_directory_members(catalog_id,node_id)")
         db.execute("DELETE FROM rail_directory_members")
+        db.execute('DELETE FROM rail_directory_member_search')
         db.execute("DELETE FROM rail_directory_nodes")
         totals = {}
         searches = {}
@@ -409,6 +416,7 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None, re
                 db.execute("INSERT OR IGNORE INTO rail_directory_nodes(id,parent_id,label,kind,object_id,path,archived,view,searchable) VALUES(?,?,?,'object',?,?,?,?,?)",
                            (node_id, parent, label, key, json.dumps(full_path, ensure_ascii=False), int(bool(record.get("archived"))), view, search.casefold()))
                 db.execute("INSERT INTO rail_directory_members VALUES(?,?)", (node_id,key))
+                db.execute('INSERT INTO rail_directory_member_search VALUES(?,?,?)', (key,node_id,search.casefold()))
                 totals[node_id] = totals.get(node_id, 0) + 1
                 searches[node_id] = searches.get(node_id, "") + " " + search.casefold()
                 for depth in range(2,len(full_path)+1):
@@ -422,6 +430,7 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None, re
         db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)", (signature,))
         if revision:
             db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_cache_revision',?)", (revision,))
+        install_manifest(db, manifest('directory-projection', PRESENTATION_VERSION, {'revision': revision}, schema=2), 'directory_manifest')
         db.commit()
         return True
 
@@ -446,6 +455,7 @@ def update_directory_labels(catalog, keys, resolve):
             search = " ".join(str(record.get(field) or "") for field in
                               ("name", "line_name", "station_name", "line_id",
                                "railway_class", "line_role", "track_role"))
+            db.execute('UPDATE rail_directory_member_search SET searchable=? WHERE catalog_id=?', (_search_for(record,key,label), key))
             updates.extend((label, (search + " " + key + " " + label).casefold(), node_id)
                            for (node_id,) in rows)
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
@@ -467,6 +477,8 @@ class RailDirectoryModel(SqliteDirectoryModel):
         self.root.key = "folder:" + json.dumps([view], ensure_ascii=False)
         self.all_visible = False
         self.reveal_target = None
+        with self._connect() as db:
+            self._has_member_search = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_directory_member_search'").fetchone())
 
     def hasChildren(self, parent=QModelIndex()):
         return (self._node(parent).child_count > 0 if parent.isValid()
@@ -478,6 +490,8 @@ class RailDirectoryModel(SqliteDirectoryModel):
                     "AND (d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)))))")
         if not self.search:
             return ""
+        if self._has_member_search:
+            return (" AND (label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM rail_directory_member_search s WHERE s.node_id=rail_directory_nodes.id AND s.searchable LIKE ? ESCAPE '\\') OR (kind='folder' AND EXISTS(SELECT 1 FROM rail_directory_nodes d WHERE d.kind='object' AND (d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)) AND (d.label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM rail_directory_member_search s WHERE s.node_id=d.id AND s.searchable LIKE ? ESCAPE '\\')))))")
         return (" AND ((label||' '||searchable) LIKE ? ESCAPE '\\' OR (kind='folder' AND EXISTS(SELECT 1 FROM rail_directory_nodes d "
                 "WHERE d.kind='object' AND (d.id=rail_directory_nodes.id OR "
                 "d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)) "
@@ -487,7 +501,7 @@ class RailDirectoryModel(SqliteDirectoryModel):
         if self.reveal_target:
             return (self.reveal_target, self.reveal_target)
         value = self.search.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return (f"%{value}%", f"%{value}%") if self.search else ()
+        return (f"%{value}%",) * (4 if self._has_member_search else 2) if self.search else ()
 
     def ids_below(self, key):
         with self._connect() as db:

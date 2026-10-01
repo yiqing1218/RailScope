@@ -117,3 +117,22 @@ def test_explicit_assignment_and_history_update_only_related_stations(qtbot, tmp
     with sqlite3.connect(widget.catalog.path) as db:
         assert '待核对' in db.execute("SELECT parent_id FROM rail_station_nodes WHERE id='facility:ST-yard'").fetchone()[0]
     assert widget.map.calls == []
+
+
+def test_moving_one_same_name_member_does_not_resolve_all_siblings(qtbot, tmp_path, monkeypatch):
+    widget = widget_with_stations(qtbot, tmp_path, monkeypatch)
+    with sqlite3.connect(widget.catalog.path) as db:
+        db.execute("UPDATE catalog SET data=json_set(data,'$.name','Shared source label') WHERE id LIKE 'RL-%'")
+        db.execute("DELETE FROM metadata WHERE key IN ('paged_directory_signature','directory_cache_revision')")
+    widget._populate_paged_directory()
+    forbid_full_work(monkeypatch, widget)
+    resolved = []
+    original = widget._resolve_directory_record
+    def local(key, record):
+        resolved.append(key)
+        return original(key, record)
+    monkeypatch.setattr(widget, '_resolve_directory_record', local)
+    widget.move_items({'RL-0'}, ['Custom', 'Single member'])
+    assert set(resolved) == {'RL-0'}
+    with sqlite3.connect(widget.catalog.path) as db:
+        assert db.execute("SELECT d.total FROM rail_directory_nodes d JOIN rail_directory_members m ON m.node_id=d.id WHERE m.catalog_id='RL-1'").fetchone()[0] == 699

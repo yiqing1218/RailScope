@@ -11,8 +11,10 @@ import sqlite3
 from uuid import uuid4
 
 try:
+    from .artifact_manifest import manifest, install_manifest, read_manifest
     from .provinces import VERSION
 except ImportError:
+    from artifact_manifest import manifest, install_manifest, read_manifest
     from provinces import VERSION
 
 
@@ -33,7 +35,7 @@ def _install_in_place(target, replacement):
                 db.execute("INSERT INTO catalog SELECT * FROM replacement.catalog")
                 db.execute("INSERT OR REPLACE INTO metadata SELECT * FROM replacement.metadata")
                 # Presentation rows derived from the old catalog must be rebuilt.
-                db.execute("DELETE FROM metadata WHERE key='paged_directory_signature'")
+                db.execute("DELETE FROM metadata WHERE key IN ('paged_directory_signature','directory_cache_revision','station_cache_revision','station_catalog_signature')")
                 db.execute("DELETE FROM metadata WHERE key='way_lookup_schema'")
         finally:
             db.execute("DETACH DATABASE replacement")
@@ -160,6 +162,7 @@ def build_index(directory, catalog=None):
             db.executemany("INSERT INTO metadata VALUES(?,?)", [
                 ("schema", str(SCHEMA)), ("source", stamp),
             ])
+            install_manifest(db, manifest('source-catalog', VERSION, {'source': stamp}, schema=SCHEMA))
             db.commit()
         try:
             temporary.replace(target)
