@@ -10,6 +10,14 @@ def normalize_name(value):
     return re.sub(r"[\s·・_\-（）()]", "", value)
 
 
+def rail_name_key(value):
+    """Conventional station suffixes are optional; geographic directions aren't."""
+    value = ''.join(unicodedata.normalize('NFKC', str(value)).split()).casefold()
+    value = re.sub(r'(?:火车|高铁|铁路)(?=[东西南北中]*站?$)', '', value)
+    value = re.sub(r'(?:railway|railroad|train)?station$', '', value)
+    return value.removesuffix('站')
+
+
 def station_names(props):
     values = set()
     for tags in (props, props.get("station_tags", {}), props.get("station_area_tags", {}), props.get("way_tags", {})):

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import replace
 from typing import Protocol
 from ...domain import DispatchEvent, DispatchScenario
 from ...repository import RailRepository
@@ -73,11 +74,17 @@ def add_event(repo: RailRepository, event: DispatchEvent) -> DispatchEvent:
 
 
 def recalculate(repo: RailRepository, scenario_id: str) -> dict[str, int]:
-    occupancy = calculate_occupancies(repo, scenario_id)
-    conflicts = detect_conflicts(repo, scenario_id)
+    # The immutable infrastructure is shared; only derived lists are replaced.
+    candidate = replace(repo)
+    occupancy = calculate_occupancies(candidate, scenario_id)
+    conflicts = detect_conflicts(candidate, scenario_id)
+    repo.occupancies, repo.conflicts = candidate.occupancies, candidate.conflicts
     return {"occupancies": len(occupancy), "conflicts": len(conflicts)}
 
 
 def reset(repo: RailRepository, scenario_id: str) -> dict[str, int]:
-    repo.reset_scenario(scenario_id)
-    return recalculate(repo, scenario_id)
+    candidate = replace(repo)
+    candidate.reset_scenario(scenario_id)
+    result = recalculate(candidate, scenario_id)
+    repo.events, repo.occupancies, repo.conflicts = candidate.events, candidate.occupancies, candidate.conflicts
+    return result

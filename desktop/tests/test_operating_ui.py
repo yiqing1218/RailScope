@@ -151,6 +151,7 @@ def test_native_table_and_diagram_drag_edit_same_plan(tmp_path):
 
 def test_vehicle_source_updates_are_throttled_and_per_train_style_is_embedded(tmp_path):
     app = QApplication.instance() or QApplication([])
+    assert app is not None
     line = {
         "id": "sh-1", "ref": "1", "relation_id": 199200, "name": "1号线",
         "color": "#c82732", "variants": [],

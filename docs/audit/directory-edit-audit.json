@@ -1,0 +1,1509 @@
+{
+  "source_ref": "3f300b43bb6e9b57b8519792fc6cebb83f2fd5f8",
+  "boundary": "Current production Qt slots/SQLite, instrumented wall time; MapStub excludes browser paint. No active TrainRun; push_corridors is recorded, not executed. Synthetic notes are injected before timing.",
+  "synthetic": {
+    "directory_scaling": [
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 0,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 36.246,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                22.716
+              ],
+              "_save_local_overrides": [
+                22.761
+              ],
+              "_directory_signature": [
+                0.235
+              ],
+              "update_catalog_directory": [
+                9.307
+              ],
+              "directory_model_reset": [
+                0.026,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                0.559
+              ],
+              "_update_paged_directory": [
+                12.492
+              ],
+              "save_overrides": [
+                36.196
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 163.559,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                13.905
+              ],
+              "_save_local_overrides": [
+                14.478
+              ],
+              "_directory_signature": [
+                0.373
+              ],
+              "update_catalog_directory": [
+                60.069
+              ],
+              "directory_model_reset": [
+                0.025,
+                0.007
+              ],
+              "_sync_paged_visibility": [
+                0.555
+              ],
+              "_update_paged_directory": [
+                62.373
+              ],
+              "save_overrides": [
+                162.417
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 102.115,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                13.441
+              ],
+              "_directory_signature": [
+                0.23
+              ],
+              "update_catalog_directory": [
+                85.699
+              ],
+              "directory_model_reset": [
+                0.026,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                0.526
+              ],
+              "_update_paged_directory": [
+                87.943
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 77.662,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                13.939
+              ],
+              "_directory_signature": [
+                0.334
+              ],
+              "update_catalog_directory": [
+                60.699
+              ],
+              "directory_model_reset": [
+                0.026,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                0.512
+              ],
+              "_update_paged_directory": [
+                62.961
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 7000,
+        "unrelated_override_count": 0,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 46.012,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                22.835
+              ],
+              "_save_local_overrides": [
+                22.884
+              ],
+              "_directory_signature": [
+                0.238
+              ],
+              "update_catalog_directory": [
+                10.967
+              ],
+              "directory_model_reset": [
+                0.031,
+                0.009
+              ],
+              "_sync_paged_visibility": [
+                4.989
+              ],
+              "_update_paged_directory": [
+                21.325
+              ],
+              "save_overrides": [
+                45.945
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 272.231,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                13.804
+              ],
+              "_save_local_overrides": [
+                14.562
+              ],
+              "_directory_signature": [
+                0.766
+              ],
+              "update_catalog_directory": [
+                130.221
+              ],
+              "directory_model_reset": [
+                0.03,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                1.554
+              ],
+              "_update_paged_directory": [
+                135.844
+              ],
+              "save_overrides": [
+                270.765
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 143.035,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                14.222
+              ],
+              "_directory_signature": [
+                0.234
+              ],
+              "update_catalog_directory": [
+                122.646
+              ],
+              "directory_model_reset": [
+                0.028,
+                0.012
+              ],
+              "_sync_paged_visibility": [
+                1.643
+              ],
+              "_update_paged_directory": [
+                127.924
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 132.823,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                13.961
+              ],
+              "_directory_signature": [
+                0.369
+              ],
+              "update_catalog_directory": [
+                112.906
+              ],
+              "directory_model_reset": [
+                0.029,
+                0.017
+              ],
+              "_sync_paged_visibility": [
+                1.72
+              ],
+              "_update_paged_directory": [
+                118.202
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 1000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 41.43,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                23.62
+              ],
+              "_save_local_overrides": [
+                23.663
+              ],
+              "_directory_signature": [
+                0.468
+              ],
+              "update_catalog_directory": [
+                10.269
+              ],
+              "directory_model_reset": [
+                0.036,
+                0.029
+              ],
+              "_sync_paged_visibility": [
+                1.656
+              ],
+              "_update_paged_directory": [
+                16.662
+              ],
+              "save_overrides": [
+                41.357
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 229.376,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                15.204
+              ],
+              "_save_local_overrides": [
+                15.914
+              ],
+              "_directory_signature": [
+                0.415
+              ],
+              "update_catalog_directory": [
+                99.987
+              ],
+              "directory_model_reset": [
+                0.03,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                0.566
+              ],
+              "_update_paged_directory": [
+                102.411
+              ],
+              "save_overrides": [
+                225.314
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 137.784,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                15.742
+              ],
+              "_directory_signature": [
+                0.555
+              ],
+              "update_catalog_directory": [
+                118.113
+              ],
+              "directory_model_reset": [
+                0.029,
+                0.009
+              ],
+              "_sync_paged_visibility": [
+                0.693
+              ],
+              "_update_paged_directory": [
+                121.052
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 93.377,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                14.961
+              ],
+              "_directory_signature": [
+                0.34
+              ],
+              "update_catalog_directory": [
+                74.041
+              ],
+              "directory_model_reset": [
+                0.033,
+                0.009
+              ],
+              "_sync_paged_visibility": [
+                0.537
+              ],
+              "_update_paged_directory": [
+                77.186
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 10000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 43.062,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                25.396
+              ],
+              "_save_local_overrides": [
+                25.515
+              ],
+              "_directory_signature": [
+                0.92
+              ],
+              "update_catalog_directory": [
+                9.105
+              ],
+              "directory_model_reset": [
+                0.049,
+                0.012
+              ],
+              "_sync_paged_visibility": [
+                0.53
+              ],
+              "_update_paged_directory": [
+                12.979
+              ],
+              "save_overrides": [
+                42.795
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 230.002,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                14.626
+              ],
+              "_save_local_overrides": [
+                16.047
+              ],
+              "_directory_signature": [
+                1.374
+              ],
+              "update_catalog_directory": [
+                82.76
+              ],
+              "directory_model_reset": [
+                0.032,
+                0.009
+              ],
+              "_sync_paged_visibility": [
+                0.548
+              ],
+              "_update_paged_directory": [
+                87.712
+              ],
+              "save_overrides": [
+                228.906
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 156.712,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                14.116
+              ],
+              "_directory_signature": [
+                0.25
+              ],
+              "update_catalog_directory": [
+                136.118
+              ],
+              "directory_model_reset": [
+                0.048,
+                0.019
+              ],
+              "_sync_paged_visibility": [
+                1.277
+              ],
+              "_update_paged_directory": [
+                141.328
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 144.797,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                16.722
+              ],
+              "_directory_signature": [
+                0.875
+              ],
+              "update_catalog_directory": [
+                122.063
+              ],
+              "directory_model_reset": [
+                0.028,
+                0.007
+              ],
+              "_sync_paged_visibility": [
+                0.495
+              ],
+              "_update_paged_directory": [
+                126.383
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 100000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 45.954,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                22.819
+              ],
+              "_save_local_overrides": [
+                22.876
+              ],
+              "_directory_signature": [
+                0.326
+              ],
+              "update_catalog_directory": [
+                10.135
+              ],
+              "directory_model_reset": [
+                0.029,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                1.06
+              ],
+              "_update_paged_directory": [
+                20.364
+              ],
+              "save_overrides": [
+                45.763
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 221.504,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                14.729
+              ],
+              "_save_local_overrides": [
+                15.594
+              ],
+              "_directory_signature": [
+                0.403
+              ],
+              "update_catalog_directory": [
+                80.143
+              ],
+              "directory_model_reset": [
+                0.044,
+                0.011
+              ],
+              "_sync_paged_visibility": [
+                0.531
+              ],
+              "_update_paged_directory": [
+                92.121
+              ],
+              "save_overrides": [
+                220.157
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 150.77,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                16.663
+              ],
+              "_directory_signature": [
+                0.629
+              ],
+              "update_catalog_directory": [
+                115.382
+              ],
+              "directory_model_reset": [
+                0.025,
+                0.008
+              ],
+              "_sync_paged_visibility": [
+                0.631
+              ],
+              "_update_paged_directory": [
+                132.796
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 109.154,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "_directory_signature": 1,
+              "directory_model_reset": 2,
+              "_sync_paged_visibility": 1
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                15.348
+              ],
+              "_directory_signature": [
+                0.991
+              ],
+              "update_catalog_directory": [
+                78.688
+              ],
+              "directory_model_reset": [
+                0.045,
+                0.009
+              ],
+              "_sync_paged_visibility": [
+                1.044
+              ],
+              "_update_paged_directory": [
+                92.637
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      }
+    ],
+    "assembly_expansion_and_persistence": [
+      {
+        "member_count": 1,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 2,
+            "expansion_ms": 0.485,
+            "sqlite_commit_ms": 23.78
+          },
+          {
+            "expanded_owners": 2,
+            "expansion_ms": 1.037,
+            "sqlite_commit_ms": 14.466
+          },
+          {
+            "expanded_owners": 2,
+            "expansion_ms": 0.405,
+            "sqlite_commit_ms": 13.814
+          }
+        ]
+      },
+      {
+        "member_count": 100,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 101,
+            "expansion_ms": 0.651,
+            "sqlite_commit_ms": 25.043
+          },
+          {
+            "expanded_owners": 101,
+            "expansion_ms": 1.643,
+            "sqlite_commit_ms": 16.052
+          },
+          {
+            "expanded_owners": 101,
+            "expansion_ms": 1.964,
+            "sqlite_commit_ms": 18.013
+          }
+        ]
+      },
+      {
+        "member_count": 1000,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 1001,
+            "expansion_ms": 3.465,
+            "sqlite_commit_ms": 34.911
+          },
+          {
+            "expanded_owners": 1001,
+            "expansion_ms": 9.539,
+            "sqlite_commit_ms": 34.392
+          },
+          {
+            "expanded_owners": 1001,
+            "expansion_ms": 8.293,
+            "sqlite_commit_ms": 40.125
+          }
+        ]
+      }
+    ]
+  },
+  "national": {
+    "file_bytes": {
+      "rail.sqlite": 3163963392,
+      "rail_catalog.sqlite": 485822464,
+      "rail_lines.sqlite": 2703171584
+    },
+    "initialization_ms": 4117.182,
+    "row_counts_before_moves": {
+      "catalog": 87451,
+      "rail_directory_nodes": 31475,
+      "rail_station_nodes": 134887,
+      "rail_facility_track_owners": 32803
+    },
+    "override_count_before_moves": 243436,
+    "operations": {
+      "one_line": {
+        "elapsed_ms": 687.593,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_update_paged_directory": 1,
+          "update_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 19,
+          "directory_model_reset": 2,
+          "station_catalog_signature": 1,
+          "_sync_paged_visibility": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            24.385
+          ],
+          "_save_local_overrides": [
+            24.456
+          ],
+          "_directory_signature": [
+            60.007
+          ],
+          "update_catalog_directory": [
+            70.281
+          ],
+          "directory_model_reset": [
+            0.05,
+            0.03
+          ],
+          "station_catalog_signature": [
+            444.134
+          ],
+          "_sync_paged_visibility": [
+            22.72
+          ],
+          "_update_paged_directory": [
+            652.652
+          ],
+          "retain_line_library_for_directory_move": [
+            0.239
+          ],
+          "save_overrides": [
+            687.413
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_line_undo": {
+        "elapsed_ms": 647.432,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "retain_line_library_for_directory_move": 1,
+          "_update_paged_directory": 1,
+          "update_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 26,
+          "directory_model_reset": 2,
+          "station_catalog_signature": 1,
+          "_sync_paged_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            13.284
+          ],
+          "retain_line_library_for_directory_move": [
+            0.26
+          ],
+          "_directory_signature": [
+            54.134
+          ],
+          "update_catalog_directory": [
+            65.859
+          ],
+          "directory_model_reset": [
+            0.044,
+            0.021
+          ],
+          "station_catalog_signature": [
+            417.972
+          ],
+          "_sync_paged_visibility": [
+            21.007
+          ],
+          "_update_paged_directory": [
+            599.013
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_line_redo": {
+        "elapsed_ms": 720.511,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "retain_line_library_for_directory_move": 1,
+          "_update_paged_directory": 1,
+          "update_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 19,
+          "directory_model_reset": 2,
+          "station_catalog_signature": 1,
+          "_sync_paged_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            17.008
+          ],
+          "retain_line_library_for_directory_move": [
+            0.165
+          ],
+          "_directory_signature": [
+            126.423
+          ],
+          "update_catalog_directory": [
+            136.851
+          ],
+          "directory_model_reset": [
+            0.062,
+            0.013
+          ],
+          "station_catalog_signature": [
+            428.337
+          ],
+          "_sync_paged_visibility": [
+            25.973
+          ],
+          "_update_paged_directory": [
+            675.077
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_station": {
+        "elapsed_ms": 543.1,
+        "calls": {
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "update_station_placement": 1,
+          "catalog_sql_changed_rows": 15,
+          "station_model_reset": 1,
+          "directory_model_reset": 1,
+          "station_catalog_signature": 1,
+          "retain_line_library_for_directory_move": 1,
+          "send_station_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            16.635
+          ],
+          "_save_local_overrides": [
+            16.701
+          ],
+          "update_station_placement": [
+            9.153
+          ],
+          "directory_model_reset": [
+            0.07
+          ],
+          "station_model_reset": [
+            0.076
+          ],
+          "station_catalog_signature": [
+            475.666
+          ],
+          "retain_line_library_for_directory_move": [
+            0.147
+          ],
+          "send_station_visibility": [
+            30.656
+          ],
+          "_refresh_station_changes": [
+            526.373
+          ]
+        },
+        "map_commands": {
+          "setRailAssetSelection": 1,
+          "setRailPointExclusions": 1,
+          "setRailPointSelection": 1,
+          "setRailControlPointSelection": 1
+        }
+      },
+      "one_station_undo": {
+        "elapsed_ms": 465.059,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "update_station_placement": 1,
+          "catalog_sql_changed_rows": 14,
+          "station_model_reset": 1,
+          "directory_model_reset": 1,
+          "station_catalog_signature": 1,
+          "retain_line_library_for_directory_move": 1,
+          "send_station_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            14.749
+          ],
+          "update_station_placement": [
+            8.459
+          ],
+          "directory_model_reset": [
+            0.036
+          ],
+          "station_model_reset": [
+            0.04
+          ],
+          "station_catalog_signature": [
+            403.166
+          ],
+          "retain_line_library_for_directory_move": [
+            0.084
+          ],
+          "send_station_visibility": [
+            29.26
+          ],
+          "_refresh_station_changes": [
+            450.249
+          ]
+        },
+        "map_commands": {
+          "setRailAssetSelection": 1,
+          "setRailPointExclusions": 1,
+          "setRailPointSelection": 1,
+          "setRailControlPointSelection": 1
+        }
+      },
+      "one_station_redo": {
+        "elapsed_ms": 525.985,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "update_station_placement": 1,
+          "catalog_sql_changed_rows": 15,
+          "station_model_reset": 1,
+          "directory_model_reset": 1,
+          "station_catalog_signature": 1,
+          "retain_line_library_for_directory_move": 1,
+          "send_station_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            16.417
+          ],
+          "update_station_placement": [
+            7.986
+          ],
+          "directory_model_reset": [
+            0.034
+          ],
+          "station_model_reset": [
+            0.036
+          ],
+          "station_catalog_signature": [
+            461.038
+          ],
+          "retain_line_library_for_directory_move": [
+            0.094
+          ],
+          "send_station_visibility": [
+            31.627
+          ],
+          "_refresh_station_changes": [
+            509.51
+          ]
+        },
+        "map_commands": {
+          "setRailAssetSelection": 1,
+          "setRailPointExclusions": 1,
+          "setRailPointSelection": 1,
+          "setRailControlPointSelection": 1
+        }
+      },
+      "hundred_lines": {
+        "elapsed_ms": 1792.249,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 117,
+          "_update_paged_directory": 1,
+          "update_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 697,
+          "directory_model_reset": 2,
+          "station_catalog_signature": 1,
+          "_sync_paged_visibility": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            16.862
+          ],
+          "_save_local_overrides": [
+            61.716
+          ],
+          "_directory_signature": [
+            67.337
+          ],
+          "update_catalog_directory": [
+            771.719
+          ],
+          "directory_model_reset": [
+            0.039,
+            0.012
+          ],
+          "station_catalog_signature": [
+            506.285
+          ],
+          "_sync_paged_visibility": [
+            25.187
+          ],
+          "_update_paged_directory": [
+            1381.565
+          ],
+          "retain_line_library_for_directory_move": [
+            0.24
+          ],
+          "save_overrides": [
+            1785.157
+          ]
+        },
+        "map_commands": {}
+      },
+      "hundred_stations": {
+        "elapsed_ms": 1469.768,
+        "calls": {
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 100,
+          "_refresh_station_changes": 1,
+          "update_station_placement": 100,
+          "catalog_sql_changed_rows": 1195,
+          "station_model_reset": 1,
+          "directory_model_reset": 1,
+          "station_catalog_signature": 1,
+          "retain_line_library_for_directory_move": 1,
+          "send_station_visibility": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            17.82
+          ],
+          "_save_local_overrides": [
+            18.799
+          ],
+          "update_station_placement": [
+            10.539,
+            8.938,
+            9.504,
+            9.664,
+            8.774,
+            10.066,
+            10.274,
+            11.003,
+            8.229,
+            10.472,
+            8.511,
+            10.33,
+            8.394,
+            10.214,
+            9.538,
+            9.881,
+            9.062,
+            8.639,
+            10.737,
+            7.514,
+            7.832,
+            7.537,
+            12.212,
+            10.569,
+            9.591,
+            10.508,
+            9.839,
+            9.523,
+            10.87,
+            9.341,
+            8.478,
+            8.926,
+            8.829,
+            7.573,
+            10.154,
+            9.416,
+            10.585,
+            10.624,
+            12.149,
+            8.263,
+            9.277,
+            8.448,
+            9.034,
+            15.277,
+            10.802,
+            10.539,
+            14.611,
+            8.893,
+            8.536,
+            10.635,
+            12.841,
+            8.132,
+            8.148,
+            9.405,
+            10.091,
+            10.593,
+            8.785,
+            8.096,
+            10.999,
+            10.837,
+            7.837,
+            8.534,
+            8.676,
+            8.848,
+            9.474,
+            8.893,
+            11.725,
+            7.591,
+            9.3,
+            10.748,
+            10.188,
+            9.297,
+            10.655,
+            9.718,
+            10.806,
+            8.966,
+            8.995,
+            8.306,
+            8.851,
+            8.235,
+            9.559,
+            9.624,
+            10.557,
+            7.872,
+            9.493,
+            9.451,
+            9.011,
+            10.956,
+            9.646,
+            10.121,
+            9.547,
+            9.634,
+            16.487,
+            10.917,
+            13.177,
+            8.18,
+            9.599,
+            7.817,
+            8.987,
+            13.514
+          ],
+          "directory_model_reset": [
+            0.066
+          ],
+          "station_model_reset": [
+            0.073
+          ],
+          "station_catalog_signature": [
+            424.166
+          ],
+          "retain_line_library_for_directory_move": [
+            0.09
+          ],
+          "send_station_visibility": [
+            35.054
+          ],
+          "_refresh_station_changes": [
+            1450.861
+          ]
+        },
+        "map_commands": {
+          "setRailAssetSelection": 1,
+          "setRailPointExclusions": 1,
+          "setRailPointSelection": 1,
+          "setRailControlPointSelection": 1
+        }
+      },
+      "one_facility_folder": {
+        "elapsed_ms": 58688.098,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_update_paged_directory": 1,
+          "update_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 509057,
+          "directory_model_reset": 3,
+          "_prepare_station_catalog": 1,
+          "station_catalog_signature": 1,
+          "sync_station_catalog": 1,
+          "full_delete_rail_station_nodes": 1,
+          "full_delete_rail_facility_track_owners": 1,
+          "station_model_reset": 1,
+          "_sync_paged_visibility": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            14.784
+          ],
+          "_save_local_overrides": [
+            14.872
+          ],
+          "_directory_signature": [
+            59.348
+          ],
+          "update_catalog_directory": [
+            1383.137
+          ],
+          "directory_model_reset": [
+            0.065,
+            0.021,
+            0.023
+          ],
+          "station_catalog_signature": [
+            447.308
+          ],
+          "sync_station_catalog": [
+            56301.459
+          ],
+          "_prepare_station_catalog": [
+            56753.958
+          ],
+          "station_model_reset": [
+            0.027
+          ],
+          "_sync_paged_visibility": [
+            396.123
+          ],
+          "_update_paged_directory": [
+            58632.347
+          ],
+          "retain_line_library_for_directory_move": [
+            0.144
+          ],
+          "save_overrides": [
+            58687.373
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_track_assignment": {
+        "elapsed_ms": 38803.128,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "populate": 1,
+          "_populate_paged_directory": 1,
+          "sync_catalog_directory": 1,
+          "_directory_signature": 1,
+          "catalog_sql_changed_rows": 508840,
+          "_prepare_station_catalog": 1,
+          "station_catalog_signature": 1,
+          "sync_station_catalog": 1,
+          "full_delete_rail_station_nodes": 1,
+          "full_delete_rail_facility_track_owners": 1,
+          "station_model_reset": 1,
+          "directory_model_reset": 1,
+          "_sync_paged_visibility": 1,
+          "invalidate_line_library": 1,
+          "line_library": 1,
+          "push_corridors_requested": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            14.949
+          ],
+          "_save_local_overrides": [
+            14.995
+          ],
+          "_directory_signature": [
+            47.558
+          ],
+          "sync_catalog_directory": [
+            48.205
+          ],
+          "station_catalog_signature": [
+            423.904
+          ],
+          "sync_station_catalog": [
+            33982.441
+          ],
+          "_prepare_station_catalog": [
+            34410.377
+          ],
+          "directory_model_reset": [
+            0.027
+          ],
+          "station_model_reset": [
+            0.03
+          ],
+          "_sync_paged_visibility": [
+            229.666
+          ],
+          "_populate_paged_directory": [
+            34784.366
+          ],
+          "populate": [
+            34830.778
+          ],
+          "invalidate_line_library": [
+            0.007
+          ],
+          "line_library": [
+            1452.583
+          ],
+          "save_overrides": [
+            38803.108
+          ]
+        },
+        "map_commands": {
+          "setRailSignalBoxes": 1,
+          "reloadRailViewport": 1,
+          "reloadMetroViewport": 1,
+          "reloadRoadViewport": 1
+        }
+      }
+    },
+    "source_files_size_and_mtime_unchanged": true
+  },
+  "exceptions": []
+}

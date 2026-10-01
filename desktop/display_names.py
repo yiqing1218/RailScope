@@ -1,0 +1,323 @@
+"""Workspace presentation names, independent of OSM facts and domain identity."""
+import json
+
+try:
+    from .rail_line_workspace import effective_override
+    from .yard_track_names import yard_track_key
+    from .rail_semantics import semantic_record
+    from .rail_style_resolver import style_key
+    from .station_track_semantics import migrate_track_override, semantic_track_name
+except ImportError:
+    from rail_line_workspace import effective_override
+    from yard_track_names import yard_track_key
+    from rail_semantics import semantic_record
+    from rail_style_resolver import style_key
+    from station_track_semantics import migrate_track_override, semantic_track_name
+
+
+_EDGE_ROLES_CACHE = {}
+PRESENTATION_FIELDS = ('display_name', 'line_display_name', 'line_name', 'name', 'station_name',
+    'station_type', 'track_type', 'rail_style_key', 'railway_class', 'line_role', 'track_role',
+    'line_kind', 'speed_band', 'design_speed_kmh', 'display_name_source',
+    'display_name_verification_status', 'display_name_snapshot', 'display_name_confidence',
+    'rail_display_color', 'rail_display_width', 'display_track_type', 'display_style_provenance')
+
+
+def presentation_keys(props):
+    keys = {object_key(props), yard_track_key(props), props.get('catalog_group_id'), props.get('line_id')}
+    if props.get('assembly_id'):
+        keys.add('line-assembly:' + props['assembly_id'])
+    for field in ('station_source_id', 'infrastructure_id', 'station_key', 'station_id'):
+        if props.get(field):
+            keys.add('station:' + str(props[field]).removeprefix('station:'))
+    node = props.get('osm_node_id')
+    if node is not None:
+        keys.update((f'switch:node/{node}', f'node:{node}', f'station:node/{node}'))
+    associated = props.get('associated_station_ids', [])
+    if isinstance(associated, str):
+        try:
+            associated = json.loads(associated)
+        except ValueError:
+            associated = []
+    if len(associated) == 1:
+        keys.add('station:' + str(associated[0]).removeprefix('station:'))
+    return keys - {None, ''}
+
+
+def remember_presentation(props, overrides):
+    if '_presentation_base' not in props and any(key in overrides for key in presentation_keys(props)):
+        props['_presentation_base'] = {key: props[key] for key in PRESENTATION_FIELDS if key in props}
+
+
+def restore_presentation(props):
+    """Restore raw presentation before replay, including Undo after a viewport fetch."""
+    base = props.get('_presentation_base')
+    if isinstance(base, str):
+        # MapLibre picked features encode nested properties as JSON strings.
+        try:
+            base = json.loads(base)
+        except ValueError:
+            return
+        if isinstance(base, dict):
+            props['_presentation_base'] = base
+    if isinstance(base, dict):
+        for field in PRESENTATION_FIELDS:
+            props.pop(field, None)
+        props.update(base)
+
+
+def _edge_roles(library):
+    """Cache the expensive edge-role scan; it does not depend on overrides."""
+    key = (str(library.path), library.path.stat().st_mtime_ns)
+    cached = _EDGE_ROLES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    roles = {}
+    with library.connect() as db:
+        for line, kind in db.execute('SELECT line_id,track_type FROM edges GROUP BY line_id,track_type'):
+            roles.setdefault(line, set()).add(kind)
+    if len(_EDGE_ROLES_CACHE) > 8:
+        _EDGE_ROLES_CACHE.clear()
+    _EDGE_ROLES_CACHE[key] = roles
+    return roles
+
+
+def rail_line_presentation(library):
+    """One compact style/parent lookup, shared by every viewport of a snapshot."""
+    if not hasattr(library, 'connect'):
+        return {}
+    cached = getattr(library, '_line_presentation', None)
+    if cached is not None:
+        return cached
+    roles = _edge_roles(library)
+    result = {}
+    main_roles = {'高速铁路线', '普速铁路线', '货运铁路线'}
+    snapshot = str(library.path.stat().st_mtime_ns)
+    for line, kinds in roles.items():
+        known = kinds - {'未确认类型'}
+        style = next(iter(known)) if len(known) == 1 and known <= main_roles else None
+        metadata = library.metadata.get(line, {})
+        custom = metadata.get('track_type')
+        speed = metadata.get('technical_attributes', {}).get('design_speed_kmh')
+        members = library.workspace.members(line)
+        # Most source lines are single unnamed tracks. Sending an identity
+        # entry for every one would bloat the browser config by tens of MB.
+        if len(kinds) == 1 and not custom and not speed and members == [line]:
+            continue
+        for source in members:
+            result[source] = {'line_id': line, 'fallback_type': style,
+                              'override_type': custom, 'snapshot': snapshot, 'design_speed_kmh': speed}
+        result.setdefault(line, {'line_id': line, 'fallback_type': style,
+                                'override_type': custom, 'snapshot': snapshot, 'design_speed_kmh': speed})
+    library._line_presentation = result
+    return result
+
+
+def decode_properties(collection):
+    """MapLibre picked features serialize nested GeoJSON properties as JSON."""
+    for feature in collection.get('features', []):
+        props = feature.get('properties', {})
+        for key, value in props.items():
+            if isinstance(value, str) and value.lstrip()[:1] in ('{', '['):
+                try:
+                    props[key] = json.loads(value)
+                except ValueError:
+                    pass
+    return collection
+
+
+def apply_rail_presentation(collection, presentation, overrides=None):
+    """Keep physical IDs/facts; inherit only missing display styles on one line."""
+    overrides = overrides or {}
+    decode_properties(collection)
+    for feature in collection.get('features', []):
+        remember_presentation(feature.get('properties', {}), overrides or {})
+        props = feature.get('properties', {})
+        for field, display_field in (('color', 'rail_display_color'), ('width', 'rail_display_width')):
+            for key in (object_key(props), props.get('catalog_group_id'), props.get('line_id')):
+                value = effective_override(overrides, key, {}).get(field)
+                if value is not None:
+                    props[display_field] = value
+                    break
+        for field in ('line_ids', 'operating_line_ids', 'construction_line_ids'):
+            if field in props:
+                props[field] = sorted({presentation.get(key, {}).get('line_id', key) for key in props[field]})
+        source = props.get('source_line_id') or props.get('line_id')
+        entry = presentation.get(source, {})
+        if props.get('network_edge_id'):
+            tags = props.get('way_tags', {})
+            from railscope.presentation import source_design_speed
+            speed = next((value for key in (object_key(props), props.get('catalog_group_id'), entry.get('line_id'), source)
+                          if (value := effective_override(overrides, key, {}).get('technical_attributes', {}).get('design_speed_kmh'))),
+                         None) or entry.get('design_speed_kmh') or source_design_speed(tags)
+            if speed:
+                from railscope.presentation import design_speed
+                try:
+                    props['design_speed_kmh'] = design_speed(speed)
+                except ValueError:
+                    pass
+        if not entry or not props.get('network_edge_id'):
+            continue
+        props['source_line_id'] = source
+        props['line_id'] = entry['line_id']
+        props.pop('display_track_type', None)
+        props.pop('display_style_provenance', None)
+        custom = next((value for key in (object_key(props), props.get('catalog_group_id'), props['line_id'])
+                       if (value := effective_override(overrides, key, {}).get('track_type'))), entry.get('override_type'))
+        style = custom or (entry.get('fallback_type') if props.get('track_type') == '未确认类型' else None)
+        if style:
+            props['display_track_type'] = style
+            props['display_style_provenance'] = {
+                'source': 'workspace_override' if custom else 'same_line_unambiguous_track_style',
+                'snapshot': entry['snapshot'], 'version': 1,
+                'verification_status': 'user_classified' if custom else 'display_only_inference',
+                'confidence': None}
+    for feature in collection.get('features', []):
+        props = feature.get('properties', {})
+        if not props.get('network_edge_id'):
+            continue
+        props.update(semantic_record(props))
+        for key in (props.get('line_id'), props.get('catalog_group_id'), object_key(props)):
+            if key in overrides:
+                edit = effective_override(overrides, key, {})
+                props.update(semantic_record(props, edit))
+                if edit.get('line_kind'):
+                    props['line_kind'] = edit['line_kind']
+                technical = edit.get('technical_attributes', {})
+                if technical.get('speed_band'):
+                    props['speed_band'] = technical['speed_band']
+        group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
+        if group_edit.get('assembly_id'):
+            props['assembly_id'] = group_edit['assembly_id']
+            props.update(semantic_record(props, group_edit))
+            props['speed_band'] = group_edit.get('technical_attributes', {}).get('speed_band')
+        props['rail_style_key'] = style_key(props)
+    return collection
+
+
+def generated_line_name(meta):
+    """Generate a readable name for an unnamed physical line from its facts."""
+    name = (meta.get("line_name") or meta.get("line_display_name") or meta.get("name") or "").split(" · ", 1)[0]
+    if name and not name.startswith("未命名"):
+        return name
+    role = meta.get("track_role", "unknown")
+    station = meta.get("station_name")
+    if not station:
+        folder = meta.get("folder_path") or []
+        if folder and folder[0] == "车站设施" and len(folder) > 1:
+            station = folder[1]
+    if role != 'main_track' and (role not in ("main_track", "unknown") or meta.get("facility_only") or station):
+        return semantic_track_name(station, role)
+    track_kind = meta.get("track_type")
+    if track_kind and track_kind != "未确认类型":
+        return track_kind
+    way_ids = meta.get("way_ids") or []
+    if way_ids:
+        return f"轨道 w{way_ids[0]}"
+    return name or "未命名轨道"
+
+
+def object_key(properties):
+    for field in ('service_id', 'network_edge_id', 'network_node_id', 'section_id', 'infrastructure_id',
+                  'catalog_id', 'station_id', 'route_key'):
+        value = properties.get(field)
+        if value is not None and str(value) not in ('', 'node/None', 'way/None', 'relation/None'):
+            return 'object:' + field + ':' + str(value)
+    for field in ('osm_node_id', 'osm_way_id', 'osm_relation_id'):
+        if properties.get(field) is not None:
+            return 'object:' + field + ':' + str(properties[field])
+    return None
+
+
+def apply_names(collection, overrides=None, line_names=None, way_names=None, station_directory=None):
+    overrides, line_names, way_names = overrides or {}, line_names or {}, way_names or {}
+    decode_properties(collection)
+    if station_directory is not None:
+        for feature in collection.get('features', []):
+            remember_presentation(feature.get('properties', {}), overrides)
+        try:
+            from .rail_station_directory import apply_station_names
+        except ImportError:
+            from rail_station_directory import apply_station_names
+        apply_station_names(collection, station_directory, overrides)
+    for feature in collection.get('features', []):
+        props = feature.get('properties', {})
+        remember_presentation(props, overrides)
+        group_line_edit = effective_override(overrides, props.get('catalog_group_id'), {})
+        object_line_edit = effective_override(overrides, object_key(props), {})
+        if 'line_name' in group_line_edit:
+            props['line_name'] = group_line_edit['line_name']
+        if 'line_name' in object_line_edit:
+            props['line_name'] = object_line_edit['line_name']
+        yard_key = yard_track_key(props)
+        track = migrate_track_override(effective_override(overrides, yard_key, {}),
+            station_name=props.get('station_name', ''), track_role=props.get('track_role', 'unknown'))
+        if track.get('station_track_id'):
+            props['station_track_id'] = track['station_track_id']
+            props['track_number'] = track.get('track_number')
+            props['track_name'] = track.get('display_name')
+        if yard_key:
+            object_edit = effective_override(overrides, object_key(props), {})
+            if 'line_name' in object_edit:
+                props['line_name'] = object_edit['line_name']
+            group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
+            line_name = str(props.get('line_name') or group_edit.get('line_name') or '').strip()
+            if line_name.startswith('未命名'):
+                line_name = ''
+            label = (line_name or object_edit.get('display_name') or group_edit.get('display_name') or
+                     props.get('display_name') or track.get('display_name'))
+            if group_edit.get('assembly_id'):
+                label = group_edit.get('assembly_name') or group_edit.get('display_name') or label
+                props['line_name'] = group_edit.get('line_name') or label
+            if label:
+                label = label.replace('（参考）','').replace('(参考)','').strip()
+                props['display_name'] = label
+                props['line_display_name'] = label
+            continue
+        node = props.get('osm_node_id')
+        keys = [object_key(props), yard_track_key(props)]
+        keys += ['object:service_id:' + key for key in props.get('service_alias_ids', [])]
+        if node is not None:
+            keys += [f'switch:node/{node}', f'node:{node}', f'station:node/{node}']
+        if props.get('infrastructure_id'):
+            keys.append('station:' + str(props['infrastructure_id']))
+        keys += [props.get('catalog_group_id'), props.get('line_id'), props.get('catalog_id'),
+                 props.get('station_id'), str(props.get('route_relation_id')), str(props.get('osm_relation_id'))]
+        keys += sorted(presentation_keys(props))
+        group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
+        if group_edit.get('assembly_id'):
+            keys.insert(0, props.get('catalog_group_id'))
+        custom = next((effective_override(overrides, key) for key in keys if key in overrides and effective_override(overrides, key, {}).get('display_name')), {})
+        station_edit = next((overrides[key] for key in presentation_keys(props)
+                             if key.startswith('station:') and key in overrides), {})
+        if station_edit.get('station_type'):
+            props['station_type'] = station_edit['station_type']
+        custom = migrate_track_override(custom, station_name=props.get('station_name', ''),
+                                        track_role=props.get('track_role', 'unknown'))
+        name = custom.get('display_name')
+        if custom.get('source') == 'automatic_station_group' and not str(props.get('line_name', '')).startswith('未命名轨道'):
+            name = None
+            custom = {}
+        if not name and props.get('line_id'):
+            name = line_names.get(props['line_id']) or way_names.get(str(props.get('osm_way_id')))
+        if not name:
+            continue
+        if props.get('station_name') or yard_track_key(props):
+            name = name.replace('（参考）', '').replace('(参考)', '').strip()
+        # Old name exports include the identity suffix. The ID remains a
+        # separate property and is never needed in the on-map text label.
+        for ident in (props.get('line_id'), props.get('catalog_group_id')):
+            if ident and name.endswith(' · ' + str(ident)):
+                name = name[:-(len(str(ident)) + 3)]
+        props['display_name'] = name
+        if props.get('service_id'):
+            props.update({key: custom[key] for key in ('province', 'city', 'county') if key in custom})
+        if props.get('line_id') or feature.get('geometry', {}).get('type') in ('LineString', 'MultiLineString'):
+            props['line_display_name'] = name
+        props['display_name_source'] = custom.get('source', 'workspace_override')
+        props['display_name_verification_status'] = custom.get('verification_status', 'user_named')
+        if custom.get('snapshot'):
+            props['display_name_snapshot'] = custom['snapshot']
+        if 'confidence' in custom:
+            props['display_name_confidence'] = custom['confidence']
+    return collection

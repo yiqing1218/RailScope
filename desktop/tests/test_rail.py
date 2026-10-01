@@ -152,15 +152,44 @@ def test_national_viewport_has_hard_feature_budget(tmp_path):
     assert expanded["truncated"] is False
 
 
-def test_viewport_budget_presets_persist_and_unlimited_is_explicit(tmp_path):
-    from desktop.viewport_settings import DEFAULT, PRESETS, load, save
+def test_viewport_budget_caps_legacy_unlimited_settings(tmp_path):
+    from desktop.viewport_settings import DEFAULT, HIGH, PRESETS, load, save
 
     path = tmp_path / "viewport.json"
     assert load(path) == DEFAULT
-    assert save(path, PRESETS["unlimited"]) == PRESETS["unlimited"]
-    assert load(path) == PRESETS["unlimited"]
+    assert save(path, PRESETS["high"]) == HIGH
+    assert load(path) == HIGH
+    path.write_text('{"features": null, "bytes": null, "vertices": null, "feature_bytes": null}', encoding="utf-8")
+    assert load(path) == HIGH
+    assert save(path, {key: value * 100 for key, value in HIGH.items()}) == HIGH
     path.write_text('{"features": -1}', encoding="utf-8")
     assert load(path) == DEFAULT
+
+
+def test_rail_viewport_filters_station_tracks_on_disk(tmp_path):
+    from desktop.rail_store import viewport
+
+    with sqlite3.connect(tmp_path / "rail.sqlite") as db:
+        db.executescript("CREATE TABLE features(id INTEGER PRIMARY KEY,kind TEXT,service TEXT,data TEXT);"
+                         "CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy);")
+        for number, group in ((1, "RL-line"), (2, "RL-yard")):
+            feature = {"type": "Feature", "properties": {
+                "catalog_group_id": group, "construction_status": "operating",
+                "way_tags": {"railway": "rail"}},
+                "geometry": {"type": "LineString", "coordinates": [[121, 31], [121.01, 31.01]]}}
+            db.execute("INSERT INTO features VALUES(?,'rail','main',?)", (number, json.dumps(feature)))
+            db.execute("INSERT INTO bounds VALUES(?,?,?,?,?)", (number, 121, 121.01, 31, 31.01))
+    with sqlite3.connect(tmp_path / "rail_catalog.sqlite") as db:
+        db.executescript("CREATE TABLE rail_directory_nodes(id TEXT PRIMARY KEY,view TEXT);"
+                         "CREATE TABLE rail_directory_members(node_id TEXT,catalog_id TEXT);")
+        db.execute("INSERT INTO rail_directory_nodes VALUES('yard','facilities')")
+        db.execute("INSERT INTO rail_directory_members VALUES('yard','RL-yard')")
+    bbox = [120, 30, 122, 32]
+    groups = lambda result: {f["properties"]["catalog_group_id"] for f in result["features"]}
+    assert groups(viewport(tmp_path, "rail", bbox, 12, {"facility": "lines"})) == {"RL-line"}
+    assert groups(viewport(tmp_path, "rail", bbox, 12, {"facility": "facilities"})) == {"RL-yard"}
+    assert groups(viewport(tmp_path, "rail", bbox, 12, {
+        "facility": "lines", "facility_groups": ["RL-yard"]})) == {"RL-line", "RL-yard"}
 
 
 def test_selected_rail_line_is_loaded_even_at_national_zoom(tmp_path):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from copy import deepcopy
-from dataclasses import asdict, fields, replace
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import sqlite3
@@ -16,8 +16,13 @@ from . import domain as d
 from .repository import RailRepository
 from .integrity import validate_repository, references, delete_edge, path_refs
 from .identity import new_id
+from .rail_semantics import edge_semantics, legacy_semantics
+
+SCHEMA_VERSION = 2
 
 TYPES={
+    'lifecycles':d.InfrastructureLifecycle,'vehicles':d.Vehicle,
+    'service_areas':d.ServiceArea,'service_area_geometries':d.ServiceAreaGeometry,
     'sources':d.DataSource,'snapshots':d.DatasetSnapshot,'lines':d.InfrastructureLine,
     'nodes':d.NetworkNode,'edges':d.NetworkEdge,'stations':d.Station,
     'sections':d.RouteSection,'corridors':d.Corridor,'station_routes':d.StationRoute,
@@ -25,19 +30,64 @@ TYPES={
     'station_tracks':d.StationTrack,'station_areas':d.StationArea,'platforms':d.Platform,
     'stop_positions':d.StopPosition,'entrances':d.Entrance,'blocks':d.BlockSection,
     'scenarios':d.DispatchScenario,
+    'operational_points':d.OperationalPoint,'yards':d.Yard,'station_zones':d.StationZone,
+    'route_intents':d.RouteIntent,
 }
 LIST_TYPES={'memberships':d.LineMembership,'stops':d.StopTime,'block_edges':d.BlockEdge,
-            'headway_rules':d.HeadwayRule,'events':d.DispatchEvent,'occupancies':d.TrackOccupancy,'conflicts':d.Conflict}
+            'headway_rules':d.HeadwayRule,'events':d.DispatchEvent,'occupancies':d.TrackOccupancy,'conflicts':d.Conflict,
+            'station_track_edges':d.StationTrackEdge}
+DERIVED_COLLECTIONS = frozenset({'occupancies', 'conflicts'})
+
+
+def rebuild_derived(repo):
+    """Rebuild projections from schedule, resources and events before publication."""
+    from .services.dispatch import recalculate
+    repo.occupancies, repo.conflicts = [], []
+    for scenario_id in repo.scenarios:
+        recalculate(repo, scenario_id)
+
+
+def _migrate_track_number(raw):
+    """Keep uncertain old numbers recoverable without displaying them as official."""
+    number = raw.get('track_number')
+    if number is None:
+        return
+    provenance = dict(raw.get('provenance') or {})
+    evidence = provenance.get('track_number') or {}
+    reliable = {'official_confirmed', 'user_verified', 'user_named', 'manual_override', 'osm_explicit'}
+    internal = str(number).startswith(('STTR-', 'NE-', 'RS-')) or number == raw.get('id')
+    trusted = evidence.get('verification_status') in reliable or raw.get('verification_status') in reliable
+    if internal or ('track_role' not in raw and not trusted):
+        legacy = dict(raw.get('legacy_metadata') or {})
+        legacy.setdefault('track_number', number)
+        legacy.setdefault('track_number_status', 'unverified_legacy_alias')
+        raw['legacy_metadata'] = legacy
+        raw['track_number'] = None
+        provenance.setdefault('track_number', {'value': None, 'source': 'legacy_migration',
+            'snapshot_id': raw.get('snapshot_id'), 'evidence': 'No reliable official number evidence; old value retained in legacy_metadata',
+            'verification_status': 'unverified', 'confidence': None})
+        raw['provenance'] = provenance
 
 
 def decode(cls, raw):
     raw=dict(raw)
     if cls is d.TrainRun and 'route_path_id' in raw:
         raw.setdefault('corridor_id',raw.pop('route_path_id'))
-    for key in ('osm_node_ids','source_node_ids','source_member_ids'):
+    if cls is d.NetworkEdge:
+        semantic = edge_semantics(raw)
+        for key, value in semantic.items():
+            raw.setdefault(key, value)
+    if cls is d.InfrastructureLine and 'railway_class' not in raw:
+        old = legacy_semantics(raw.get('railway_type') or '')
+        for key in ('railway_class', 'line_role', 'provenance'):
+            raw.setdefault(key, old[key])
+    if cls is d.StationTrack:
+        _migrate_track_number(raw)
+    for key in ('osm_node_ids','source_node_ids','source_member_ids','node_ids','source_aliases','station_track_ids'):
         if key in raw: raw[key]=tuple(raw[key])
     if 'coordinates' in raw: raw['coordinates']=tuple(tuple(p) for p in raw['coordinates'])
     if 'edge_refs' in raw: raw['edge_refs']=tuple(d.DirectedEdgeRef(**r) for r in raw['edge_refs'])
+    if cls is d.RouteIntent: raw['steps']=tuple(d.RouteIntentStep(**r) for r in raw.get('steps', ()))
     return cls(**raw)
 
 
@@ -47,8 +97,49 @@ def _rows(repo):
         for key,obj in getattr(repo,collection).items():
             result[(collection,key)]=json.dumps(asdict(obj),ensure_ascii=False,sort_keys=True)
     for collection in LIST_TYPES:
+        if collection in DERIVED_COLLECTIONS:
+            continue
         result[(collection,'@list')]=json.dumps([asdict(v) for v in getattr(repo,collection)],ensure_ascii=False,sort_keys=True)
     return result
+
+
+class WorkspaceObjects:
+    """Small typed collections in the canonical workspace, without loading geometry."""
+    collections = frozenset({'lifecycles', 'vehicles', 'platforms'})
+
+    def __init__(self, path):
+        self.path = SQLiteWorkspace(path).path
+
+    def collection(self, kind, db=None):
+        if kind not in self.collections:
+            raise ValueError('Unsupported small workspace collection')
+        if db is None:
+            with closing(sqlite3.connect(self.path)) as connection:
+                return self.collection(kind, connection)
+        rows = dict(db.execute('SELECT id,data FROM workspace_source WHERE kind=?', (kind,)))
+        rows.update(dict(db.execute('SELECT id,data FROM workspace_override WHERE kind=?', (kind,))))
+        return {key: decode(TYPES[kind], json.loads(raw)) for key, raw in rows.items() if raw is not None}
+
+    def put(self, kind, value):
+        if kind not in self.collections or not isinstance(value, TYPES[kind]):
+            raise ValueError('Workspace object type mismatch')
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            if kind == 'lifecycles':
+                from .services.history import validate_lifecycle, effective_lifecycle
+                validate_lifecycle(value)
+                records = self.collection(kind, db)
+                records[value.id] = value
+                for ident in records:
+                    effective_lifecycle(records, ident)
+            elif kind == 'vehicles':
+                from .services.vehicles import validate_vehicle
+                validate_vehicle(value)
+            elif not value.id or not value.station_id:
+                raise ValueError('Platform requires stable platform and station IDs')
+            db.execute('INSERT OR REPLACE INTO workspace_override VALUES(?,?,?)',
+                       (kind, value.id, json.dumps(asdict(value), ensure_ascii=False, sort_keys=True)))
+            db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
 
 
 class SQLiteWorkspace:
@@ -61,8 +152,12 @@ class SQLiteWorkspace:
                 CREATE TABLE IF NOT EXISTS workspace_override(kind TEXT,id TEXT,data TEXT,PRIMARY KEY(kind,id));
                 CREATE TABLE IF NOT EXISTS workspace_meta(key TEXT PRIMARY KEY,value INTEGER);
                 INSERT OR IGNORE INTO workspace_meta VALUES('revision',0);
+                INSERT OR IGNORE INTO workspace_meta VALUES('schema_version',1);
                 CREATE TABLE IF NOT EXISTS workspace_conflict(kind TEXT,id TEXT,reason TEXT,PRIMARY KEY(kind,id));
             ''')
+            version=db.execute("SELECT value FROM workspace_meta WHERE key='schema_version'").fetchone()[0]
+            if version > SCHEMA_VERSION:
+                raise ValueError(f'工作区 schema {version} 高于当前支持版本 {SCHEMA_VERSION}；保留原文件')
 
     def seed(self,repo):
         """Import source rows without erasing manually saved object corrections."""
@@ -77,6 +172,7 @@ class SQLiteWorkspace:
                     continue
                 db.execute('INSERT OR REPLACE INTO workspace_source VALUES(?,?,?)',(kind,key,raw))
             db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
+            db.execute("UPDATE workspace_meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,))
 
     def load(self):
         repo=RailRepository()
@@ -86,11 +182,14 @@ class SQLiteWorkspace:
             rows.update({(kind,key):raw for kind,key,raw in db.execute('SELECT kind,id,data FROM workspace_override')})
         legacy_routes=[]
         for (kind,key),raw in rows.items():
+            if kind in DERIVED_COLLECTIONS:
+                continue  # Old saved projections never override current project inputs.
             if raw is None: continue
             data=json.loads(raw)
             if kind in TYPES: getattr(repo,kind)[key]=decode(TYPES[kind],data)
             elif kind in LIST_TYPES: setattr(repo,kind,[decode(LIST_TYPES[kind],v) for v in data])
             elif kind=='routes': legacy_routes.append((key,data))
+            else: raise ValueError(f'未知工作区对象类型 {kind}；拒绝读取以免后续保存丢失数据')
         for key,data in legacy_routes:
             if key in repo.corridors:
                 continue
@@ -101,7 +200,13 @@ class SQLiteWorkspace:
                 first.from_node_id if refs[0].forward else first.to_node_id,
                 last.to_node_id if refs[-1].forward else last.from_node_id,
                 source_id='legacy_route_path',verification_status='unverified')
+        existing={m.station_track_id for m in repo.station_track_edges}
+        for track in repo.station_tracks.values():
+            if track.id not in existing:
+                repo.station_track_edges.extend(d.StationTrackEdge(track.id,r.edge_id,r.sequence,
+                    'forward' if r.forward else 'reverse') for r in track.edge_refs)
         validate_repository(repo)
+        rebuild_derived(repo)
         return repo,revision
 
     def save(self,repo,expected_revision):
@@ -112,11 +217,15 @@ class SQLiteWorkspace:
             revision=db.execute("SELECT value FROM workspace_meta WHERE key='revision'").fetchone()[0]
             if revision!=expected_revision: raise ValueError('工作区已被其他窗口修改，请重新载入')
             source={(kind,key):raw for kind,key,raw in db.execute('SELECT kind,id,data FROM workspace_source')}
+            unknown = {kind for kind, _ in source if kind not in TYPES and kind not in LIST_TYPES and kind != 'routes'}
+            if unknown:
+                raise ValueError('未知工作区对象类型，拒绝覆盖：' + ', '.join(sorted(unknown)))
             db.execute('DELETE FROM workspace_override')
             for kind,key in source.keys()|rows.keys():
                 if source.get((kind,key))!=rows.get((kind,key)):
                     db.execute('INSERT INTO workspace_override VALUES(?,?,?)',(kind,key,rows.get((kind,key))))
             db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
+            db.execute("UPDATE workspace_meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,))
         return revision+1
 
     def conflicts(self):
@@ -135,6 +244,7 @@ class EditSession:
         candidate=deepcopy(self.repo)
         result=operation(candidate)
         validate_repository(candidate)
+        rebuild_derived(candidate)
         self.undo_stack.append(self.repo)
         self.repo=candidate
         self.redo_stack.clear()
@@ -154,12 +264,19 @@ class EditSession:
         self.dirty=False
 
     def edit_line(self,line_id,**values):
-        allowed={'name','railway_type','construction_status'}
+        allowed={'name','railway_type','construction_status','design_speed_kmh','railway_class','line_role'}
         if not set(values)<=allowed: raise ValueError('不允许改变线路身份或原始来源')
         if 'name' in values and not values['name'].strip(): raise ValueError('线路名称不能为空')
         if 'construction_status' in values and values['construction_status'] not in {'operating','construction','planned','disused','unknown'}:
             raise ValueError('线路运营状态无效')
-        return self.change(lambda r:r.lines.__setitem__(line_id,replace(r.lines[line_id],**values,verification_status='manual_override')))
+        def apply(repo):
+            old=repo.lines[line_id]
+            provenance=dict(old.provenance)
+            for key,value in values.items():
+                provenance[key]={'value':value,'source':'workspace_override','snapshot_id':old.snapshot_id,
+                    'evidence':'User edit','verification_status':'user_verified','confidence':None}
+            repo.lines[line_id]=replace(old,**values,provenance=provenance,verification_status='manual_override')
+        return self.change(apply)
 
     def assign_edges(self,line_id,edge_ids,remove=False):
         def apply(repo):
@@ -174,6 +291,11 @@ class EditSession:
             repo.memberships[:]=list(dict.fromkeys(replace(m,line_id=target,verification_status='manual_override') if m.line_id==source else m for m in repo.memberships))
             for key,e in repo.edges.items():
                 if e.infrastructure_line_id==source: repo.edges[key]=replace(e,infrastructure_line_id=target)
+            for key,track in repo.station_tracks.items():
+                if track.infrastructure_line_id==source: repo.station_tracks[key]=replace(track,infrastructure_line_id=target)
+            for key,intent in repo.route_intents.items():
+                repo.route_intents[key]=replace(intent,steps=tuple(replace(step,reference_id=target)
+                    if step.kind=='infrastructure_line' and step.reference_id==source else step for step in intent.steps))
             del repo.lines[source]
         self.change(apply)
 
@@ -203,10 +325,16 @@ class EditSession:
             repo.stations[target]=replace(a,source_member_ids=tuple(dict.fromkeys(a.source_member_ids+b.source_member_ids)),verification_status='manual_override')
             for key,node in repo.nodes.items():
                 if node.station_id==source: repo.nodes[key]=replace(node,station_id=target)
-            for collection in ('station_tracks','station_areas','platforms','station_routes','stop_positions','entrances'):
+            for collection in ('station_tracks','station_areas','platforms','station_routes','stop_positions','entrances',
+                               'yards','station_zones','operational_points'):
                 objects=getattr(repo,collection)
                 for key,obj in objects.items():
                     if obj.station_id==source: objects[key]=replace(obj,station_id=target)
+            for key,edge in repo.edges.items():
+                if edge.facility_id==source: repo.edges[key]=replace(edge,facility_id=target)
+            for key,intent in repo.route_intents.items():
+                repo.route_intents[key]=replace(intent,steps=tuple(replace(step,reference_id=target)
+                    if step.kind=='station' and step.reference_id==source else step for step in intent.steps))
             repo.stops[:]=[replace(s,station_id=target) if s.station_id==source else s for s in repo.stops]
             for key,obj in repo.train_runs.items():
                 repo.train_runs[key]=replace(obj,origin_station_id=target if obj.origin_station_id==source else obj.origin_station_id,destination_station_id=target if obj.destination_station_id==source else obj.destination_station_id)

@@ -163,13 +163,33 @@ def corridor_for(name, category):
     return "高速通道待核对"
 
 
+CONVENTIONAL_LINE_KEYWORDS = (
+    '京哈', '京沪', '京广', '京九', '沪昆', '陇海', '兰新', '京包', '包兰',
+    '滨洲', '滨绥', '沈山', '京承', '京通', '京原', '丰沙', '石太', '胶济',
+    '焦柳', '宁西', '西康', '成昆', '成渝', '宝成', '湘桂', '黔桂', '黎湛',
+    '南昆', '鹰厦', '青藏', '兰青', '新长', '淮南', '襄渝', '浙赣', '沪杭',
+    '津浦', '太焦', '新兖', '胶新', '蓝烟', '合九', '皖赣', '宁芜', '沪宁',
+    '同蒲', '京山', '津山', '德大', '邯济', '邯黄', '邢和', '邢黄',
+)
+FREIGHT_LINE_KEYWORDS = (
+    '大秦', '朔黄', '侯月', '兖石', '唐包', '蒙华', '浩吉', '瓦日',
+)
+
+
 def catalog_parents(meta, mode):
     """Classify a physical line without mistaking geometry fragments for routes.
 
     Unknown speed and geography stay explicit so directory labels never claim
     facts absent from source tags or reviewed workspace metadata.
     """
-    category = meta.get("track_type", "未确认类型")
+    try:
+        from .rail_semantics import semantic_record
+        from .rail_style_resolver import ROLE_LABELS
+    except ImportError:
+        from rail_semantics import semantic_record
+        from rail_style_resolver import ROLE_LABELS
+    facts = semantic_record(meta)
+    railway_class, line_role, role = (facts[key] for key in ('railway_class','line_role','track_role'))
     name = (
         meta.get("line_name")
         or meta.get("line_display_name")
@@ -177,21 +197,56 @@ def catalog_parents(meta, mode):
         or "未命名物理线路"
     ).split(" · ", 1)[0]
     prefix = ("在建铁路",) if meta.get("construction") else ()
-    yard = ("站场股道", "道岔连接轨", "车辆段", "折返线")
-    if "站场股道" in category or category in {"渡线 / 道岔连接轨", "车辆段 / 检修线", "折返线"}:
-        role = next((item for item in yard if item[:2] in category), "其他站场线")
-        return prefix + ("站台线&股道线", role)
-    if category == "联络线 / 匝道" or any(word in name for word in ("联络线", "疏解线")):
-        high = any(word in name for word in ("高速", "高铁", "客专")) or meta.get("highspeed") is True
-        return prefix + ("联络线", "高速联络线" if high else "普速联络线")
+    region = _rail_region(meta)
+    track_kind = str(meta.get("track_type") or "")
+    mixed_evidence = "多种可追溯分类依据" in str(meta.get("type_evidence") or "")
+    # 站场股道 / 设施轨道的旧版 track_type 也是设施信号，不能只依赖语义 track_role。
+    station_track_types = {
+        '高速铁路站场股道', '普速铁路站场股道', '货运站场股道', '站场股道（类型待核对）',
+        '车辆段 / 检修线', '折返线', '渡线 / 道岔连接轨',
+    }
+    station_name_hints = ('进站线', '出站线', '到发线', '发车线', '环到线', '环发线',
+                          '到达线', '牵出线', '走行线', '机走线', '机待线', '整备线')
+    if role != 'main_track' and (facts.get('facility_only') or role not in ('main_track', 'unknown')
+            or track_kind in station_track_types
+            or any(word in name for word in station_name_hints)):
+        return prefix + ('车站设施', meta.get('station_name') or facts.get('facility_id') or '未关联设施',
+                         ROLE_LABELS.get(role, '用途待核实'))
+    # 名称中的“联络 / 疏解”是比 usage 推断的 line_role 更可靠的联络线信号。
+    if (line_role == 'connecting_line'
+            or any(word in name for word in ('联络', '疏解', '联线', '货联', '下联', '上联', '联结线'))):
+        if railway_class == 'high_speed':
+            return prefix + ('联络线', '高速联络线')
+        if railway_class == 'conventional':
+            return prefix + ('联络线', '普速联络线')
+        return prefix + ('联络线', '速度待核实的联络线')
     if any(word in name for word in ("地方铁路", "地方线")):
         return prefix + ("其他铁路", "地方铁路")
     if any(word in name for word in ("矿区", "矿山")):
         return prefix + ("其他铁路", "矿区铁路")
     if any(word in name for word in ("港口", "港区", "码头")):
         return prefix + ("其他铁路", "港口铁路")
-    region = _rail_region(meta)
-    if category == "高速铁路线":
+    if not mixed_evidence and railway_class == 'unknown':
+        if track_kind == '普速铁路线':
+            railway_class = 'conventional'
+        elif track_kind == '高速铁路线':
+            railway_class = 'high_speed'
+        elif track_kind == '货运铁路线':
+            railway_class = 'freight'
+    if railway_class == 'unknown':
+        # 明确名称优先于未知速度：高速/高铁 > 货运专线 > 普速干线。
+        if any(word in name for word in ('高速', '高铁')):
+            railway_class = 'high_speed'
+        elif any(word in name for word in FREIGHT_LINE_KEYWORDS) or any(
+                word in name for word in ('货车', '煤码头', '货线')):
+            railway_class = 'freight'
+        elif any(word in name for word in CONVENTIONAL_LINE_KEYWORDS):
+            railway_class = 'conventional'
+    if railway_class == 'unknown' and str(meta.get('service_type')) == 'industrial':
+        return prefix + ('货运与专用铁路', region, '工业专用线')
+    if railway_class == 'unknown' and (name.startswith('未命名') or name.startswith('站线（用途待核实）')):
+        return prefix + ('待归属物理轨道', region, '线路归属待核实')
+    if railway_class == 'high_speed':
         trunk = any(word in name for word in ("京沪", "京广", "沪昆", "徐兰", "京哈", "京港", "沿海", "陆桥"))
         technical = meta.get("technical_attributes") or {}
         speed = meta.get("design_speed_kmh") or technical.get("design_speed_kmh") or meta.get("maxspeed")
@@ -201,13 +256,13 @@ def catalog_parents(meta, mode):
             speed = None
         band = str(speed) if speed in (350, 250, 200) else "其他/速度待核对"
         return prefix + ("高速铁路", "干线" if trunk else region, band)
-    if category in {"普速铁路线", "货运铁路线", "支线 / 岔道"}:
+    if railway_class in {'conventional', 'freight'}:
         trunk = any(word in name for word in ("京沪", "京广", "陇海", "沪昆", "京九", "兰新"))
-        service = "货运" if category == "货运铁路线" else meta.get("service_type", "客货运")
+        service = "货运" if railway_class == 'freight' else meta.get("service_type", "客货运")
         if service not in {"客运", "货运", "客货运"}:
             service = "客货运"
         return prefix + ("普速铁路", "干线" if trunk else region, service)
-    return prefix + ("其他铁路", "不确定铁路")
+    return prefix + ("其他铁路", "类型待核实")
 
 
 def _rail_region(meta):

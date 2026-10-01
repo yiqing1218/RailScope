@@ -1,6 +1,9 @@
 from __future__ import annotations
 from math import asin, cos, radians, sin, sqrt
-from .domain import *
+from .domain import (
+    DataSource, InfrastructureLine, NetworkNode, NetworkEdge, Station,
+    StationTrack, HeadwayRule, DispatchScenario, TrainRun, StopTime,
+)
 from .repository import RailRepository
 from .services.blocks import create_virtual_blocks
 from .services.routing import manual_corridor

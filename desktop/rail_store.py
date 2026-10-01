@@ -7,10 +7,11 @@ import sqlite3
 from contextlib import closing
 from uuid import uuid4
 from threading import BoundedSemaphore
+from railscope.rail_semantics import edge_semantics
 try:
-    from .viewport_settings import DEFAULT, normalize
+    from .viewport_settings import DEFAULT, HIGH, normalize
 except ImportError:
-    from viewport_settings import DEFAULT, normalize
+    from viewport_settings import DEFAULT, HIGH, normalize
 
 try:
     from .rail_categories import track_type as classify_track_type
@@ -64,6 +65,7 @@ def _rail_feature(edge, section_props=None):
             "license": "ODbL 1.0",
             "attribution": "© OpenStreetMap contributors",
             **(section_props or {}),
+            **edge_semantics(edge),
         },
         "geometry": {"type": "LineString", "coordinates": edge["coordinates"]},
     }
@@ -121,6 +123,7 @@ def build_index(directory, tracks, points, platforms, edges):
     # The map uses the same endpoint-delimited physical units as Corridors and
     # the RS directory. Whole OSM ways remain source metadata, not render units.
     for edge in edges:
+        edge = {**edge, **edge_semantics(edge)}
         section = edge_sections.get(edge["id"])
         section_props = (
             {
@@ -326,23 +329,33 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         return {"type": "FeatureCollection", "features": [], "truncated": False}
     selection = selection if kind == "rail" and isinstance(selection, dict) else {}
     selected_values = {}
-    for name in ("sections", "ways", "groups"):
+    for name in ("sections", "ways", "groups", "facility_groups", "included_edges", "excluded_edges"):
         values = selection.get(name, [])
         if not isinstance(values, list) or len(values) > 100000:
             raise ValueError("线路选择无效")
         if any(not isinstance(value, (str, int)) or isinstance(value, bool) for value in values):
             raise ValueError("线路选择无效")
         selected_values[name] = list(dict.fromkeys(values))
-    selected = any(selected_values.values())
+    excluded = selection.get("exclude", False)
+    if type(excluded) is not bool:
+        raise ValueError("线路排除选项无效")
+    selected = any(selected_values[name] for name in ("sections", "ways", "groups"))
+    explicit = selected or bool(selected_values["facility_groups"] or selected_values['included_edges'])
+    only_explicit = selection.get('only_explicit',False)
+    if type(only_explicit) is not bool:
+        raise ValueError('线路选择模式无效')
+    facility_mode = selection.get("facility", "all")
+    if kind == "rail" and facility_mode not in ("all", "lines", "facilities"):
+        raise ValueError("站场轨道选择无效")
     budget = normalize(limits) if limits is not None else DEFAULT
     feature_limit = budget["features"]
     byte_limit = budget["bytes"]
     vertex_limit = budget["vertices"]
     feature_byte_limit = budget["feature_bytes"]
-    if selected:
-        feature_limit = feature_limit * 2 if feature_limit is not None else None
-        byte_limit = byte_limit * 4 if byte_limit is not None else None
-        vertex_limit = vertex_limit * 10 if vertex_limit is not None else None
+    if explicit:
+        feature_limit = min(feature_limit * 2, HIGH["features"])
+        byte_limit = min(byte_limit * 4, HIGH["bytes"])
+        vertex_limit = min(vertex_limit * 10, HIGH["vertices"])
     # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
     if not _viewport_gate.acquire(blocking=False):
         return {"type": "FeatureCollection", "features": [], "busy": True}
@@ -355,6 +368,44 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 "b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
             ]
             parameters = [kind, west, east, south, north]
+            edge_predicate = "json_extract(f.data,'$.properties.network_edge_id') IN (SELECT id FROM included_edges)"
+            for name in ('included_edges','excluded_edges'):
+                db.execute(f'CREATE TEMP TABLE {name}(id TEXT PRIMARY KEY)')
+                db.executemany(f'INSERT INTO {name} VALUES(?)',((str(key),) for key in selected_values[name]))
+            if kind == "rail" and facility_mode != "all":
+                catalog_path = Path(directory) / "rail_catalog.sqlite"
+                if not catalog_path.exists():
+                    raise ValueError("铁路目录索引未就绪")
+                db.execute("ATTACH DATABASE ? AS catalog_visibility",
+                           (catalog_path.resolve().as_uri() + "?mode=ro",))
+                member = ("EXISTS (SELECT 1 FROM catalog_visibility.rail_directory_members m "
+                          "JOIN catalog_visibility.rail_directory_nodes d ON d.id=m.node_id "
+                          "WHERE m.catalog_id=json_extract(f.data,'$.properties.catalog_group_id') "
+                          "AND d.view='facilities')")
+                if db.execute("SELECT 1 FROM catalog_visibility.sqlite_master WHERE name='rail_facility_track_owners'").fetchone():
+                    member = ('('+member+" OR EXISTS (SELECT 1 FROM catalog_visibility.rail_facility_track_owners o "
+                        "WHERE o.object_id='object:network_edge_id:'||json_extract(f.data,'$.properties.network_edge_id')))")
+                exceptions = selected_values["facility_groups"]
+                extra = ""
+                if exceptions:
+                    db.execute("CREATE TEMP TABLE facility_exceptions(group_id TEXT PRIMARY KEY)")
+                    db.executemany("INSERT OR IGNORE INTO facility_exceptions VALUES(?)",
+                                   ((str(group),) for group in exceptions))
+                    extra = (" OR json_extract(f.data,'$.properties.catalog_group_id') "
+                             "IN (SELECT group_id FROM facility_exceptions)")
+                extra += ' OR '+edge_predicate if selected_values['included_edges'] else ''
+                clauses.append("(NOT " + member + extra + ")" if facility_mode == "lines"
+                               else "(" + member + extra + ")")
+            group_index = bool(selected_values["groups"]) and db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rail_feature_groups'"
+            ).fetchone() is not None
+            if kind == "rail" and "states" in selection:
+                states = selection['states']
+                if not isinstance(states, list) or any(v not in ('operating','construction','planned','disused','unknown') for v in states):
+                    raise ValueError('线路状态选择无效')
+                marks = ','.join('?' for _ in states) or "NULL"
+                clauses.append(f"coalesce(json_extract(f.data,'$.properties.construction_status'),CASE WHEN json_extract(f.data,'$.properties.construction')=1 THEN 'construction' ELSE 'operating' END) IN ({marks})")
+                parameters.extend(states)
             if kind != "rail":
                 try:
                     from .transport_modes import rail_display_predicate
@@ -384,13 +435,21 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                     if values:
                         placeholders = ",".join("?" for _ in values)
                         selectors.append(
+                            f"f.id IN (SELECT feature_id FROM rail_feature_groups WHERE group_id IN ({placeholders}))"
+                            if name == "groups" and group_index else
                             f"json_extract(f.data, '$.properties.{property_name}') IN ({placeholders})"
                         )
                         parameters.extend(values)
-                clauses.append("(" + " OR ".join(selectors) + ")")
-            else:
+                predicate = "(" + " OR ".join(selectors) + ")"
+                predicate = "NOT coalesce(" + predicate + ",0)" if excluded else predicate
+                clauses.append('('+predicate+' OR '+edge_predicate+')')
+            elif only_explicit and not excluded:
+                clauses.append(edge_predicate)
+            elif not explicit:
                 clauses.append('(? >= 10 OR f.service="main")')
                 parameters.append(zoom)
+            if selected_values['excluded_edges']:
+                clauses.append("coalesce(json_extract(f.data,'$.properties.network_edge_id'),'') NOT IN (SELECT id FROM excluded_edges)")
             parameters.append(feature_limit + 1 if feature_limit is not None else -1)
             rows = db.execute(
                 'SELECT CASE WHEN ? IS NULL OR length(f.data)<=? THEN f.data ELSE NULL END '
@@ -424,10 +483,11 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
             props["track_type"] = classify_track_type(
                 props.get("way_tags", props)
             )[0]
+            props.update(edge_semantics(props))
     elif kind in ("railPoints", "railPlatforms", "railStationAreas") and features:
         if kind == "railPoints":
             node_ids = [
-                feature["properties"].get("osm_node_id") for feature in features
+                feature['properties'].get('osm_node_id', feature['properties'].get('station_source_id')) for feature in features
             ]
         else:
             node_ids = sorted({
@@ -435,29 +495,27 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 for feature in features
                 for node in feature["properties"].get("associated_station_ids", [])
                 if node is not None
-            })
+            }, key=str)
         line_path = Path(directory) / "rail_lines.sqlite"
         if line_path.exists():
             line_map = {node_id: set() for node_id in node_ids}
             line_names = {}
+            construction_map, operating_map = {}, {}
             with closing(sqlite3.connect(str(line_path))) as lines:
                 for start in range(0, len(node_ids), 800):
                     batch = node_ids[start : start + 800]
                     marks = ",".join("?" for _ in batch)
-                    for node_id, line_id in lines.execute(
-                        "SELECT a.source_id,l.line_id FROM node_aliases a "
-                        "JOIN line_nodes l ON l.node_id=a.node_id "
-                        f"WHERE a.source_id IN ({marks})",
-                        batch,
-                    ):
-                        line_map.setdefault(node_id, set()).add(line_id)
-                    for node_id, line_id in lines.execute(
-                        "SELECT a.station_node_id,l.line_id FROM station_aliases a "
-                        "JOIN line_nodes l ON l.node_id=a.anchor_node "
-                        f"WHERE a.station_node_id IN ({marks})",
-                        batch,
-                    ):
-                        line_map.setdefault(node_id, set()).add(line_id)
+                    # State belongs to the incident edge, not to every node of
+                    # a long railway that happens to contain a construction part.
+                    for table, source, anchor in (('node_aliases','source_id','node_id'),
+                                                   ('station_aliases','station_node_id','anchor_node')):
+                        for endpoint in ('a', 'b'):
+                            for node_id, line_id, construction in lines.execute(
+                                f"SELECT a.{source},e.line_id,e.construction FROM {table} a "
+                                f"JOIN edges e ON e.{endpoint}=a.{anchor} WHERE a.{source} IN ({marks})", batch):
+                                line_map.setdefault(node_id, set()).add(line_id)
+                                target = construction_map if construction else operating_map
+                                target.setdefault(node_id, set()).add(line_id)
                 used_line_ids = sorted(set().union(*line_map.values())) if line_map else []
                 for start in range(0, len(used_line_ids), 800):
                     batch = used_line_ids[start : start + 800]
@@ -468,7 +526,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
             for feature in features:
                 props = feature["properties"]
                 associated = (
-                    [props.get("osm_node_id")]
+                    [props.get('osm_node_id', props.get('station_source_id'))]
                     if kind == "railPoints"
                     else props.get("associated_station_ids", [])
                 )
@@ -476,6 +534,8 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                     *(line_map.get(node, set()) for node in associated)
                 )) if associated else []
                 props["line_ids"] = line_ids
+                props['construction_line_ids'] = sorted({v for node in associated for v in construction_map.get(node, ())})
+                props['operating_line_ids'] = sorted({v for node in associated for v in operating_map.get(node, ())})
                 props["line_names"] = [line_names.get(value, value) for value in line_ids]
     for feature in features:
         props = feature["properties"]

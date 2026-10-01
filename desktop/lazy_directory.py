@@ -11,7 +11,7 @@ from contextlib import closing
 import json
 import sqlite3
 
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal
+from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal, QSignalBlocker, QItemSelectionModel
 
 
 PAGE_SIZE = 128
@@ -85,18 +85,19 @@ class SqliteDirectoryModel(QAbstractItemModel):
             return ""
         # Directory paths are materialised in the cache. A matching descendant
         # keeps every ancestor visible without creating its Qt item.
-        return (f" AND (label LIKE ? OR EXISTS(SELECT 1 FROM {self.table} d "
-                f"WHERE (d.path={self.table}.path OR d.path LIKE "
-                f"substr({self.table}.path,1,length({self.table}.path)-1)||',%') "
-                "AND d.kind='object' AND d.label LIKE ?))")
+        return (f" AND (label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM {self.table} d "
+                f"WHERE (d.path={self.table}.path OR substr(d.path,1,length({self.table}.path))="
+                f"substr({self.table}.path,1,length({self.table}.path)-1)||',') "
+                "AND d.kind='object' AND d.label LIKE ? ESCAPE '\\'))")
 
     def _search_args(self):
-        value = f"%{self.search}%"
+        literal = self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        value = f"%{literal}%"
         return (value, value) if self.search else ()
 
     def canFetchMore(self, parent=QModelIndex()):
         node = self._node(parent)
-        return len(node.children) < self._count_children(node.key)
+        return len(node.children) - int(getattr(node, "spotlight", None) in node.children) < self._count_children(node.key)
 
     def fetchMore(self, parent=QModelIndex()):
         node = self._node(parent)
@@ -106,7 +107,8 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 f"SELECT id,label,kind,object_id,child_count,total,archived "
                 f"FROM {self.table} WHERE parent_id=?" + self._search_clause()
                 + " ORDER BY kind='object',label,id LIMIT ? OFFSET ?",
-                (node.key, *self._search_args(), PAGE_SIZE, len(node.children)),
+                (node.key, *self._search_args(), PAGE_SIZE,
+                 len(node.children) - int(getattr(node, "spotlight", None) in node.children)),
             ).fetchall()
         if not rows:
             return
@@ -196,16 +198,45 @@ class SqliteDirectoryModel(QAbstractItemModel):
         self.root.fetched = False
         self.endResetModel()
 
+    def refresh_labels(self, keys):
+        """Patch materialised rows without losing expansion or selection.
+
+        An active filter may change membership after rename: invalidate only
+        loaded branches then let the existing paged query find the new results.
+        """
+        if self.search:
+            affected = set(keys)
+            with self._connect() as db:
+                for key in keys:
+                    affected.update(row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                        f'SELECT id,parent_id FROM {self.table} WHERE id=? UNION ALL '
+                        f'SELECT n.id,n.parent_id FROM {self.table} n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,)))
+            affected.add(self.root.key)
+            self.refresh_affected(affected)
+            return
+        pending = [self.root]
+        with self._connect() as db:
+            while pending:
+                parent = pending.pop()
+                for row, node in enumerate(parent.children):
+                    pending.append(node)
+                    if node.key not in keys:
+                        continue
+                    value = db.execute(f'SELECT label FROM {self.table} WHERE id=?', (node.key,)).fetchone()
+                    if value:
+                        node.label = value[0]
+                        index = self.createIndex(row, 0, node)
+                        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole])
+
     def index_for_key(self, key):
         with self._connect() as db:
-            row = db.execute(f"SELECT path FROM {self.table} WHERE id=?", (key,)).fetchone()
-        if row is None:
+            rows = db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                f'SELECT id,parent_id FROM {self.table} WHERE id=? UNION ALL '
+                f'SELECT n.id,n.parent_id FROM {self.table} n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,)).fetchall()
+        if not rows:
             return QModelIndex()
-        path = json.loads(row[0])
         parent = QModelIndex()
-        keys = ["folder:" + json.dumps(path[:depth], ensure_ascii=False) for depth in range(1, len(path) + 1)]
-        if not keys or key != keys[-1]:
-            keys.append(key)
+        keys = [row[0] for row in reversed(rows) if row[0] != self.root.key]
         for target in keys:
             while True:
                 matches = [self.index(i, 0, parent) for i in range(self.rowCount(parent))]
@@ -218,6 +249,58 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 self.fetchMore(parent)
         return parent
 
+    def refresh_view_affected(self, view, keys):
+        """Restore moved selection/focus/expansion by stable identities, silently."""
+        selection = view.selectionModel()
+        if selection is None:
+            self.refresh_affected(keys)
+            return
+        def token(index):
+            node = self._node(index)
+            return (node.key, node.kind, node.object_id) if index.isValid() else None
+        selected = [token(index) for index in selection.selectedRows()]
+        current = token(selection.currentIndex())
+        expanded = []
+        def walk(parent=QModelIndex()):
+            for row in range(self.rowCount(parent)):
+                index = self.index(row, 0, parent)
+                if view.isExpanded(index):
+                    expanded.append(token(index))
+                walk(index)
+        walk()
+        # Model removals and selection restoration must not trigger map actions.
+        with QSignalBlocker(selection), QSignalBlocker(view):
+            self.refresh_affected(keys)
+            def resolve(value):
+                if value is None:
+                    return QModelIndex()
+                key, kind, object_id = value
+                if kind == 'object' and hasattr(self, 'view'):
+                    with self._connect() as db:
+                        row = db.execute('SELECT d.id FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id WHERE m.catalog_id=? AND d.view=?', (object_id,self.view)).fetchone()
+                    if row is None:
+                        return QModelIndex()
+                    key = row[0]
+                return self.index_for_key(key)
+            for value in expanded:
+                index = resolve(value)
+                if index.isValid():
+                    view.setExpanded(index, True)
+            if selected:
+                selection.clearSelection()
+                for value in selected:
+                    index = resolve(value)
+                    if index.isValid():
+                        selection.select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                        parent = index.parent()
+                        while parent.isValid():
+                            view.setExpanded(parent, True)
+                            parent = parent.parent()
+            if current:
+                index = resolve(current)
+                if index.isValid():
+                    selection.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+
     def ids_below(self, key):
         with self._connect() as db:
             row = db.execute(f"SELECT kind,object_id,path FROM {self.table} WHERE id=?", (key,)).fetchone()
@@ -226,10 +309,11 @@ class SqliteDirectoryModel(QAbstractItemModel):
             kind, object_id, path = row
             if kind == "object":
                 return {object_id}
+            prefix = path[:-1] + ','
             return {value for (value,) in db.execute(
                 f"SELECT DISTINCT object_id FROM {self.table} WHERE kind='object' "
-                "AND (path=? OR path LIKE substr(?,1,length(?)-1)||',%')",
-                (path, path, path),
+                "AND (path=? OR substr(path,1,?)=?)",
+                (path, len(prefix), prefix),
             )}
 
     def refresh_affected(self, keys):
@@ -249,11 +333,11 @@ class SqliteDirectoryModel(QAbstractItemModel):
         with self._connect() as db:
             if node is not self.root:
                 row = db.execute(
-                    f"SELECT label,child_count,total,archived FROM {self.table} WHERE id=?",
+                    f"SELECT label,child_count,total,archived,kind,object_id FROM {self.table} WHERE id=?",
                     (node.key,),
                 ).fetchone()
                 if row:
-                    node.label, node.child_count, node.total, archived = row
+                    node.label, node.child_count, node.total, archived, node.kind, node.object_id = row
                     node.archived = bool(archived)
                     self.dataChanged.emit(index, index)
             if not node.fetched:
@@ -262,7 +346,8 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 f"SELECT id,label,kind,object_id,child_count,total,archived "
                 f"FROM {self.table} WHERE parent_id=?" + self._search_clause()
                 + " ORDER BY kind='object',label,id LIMIT ?",
-                (node.key, *self._search_args(), max(PAGE_SIZE, len(node.children))),
+                (node.key, *self._search_args(), max(PAGE_SIZE,
+                    ((len(node.children) + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE)),
             ).fetchall()
         target_keys = [value[0] for value in target]
         existing = {child.key: child for child in node.children}
@@ -278,13 +363,17 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 child = _Node(key, node, label, kind, object_id, child_count, total, bool(archived))
             else:
                 child.label, child.child_count, child.total, child.archived = label, child_count, total, bool(archived)
+                child.kind, child.object_id = kind, object_id
             if position < len(node.children) and node.children[position] is child:
                 continue
             if child in node.children:
                 old_position = node.children.index(child)
-                self.beginRemoveRows(index, old_position, old_position)
+                destination = position if old_position > position else position + 1
+                self.beginMoveRows(index, old_position, old_position, index, destination)
                 node.children.pop(old_position)
-                self.endRemoveRows()
+                node.children.insert(position, child)
+                self.endMoveRows()
+                continue
             self.beginInsertRows(index, position, position)
             node.children.insert(position, child)
             self.endInsertRows()

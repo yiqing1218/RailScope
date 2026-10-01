@@ -1,0 +1,4100 @@
+{
+  "summary": {
+    "files": 225,
+    "lines": 45802,
+    "python_files": 148,
+    "silent_handler_candidates": 17,
+    "broad_handler_candidates": 10
+  },
+  "files": [
+    {
+      "path": ".env.example",
+      "lines": 6,
+      "sha256": "773345f0ec7b433a7bf3878ede648f1f4660248ff43e8f91145b4beebbf04c05",
+      "markers": []
+    },
+    {
+      "path": ".gitignore",
+      "lines": 23,
+      "sha256": "7d679b8a568d500bd9391473134458bc86618ea89bcfa31463fe011f63fbbe3a",
+      "markers": []
+    },
+    {
+      "path": "AGENTS.md",
+      "lines": 29,
+      "sha256": "085b55acfeaf57fdd4911682dbb87cce5934a34f9c8d6254a09a33a44bcf1108",
+      "markers": []
+    },
+    {
+      "path": "Makefile",
+      "lines": 17,
+      "sha256": "a749b9f00a17af73c08f854c6ed12ba5199c95b19faac23ec04a3832faf9ba8c",
+      "markers": []
+    },
+    {
+      "path": "README.md",
+      "lines": 284,
+      "sha256": "72df0b54e50e5343dd913388f16b282c4f15055c2288f49a004e40da7952ab50",
+      "markers": []
+    },
+    {
+      "path": "Start-RailScope.cmd",
+      "lines": 3,
+      "sha256": "cf94abbf8f7a9216eee027580bdb4521f8d2c81d26fc53a88bd44cd3cbbb105b",
+      "markers": []
+    },
+    {
+      "path": "backend/alembic.ini",
+      "lines": 3,
+      "sha256": "f0efe3fd990d3e1d63dff7e4a94f039dcfb87ea51fb9201a83536a8f74a135ab",
+      "markers": []
+    },
+    {
+      "path": "backend/alembic/env.py",
+      "lines": 14,
+      "sha256": "1367bdf3a8bcf298aef7d90fc007b6564b014eda23a3cfe669d03c5f54d6856e",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/alembic/script.py.mako",
+      "lines": 5,
+      "sha256": "156770121943a6972d98137f5b5f9bfbb40628f050e48fa863543ae952ee3fb3",
+      "markers": []
+    },
+    {
+      "path": "backend/alembic/versions/0001_baseline.py",
+      "lines": 18,
+      "sha256": "c9391740effc72bf45ffbafb03ccf0c478329e8169d4e177be3ef425b24835c8",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/alembic/versions/0002_complete_domain_schema.py",
+      "lines": 42,
+      "sha256": "5929a774409c82724a1a00f90e6459467dec5d663dd582be9d334b8374585568",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/alembic/versions/0003_corridor_canonical.py",
+      "lines": 58,
+      "sha256": "618846e13563ad778fd06ad47fa14c01145076153b027e8b8ea9e95e535a128f",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/alembic/versions/0004_canonical_domain_contract.py",
+      "lines": 260,
+      "sha256": "74f27b245fdcfbf5fba9a146ae666eb0ea49f15aa21934e402557ad79b2a01b6",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [
+        {
+          "name": "upgrade",
+          "line": 75,
+          "lines": 136
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/alembic/versions/0005_rail_domain_v2.py",
+      "lines": 114,
+      "sha256": "e09a941a78ca9d05a2ea0776a2b05da5ad4d24e66cc4a7d5792d55116474e9c8",
+      "markers": [],
+      "imports": [
+        "alembic",
+        "sqlalchemy"
+      ],
+      "functions": [
+        {
+          "name": "upgrade",
+          "line": 22,
+          "lines": 87
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/pyproject.toml",
+      "lines": 23,
+      "sha256": "6ea26798eb37e4bac11eaf4bcc6901eef9e6d06247bfec485ea806c5d41eac91",
+      "markers": []
+    },
+    {
+      "path": "backend/railscope/__init__.py",
+      "lines": 3,
+      "sha256": "1972f3128e360cf6c2a122127eb33b27878ff470bd6c8b5b58698e171bee0714",
+      "markers": [],
+      "imports": [],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/cli.py",
+      "lines": 34,
+      "sha256": "4650764920c1259ed13953c05392e2985fbe808d79f301f066f650f84362063d",
+      "markers": [],
+      "imports": [
+        ".demo",
+        ".services.importers",
+        ".services.topology",
+        "__future__",
+        "argparse",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/config.py",
+      "lines": 15,
+      "sha256": "08c04eff32077d728c0c963616e2c6d08ee5f77b1a90e904edd84ef25d109368",
+      "markers": [],
+      "imports": [
+        "dataclasses",
+        "os",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/db.py",
+      "lines": 7,
+      "sha256": "58236b8f4160d6f4d790c45a54f0bb563dde4e46a143148e4211e1be84821b98",
+      "markers": [],
+      "imports": [
+        ".config",
+        "sqlalchemy"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/demo.py",
+      "lines": 86,
+      "sha256": "a7f18b1f6779fd952434a9249a48d2c1fa324628a0281575126bf576f346f086",
+      "markers": [],
+      "imports": [
+        ".domain",
+        ".repository",
+        ".services.blocks",
+        ".services.dispatch",
+        ".services.routing",
+        "__future__",
+        "math"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/domain.py",
+      "lines": 470,
+      "sha256": "b7d70860ae9db17934666b27f6a708222e1f71aac1f465b8cc0f0e1e3cce1ca3",
+      "markers": [],
+      "imports": [
+        "__future__",
+        "dataclasses",
+        "typing"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/identity.py",
+      "lines": 261,
+      "sha256": "8765ef8fd43c41831a859bdc4d7759f34a5ec89cb5a0a984653061641ea2d09a",
+      "markers": [],
+      "imports": [
+        ".domain",
+        "__future__",
+        "collections",
+        "contextlib",
+        "copy",
+        "dataclasses",
+        "json",
+        "math",
+        "pathlib",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "prepare",
+          "line": 111,
+          "lines": 134
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/integrity.py",
+      "lines": 325,
+      "sha256": "ec42269415fb62254c23d255905775b358df972c6581bb197cb02fd4d8b1e117",
+      "markers": [],
+      "imports": [
+        ".domain",
+        ".presentation",
+        ".rail_semantics",
+        ".services.timetable.canonical",
+        ".timetable_validation",
+        "__future__",
+        "math"
+      ],
+      "functions": [
+        {
+          "name": "validate_repository",
+          "line": 132,
+          "lines": 186
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/main.py",
+      "lines": 251,
+      "sha256": "c6285b26ea57d680ed6fac967a098e92ac5a09d84953ca6617c6c25a318ed134",
+      "markers": [],
+      "imports": [
+        ".demo",
+        ".domain",
+        ".repository",
+        ".services.dispatch",
+        ".services.simulation",
+        ".services.topology",
+        "__future__",
+        "collections",
+        "fastapi",
+        "fastapi.middleware.cors",
+        "fastapi.responses",
+        "logging",
+        "pydantic",
+        "uuid"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/presentation.py",
+      "lines": 38,
+      "sha256": "b82f596fddbac9c37dfe95107878062cf826450cf31471b82507092d0f09545f",
+      "markers": [],
+      "imports": [
+        "re"
+      ],
+      "functions": [],
+      "silent_handlers": [
+        36
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        36
+      ]
+    },
+    {
+      "path": "backend/railscope/rail_semantics.py",
+      "lines": 186,
+      "sha256": "c174fd20f841f00d642c2d047ebe1281542158de552e1fcff232b3e98b004d9f",
+      "markers": [],
+      "imports": [
+        "__future__",
+        "copy",
+        "dataclasses",
+        "math"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/repository.py",
+      "lines": 57,
+      "sha256": "8afa096b55bba673a1592d5ea909e8a27a97c00e2ba099733a7da23969c782b3",
+      "markers": [],
+      "imports": [
+        ".domain",
+        "dataclasses"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/__init__.py",
+      "lines": 1,
+      "sha256": "2dbfa220431bc96dea81fed50610100fd3bdbede3e4284b86b2cd12b4d5d67c8",
+      "markers": [],
+      "imports": [],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/blocks/__init__.py",
+      "lines": 19,
+      "sha256": "c514bc29042e52aa1369d617603748ecc2d0a61fd0a5de578195f39089ba4ce3",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...repository"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/conflicts/__init__.py",
+      "lines": 48,
+      "sha256": "21d34735e8679d0193ed77a0e13e9d2df802a2af042dcf31d8b38da0b5a09d0d",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...repository",
+        "__future__",
+        "collections"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/dispatch/__init__.py",
+      "lines": 90,
+      "sha256": "a9ff9073bc8ddad152a15f09be47996f81f0d919f12773e14723bfbc4f8b45a5",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...repository",
+        "..conflicts",
+        "..occupancy",
+        "..timetable.canonical",
+        "__future__",
+        "dataclasses",
+        "typing"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [
+        68
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/importers/__init__.py",
+      "lines": 26,
+      "sha256": "600b72cd0fa38bb68bb7ed83485a9f280a13d5a5be1441fcb8e22e0b930307d1",
+      "markers": [],
+      "imports": [
+        "...domain",
+        ".construction",
+        ".metro",
+        ".overpass",
+        "__future__",
+        "json",
+        "osmium",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/importers/construction.py",
+      "lines": 238,
+      "sha256": "40332963188f1153c3d04f041f06a1b8517c365b0329fd080beaad276f349be6",
+      "markers": [],
+      "imports": [
+        "...domain",
+        ".metro",
+        ".native_paths",
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "gc",
+        "osmium",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        {
+          "name": "extract_construction_metro",
+          "line": 114,
+          "lines": 125
+        }
+      ],
+      "silent_handlers": [
+        193
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        193
+      ]
+    },
+    {
+      "path": "backend/railscope/services/importers/metro.py",
+      "lines": 350,
+      "sha256": "3b1d07b5dcff99bc65fc7750d0c1cb118929014083e3f8ef1d3d0471158e7177",
+      "markers": [],
+      "imports": [
+        "...domain",
+        ".native_paths",
+        "__future__",
+        "collections",
+        "dataclasses",
+        "datetime",
+        "gc",
+        "json",
+        "osmium",
+        "pathlib",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        {
+          "name": "extract_metro_routes",
+          "line": 159,
+          "lines": 192
+        }
+      ],
+      "silent_handlers": [
+        255
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        255
+      ]
+    },
+    {
+      "path": "backend/railscope/services/importers/native_paths.py",
+      "lines": 86,
+      "sha256": "c32d902a07f809a387abe53f85cede1564b3408dd4c491281f7f36290fc8afbc",
+      "markers": [],
+      "imports": [
+        "atexit",
+        "ctypes",
+        "os",
+        "pathlib",
+        "shutil",
+        "sys",
+        "tempfile",
+        "uuid"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        49
+      ]
+    },
+    {
+      "path": "backend/railscope/services/importers/overpass.py",
+      "lines": 52,
+      "sha256": "ec0acd968b9be4c6e3d7acb47d37cc6a63c4ed92288faf89b2f7e9844795144e",
+      "markers": [],
+      "imports": [
+        "__future__",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "urllib.parse",
+        "urllib.request"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [
+        44
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/occupancy/__init__.py",
+      "lines": 49,
+      "sha256": "113d1f174fe04b061dd5aaccd328626e22b1bc6196247d401eb9d1dcb4b78b29",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...repository",
+        "..timetable",
+        "__future__"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/routing/__init__.py",
+      "lines": 127,
+      "sha256": "f743c242dd05ec47a46bc8a824a87bfc352898997bf717fd151a1b156183949e",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...integrity",
+        "...repository",
+        "__future__",
+        "heapq"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/simulation/__init__.py",
+      "lines": 68,
+      "sha256": "3a3d32aa2cebcd78437a5508f42cdb8393e088ab5d233dbafba74b91b40ddad2",
+      "markers": [],
+      "imports": [
+        "...repository",
+        "..timetable",
+        ".geometry",
+        "typing"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/simulation/geometry.py",
+      "lines": 39,
+      "sha256": "ac02c43f83bab3c7c5e00ee339e5294c6f879b33d71efba95d89ec124a844408",
+      "markers": [],
+      "imports": [
+        "bisect",
+        "math"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/stations.py",
+      "lines": 218,
+      "sha256": "06d2e2aaed1273d8c35ae7abefe0ff8f7b6bc36d84b38b6aa8eb509250a4ed32",
+      "markers": [],
+      "imports": [
+        "__future__",
+        "collections",
+        "contextlib",
+        "dataclasses",
+        "json",
+        "math",
+        "pathlib",
+        "railscope.domain",
+        "railscope.identity",
+        "sqlite3",
+        "unicodedata",
+        "uuid"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/timetable/__init__.py",
+      "lines": 44,
+      "sha256": "8aa47bb08b8c106c0b0d9e5bd3582fe8a4c85588605286853cf6452830c5417d",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...repository",
+        ".canonical",
+        "__future__",
+        "dataclasses"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/services/timetable/canonical.py",
+      "lines": 274,
+      "sha256": "0fdcf94498f4f1737a2db282ef9ed8b8998b25bd98a000afe3e53a0eb7267a84",
+      "markers": [],
+      "imports": [
+        "...domain",
+        "...integrity",
+        "...repository",
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "hashlib",
+        "math",
+        "typing"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        255
+      ]
+    },
+    {
+      "path": "backend/railscope/services/topology/__init__.py",
+      "lines": 21,
+      "sha256": "061f1dab4682baba45296c0cb0c5ae879c4d12c6d7c9f9d4d1ec585b4367fb40",
+      "markers": [],
+      "imports": [
+        "...repository",
+        "__future__",
+        "collections"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/timetable_validation.py",
+      "lines": 66,
+      "sha256": "49faf6e6cfd02c6a5336097be49b0562a9c0d4e0980fee767bbafeb3b1118823",
+      "markers": [],
+      "imports": [
+        "collections",
+        "datetime",
+        "math"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/railscope/workspace.py",
+      "lines": 330,
+      "sha256": "1214489d7178c9f4c57221c501982d20fe3d4f5c13b72dee034bec0f1dd8433c",
+      "markers": [],
+      "imports": [
+        ".",
+        ".identity",
+        ".integrity",
+        ".rail_semantics",
+        ".repository",
+        ".services.dispatch",
+        "__future__",
+        "contextlib",
+        "copy",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_api_geometry_audit.py",
+      "lines": 35,
+      "sha256": "ee4c71a2ef77e20b6450bd0208f03cae69b6a42ebfdfaa7e0101c3926bad4645",
+      "markers": [],
+      "imports": [
+        "dataclasses",
+        "railscope",
+        "railscope.demo",
+        "railscope.domain",
+        "railscope.services.blocks"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_audit_invariants.py",
+      "lines": 107,
+      "sha256": "be4d6cb3ec0262226bd61f7c30432522440691fef15c3249fbf8779e691caaac",
+      "markers": [],
+      "imports": [
+        "copy",
+        "dataclasses",
+        "pytest",
+        "railscope.demo",
+        "railscope.domain",
+        "railscope.integrity",
+        "railscope.services.dispatch",
+        "railscope.services.timetable"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_canonical_timetable.py",
+      "lines": 140,
+      "sha256": "db50cd9344fd2a90827d4f86f2fe81925d58f96bd7c96ba583a6f96f516fde92",
+      "markers": [],
+      "imports": [
+        "dataclasses",
+        "pytest",
+        "railscope.domain",
+        "railscope.repository",
+        "railscope.services.simulation",
+        "railscope.services.simulation.geometry",
+        "railscope.services.timetable",
+        "railscope.services.timetable.canonical"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_conflict_audit.py",
+      "lines": 31,
+      "sha256": "71c80aa330f845da4b125fa225ec1605ce97e92e13c05b485642ad90839a3c17",
+      "markers": [],
+      "imports": [
+        "railscope.domain",
+        "railscope.repository",
+        "railscope.services.conflicts"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_identity_audit.py",
+      "lines": 36,
+      "sha256": "213784ba2e8eabfa7ba98b8c303b8d6cba5f0bbfe263105aa6f552f0457e5f7b",
+      "markers": [],
+      "imports": [
+        "railscope.domain",
+        "railscope.identity"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_rail_domain_v2.py",
+      "lines": 233,
+      "sha256": "b562910a5795211262640e5076daef4a0b3b5b62454de3debe7c691b344627c3",
+      "markers": [],
+      "imports": [
+        "alembic.migration",
+        "alembic.operations",
+        "dataclasses",
+        "importlib.util",
+        "io",
+        "json",
+        "pathlib",
+        "pytest",
+        "railscope.domain",
+        "railscope.integrity",
+        "railscope.rail_semantics",
+        "railscope.repository",
+        "railscope.workspace",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_workspace_cache_audit.py",
+      "lines": 38,
+      "sha256": "1324636db2f0e7b3864c9cb1d68fef19bf53da6436316f4e6a7403ad9619469c",
+      "markers": [],
+      "imports": [
+        "dataclasses",
+        "json",
+        "railscope.demo",
+        "railscope.workspace",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "backend/tests/test_workspace_integrity.py",
+      "lines": 128,
+      "sha256": "1169345852d7d804d42e1fd417338bf24ec783b60de5d1aafa42eadd1cf4ea72",
+      "markers": [],
+      "imports": [
+        "dataclasses",
+        "json",
+        "pytest",
+        "railscope.domain",
+        "railscope.integrity",
+        "railscope.repository",
+        "railscope.workspace",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/Import-China-Construction-Metro.ps1",
+      "lines": 20,
+      "sha256": "a28f076c35e80a367e4c37c281b2939c9d28712926ff90fa2d36a59c207949ad",
+      "markers": []
+    },
+    {
+      "path": "desktop/Import-China-Metro.ps1",
+      "lines": 17,
+      "sha256": "acdadb9558d8f5b2bc74ec7591af928f6252a48dd1b27a85bfb38b514fceae7f",
+      "markers": []
+    },
+    {
+      "path": "desktop/Run-RailScope.ps1",
+      "lines": 90,
+      "sha256": "8e4899e7ff97bdab1a18afe16e4736ed74a0044d442d413d151f5ef830ebef4a",
+      "markers": []
+    },
+    {
+      "path": "desktop/admin_land.py",
+      "lines": 111,
+      "sha256": "7306b3247135b9f420de81398ddaa1a04398e1b989e84a1ff35dd970444dae50",
+      "markers": [],
+      "imports": [
+        "contextlib",
+        "hashlib",
+        "json",
+        "pathlib",
+        "shapely",
+        "shapely.geometry",
+        "shapely.strtree",
+        "sqlite3",
+        "threading",
+        "urllib.request",
+        "uuid"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/admin_store.py",
+      "lines": 187,
+      "sha256": "d2c12fe41d6b9eea55799db64717d2969c01ec3118103e4e6ad4342e9f227f24",
+      "markers": [],
+      "imports": [
+        ".admin_land",
+        "admin_land",
+        "contextlib",
+        "gc",
+        "json",
+        "math",
+        "osmium",
+        "pathlib",
+        "railscope.services.importers.native_paths",
+        "sqlite3",
+        "sys",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "build_index",
+          "line": 56,
+          "lines": 98
+        }
+      ],
+      "silent_handlers": [
+        149
+      ],
+      "broad_handlers": [
+        140
+      ],
+      "suppressed_handlers": [
+        149
+      ]
+    },
+    {
+      "path": "desktop/assets/china-provinces.source.md",
+      "lines": 15,
+      "sha256": "87729a83cb9421b83fec89f331edf168604c61c787c1692a01ede6f24d6ce8a0",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/design-tokens.json",
+      "lines": 25,
+      "sha256": "a554b0028dd2ed9035cbcb40bd73d2ba79a7a937b45c7b92bae5c2e3257398c9",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/map-export.js",
+      "lines": 51,
+      "sha256": "02583087e7a08e03303abd98f1db02d073442126c8a04e3526e161530163de4c",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/map.css",
+      "lines": 54,
+      "sha256": "31481149799e38dd0b9e2b163ebac2a9dea279b250536924e7ea58b761fe90ab",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/map.html",
+      "lines": 52,
+      "sha256": "ac0fd023400814d07fcb6f5c55504094f6253dfcc1c2b8128f70d734bc6a38d3",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/map.js",
+      "lines": 884,
+      "sha256": "ebe7d4651975f739db6fc9e736b7c5056012f462a388c28b7f77d4290c28567e",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/vehicle-motion.js",
+      "lines": 86,
+      "sha256": "ac4fb5052173f12c66ec8951a076c08265aec22184a22b2e6034381633dc6f82",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/visibility_mixed.svg",
+      "lines": 4,
+      "sha256": "f547a3c74c7dbf63bcff2c4716ec5eba130dffb8658918c28005057756af10a1",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/visibility_off.svg",
+      "lines": 3,
+      "sha256": "5c20ef9f9b6116e5c5b70debcd230d53cd0e1a9164fc98ca6a659f4c8d5c0e0b",
+      "markers": []
+    },
+    {
+      "path": "desktop/assets/visibility_on.svg",
+      "lines": 4,
+      "sha256": "c8221cf77f8a699c0c77b60e6159a6a0ffb921065fe62657a12ef1ad9e565fd1",
+      "markers": []
+    },
+    {
+      "path": "desktop/audit_corridor.py",
+      "lines": 86,
+      "sha256": "c71ceb55eeefce63f4f08a72f5e9d8de2add643f8ab1ef8c1f4a8d91311a0b7a",
+      "markers": [],
+      "imports": [
+        ".data_install",
+        ".rail_line_store",
+        "argparse",
+        "contextlib",
+        "json",
+        "pathlib",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/background_work.py",
+      "lines": 53,
+      "sha256": "3e0f255069a7ee879f5a5456c1448e9656ba121003070e99edc9f0d60ff8be63",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtWidgets"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [
+        26
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/bootstrap.py",
+      "lines": 81,
+      "sha256": "6fde63c5e0aa2f7917e818b22ab4dd60ea9e9b935d6e7a0a7cf636beac99eb96",
+      "markers": [],
+      "imports": [
+        "base64",
+        "hashlib",
+        "io",
+        "json",
+        "pathlib",
+        "tarfile",
+        "urllib.request"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        60
+      ]
+    },
+    {
+      "path": "desktop/boundary_ui.py",
+      "lines": 158,
+      "sha256": "3d27a4e55530d9a5e69ad7a6a7112e1d52d68b825e88b8ba49974ad7312ba3fe",
+      "markers": [],
+      "imports": [
+        ".station_search",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "json",
+        "pathlib",
+        "station_search"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/build_g1_reference.py",
+      "lines": 213,
+      "sha256": "ba1574392c7aceaa0fb5e5459f91c0104e88d9efb16611e141d4c6418c9b9f9f",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".rail",
+        "argparse",
+        "collections",
+        "geometry",
+        "heapq",
+        "json",
+        "pathlib",
+        "rail",
+        "sqlite3"
+      ],
+      "functions": [
+        {
+          "name": "build",
+          "line": 32,
+          "lines": 174
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/catalog_metadata.py",
+      "lines": 610,
+      "sha256": "846c77ec70a2b14fccd4b66594e8232364340999b846ab243313beb7af0f304f",
+      "markers": [],
+      "imports": [
+        ".catalog_workspace",
+        ".persistence",
+        ".provinces",
+        ".rail_station_directory",
+        "__future__",
+        "catalog_workspace",
+        "collections",
+        "hashlib",
+        "json",
+        "math",
+        "pathlib",
+        "persistence",
+        "provinces",
+        "rail_station_directory",
+        "sqlite3"
+      ],
+      "functions": [
+        {
+          "name": "rail_switch_owner",
+          "line": 356,
+          "lines": 109
+        },
+        {
+          "name": "rail_station_records",
+          "line": 467,
+          "lines": 144
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/catalog_workspace.py",
+      "lines": 117,
+      "sha256": "b4a92c7b8aaf07aa2dcf5a53f499ed6dade576f58180788ba9be9e84dfbf2db4",
+      "markers": [],
+      "imports": [
+        ".persistence",
+        "copy",
+        "json",
+        "pathlib",
+        "persistence"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/components.py",
+      "lines": 395,
+      "sha256": "bb9aafa64b592f8925668cedc6d0d992fcf0288df61e3cd04105334b1463bcb5",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/corridor_ui.py",
+      "lines": 878,
+      "sha256": "f1b55b1cf9055fbd628eb8673e9161eff5b404d40e7a446865b7145a63727945",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".rail_lines",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "components",
+        "copy",
+        "rail_lines",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "edit_table",
+          "line": 621,
+          "lines": 258
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/cycle_ui.py",
+      "lines": 267,
+      "sha256": "252b5abf1fd8149be5ba3247e65c664457a46786923f20c2d9d9c0a563054ee3",
+      "markers": [],
+      "imports": [
+        ".operating",
+        "PySide6.QtWidgets",
+        "copy",
+        "operating"
+      ],
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 28,
+          "lines": 100
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/data_install.py",
+      "lines": 350,
+      "sha256": "af8646d6c64b4efcefa86898946c29b001e437361054636d0bded2d4865a0db9",
+      "markers": [],
+      "imports": [
+        "datetime",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "railscope.services.importers.native_paths",
+        "shutil",
+        "subprocess",
+        "sys",
+        "threading",
+        "urllib.request",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "download_file",
+          "line": 56,
+          "lines": 80
+        },
+        {
+          "name": "install",
+          "line": 179,
+          "lines": 172
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/data_install_ui.py",
+      "lines": 178,
+      "sha256": "517ea3cde95d1993ccf9fba0f4a41a135d75a4a1812e54e6c17a2b99a1cd52e1",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".data_install",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "components",
+        "data_install",
+        "pathlib",
+        "threading"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [
+        42
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/display_names.py",
+      "lines": 258,
+      "sha256": "5d2f5b51d30e5ec3fb06094aeacbf33d69d2bee739e486620ff8fe2b18217b67",
+      "markers": [],
+      "imports": [
+        ".rail_semantics",
+        ".rail_station_directory",
+        ".rail_style_resolver",
+        ".station_track_semantics",
+        ".yard_track_names",
+        "json",
+        "rail_semantics",
+        "rail_station_directory",
+        "rail_style_resolver",
+        "railscope.presentation",
+        "station_track_semantics",
+        "yard_track_names"
+      ],
+      "functions": [
+        {
+          "name": "apply_names",
+          "line": 175,
+          "lines": 84
+        }
+      ],
+      "silent_handlers": [
+        74,
+        101
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        74,
+        101
+      ]
+    },
+    {
+      "path": "desktop/domain_adapter.py",
+      "lines": 384,
+      "sha256": "44ebb4bfacb2837807cb9de7588c9df631be0c0b83526493b3e488c9869a61d6",
+      "markers": [],
+      "imports": [
+        ".rail",
+        ".rail_categories",
+        ".rail_line_workspace",
+        ".rail_lines",
+        ".station_track_semantics",
+        "__future__",
+        "collections",
+        "contextlib",
+        "json",
+        "pathlib",
+        "rail",
+        "rail_categories",
+        "rail_line_workspace",
+        "rail_lines",
+        "railscope.domain",
+        "railscope.identity",
+        "railscope.integrity",
+        "railscope.presentation",
+        "railscope.rail_semantics",
+        "railscope.repository",
+        "railscope.services.simulation.geometry",
+        "railscope.workspace",
+        "sqlite3",
+        "station_track_semantics"
+      ],
+      "functions": [
+        {
+          "name": "_build_repository",
+          "line": 66,
+          "lines": 319
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/examples/g1-reference.json",
+      "lines": 1,
+      "sha256": "ae98208e6c9c700b4e19f326a54cb338581a6f92bc454dd4f0c5e6a7f0371b9a",
+      "markers": []
+    },
+    {
+      "path": "desktop/examples/g1-service.json",
+      "lines": 15,
+      "sha256": "6e70e3169f456a61cfbf0c1459f91c17215aeb656ccdcceeead1fa4bb5e3b843",
+      "markers": []
+    },
+    {
+      "path": "desktop/examples/jinghu-corridor.csv",
+      "lines": 2,
+      "sha256": "a15940510363ef5f113c21dd4892a77f1e463f36af35f3b380402f22543d7788",
+      "markers": []
+    },
+    {
+      "path": "desktop/examples/jinghu-corridor.json",
+      "lines": 18,
+      "sha256": "80643a1bc2c4d8ed512391875895dd775deeca0b4955eb09bff390b71d8c45d9",
+      "markers": []
+    },
+    {
+      "path": "desktop/geometry.py",
+      "lines": 37,
+      "sha256": "7f66ac6c433a5ea038d8ad5ed69ab9979c8a8ee14c440b4d8faf92b56b4c4026",
+      "markers": [],
+      "imports": [
+        "railscope.services.simulation.geometry"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/hierarchy.py",
+      "lines": 154,
+      "sha256": "5fe8649141466c49f139a58c394ff8da48535d06297968dd5ed5b317f0571dbd",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        "copy",
+        "geometry",
+        "json",
+        "pathlib",
+        "re"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/hierarchy_ui.py",
+      "lines": 285,
+      "sha256": "c14756d7ff6200e0eb06b751918bc24aba1e62b7b57c7fe9dca558a3cfd0e115",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".hierarchy",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "components",
+        "hierarchy"
+      ],
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 31,
+          "lines": 88
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/import_admin.py",
+      "lines": 15,
+      "sha256": "dafd83c27e2a837ae228f1d4670bc4df4887f3e431024083adbe1fbd3e00e27d",
+      "markers": [],
+      "imports": [
+        "admin_land",
+        "admin_store",
+        "argparse",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/import_rail.py",
+      "lines": 353,
+      "sha256": "2f00bc3f8cf69691314972a279541dae791e3a546336d3ecfe8f34e9afa3e588",
+      "markers": [],
+      "imports": [
+        ".rail_boundaries",
+        ".rail_categories",
+        ".rail_store",
+        ".transport_modes",
+        "argparse",
+        "collections",
+        "datetime",
+        "json",
+        "osmium",
+        "pathlib",
+        "rail_boundaries",
+        "rail_categories",
+        "rail_store",
+        "railscope.domain",
+        "railscope.identity",
+        "railscope.rail_semantics",
+        "railscope.services.importers.native_paths",
+        "sys",
+        "transport_modes"
+      ],
+      "functions": [
+        {
+          "name": "extract",
+          "line": 21,
+          "lines": 324
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/import_roads.py",
+      "lines": 14,
+      "sha256": "6435c3c1b317283fc81f7e7c1745a5b81062c93fd73b4d81b9a282cdd673ab9f",
+      "markers": [],
+      "imports": [
+        "argparse",
+        "pathlib",
+        "road_store"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/import_station_areas.py",
+      "lines": 333,
+      "sha256": "1dd999a4f7db05b49ec1df1f50a19a41aef924a62d2e08c1fc6577164ac4089a",
+      "markers": [],
+      "imports": [
+        ".metro_data",
+        ".station_search",
+        "argparse",
+        "collections",
+        "datetime",
+        "gc",
+        "json",
+        "metro_data",
+        "os",
+        "osmium",
+        "pathlib",
+        "railscope.services.importers.metro",
+        "railscope.services.importers.native_paths",
+        "shutil",
+        "station_search",
+        "subprocess",
+        "sys",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "extract",
+          "line": 24,
+          "lines": 256
+        }
+      ],
+      "silent_handlers": [
+        188
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        188
+      ]
+    },
+    {
+      "path": "desktop/launcher.py",
+      "lines": 5272,
+      "sha256": "50b38129b89213ccfe7072f84a869dc3e7333746e147950ea6b675ced9042d3d",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtSvg",
+        "PySide6.QtWebChannel",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.QtWidgets",
+        "__future__",
+        "admin_store",
+        "argparse",
+        "base64",
+        "bootstrap",
+        "boundary_ui",
+        "catalog_metadata",
+        "components",
+        "copy",
+        "corridor_ui",
+        "data_install",
+        "data_install_ui",
+        "display_names",
+        "geometry",
+        "hierarchy",
+        "hierarchy_ui",
+        "http.server",
+        "json",
+        "layer_state",
+        "lazy_directory",
+        "line_metadata",
+        "line_metadata_ui",
+        "map_commands",
+        "map_zoom_settings",
+        "math",
+        "metro_data",
+        "metro_line_directory",
+        "metro_store",
+        "metro_style_ui",
+        "operating",
+        "operating_ui",
+        "os",
+        "pathlib",
+        "rail_catalog_ui",
+        "rail_categories",
+        "rail_connection_ui",
+        "rail_point_style_ui",
+        "rail_relationship_ui",
+        "rail_relationships",
+        "rail_semantics",
+        "rail_station_directory",
+        "rail_store",
+        "rail_style_resolver",
+        "rail_style_ui",
+        "rail_ui",
+        "railscope.demo",
+        "railscope.identity",
+        "railscope.rail_semantics",
+        "railscope.services.stations",
+        "railscope.services.topology",
+        "re",
+        "repair_hefei_s1",
+        "road_catalog_ui",
+        "road_services",
+        "road_store",
+        "road_style_ui",
+        "shutil",
+        "sqlite3",
+        "station_schematic",
+        "station_track_ui",
+        "station_tracks",
+        "subprocess",
+        "sys",
+        "threading",
+        "urllib.parse",
+        "viewport_settings",
+        "yard_track_names"
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "line": 4641,
+          "lines": 628
+        },
+        {
+          "name": "do_GET",
+          "line": 276,
+          "lines": 140
+        },
+        {
+          "name": "__init__",
+          "line": 554,
+          "lines": 168
+        },
+        {
+          "name": "build_menus",
+          "line": 1031,
+          "lines": 200
+        },
+        {
+          "name": "display_feature",
+          "line": 3311,
+          "lines": 323
+        },
+        {
+          "name": "edit_line_metadata",
+          "line": 3690,
+          "lines": 232
+        },
+        {
+          "name": "edit_selected_metadata",
+          "line": 3923,
+          "lines": 333
+        },
+        {
+          "name": "save",
+          "line": 4150,
+          "lines": 103
+        },
+        {
+          "name": "capture",
+          "line": 4686,
+          "lines": 580
+        },
+        {
+          "name": "complete",
+          "line": 4691,
+          "lines": 570
+        },
+        {
+          "name": "finish",
+          "line": 4752,
+          "lines": 194
+        },
+        {
+          "name": "inspect_controls",
+          "line": 5082,
+          "lines": 172
+        },
+        {
+          "name": "inspect_movement",
+          "line": 5137,
+          "lines": 109
+        }
+      ],
+      "silent_handlers": [
+        295,
+        319,
+        349,
+        399
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        295,
+        319,
+        349,
+        399
+      ]
+    },
+    {
+      "path": "desktop/layer_state.py",
+      "lines": 38,
+      "sha256": "2c4f94ed7b6bad99f2bdb3f8004388b5c524ea482059e24329ce006693f2673b",
+      "markers": [],
+      "imports": [],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/lazy_directory.py",
+      "lines": 293,
+      "sha256": "9508aeb9605c12d5450f7a520718ddf58b916c450817f2a4fcddd482633ec99e",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "__future__",
+        "contextlib",
+        "dataclasses",
+        "json",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/line_metadata.py",
+      "lines": 112,
+      "sha256": "f086e80d2d9e9718a25ed40d2c59ccf329afb2d47d25f1f70c20d39ae63f3b76",
+      "markers": [],
+      "imports": [
+        ".rail_style_resolver",
+        "rail_style_resolver",
+        "railscope.presentation"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/line_metadata_ui.py",
+      "lines": 285,
+      "sha256": "fcdba689d82557c3b78af4f5c5ad4a4d834f41e30cf94cb691be164117563b0a",
+      "markers": [],
+      "imports": [
+        ".line_metadata",
+        ".rail_style_resolver",
+        "PySide6.QtWidgets",
+        "line_metadata",
+        "rail_style_resolver"
+      ],
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 111,
+          "lines": 112
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/map_commands.py",
+      "lines": 18,
+      "sha256": "77b959ae3613bb957c054ce8eb1b0b59eae15ff338b0ab6edec87ab2363e23ec",
+      "markers": [],
+      "imports": [
+        "collections"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/map_zoom_settings.py",
+      "lines": 58,
+      "sha256": "a90339f6969a10bdfd93c48ffe1f2c97108d8a1b745140e563b5c7aadd0660ab",
+      "markers": [],
+      "imports": [
+        "json",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/metro_data.py",
+      "lines": 394,
+      "sha256": "ccc31d11690f3c8cb89fee89216759aab41cf0c7b3f0f788c9cffed5dc224c2c",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".station_search",
+        "collections",
+        "copy",
+        "geometry",
+        "heapq",
+        "json",
+        "math",
+        "pathlib",
+        "railscope.services.stations",
+        "re",
+        "station_search"
+      ],
+      "functions": [
+        {
+          "name": "build_shanghai_lines",
+          "line": 294,
+          "lines": 101
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/metro_line_directory.py",
+      "lines": 177,
+      "sha256": "ea0b46a3ed079f615918fefc45e4c72cd342e5cf2f453f95d85b688f8d41c877",
+      "markers": [],
+      "imports": [
+        ".lazy_directory",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "__future__",
+        "collections",
+        "contextlib",
+        "hashlib",
+        "json",
+        "lazy_directory",
+        "sqlite3"
+      ],
+      "functions": [
+        {
+          "name": "sync_line_directory",
+          "line": 23,
+          "lines": 86
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/metro_store.py",
+      "lines": 550,
+      "sha256": "225d7b5b39cc095390b94998efcd6af7647c62f90e895b1bc59f76f72acc80d6",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".metro_data",
+        "__future__",
+        "catalog_metadata",
+        "collections",
+        "collections.abc",
+        "contextlib",
+        "hashlib",
+        "json",
+        "metro_data",
+        "pathlib",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "ensure_index",
+          "line": 123,
+          "lines": 89
+        }
+      ],
+      "silent_handlers": [
+        133
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        133
+      ]
+    },
+    {
+      "path": "desktop/metro_style_ui.py",
+      "lines": 149,
+      "sha256": "800add1e572449a580fa117c21162a1101af7dfe566b6d2cdb3e46f6028cbbb1",
+      "markers": [],
+      "imports": [
+        "PySide6.QtWidgets",
+        "json",
+        "math",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/operating.py",
+      "lines": 577,
+      "sha256": "ab1697b5475b9c5b6e3d5d71c38832b080f72dbf076d9cd5fafc89fbee9d86cf",
+      "markers": [],
+      "imports": [
+        "copy",
+        "json",
+        "math",
+        "pathlib"
+      ],
+      "functions": [
+        {
+          "name": "validate",
+          "line": 41,
+          "lines": 97
+        },
+        {
+          "name": "load",
+          "line": 449,
+          "lines": 89
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/operating_ui.py",
+      "lines": 1055,
+      "sha256": "9c4c4beda54f780b205a436a99a96515c4334e8a539d80f51179dc93f1bc1703",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".cycle_ui",
+        ".geometry",
+        ".operating",
+        ".vehicle_motion",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "components",
+        "cycle_ui",
+        "geometry",
+        "operating",
+        "pathlib",
+        "shiboken6",
+        "time",
+        "vehicle_motion"
+      ],
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 113,
+          "lines": 190
+        },
+        {
+          "name": "sidebar",
+          "line": 308,
+          "lines": 122
+        },
+        {
+          "name": "refresh_diagram",
+          "line": 957,
+          "lines": 99
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/persistence.py",
+      "lines": 20,
+      "sha256": "65af027416cfadf3a8526458efd2ed2bb3153e5a8b55ef186c396d20c6f04867",
+      "markers": [],
+      "imports": [
+        "json",
+        "pathlib",
+        "tempfile"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/provinces.py",
+      "lines": 381,
+      "sha256": "c1ebf5529dd69ade1e861459e0f3bbf304ca335618d6cff37c6ca190c11e8866",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".rail_categories",
+        ".rail_line_store",
+        ".rail_semantics",
+        ".rail_store",
+        "geometry",
+        "hashlib",
+        "json",
+        "pathlib",
+        "rail_categories",
+        "rail_line_store",
+        "rail_semantics",
+        "rail_store",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "geographic_catalog",
+          "line": 236,
+          "lines": 146
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail.py",
+      "lines": 695,
+      "sha256": "3cc7bb8aebf0a2f5f0256d3fec76bea5eb3d8923fe5b7e8434e2f7248d235a68",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".operating",
+        ".rail_lines",
+        ".route_intent",
+        ".station_positions",
+        "copy",
+        "datetime",
+        "geometry",
+        "hashlib",
+        "json",
+        "math",
+        "operating",
+        "rail_lines",
+        "railscope.presentation",
+        "route_intent",
+        "station_positions"
+      ],
+      "functions": [
+        {
+          "name": "train_path",
+          "line": 82,
+          "lines": 84
+        },
+        {
+          "name": "compile_rail_plan",
+          "line": 297,
+          "lines": 289
+        },
+        {
+          "name": "validate_corridors",
+          "line": 588,
+          "lines": 108
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_assembly.py",
+      "lines": 194,
+      "sha256": "7d471577e9088ea5325a3139081ba6c966698ef4c90e0df283f2f2fc119cdba8",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".rail_line_store",
+        ".rail_lines",
+        ".rail_store",
+        "geometry",
+        "json",
+        "pathlib",
+        "rail_line_store",
+        "rail_lines",
+        "rail_store"
+      ],
+      "functions": [
+        {
+          "name": "assemble_jinghu",
+          "line": 28,
+          "lines": 167
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_boundaries.py",
+      "lines": 491,
+      "sha256": "c4b06397b5c946934aef97a61d36d58da2a031dc39a0764aae5037d591b09681",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".data_install",
+        ".geometry",
+        ".rail_line_store",
+        ".rail_station_directory",
+        ".station_search",
+        ".transport_modes",
+        "argparse",
+        "catalog_metadata",
+        "collections",
+        "contextlib",
+        "data_install",
+        "gc",
+        "geometry",
+        "json",
+        "osmium",
+        "pathlib",
+        "rail_line_store",
+        "rail_station_directory",
+        "railscope.services.importers.native_paths",
+        "shapely.geometry",
+        "shapely.strtree",
+        "sqlite3",
+        "station_search",
+        "sys",
+        "transport_modes"
+      ],
+      "functions": [
+        {
+          "name": "associate",
+          "line": 70,
+          "lines": 96
+        },
+        {
+          "name": "extract",
+          "line": 194,
+          "lines": 290
+        }
+      ],
+      "silent_handlers": [
+        334
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        334
+      ]
+    },
+    {
+      "path": "desktop/rail_catalog_index.py",
+      "lines": 335,
+      "sha256": "30a6068809df044a91170c97f550a74fc32a5faf6094e8ae7752c5e9d8208134",
+      "markers": [],
+      "imports": [
+        ".provinces",
+        ".rail_categories",
+        ".rail_semantics",
+        "collections",
+        "collections.abc",
+        "contextlib",
+        "hashlib",
+        "json",
+        "pathlib",
+        "provinces",
+        "rail_categories",
+        "rail_semantics",
+        "re",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "build_index",
+          "line": 42,
+          "lines": 131
+        }
+      ],
+      "silent_handlers": [
+        67
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        67
+      ]
+    },
+    {
+      "path": "desktop/rail_catalog_model.py",
+      "lines": 565,
+      "sha256": "d710b0af592671e585e823ae29ad8e11762a6dcc58d906d9f96f923fae1d8713",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".lazy_directory",
+        ".rail_semantics",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "components",
+        "contextlib",
+        "hashlib",
+        "json",
+        "lazy_directory",
+        "rail_semantics",
+        "sqlite3"
+      ],
+      "functions": [
+        {
+          "name": "_update_directory_rows",
+          "line": 150,
+          "lines": 104
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [
+        278
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_catalog_ui.py",
+      "lines": 4033,
+      "sha256": "d918601f297542271abc1e63cfc3f7cf4ff8f5653c42192377c1a79ba0028d2f",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".catalog_workspace",
+        ".components",
+        ".display_names",
+        ".provinces",
+        ".rail_catalog_index",
+        ".rail_catalog_model",
+        ".rail_categories",
+        ".rail_line_store",
+        ".rail_line_workspace",
+        ".rail_relationships",
+        ".rail_semantics",
+        ".rail_station_catalog_model",
+        ".rail_store",
+        ".rail_style_resolver",
+        ".yard_track_names",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "catalog_metadata",
+        "catalog_workspace",
+        "components",
+        "contextlib",
+        "copy",
+        "display_names",
+        "hashlib",
+        "json",
+        "math",
+        "pathlib",
+        "provinces",
+        "rail_catalog_index",
+        "rail_catalog_model",
+        "rail_categories",
+        "rail_line_store",
+        "rail_line_workspace",
+        "rail_relationships",
+        "rail_semantics",
+        "rail_station_catalog_model",
+        "rail_store",
+        "rail_style_resolver",
+        "sqlite3",
+        "threading",
+        "uuid",
+        "yard_track_names"
+      ],
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 371,
+          "lines": 193
+        },
+        {
+          "name": "populate",
+          "line": 1214,
+          "lines": 178
+        },
+        {
+          "name": "populate_station_tree",
+          "line": 1710,
+          "lines": 139
+        },
+        {
+          "name": "_refresh_station_items",
+          "line": 2375,
+          "lines": 80
+        },
+        {
+          "name": "save_station_override",
+          "line": 2720,
+          "lines": 99
+        },
+        {
+          "name": "save_overrides",
+          "line": 2862,
+          "lines": 108
+        },
+        {
+          "name": "_move_line_items_in_tree",
+          "line": 3175,
+          "lines": 100
+        },
+        {
+          "name": "item_menu",
+          "line": 3343,
+          "lines": 81
+        },
+        {
+          "name": "focus_item",
+          "line": 3778,
+          "lines": 95
+        },
+        {
+          "name": "organize",
+          "line": 3949,
+          "lines": 85
+        }
+      ],
+      "silent_handlers": [
+        560
+      ],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        560
+      ]
+    },
+    {
+      "path": "desktop/rail_categories.py",
+      "lines": 281,
+      "sha256": "4a78c87688cc16e1d5f9e74c649f6c2c2e259530113bb04543098300b8cb588b",
+      "markers": [],
+      "imports": [
+        ".rail_semantics",
+        ".rail_style_resolver",
+        "rail_semantics",
+        "rail_style_resolver"
+      ],
+      "functions": [
+        {
+          "name": "catalog_parents",
+          "line": 179,
+          "lines": 87
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_connection_ui.py",
+      "lines": 103,
+      "sha256": "b25efdb920906d0b02d1ced765b11917027e56c36130683948123e6f75529dc8",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".corridor_ui",
+        "PySide6.QtWidgets",
+        "components",
+        "corridor_ui"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_facility_ownership.py",
+      "lines": 162,
+      "sha256": "7380d38d7c1d909e013b173550d85a52749e8714a5d89ebcb537373837221c7b",
+      "markers": [],
+      "imports": [
+        ".rail_semantics",
+        "collections",
+        "contextlib",
+        "json",
+        "pathlib",
+        "rail_semantics",
+        "shapely.geometry",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_inventory.py",
+      "lines": 50,
+      "sha256": "4200941176dc4eb3fb9f8715b69433d5ba54cce5fbb6eeda6f8fde5e243db088",
+      "markers": [],
+      "imports": [
+        ".data_install",
+        ".rail_line_store",
+        "argparse",
+        "contextlib",
+        "pathlib",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_line_store.py",
+      "lines": 2033,
+      "sha256": "d79727295ac426dabb43715a8538e4324c3e528997c38d968509a023fe1dbb6f",
+      "markers": [],
+      "imports": [
+        ".",
+        ".geometry",
+        ".rail_categories",
+        ".rail_line_workspace",
+        ".rail_lines",
+        ".rail_reference",
+        ".rail_semantics",
+        ".rail_station_directory",
+        ".rail_transfer",
+        ".station_positions",
+        "collections",
+        "collections.abc",
+        "contextlib",
+        "geometry",
+        "itertools",
+        "json",
+        "math",
+        "pathlib",
+        "rail_categories",
+        "rail_line_workspace",
+        "rail_lines",
+        "rail_reference",
+        "rail_semantic_index",
+        "rail_semantics",
+        "rail_station_directory",
+        "rail_transfer",
+        "sqlite3",
+        "station_positions",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "build_line_index",
+          "line": 77,
+          "lines": 323
+        },
+        {
+          "name": "station_connection_override",
+          "line": 596,
+          "lines": 86
+        },
+        {
+          "name": "search_endpoints",
+          "line": 904,
+          "lines": 224
+        },
+        {
+          "name": "sections",
+          "line": 1828,
+          "lines": 98
+        },
+        {
+          "name": "write_export",
+          "line": 1927,
+          "lines": 97
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [
+        395,
+        2021
+      ],
+      "suppressed_handlers": [
+        1255,
+        1720
+      ]
+    },
+    {
+      "path": "desktop/rail_line_terminals.py",
+      "lines": 28,
+      "sha256": "81078349215cf057ba23dcb63070f3c5f874663a99bddd47646247b802f6cacb",
+      "markers": [],
+      "imports": [
+        "re"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_line_workspace.py",
+      "lines": 240,
+      "sha256": "5afc45fdb1a97e811be7567b81870814f68f72edebbb22bb25648af274ff3e25",
+      "markers": [],
+      "imports": [
+        ".rail_semantics",
+        ".rail_style_resolver",
+        "collections",
+        "copy",
+        "hashlib",
+        "json",
+        "rail_semantics",
+        "rail_style_resolver"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_lines.py",
+      "lines": 668,
+      "sha256": "90544df8bc4c60ae0542a2d6874c171e9c912e44446a10890d221f5467c59681",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        ".rail_categories",
+        ".rail_line_workspace",
+        ".rail_semantics",
+        "collections",
+        "copy",
+        "csv",
+        "geometry",
+        "hashlib",
+        "heapq",
+        "io",
+        "itertools",
+        "json",
+        "rail_categories",
+        "rail_line_workspace",
+        "rail_semantics",
+        "railscope.presentation"
+      ],
+      "functions": [
+        {
+          "name": "resolve",
+          "line": 468,
+          "lines": 95
+        },
+        {
+          "name": "sections",
+          "line": 589,
+          "lines": 80
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_point_style_ui.py",
+      "lines": 113,
+      "sha256": "1444df305a6c7e7f0a5cc94a113a064357a35e54603a33546a97c73508f07ade",
+      "markers": [],
+      "imports": [
+        "PySide6.QtWidgets",
+        "json",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_reference.py",
+      "lines": 89,
+      "sha256": "080809791df3b3ef677eba05e44a2b53cf9397b3ad133c6071f3657934832fb4",
+      "markers": [],
+      "imports": [
+        ".rail_lines",
+        "heapq",
+        "itertools",
+        "rail_lines"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_relationship_ui.py",
+      "lines": 51,
+      "sha256": "7e4eff7d3ba717dc6553b6125a8d36f0df2d8cb6d1fc2fcceded7327bb6b5d5b",
+      "markers": [],
+      "imports": [
+        ".corridor_ui",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "corridor_ui"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_relationships.py",
+      "lines": 65,
+      "sha256": "3790a7cceb818ba91b1c0fba8ffb78b6ceb88035fd7b44f08f1f24958121fd4e",
+      "markers": [],
+      "imports": [],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_semantic_index.py",
+      "lines": 82,
+      "sha256": "77fcd175766dd927829153ef3ed1e1087f8dbe73ab17f2539a5449d663201e01",
+      "markers": [],
+      "imports": [
+        ".rail_semantics",
+        "json",
+        "rail_semantics"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_semantics.py",
+      "lines": 114,
+      "sha256": "a02d5962f046b4cc9a10768b45c6dc4c130c1059b936eda79969da09514425b8",
+      "markers": [],
+      "imports": [
+        "copy",
+        "math",
+        "railscope.rail_semantics"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_station_catalog_model.py",
+      "lines": 487,
+      "sha256": "2b6127ab8d914cd33636133262d9716a39aeb260d988e7f8e1097d343e8c64f5",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".lazy_directory",
+        ".rail_facility_ownership",
+        "PySide6.QtCore",
+        "catalog_metadata",
+        "collections",
+        "contextlib",
+        "hashlib",
+        "json",
+        "lazy_directory",
+        "rail_facility_ownership",
+        "sqlite3"
+      ],
+      "functions": [
+        {
+          "name": "sync_station_catalog",
+          "line": 50,
+          "lines": 203
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_station_directory.py",
+      "lines": 224,
+      "sha256": "231ae16e01ba6a5ad36fe058acccb7a837ce7f06c3a2a7e4c0004fec7c33a1ee",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".station_positions",
+        ".station_search",
+        ".transport_modes",
+        "catalog_metadata",
+        "contextlib",
+        "functools",
+        "json",
+        "math",
+        "pathlib",
+        "sqlite3",
+        "station_positions",
+        "station_search",
+        "transport_modes"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_station_import.py",
+      "lines": 202,
+      "sha256": "f80752077cdf04bee0ae6f284aba86f628b5e61a7c4e68b08de29964f033d233",
+      "markers": [],
+      "imports": [
+        ".rail_station_directory",
+        ".station_positions",
+        ".station_search",
+        "copy",
+        "difflib",
+        "rail_station_directory",
+        "railscope.services.simulation.geometry",
+        "station_positions",
+        "station_search"
+      ],
+      "functions": [
+        {
+          "name": "station_choices",
+          "line": 21,
+          "lines": 100
+        },
+        {
+          "name": "resolve_stops",
+          "line": 123,
+          "lines": 80
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_store.py",
+      "lines": 580,
+      "sha256": "0d0a1d55cb62301495ae8d6968960acbd80a45164982056f31a83dff9fe37725",
+      "markers": [],
+      "imports": [
+        ".rail_categories",
+        ".rail_lines",
+        ".transport_modes",
+        ".viewport_settings",
+        "contextlib",
+        "json",
+        "math",
+        "pathlib",
+        "rail_categories",
+        "rail_lines",
+        "railscope.rail_semantics",
+        "sqlite3",
+        "threading",
+        "transport_modes",
+        "uuid",
+        "viewport_settings"
+      ],
+      "functions": [
+        {
+          "name": "build_index",
+          "line": 74,
+          "lines": 109
+        },
+        {
+          "name": "upgrade_render_features",
+          "line": 185,
+          "lines": 123
+        },
+        {
+          "name": "viewport",
+          "line": 310,
+          "lines": 250
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_style_resolver.py",
+      "lines": 138,
+      "sha256": "7489ff196dfdec7f1f506f24f80cabe97c90a4aeb0f70a8f1bf6662a9d6cc083",
+      "markers": [],
+      "imports": [],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_style_ui.py",
+      "lines": 324,
+      "sha256": "13e014ad04aec7655e7b127850e4f52528acc5f3d0a2d672737e32ccc9df50a1",
+      "markers": [],
+      "imports": [
+        ".rail_categories",
+        ".rail_style_resolver",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "json",
+        "math",
+        "pathlib",
+        "rail_categories",
+        "rail_style_resolver",
+        "re"
+      ],
+      "functions": [
+        {
+          "name": "validate_styles",
+          "line": 93,
+          "lines": 81
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_tables.py",
+      "lines": 204,
+      "sha256": "0c2c2311595deeb45b1dbb7eeb90e082b94af1f3cb967d7f4ee5cc3d9613afaf",
+      "markers": [],
+      "imports": [
+        ".operating",
+        ".rail",
+        ".rail_station_import",
+        "csv",
+        "io",
+        "operating",
+        "rail",
+        "rail_station_import"
+      ],
+      "functions": [
+        {
+          "name": "merge_csv",
+          "line": 31,
+          "lines": 96
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_transfer.py",
+      "lines": 116,
+      "sha256": "b08a74a88fe61c3e784cf9ff95f90eb867bcd5ba79d7e89e2b5abe19a4a0d723",
+      "markers": [],
+      "imports": [
+        ".rail_lines",
+        "collections",
+        "heapq",
+        "itertools",
+        "rail_lines"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/rail_ui.py",
+      "lines": 1974,
+      "sha256": "04ab4710d1161311cc0094eb2ce5b6cc8c5d5892dfe99bfa0ce33941cfe9cf23",
+      "markers": [],
+      "imports": [
+        ".background_work",
+        ".components",
+        ".display_names",
+        ".domain_adapter",
+        ".geometry",
+        ".operating",
+        ".operating_ui",
+        ".persistence",
+        ".rail",
+        ".rail_assembly",
+        ".rail_line_store",
+        ".rail_lines",
+        ".rail_station_directory",
+        ".rail_station_import",
+        ".rail_store",
+        ".rail_tables",
+        ".route_intent",
+        ".station_positions",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "background_work",
+        "components",
+        "copy",
+        "display_names",
+        "domain_adapter",
+        "geometry",
+        "json",
+        "operating",
+        "operating_ui",
+        "pathlib",
+        "persistence",
+        "rail",
+        "rail_assembly",
+        "rail_line_store",
+        "rail_lines",
+        "rail_station_directory",
+        "rail_station_import",
+        "rail_store",
+        "rail_tables",
+        "route_intent",
+        "sqlite3",
+        "station_positions"
+      ],
+      "functions": [
+        {
+          "name": "apply_payload",
+          "line": 206,
+          "lines": 209
+        },
+        {
+          "name": "push_corridors",
+          "line": 477,
+          "lines": 131
+        },
+        {
+          "name": "merge_corridors",
+          "line": 1026,
+          "lines": 144
+        },
+        {
+          "name": "organize_lines",
+          "line": 1227,
+          "lines": 115
+        },
+        {
+          "name": "refresh_table",
+          "line": 1447,
+          "lines": 80
+        },
+        {
+          "name": "edit_train_stops",
+          "line": 1597,
+          "lines": 128
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        194
+      ]
+    },
+    {
+      "path": "desktop/repair_hefei_s1.py",
+      "lines": 167,
+      "sha256": "9e50bf1b43a2a765512f24a6d92f7f5d85d2b4b0b7ff6be4277990fcdad753ef",
+      "markers": [],
+      "imports": [
+        "datetime",
+        "json",
+        "pathlib",
+        "railscope.services.importers.construction",
+        "railscope.services.importers.metro",
+        "shutil",
+        "sys",
+        "urllib.request",
+        "xml.etree.ElementTree"
+      ],
+      "functions": [
+        {
+          "name": "recover",
+          "line": 44,
+          "lines": 115
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/requirements.txt",
+      "lines": 4,
+      "sha256": "c9fdaf83fd803e9b361676b71e3fa3bfbae40d97a1f017ec15a6acaddc04a414",
+      "markers": []
+    },
+    {
+      "path": "desktop/road_catalog_ui.py",
+      "lines": 163,
+      "sha256": "11418c0b508b02acbf02a4b554b4dbce0afbe7d7d228b2dfae37086ff052368f",
+      "markers": [],
+      "imports": [
+        ".components",
+        ".lazy_directory",
+        ".road_services",
+        ".road_store",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "components",
+        "lazy_directory",
+        "pathlib",
+        "road_services",
+        "road_store"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/road_overview.py",
+      "lines": 153,
+      "sha256": "79388dd61515a4aea8acccf365fd7a32f2c55121bebeea6bfd8168176516b7f3",
+      "markers": [],
+      "imports": [
+        "collections",
+        "contextlib",
+        "json",
+        "pathlib",
+        "sqlite3",
+        "threading",
+        "uuid"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/road_services.py",
+      "lines": 338,
+      "sha256": "c7ba2ee7dfb4563bd171df3ff4b2ca03110892f21686ced00453ca1eda5a0b4f",
+      "markers": [],
+      "imports": [
+        "contextlib",
+        "dataclasses",
+        "functools",
+        "gc",
+        "json",
+        "osmium",
+        "pathlib",
+        "railscope.domain",
+        "railscope.repository",
+        "railscope.services.importers.native_paths",
+        "shapely",
+        "shapely.geometry",
+        "shapely.strtree",
+        "sqlite3",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "build_services",
+          "line": 58,
+          "lines": 107
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": [
+        79,
+        149
+      ]
+    },
+    {
+      "path": "desktop/road_store.py",
+      "lines": 363,
+      "sha256": "2a3722d718c3c78fe333c9d72629747c2ebac163c2736090fef7690d4b53b7db",
+      "markers": [],
+      "imports": [
+        ".provinces",
+        ".road_overview",
+        ".road_services",
+        "contextlib",
+        "gc",
+        "json",
+        "math",
+        "osmium",
+        "pathlib",
+        "provinces",
+        "railscope.services.importers.native_paths",
+        "re",
+        "road_overview",
+        "road_services",
+        "sqlite3",
+        "sys",
+        "time",
+        "uuid"
+      ],
+      "functions": [
+        {
+          "name": "build_index",
+          "line": 64,
+          "lines": 152
+        }
+      ],
+      "silent_handlers": [
+        178,
+        210
+      ],
+      "broad_handlers": [
+        206
+      ],
+      "suppressed_handlers": [
+        178,
+        210
+      ]
+    },
+    {
+      "path": "desktop/road_style_ui.py",
+      "lines": 78,
+      "sha256": "ba6fa05bd905e6ac719a37dee524c9ac357d40d6b061ff84638ff994a481a613",
+      "markers": [],
+      "imports": [
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "json",
+        "math",
+        "pathlib",
+        "re"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/route_intent.py",
+      "lines": 83,
+      "sha256": "7b492a793e6b28237495785d808d0bbab8f9d2f81613310634f0dd1da3fc28df",
+      "markers": [],
+      "imports": [
+        "copy",
+        "hashlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/src-tauri/Cargo.toml",
+      "lines": 11,
+      "sha256": "3dac5f7f8bb4556ad73537782e2dea86025698258f869dd74d7537e91bacf8e2",
+      "markers": []
+    },
+    {
+      "path": "desktop/src-tauri/build.rs",
+      "lines": 1,
+      "sha256": "8af41c0062014fc594e4bb9899e60ee9930ab57d4cf0c73041ff557d6ec736e6",
+      "markers": []
+    },
+    {
+      "path": "desktop/src-tauri/src/main.rs",
+      "lines": 2,
+      "sha256": "35ac53a96ee6ea20c06cbac7c1723a6c91318ecec901e2b7a2f159144c3f5f8f",
+      "markers": []
+    },
+    {
+      "path": "desktop/src-tauri/tauri.conf.json",
+      "lines": 1,
+      "sha256": "bd8f13e8b6214b0521c11d286e8f19590b67dafb4988a73a9a2f5f145222efca",
+      "markers": []
+    },
+    {
+      "path": "desktop/station_positions.py",
+      "lines": 245,
+      "sha256": "82437f65d164d50dc2a3e01e3b4e826325dd11dd931010443e5415feb6d9dfd1",
+      "markers": [],
+      "imports": [
+        ".rail_lines",
+        ".rail_station_directory",
+        ".rail_store",
+        ".transport_modes",
+        "contextlib",
+        "json",
+        "math",
+        "rail_lines",
+        "rail_station_directory",
+        "rail_store",
+        "railscope.services.simulation.geometry",
+        "sqlite3",
+        "transport_modes"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/station_schematic.py",
+      "lines": 344,
+      "sha256": "48b7523f9dd67cdc1059908b9fc5e81c04afe7aeeb0b31f9b87a5b2fd8916a3d",
+      "markers": [],
+      "imports": [
+        "PySide6.QtGui",
+        "collections",
+        "html",
+        "math",
+        "os",
+        "pathlib",
+        "re",
+        "shapely.geometry",
+        "shapely.ops"
+      ],
+      "functions": [
+        {
+          "name": "station_svg",
+          "line": 156,
+          "lines": 189
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/station_search.py",
+      "lines": 39,
+      "sha256": "ccf9212f10496554e82ce5ebb6a4b6aeffc487ab9e31ce7a31e68bae8274ed23",
+      "markers": [],
+      "imports": [
+        "re",
+        "unicodedata"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/station_track_semantics.py",
+      "lines": 69,
+      "sha256": "7585759fbf5d40009482a1e0a71c0b8f2d9b79d88d20ff861b95a8319c3d0ab1",
+      "markers": [],
+      "imports": [
+        "copy",
+        "re"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/station_track_ui.py",
+      "lines": 75,
+      "sha256": "a72f4636aaa51e57aa2472259fd432c3d42f9defa7444dc792fcb687abf523f8",
+      "markers": [],
+      "imports": [
+        ".station_track_semantics",
+        ".station_tracks",
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "dataclasses",
+        "station_track_semantics",
+        "station_tracks"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/station_tracks.py",
+      "lines": 438,
+      "sha256": "044ce7bf23d53e8bc67e13e5abb600978f6e352d6307416456602da490745e81",
+      "markers": [],
+      "imports": [
+        ".catalog_metadata",
+        ".domain_adapter",
+        ".rail_line_terminals",
+        ".rail_station_directory",
+        ".station_schematic",
+        ".station_track_semantics",
+        "catalog_metadata",
+        "collections",
+        "contextlib",
+        "dataclasses",
+        "domain_adapter",
+        "json",
+        "math",
+        "pathlib",
+        "rail_line_terminals",
+        "rail_station_directory",
+        "railscope.domain",
+        "railscope.identity",
+        "railscope.integrity",
+        "shapely.geometry",
+        "sqlite3",
+        "station_schematic",
+        "station_track_semantics"
+      ],
+      "functions": [
+        {
+          "name": "load_station_tracks",
+          "line": 132,
+          "lines": 200
+        }
+      ],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/conftest.py",
+      "lines": 4,
+      "sha256": "9b66eef0dac4bd4aa328f4f62b56efe0bae2a2e70e3253bc1b7392632038a31a",
+      "markers": [],
+      "imports": [
+        "os"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/road_layers.cjs",
+      "lines": 91,
+      "sha256": "0f282b95a986abef4f0df7b69ef642c7ecdbf283cd8f11a1e9fc482021c9bed2",
+      "markers": []
+    },
+    {
+      "path": "desktop/tests/test_adapter_provenance_audit.py",
+      "lines": 34,
+      "sha256": "0ed521fbac874334bd7faf8008b5ebc955468e06914389c4cf0f5fd928914cbb",
+      "markers": [],
+      "imports": [
+        "desktop.domain_adapter",
+        "pytest"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_audit_queries.py",
+      "lines": 67,
+      "sha256": "c2c0ad322459669c5355f0e709ef61145651943003606115cb6ac81cbf5cdcd3",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtTest",
+        "desktop.lazy_directory",
+        "desktop.metro_store",
+        "desktop.rail_catalog_model",
+        "json",
+        "launcher",
+        "sqlite3",
+        "types"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_catalog_batch_audit.py",
+      "lines": 32,
+      "sha256": "e8099ca749a74ec4da81c137d60c802c737e465b635e64c8d26cffa0872185e3",
+      "markers": [],
+      "imports": [
+        "desktop.catalog_workspace",
+        "desktop.rail_catalog_ui",
+        "sqlite3",
+        "types"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_catalog_workspace.py",
+      "lines": 93,
+      "sha256": "136103da43e5ed1b66e8c9cd973192ccf935302260772f7309776ea03f378634",
+      "markers": [],
+      "imports": [
+        "copy",
+        "desktop.catalog_metadata",
+        "desktop.catalog_workspace",
+        "desktop.metro_store",
+        "desktop.rail_catalog_ui",
+        "desktop.tests.test_operating_ui",
+        "json",
+        "pathlib",
+        "pytest"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_facility_ownership.py",
+      "lines": 230,
+      "sha256": "43e5e585b44be0618e54852b3ee1963c0faaba526e820600084f462de27caf17",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "desktop.catalog_metadata",
+        "desktop.rail_catalog_index",
+        "desktop.rail_catalog_model",
+        "desktop.rail_catalog_ui",
+        "desktop.rail_facility_ownership",
+        "desktop.rail_station_catalog_model",
+        "desktop.rail_station_directory",
+        "desktop.rail_store",
+        "json",
+        "pathlib",
+        "pytest",
+        "shutil",
+        "sqlite3",
+        "subprocess",
+        "types"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_failed_load_audit.py",
+      "lines": 84,
+      "sha256": "d9cbaba30ffe4597f20cea3fc9ff8192c83a5777f96e3dc0e1449aff62dec7c7",
+      "markers": [],
+      "imports": [
+        "copy",
+        "desktop.catalog_metadata",
+        "desktop.rail_catalog_ui",
+        "desktop.rail_ui",
+        "desktop.tests.test_operating_ui",
+        "pathlib",
+        "pytest"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_line_membership.py",
+      "lines": 255,
+      "sha256": "b2ccb9c64293f01e288c4fb62baa78560ac875c75cec03063cabb61d097e6f6e",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "desktop.corridor_ui",
+        "desktop.rail_catalog_ui",
+        "desktop.rail_line_store",
+        "desktop.rail_lines",
+        "desktop.rail_ui",
+        "desktop.tests.test_operating_ui",
+        "json",
+        "pytest",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [
+        246
+      ],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_map_transport.py",
+      "lines": 84,
+      "sha256": "9ed13b71f6641582f6cfbaf5347966356f64a3bbb6f5198f8b073d6dbe49fb7e",
+      "markers": [],
+      "imports": [
+        "http.server",
+        "json",
+        "launcher",
+        "map_commands",
+        "pytest",
+        "threading",
+        "types",
+        "urllib.error",
+        "urllib.request"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_operating_ui.py",
+      "lines": 175,
+      "sha256": "252518afa5bc5b8b2b1f4ce1752afacb9368d309558b4f1ca10972037546a11e",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtTest",
+        "PySide6.QtWidgets",
+        "desktop.operating",
+        "desktop.operating_ui",
+        "os",
+        "pytest"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_rail.py",
+      "lines": 216,
+      "sha256": "c778eb10175e7f5ff13ecc86a0f8dd16f9e3a6e395810bcb83adb11a4cefcf05",
+      "markers": [],
+      "imports": [
+        "desktop.import_rail",
+        "desktop.rail",
+        "desktop.rail_store",
+        "desktop.viewport_settings",
+        "json",
+        "pytest",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_rail_catalog_context.py",
+      "lines": 960,
+      "sha256": "61b8619487576b02a723cacc9810c47159010604203f7339d4d440d0c4c28690",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "copy",
+        "desktop.catalog_metadata",
+        "desktop.provinces",
+        "desktop.rail_catalog_ui",
+        "desktop.tests.test_operating_ui",
+        "json",
+        "launcher",
+        "pathlib",
+        "pytest",
+        "sqlite3",
+        "types"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_rail_catalog_model.py",
+      "lines": 413,
+      "sha256": "4314a7fb5cdef796aa418eac59cb8b82a0e1a842e67cd7a30b3e698e3cf06b88",
+      "markers": [],
+      "imports": [
+        "PySide6.QtCore",
+        "PySide6.QtWidgets",
+        "desktop.rail_catalog_index",
+        "desktop.rail_catalog_model",
+        "desktop.rail_catalog_ui",
+        "desktop.rail_semantics",
+        "desktop.rail_station_catalog_model",
+        "desktop.tests.test_operating_ui",
+        "json",
+        "pathlib",
+        "pytest",
+        "sqlite3",
+        "types"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_rail_presentation_revision.py",
+      "lines": 338,
+      "sha256": "b5854e2377653ed7cc33c3b4dd986087f9e093f9c7f01ff26d2b885efc6300ec",
+      "markers": [],
+      "imports": [
+        "copy",
+        "dataclasses",
+        "desktop.catalog_metadata",
+        "desktop.display_names",
+        "desktop.import_rail",
+        "desktop.line_metadata",
+        "desktop.rail_boundaries",
+        "desktop.rail_catalog_ui",
+        "desktop.rail_line_store",
+        "desktop.rail_station_directory",
+        "desktop.rail_style_resolver",
+        "desktop.rail_style_ui",
+        "desktop.rail_ui",
+        "desktop.station_schematic",
+        "desktop.station_tracks",
+        "desktop.tests.test_operating_ui",
+        "json",
+        "math",
+        "pytest",
+        "railscope.domain",
+        "railscope.integrity",
+        "railscope.repository",
+        "re",
+        "sqlite3",
+        "types",
+        "xml.etree"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/test_station_outlets.py",
+      "lines": 150,
+      "sha256": "a183d28e5b9f69cd3d1c5ce8753175f4c221a34cfa403a6db3e725877955efcb",
+      "markers": [],
+      "imports": [
+        "copy",
+        "dataclasses",
+        "desktop.station_schematic",
+        "desktop.station_tracks",
+        "json",
+        "pytest",
+        "railscope.domain",
+        "railscope.integrity",
+        "railscope.repository",
+        "shapely.geometry",
+        "sqlite3",
+        "xml.etree"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/tests/vehicle_motion_test.cjs",
+      "lines": 42,
+      "sha256": "79cc6d06f08e8deec943009e977f2f40aadfe88e4661bf1f4fb3affa9a6e489e",
+      "markers": []
+    },
+    {
+      "path": "desktop/transport_modes.py",
+      "lines": 62,
+      "sha256": "b947a24b8b2d8dbc69bd0c3b940f18dadf2fd2267e1ab2ee39854e99335a7316",
+      "markers": [],
+      "imports": [
+        "contextlib",
+        "functools",
+        "json",
+        "pathlib",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/vehicle_motion.py",
+      "lines": 36,
+      "sha256": "d637339bb283ed97513ab8917d844bbc1a4a368a92a9e5f2adbedba7a5a359d1",
+      "markers": [],
+      "imports": [
+        ".geometry",
+        "bisect",
+        "geometry"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/viewport_settings.py",
+      "lines": 46,
+      "sha256": "c3e85047c113d09d1713c0de93d999704ec3a91cb7df020cfb22cb9f046c654d",
+      "markers": [],
+      "imports": [
+        "json",
+        "pathlib"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "desktop/yard_track_names.py",
+      "lines": 75,
+      "sha256": "1908bedb79dafe42ee232b178f93bbfdba777ef2ae6d11974cd575765c556354",
+      "markers": [],
+      "imports": [
+        ".station_track_semantics",
+        "collections",
+        "contextlib",
+        "json",
+        "railscope.rail_semantics",
+        "sqlite3",
+        "station_track_semantics"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "docker-compose.yml",
+      "lines": 13,
+      "sha256": "6b8212a4b4b30d8d68dcb93d5c3af96096cb272c9c51c584055ed256f3b800bc",
+      "markers": []
+    },
+    {
+      "path": "docs/ENTITY_RENDERING_UPDATE.md",
+      "lines": 54,
+      "sha256": "5d6030e5cbd1ede1cfb2ddc9f148e3eebf91862d7517d21b9f5b5f11035855dc",
+      "markers": []
+    },
+    {
+      "path": "docs/HEFEI_S1_GAP_FIX.md",
+      "lines": 23,
+      "sha256": "9041c7e5f2e9c5fa8214a11f3bc219f28acbbce796d8aba081af9aa95e3c8870",
+      "markers": []
+    },
+    {
+      "path": "docs/NATIONAL_INFRASTRUCTURE_PROGRESS.md",
+      "lines": 36,
+      "sha256": "2635a698413f16a20d5c72531fe10e60e978e6ff53759bb04891f22aee28d150",
+      "markers": []
+    },
+    {
+      "path": "docs/NATIONAL_RAIL_OPERATIONS.md",
+      "lines": 85,
+      "sha256": "020b1e8ff24462f13b0b51cc5258d6584c5a3e2ea87dc11b608c42a4aee0aaf5",
+      "markers": []
+    },
+    {
+      "path": "docs/OPERATING_PLAN_STANDARD.md",
+      "lines": 106,
+      "sha256": "4978a3daf79c0cbf13d34cb860684e43dd859a87207da6b13991470c8260a6f5",
+      "markers": []
+    },
+    {
+      "path": "docs/RAIL_DOMAIN_MODEL_V2.md",
+      "lines": 36,
+      "sha256": "f5610c3249d635cea637e7eea6534e7106a7d9d4671e751a140f333ae69eaa00",
+      "markers": []
+    },
+    {
+      "path": "docs/RAIL_DOMAIN_V2_CHANGELOG.md",
+      "lines": 41,
+      "sha256": "9d0b6b3d13bdf9cae500db94eb133492d2988ae390650072751ed4c5d2dbce3a",
+      "markers": []
+    },
+    {
+      "path": "docs/RAIL_LINE_NAMING_AND_CORRIDORS.md",
+      "lines": 138,
+      "sha256": "3faaf55e646393b3cb047bc5fbcb36fd612c594227799cacdb1350df8afccf95",
+      "markers": []
+    },
+    {
+      "path": "docs/STATION_BOUNDARY_STRATEGY.md",
+      "lines": 20,
+      "sha256": "ef6c46feb78232a466a3866c49578dc2dd6f297bd904a8b23dc86b2a6f142f58",
+      "markers": []
+    },
+    {
+      "path": "docs/TRAIN_IMPORT_GUIDE.md",
+      "lines": 54,
+      "sha256": "f7c86d0892b82be8f0a2e88dbd0dc727726270b5b90ff15a7656553f6d624e07",
+      "markers": []
+    },
+    {
+      "path": "docs/UI_INFORMATION_ARCHITECTURE.md",
+      "lines": 74,
+      "sha256": "041788aee440c6586acc417986727d69e30866ef627ebb9f2fcf3ec9275ac2d2",
+      "markers": []
+    },
+    {
+      "path": "docs/VEHICLE_LAYER_CONTRACT.md",
+      "lines": 37,
+      "sha256": "a7c56550fff6b638a8aa9fb2f42c452c3fcb5f3055636d9df7bbced9c39c2141",
+      "markers": []
+    },
+    {
+      "path": "docs/WORKBENCH_REFINEMENT.md",
+      "lines": 45,
+      "sha256": "abdbfc94f22d9d73c8d535809828a6c72e9eaf92bef87b93367d9954ad675a7d",
+      "markers": []
+    },
+    {
+      "path": "docs/architecture.md",
+      "lines": 18,
+      "sha256": "bb92af20e8c0f3988b4802788455ef9641616211035dc38f2aa47d0db93384ba",
+      "markers": []
+    },
+    {
+      "path": "docs/audit/SYSTEM_AUDIT.md",
+      "lines": 197,
+      "sha256": "73e21b292b2322ebcbffcf862e1897bfde21977e6912fb20734c8639a9f2a8c9",
+      "markers": [
+        {
+          "line": 13,
+          "kind": "TODO"
+        }
+      ]
+    },
+    {
+      "path": "docs/data-model.md",
+      "lines": 27,
+      "sha256": "ca26f65ec9590d512dbf6c87aa4972207f60f7d157e806194b56d44416bbf869",
+      "markers": []
+    },
+    {
+      "path": "docs/development.md",
+      "lines": 37,
+      "sha256": "9c5f33e64065f5a4416bbc2ee5c23a4a9b8f1dde0c9bd4aac7f1c9907118842c",
+      "markers": []
+    },
+    {
+      "path": "docs/history/INITIAL_PLAN.md",
+      "lines": 44,
+      "sha256": "ea4a704a578453bcca9bd01f008e87667a4eaba5af5dcce0356d734c8d7bb2ba",
+      "markers": []
+    },
+    {
+      "path": "docs/history/INITIAL_REPORT.md",
+      "lines": 68,
+      "sha256": "4afb888a94c429c52efe997b085ea0fd9fae2dd648b16912e900b11bf35621b9",
+      "markers": []
+    },
+    {
+      "path": "docs/importing-data.md",
+      "lines": 14,
+      "sha256": "b9145f708e1575aa486a25dcad7c8ab9ecf5a072e9b52e0a754ab11f9242f5f6",
+      "markers": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-18-domain-foundation.md",
+      "lines": 28,
+      "sha256": "290f73be2fbeca01f6d013884efe892c6ef8330bec3ec55d383965806982c655",
+      "markers": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-27-rail-domain-v2.md",
+      "lines": 73,
+      "sha256": "dfab4e21486137db6c178326129a1b968928b41917967ca7a0edb889d7cd64d7",
+      "markers": []
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-29-system-audit.md",
+      "lines": 34,
+      "sha256": "5ae175d794384792a8f26878fc229287f33c071db9bf076e8a71ac8759a8ad40",
+      "markers": []
+    },
+    {
+      "path": "docs/timetable.md",
+      "lines": 12,
+      "sha256": "eae843ee1ae39d52a4a09326361f188cf9d4a7de33e16a8f59509fdcc567baa2",
+      "markers": []
+    },
+    {
+      "path": "frontend/index.html",
+      "lines": 1,
+      "sha256": "4a528f95431e4251fda2710be50b2bf295ed2221ecc559ca4be982ae803c9ab4",
+      "markers": []
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "lines": 1557,
+      "sha256": "11dc077ba496283a37b5321f8aa23a8cb3b5e4edfc1149a8918b24ef8b9725f7",
+      "markers": []
+    },
+    {
+      "path": "frontend/package.json",
+      "lines": 27,
+      "sha256": "87cebe3839c333b54295740b11fa008f9c7b1a80da283f978589ff72e4e2054d",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/App.tsx",
+      "lines": 8,
+      "sha256": "71297499bb543276e518089bde0de7eab0748ad24f3fe10bc80b56ae85977f2c",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/api/client.ts",
+      "lines": 7,
+      "sha256": "bb00b8c5afa5519165f50134c71c44f2a60c78a8e6872349318701b347d6afb9",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/app.css",
+      "lines": 1,
+      "sha256": "f3fad9b1ad555195989a955c5563def733a54f87abf0d55c495d302813bb1f17",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/features/map/MapView.tsx",
+      "lines": 56,
+      "sha256": "008db86411ae9fd7caf11141526304f621c0f358d8eb54603cb81e65378f019c",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/features/map/mapLayers.test.ts",
+      "lines": 20,
+      "sha256": "75b62d32b33af825c2d28ddf4e0b7c6563e865ca8937053a06b03c4bd4fc3e5c",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/features/map/mapLayers.ts",
+      "lines": 25,
+      "sha256": "a467042232adb4ed1a6c4306ae9ce5f28988595c9e79317038ceb5ec8781c61f",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/features/map/styles/theme.ts",
+      "lines": 1,
+      "sha256": "1fc6ac86cb5bfa1f99c02722481df2e93737ea925044a8f8af8f6eae1bd3ebf3",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/features/operations/OperationsPanel.tsx",
+      "lines": 14,
+      "sha256": "de7fb3cc3d54d153a67aa2ac3af3c86567590c796b3417e4ab8c184b64c9ba7c",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "lines": 2,
+      "sha256": "92de297292963e1b5e55b020aca6ec336b8f762e450e32dbefeeeca546fad4ce",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/stores/layerStore.test.ts",
+      "lines": 3,
+      "sha256": "7d854a3fa90a771097347b9500b65bd574d7612acac19146502c38303174f0a5",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/stores/layerStore.ts",
+      "lines": 12,
+      "sha256": "5c4d6b514aede83fa64b1959cc38adda261c5a48199c7a413dd16eb413c16062",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/stores/selectionStore.ts",
+      "lines": 3,
+      "sha256": "4dd65cfdde00d7e8d6e9e3b843304847b887976c946ad47da50f35ecf27f7797",
+      "markers": []
+    },
+    {
+      "path": "frontend/src/types/api.ts",
+      "lines": 5,
+      "sha256": "8af7fedd145bfe066511d85671d8457f5b76f9221cc4b3a35723c9ffe029351b",
+      "markers": []
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "lines": 1,
+      "sha256": "0c684395af81acaa6d2cad5320c1df6e9199d403ac07fdae262b248ade126427",
+      "markers": []
+    },
+    {
+      "path": "frontend/vite.config.ts",
+      "lines": 3,
+      "sha256": "0ea84b4e2909b04e4c1cb1b92392a9f85bcb46605472763b15935d3498ba8ed3",
+      "markers": []
+    },
+    {
+      "path": "pytest.ini",
+      "lines": 4,
+      "sha256": "cd311372bed36f9490686b5d51698dfef6dd9057c26d4748a632d6c83b02181a",
+      "markers": []
+    },
+    {
+      "path": "scripts/audit_codebase.py",
+      "lines": 76,
+      "sha256": "a64c1e59a2c87c2312ebc2945a7e4cc431069949e8266882e6befb4a1f74d8a5",
+      "markers": [
+        {
+          "line": 36,
+          "kind": "TODO"
+        }
+      ],
+      "imports": [
+        "__future__",
+        "argparse",
+        "ast",
+        "collections",
+        "hashlib",
+        "json",
+        "pathlib",
+        "re",
+        "subprocess"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "scripts/audit_rail_line.py",
+      "lines": 70,
+      "sha256": "57488faa154cf30a1c04d61047b0ba04753352f54992d5fb78f3fb7801fd482a",
+      "markers": [],
+      "imports": [
+        "argparse",
+        "collections",
+        "contextlib",
+        "json",
+        "osmium",
+        "pathlib",
+        "sqlite3"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "scripts/benchmark_identity.py",
+      "lines": 63,
+      "sha256": "c0a671a48eec7ab8571ccf04e524ac35ad173708ed4cacbe95e774d16c2e90dd",
+      "markers": [],
+      "imports": [
+        "__future__",
+        "argparse",
+        "importlib.util",
+        "json",
+        "pathlib",
+        "railscope.domain",
+        "railscope.identity",
+        "subprocess",
+        "sys",
+        "tempfile",
+        "time"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    },
+    {
+      "path": "scripts/export_station_node_ids.py",
+      "lines": 64,
+      "sha256": "8464935424b430ee4a02636fa7dc98802c6455c7e10518cc6c250df1c091fa94",
+      "markers": [],
+      "imports": [
+        "argparse",
+        "csv",
+        "data_install",
+        "json",
+        "pathlib",
+        "rail_station_directory",
+        "sys"
+      ],
+      "functions": [],
+      "silent_handlers": [],
+      "broad_handlers": [],
+      "suppressed_handlers": []
+    }
+  ]
+}

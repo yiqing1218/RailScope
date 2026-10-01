@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import closing
 import hashlib
 import json
 import math
@@ -11,25 +12,15 @@ import sqlite3
 
 try:
     from .provinces import ProvinceIndex
+    from .catalog_workspace import validate_overrides
+    from .persistence import write_json_atomic
+    from .rail_station_types import STATION_TYPES, STATION_KINDS, station_type
 except ImportError:
     from provinces import ProvinceIndex
+    from catalog_workspace import validate_overrides
+    from persistence import write_json_atomic
+    from rail_station_types import STATION_TYPES, STATION_KINDS, station_type
 
-
-STATION_TYPES = (
-    "客运站",
-    "货运站",
-    "客货运站",
-    "编组站",
-    "区段站",
-    "中间站",
-    "线路所",
-    "乘降所",
-    "越行站",
-    "会让站",
-    "动车所/客整所",
-    "货场",
-    "未定义",
-)
 
 STATION_OVERVIEW_FIELDS = (
     ("chinese_name", "中文名"),
@@ -40,9 +31,9 @@ STATION_OVERVIEW_FIELDS = (
     ("main_lines", "主要线路"),
     ("regional_management", "区域管理"),
     ("platform_scale", "站台规模"),
-    ("platform_count", "站台数"),
+    ("platform_count", "站台数量"),
+    ("track_count", "股道数量"),
     ("platform_track_count", "邻靠站台股道数"),
-    ("track_count", "股道数"),
     ("through_mainline_count", "贯通正线数"),
     ("independent_mainline_count", "独立正线数"),
     ("station_yards", "站场及站台编号范围"),
@@ -81,6 +72,8 @@ def station_overview(properties, record=None, custom=None):
         "main_lines": "、".join(record.get("line_names", [])),
         "regional_management": tags.get("operator") or properties.get("operator", ""),
         "platform_scale": tags.get("platforms") or tags.get("tracks", ""),
+        "platform_count": tags.get("platforms") or tags.get("station:platforms", ""),
+        "track_count": tags.get("tracks") or tags.get("railway:tracks", ""),
         "annual_freight_volume": tags.get("freight:annual") or tags.get("annual_freight", ""),
         "address": tags.get("addr:full") or "".join(
             str(tags.get(key, ""))
@@ -124,41 +117,6 @@ def normalize_station_attributes(values, custom=False):
     return result
 
 
-def station_type(tags, kind=""):
-    """Use explicit OSM evidence only; ambiguous stations remain 未定义."""
-    tags = tags or {}
-    text = " ".join(
-        str(tags.get(key, ""))
-        for key in ("name", "name:zh", "description", "railway:station_category")
-    )
-    facility = tags.get("railway:facility", "")
-    if kind in {"signal_box", "junction", "crossing"} or "线路所" in text:
-        return "线路所"
-    if any(word in text for word in ("编组站", "编组场")) or facility == "classification_yard":
-        return "编组站"
-    if "区段站" in text:
-        return "区段站"
-    if "越行站" in text:
-        return "越行站"
-    if "会让站" in text:
-        return "会让站"
-    if kind == "halt" or tags.get("railway") == "halt" or "乘降所" in text:
-        return "乘降所"
-    if any(word in text for word in ("动车所", "动车段", "客整所", "客车整备所")):
-        return "动车所/客整所"
-    if "货场" in text or facility in {"freight_terminal", "freight_yard"}:
-        return "货场"
-    passenger = tags.get("passenger")
-    freight = tags.get("freight")
-    if passenger == "yes" and freight == "yes":
-        return "客货运站"
-    if passenger == "yes" and freight in {"no", None, ""}:
-        return "客运站"
-    if freight == "yes" and passenger in {"no", None, ""}:
-        return "货运站"
-    return "未定义"
-
-
 def nearest_city(coordinates, province, regions, tags=None):
     tags = tags or {}
     explicit = (
@@ -190,42 +148,38 @@ class CatalogOverrides:
         self.path = Path(path)
         self.schema = schema
         self.values = {}
+        self.load_failed = False
 
     def load(self):
+        self.load_failed = True
         if not self.path.exists():
+            self.load_failed = False
             return
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        if payload.get("schema") != self.schema or not isinstance(
+        if not isinstance(payload, dict) or payload.get("schema") != self.schema or not isinstance(
             payload.get("overrides"), dict
         ):
             raise ValueError("目录编辑文件格式无效")
-        self.values = {
-            str(key): value
-            for key, value in payload["overrides"].items()
-            if isinstance(value, dict)
-        }
+        proposed = validate_overrides(payload['overrides'], self.path)
+        self.values.clear()
+        self.values.update(proposed)
+        self.load_failed = False
 
     def update(self, key, **changes):
         self.update_many({str(key): changes})
 
     def update_many(self, changes):
+        if self.load_failed:
+            raise ValueError('目录未成功载入；请先修复文件并重新载入，原文件保留')
         proposed = {**self.values}
         for key, value in changes.items():
             if not isinstance(value, dict):
                 raise ValueError("目录批量修改内容无效")
             proposed[str(key)] = {**proposed.get(str(key), {}), **value}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(
-                {"schema": self.schema, "overrides": proposed},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        temporary.replace(self.path)
-        self.values = proposed
+        validate_overrides(proposed, self.path)
+        write_json_atomic(self.path, {"schema": self.schema, "overrides": proposed})
+        self.values.clear()
+        self.values.update(proposed)
 
 
 def _metro_platform_id(properties, entity_id, relation_id):
@@ -469,12 +423,24 @@ def rail_switch_owner(directory, osm_node_id, regions, overrides=None):
 def rail_station_records(directory, regions, query="", limit=4000, overrides=None):
     """Read station/signal-box owners; raw switches are always owned children."""
     directory = Path(directory)
+    try:
+        from .rail_station_directory import load_directory, display_name
+    except ImportError:
+        from rail_station_directory import load_directory, display_name
+    lookup = query.strip().removeprefix('station:')
+    index_path = directory / 'rail_lines.sqlite'
+    if lookup.startswith(('node/', 'way/', 'relation/')) and index_path.exists():
+        with closing(sqlite3.connect(index_path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            row = db.execute('SELECT name,data FROM station_directory WHERE source_id=?', (lookup,)).fetchone()
+        station_directory = {lookup: {'name': row[0], 'feature': json.loads(row[1])}} if row else {}
+    else:
+        station_directory = load_directory(index_path)
     source = directory / "rail.sqlite"
     if not source.exists():
         return [], 0
     where = (
         "kind='railPoints' AND json_extract(data,'$.properties.kind') "
-        "IN ('station','halt','signal_box','junction','crossing')"
+        "IN ('station','halt','signal_box','junction','yard','depot','workshop','works','engine_shed')"
     )
     args = []
     normalized_query = query.strip().removesuffix("市").removesuffix("站").casefold()
@@ -496,20 +462,46 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
     elif query:
         where += " AND (json_extract(data,'$.properties.name') LIKE ? OR CAST(json_extract(data,'$.properties.osm_node_id') AS TEXT) LIKE ?)"
         args.extend([f"%{normalized_query}%", f"%{query.strip()}%"])
-    with sqlite3.connect(source) as db:
-        total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
-        rows = db.execute(
-            f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
-            [*args, limit * 4 if region_match else limit],
-        ).fetchall()
-    features = [json.loads(row[0]) for row in rows]
-    node_ids = [f["properties"].get("osm_node_id") for f in features]
+    if station_directory:
+        # The directory and corridor picker now read the same station owners.
+        # Search includes workspace names so a map rename remains discoverable.
+        features = []
+        direct_key = query.strip().removeprefix("node/")
+        candidates = ([("node/" + direct_key, station_directory["node/" + direct_key])]
+                      if direct_key.isdigit() and "node/" + direct_key in station_directory
+                      else station_directory.items())
+        for key, record in candidates:
+            feature = record['feature']
+            coordinate = feature.get('geometry', {}).get('coordinates')
+            if not coordinate:
+                continue
+            if region_match:
+                if abs(coordinate[0]-lon)>2 or abs(coordinate[1]-lat)>2:
+                    continue
+            elif query:
+                custom = (overrides or {}).get('station:' + key, {}).get('display_name', '')
+                text = ' '.join((record['name'], key, custom)).casefold()
+                if normalized_query not in text and key != "node/" + direct_key:
+                    continue
+            features.append(feature)
+        features.sort(key=lambda f: (0 if f['properties'].get('kind')=='station' else 1,
+                                     f['properties'].get('name', '')))
+        total = len(features)
+        features = features[:limit*4 if region_match else limit]
+    else:
+        with sqlite3.connect(source) as db:
+            total = db.execute(f"SELECT count(*) FROM features WHERE {where}", args).fetchone()[0]
+            rows = db.execute(
+                f"SELECT data FROM features WHERE {where} ORDER BY CASE json_extract(data,'$.properties.kind') WHEN 'station' THEN 0 WHEN 'halt' THEN 1 ELSE 2 END, json_extract(data,'$.properties.name') LIMIT ?",
+                [*args, limit * 4 if region_match else limit],
+            ).fetchall()
+        features = [json.loads(row[0]) for row in rows]
+    node_ids = [f['properties'].get('osm_node_id', f['properties'].get('station_source_id')) for f in features]
     line_map = defaultdict(set)
     line_names = {}
     line_db = directory / "rail_lines.sqlite"
     if line_db.exists() and node_ids:
         with sqlite3.connect(line_db) as db:
-            line_names = dict(db.execute("SELECT id,source_name FROM lines"))
             for start in range(0, len(node_ids), 800):
                 batch = node_ids[start : start + 800]
                 marks = ",".join("?" for _ in batch)
@@ -520,12 +512,20 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 for node, line_id in db.execute(sql, batch):
                     line_map[node].add(line_id)
                 alias_sql = (
-                    "SELECT a.station_node_id,l.line_id FROM station_aliases a "
+                    "SELECT a.source_id,l.line_id FROM station_aliases a "
                     "JOIN line_nodes l ON l.node_id=a.anchor_node "
-                    f"WHERE a.station_node_id IN ({marks})"
+                    f"WHERE a.source_id IN ({marks})"
                 )
-                for node, line_id in db.execute(alias_sql, batch):
+                sources = [str(node) if str(node).startswith(('node/', 'way/', 'relation/')) else 'node/' + str(node) for node in batch]
+                for node, line_id in db.execute(alias_sql, sources):
                     line_map[node].add(line_id)
+            matched_lines = sorted({line for values in line_map.values() for line in values})
+            for start in range(0, len(matched_lines), 800):
+                batch = matched_lines[start:start + 800]
+                marks = ",".join("?" for _ in batch)
+                line_names.update(db.execute(
+                    f"SELECT id,source_name FROM lines WHERE id IN ({marks})", batch
+                ))
     index = ProvinceIndex()
     result = []
     for feature in features:
@@ -533,18 +533,31 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
         coordinates = feature["geometry"]["coordinates"]
         tags = props.get("node_tags", {})
         province = index.locate(coordinates)
-        node_id = props.get("osm_node_id")
-        lines = sorted(line_map.get(node_id, set()))
+        node_id = props.get("osm_node_id", props.get('station_source_id'))
+        source_id = props.get('station_source_id') or f'node/{node_id}'
+        lines = sorted(line_map.get(node_id, set()) | line_map.get(source_id, set()))
+        source_props = station_directory.get(source_id, {}).get('feature', {}).get('properties', {})
+        source_type = station_type({'name': props.get('name', ''), **tags}, props.get('kind', ''))
+        type_provenance = {
+            'source': 'osm_station_name_or_tags', 'snapshot': str(source.stat().st_mtime_ns),
+            'verification_status': 'automatic_reference', 'confidence': None,
+        }
+        if source_type == '未定义' and source_props.get('station_type_hint'):
+            source_type = source_props['station_type_hint']
+            type_provenance = source_props.get('station_type_provenance', type_provenance)
         result.append(
             {
-                "id": f"node/{node_id}",
-                "name": props.get("name") or f"节点 {node_id}",
+                "id": source_id,
+                "name": station_directory.get(source_id, {}).get('name') or display_name(props.get("name") or f"节点 {node_id}"),
+                "station_key": 'station:' + source_id,
                 "kind": props.get("kind", ""),
-                "station_type": station_type(tags, props.get("kind", "")),
+                "station_type": source_type,
+                "station_type_provenance": type_provenance,
                 "province": province,
                 "city": nearest_city(coordinates, province, regions, tags),
                 "coordinates": coordinates,
-                "osm_node_id": node_id,
+                "osm_node_id": props.get('osm_node_id'),
+                'station_source_id': props.get('station_source_id'),
                 "line_ids": lines,
                 "line_names": [line_names.get(line, line) for line in lines],
                 "properties": props,

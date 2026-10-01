@@ -43,10 +43,12 @@ try:
     from .components import Switch, switch_row, text_label, GrowingTree, Fold
     from .geometry import interpolate
     from .operating import parse_time, format_time
+    from .vehicle_motion import motion_frames
 except ImportError:
     from components import Switch, switch_row, text_label, GrowingTree, Fold
     from geometry import interpolate
     from operating import parse_time, format_time
+    from vehicle_motion import motion_frames
 
 
 class TimeHandle(QGraphicsEllipseItem):
@@ -103,6 +105,26 @@ class DiagramView(QGraphicsView):
 
 
 class OperationsEditor(QFrame):
+    @property
+    def clock(self):
+        return self.session_time.seconds if getattr(self,'session_time',None) else self._clock
+
+    @clock.setter
+    def clock(self,value):
+        if getattr(self,'session_time',None):
+            self.session_time.set_seconds(value)
+        else:
+            self._clock=value
+
+    def bind_session(self,session):
+        self.session_time=session
+        session.changed.connect(self._session_changed)
+        session.calendar_changed.connect(self._session_changed)
+
+    def _session_changed(self):
+        self.push_positions(throttled=True)
+        self.update_sidebar(0)
+
     updated = Signal()
     expand_requested = Signal()
     closed = Signal()
@@ -293,12 +315,13 @@ class OperationsEditor(QFrame):
         self.refresh()
         self.timer = QTimer(self)
         self.timer.setInterval(100)
-        self.timer.timeout.connect(self.tick)
+        # A callable connection also works for RailEditor after the base
+        # editor's dynamic Qt slots have been registered by another instance.
+        self.timer.timeout.connect(lambda: self.tick())
         self.timer.start()
         map_view.bridge.initialized.connect(self.map_ready)
 
     def map_ready(self):
-        self._motion_paths_signature = None
         self.map.call("setVehicleAppearance", self.appearance)
         self.push_positions()
 
@@ -327,7 +350,6 @@ class OperationsEditor(QFrame):
         self.session_label = text_label("已关闭 · 地图浏览模式", "muted", True)
         cl.addWidget(self.session_label)
         self.clock_label = text_label(format_time(self.clock), "metricValue")
-        self.clock_label.setMinimumWidth(145)
         cl.addWidget(self.clock_label)
         self.count_label = text_label("", wrap=True)
         cl.addWidget(self.count_label)
@@ -766,6 +788,12 @@ class OperationsEditor(QFrame):
     def play(self):
         self.set_enabled(True)
         self.playing = True
+        if getattr(self,'session_time',None):
+            if getattr(self.plan,'service_date',None) and self.plan.service_date!=self.session_time.day:
+                self.session_time.set_day(self.plan.service_date)
+            if self.session_time.driver and self.session_time.driver is not self:
+                self.session_time.driver.pause()
+            self.session_time.driver=self
         self._last_tick = monotonic()
         self.update_sidebar(0)
         self.push_positions()
@@ -806,6 +834,8 @@ class OperationsEditor(QFrame):
             self.push_positions()
             self.message.setText(f"{self.selected_train} 已使用独立列车标记")
         self.map.call("setVehicleAppearance", self.appearance)
+        if self.plan.system != "rail":
+            self.push_positions()
 
     def choose_marker_color(self):
         if self.plan.system != "rail" or not self.selected_train:
@@ -850,7 +880,7 @@ class OperationsEditor(QFrame):
         now = monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
-        advancing = self.enabled and self.playing
+        advancing = self.enabled and self.playing and (not getattr(self,'session_time',None) or self.session_time.driver is self)
         if advancing:
             self.clock = min(172799, self.clock + self.speed * elapsed)
         if self.clock >= 172799:
@@ -871,28 +901,19 @@ class OperationsEditor(QFrame):
         if throttled and now - self._last_vehicle_push < 0.25:
             return
         self._last_vehicle_push = now
-        # Route geometry is shared and sent only when the plan changes. The web
-        # map draws intermediate frames without querying/reloading infrastructure.
-        paths = {line.get("corridor_id", key): line["path"] for key, line in self.plan.lines.items() if line.get("path")}
-        path_signature = tuple((key, id(path)) for key, path in paths.items())
-        motion = {"speed": self.speed}
-        if path_signature != getattr(self, "_motion_paths_signature", None):
-            motion["paths"] = {key: {"coordinates": path["coordinates"], "cumulative": path["cumulative"]}
-                               for key, path in paths.items()}
-            self._motion_paths_signature = path_signature
         features = []
         for train, position in (
-            self.plan.vehicle_positions(self.clock) if self.enabled else []
+            self.plan.vehicle_positions(self.clock) if self.enabled and (not getattr(self,'session_time',None)
+                or not getattr(self.plan,'service_date',None) or self.plan.service_date==self.session_time.day) else []
         ):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
-                display = train.get("extensions", {}).get("railscope.org/display", {})
+                display = {**self.appearance, **train.get("extensions", {}).get("railscope.org/display", {})}
                 features.append(
                     {
                         "type": "Feature",
                         "properties": {
-                            "vehicle_id": train.get("vehicle_id", train["id"]),
-                            "motion_path": line.get("corridor_id", train["line_id"]),
+                            "vehicle_id": train.get('extensions',{}).get('railscope.org/vehicle',{}).get('vehicle_id') or train.get("vehicle_id", train["id"]),
                             "trip_id": train["id"],
                             "name": train["id"] + " · " + line["name"],
                             "line_ref": line["ref"],
@@ -902,6 +923,8 @@ class OperationsEditor(QFrame):
                             "distance_km": round(position["distance_m"] / 1000, 3),
                             "simulation_time": format_time(self.clock),
                             "source": train["source"],
+                            "motion_frames": motion_frames(self.plan, train, line['path'], self.clock,
+                                position['distance_m'], self.speed, self.playing),
                             "display_style": display.get("style", "glow"),
                             "display_size": max(8, min(40, int(display.get("size", 14)))),
                             "display_color": display.get("color", line["color"]),
@@ -925,7 +948,6 @@ class OperationsEditor(QFrame):
             {"type": "FeatureCollection", "features": features},
             self.clock,
             self.playing,
-            motion,
         )
         self.update_sidebar(len(features))
 
@@ -954,9 +976,10 @@ class OperationsEditor(QFrame):
             if state == self._sidebar_state:
                 return
             self._sidebar_state = state
-            for widget, value in zip((self.clock_label, self.count_label, self.play_button, self.session_label), state):
-                if widget.text() != value:
-                    widget.setText(value)
+            self.clock_label.setText(state[0])
+            self.count_label.setText(state[1])
+            self.play_button.setText(state[2])
+            self.session_label.setText(state[3])
 
     def refresh_diagram(self):
         if QApplication.mouseButtons() != Qt.MouseButton.NoButton:

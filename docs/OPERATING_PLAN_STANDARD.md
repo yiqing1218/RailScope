@@ -43,6 +43,8 @@ v2 每个车次必填且只允许 `id`、`route_id`、`stops`、`extensions`。`
 
 保留自由度的无损交换使用 JSON；任意未来数据须放在命名空间 extensions，不得增加未知标准字段。
 
+读取保存的文件不构成人工核验。共享领域适配器对未提供核验证据的 Corridor、TrainRun 默认标记 `unverified`；自动参考通道保留 `railscope.org/line-resolution` 中的 `verification_status`、`confidence`。车次来源信息可在其 `extensions["railscope.org/provenance"]` 中提供 `source_version` 和明确的 `verification_status`，读取时保留，不会根据路径连续或时刻格式合法自动升级为 `user_verified`。这些标记不能代替真实调度/联锁进路核验。
+
 `path` 是按行驶顺序排列的完整物理区间数组；每项必填稳定 RailScope `edge_id` 与 `direction`（forward/reverse）。OSM Way/Node ID 只作为来源别名，不是长期业务主键。相邻区间必须共享同一个真实拓扑节点，禁止用距离接近代替连接；construction、planned、disused、unknown 区间默认禁止排正式运营车次。
 
 `stops` 是具体 TrainRun 的经停和通过计划，必填整数 `node_id`、`arrival_s`、`departure_s`；可选 `platform_id`/`platform_ref`、`station_track_id`、`station_route_id` 和 `extensions`。控制点必须按顺序位于完整 Corridor 上；不停车的中间车站无需写入 stops。站台、到发线和车站进路都属于车次，不属于长距离 Corridor。`station_route_id` 只能引用已登记且包含在完整 Corridor 中的车站内路径；若实际物理路径不同，须另建完整 Corridor。

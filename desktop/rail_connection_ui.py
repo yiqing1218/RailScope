@@ -59,6 +59,7 @@ class StationConnectionSelector(QWidget):
         layout.addWidget(remove)
         for line in library.connected_lines(endpoint):
             self._append(line["id"], line["name"])
+        self._original_ids = self.line_ids()
 
     def _search_lines(self, query):
         return [
@@ -98,6 +99,12 @@ class StationConnectionSelector(QWidget):
         ]
 
     def connections(self):
-        return self.library.station_connection_override(
-            self.endpoint, self.line_ids()
-        )
+        selected = self.line_ids()
+        if selected == self._original_ids:
+            return None  # Name/notes edits must not verify or replace anchors.
+        resolver = getattr(self.library, '_station_sources', None)
+        old = self.library._station_connection_override(resolver(self.endpoint)) if resolver else []
+        old = {item['line_id']: item for item in old or []}
+        added = [ident for ident in selected if ident not in old]
+        new = {item['line_id']: item for item in self.library.station_connection_override(self.endpoint, added)}
+        return [old.get(ident) or new[ident] for ident in selected]

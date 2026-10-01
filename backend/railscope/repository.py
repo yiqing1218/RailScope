@@ -1,10 +1,22 @@
 """Small deterministic repository used by demo/API; SQLAlchemy persistence can replace it at this boundary."""
 from dataclasses import dataclass, field
-from .domain import *
+from .domain import (
+    ServiceArea, ServiceAreaGeometry, DatasetSnapshot, LineMembership,
+    RouteSection, Corridor, StationRoute, TrainService, StationArea, Platform,
+    StopPosition, Entrance, DataSource, InfrastructureLine, NetworkNode,
+    NetworkEdge, Station, TrainRun, StopTime, BlockSection, BlockEdge,
+    StationTrack, HeadwayRule, DispatchScenario, DispatchEvent, TrackOccupancy,
+    Conflict, OperationalPoint, Yard, StationZone, StationTrackEdge, RouteIntent,
+    InfrastructureLifecycle, Vehicle,
+)
 
 
 @dataclass
 class RailRepository:
+    lifecycles: dict[str, InfrastructureLifecycle] = field(default_factory=dict)
+    vehicles: dict[str, Vehicle] = field(default_factory=dict)
+    service_areas: dict[str, ServiceArea] = field(default_factory=dict)
+    service_area_geometries: dict[str, ServiceAreaGeometry] = field(default_factory=dict)
     snapshots: dict[str, DatasetSnapshot] = field(default_factory=dict)
     memberships: list[LineMembership] = field(default_factory=list)
     sections: dict[str, RouteSection] = field(default_factory=dict)
@@ -30,6 +42,11 @@ class RailRepository:
     events: list[DispatchEvent] = field(default_factory=list)
     occupancies: list[TrackOccupancy] = field(default_factory=list)
     conflicts: list[Conflict] = field(default_factory=list)
+    operational_points: dict[str, OperationalPoint] = field(default_factory=dict)
+    yards: dict[str, Yard] = field(default_factory=dict)
+    station_zones: dict[str, StationZone] = field(default_factory=dict)
+    station_track_edges: list[StationTrackEdge] = field(default_factory=list)
+    route_intents: dict[str, RouteIntent] = field(default_factory=dict)
 
     def stops_for(self, train_id: str) -> tuple[StopTime, ...]:
         return tuple(sorted((s for s in self.stops if s.train_run_id == train_id), key=lambda s: s.sequence))

@@ -116,8 +116,10 @@ class IdentityRegistry:
             nodes = {key: json.loads(raw) for key, raw in db.execute("SELECT source_id,data FROM identity_nodes")}
         current_nodes = {}
         endpoint_index = defaultdict(list)
+        way_index = defaultdict(list)
         for edge in old:
             endpoint_index[frozenset((edge['from_node_id'],edge['to_node_id']))].append(edge)
+            way_index[str(edge.get('osm_way_id'))].append(edge)
         used, output, changes, conflicts = set(), [], [], []
         # Source node IDs remain aliases, never business references.
         for original in source_edges:
@@ -139,8 +141,8 @@ class IdentityRegistry:
                           if e['id'] not in used and _near_geometry(e['coordinates'],edge['coordinates'])]
             if not candidates:
                 candidates = [
-                    e for e in old
-                    if e['id'] not in used and str(e.get('osm_way_id')) == source_way
+                    e for e in way_index.get(source_way, ())
+                    if e['id'] not in used
                     and _near_geometry(e['coordinates'], edge['coordinates'])
                 ]
             if len(candidates)>1:
@@ -221,11 +223,20 @@ class IdentityRegistry:
             e['line_id']=e.get('line_id') or groups.setdefault(key,new_id('IL'))
             e['line_name']=tags.get('name') or tags.get('ref') or '未命名轨道'
         added=[e for e in output if e['id'] not in used]
+        added_by_node = defaultdict(set)
+        for index, edge in enumerate(added):
+            for source_node in set(map(str, edge.get('node_ids', []))):
+                added_by_node[source_node].add(index)
         for e in old:
             if e['id'] in used:
                 continue
             old_nodes=set(map(str,e.get('node_ids',[])))
-            related=[n for n in added if len(old_nodes.intersection(map(str,n.get('node_ids',[]))))>=2]
+            shared_counts = defaultdict(int)
+            for node in old_nodes:
+                for index in added_by_node.get(node, ()):
+                    shared_counts[index] += 1
+            # Preserve source order and the original two-shared-node migration rule.
+            related=[added[index] for index in sorted(shared_counts) if shared_counts[index] >= 2]
             status='split' if len(related)>1 else 'merged' if related else 'removed'
             record={'status':status,'old_ids':[e['id']],'new_ids':[n['id'] for n in related]}
             changes.append(record)

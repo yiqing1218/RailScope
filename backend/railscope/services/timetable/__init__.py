@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import replace
 from ...domain import EffectiveRun, StopTime, shifted_stop
 from ...repository import RailRepository
 
@@ -16,11 +17,13 @@ def effective_run(repo: RailRepository, scenario_id: str, train_id: str) -> Effe
             offset += int(event.new_value)
         elif event.event_type == "hold_train":
             station_id, seconds = event.new_value
-            index = next((i for i, s in enumerate(stops) if s.station_id == station_id), None)
-            if index is None:
-                raise ValueError("hold station is not in train timetable")
+            matches = [i for i, s in enumerate(stops) if s.station_id == station_id]
+            if len(matches) != 1 or stops[matches[0]].departure_time_s is None:
+                raise ValueError("hold requires a unique scheduled departure")
+            index = matches[0]
             # Hold moves this departure and all later times; it never changes scheduled facts.
-            stops[index:] = [shifted_stop(s, int(seconds)) for s in stops[index:]]
+            stops[index] = replace(stops[index], departure_time_s=stops[index].departure_time_s + int(seconds))
+            stops[index + 1:] = [shifted_stop(s, int(seconds)) for s in stops[index + 1:]]
         elif event.event_type == "change_route":
             corridor_id = str(event.new_value)
         elif event.event_type == "assign_track":
@@ -35,7 +38,9 @@ def route_distances(repo: RailRepository, effective: EffectiveRun) -> tuple[Stop
     from .canonical import stop_distances
     if not effective.corridor_id:
         return effective.stops
-    path = repo.corridors[effective.corridor_id]
-    distances = stop_distances(repo, path.edge_refs, effective.stops)
+    from ..station_routing import effective_path, positioned_stops
+    refs = effective_path(repo, effective.corridor_id, effective.stops)
+    stops = positioned_stops(repo, refs, effective.stops)
+    distances = stop_distances(repo, refs, stops)
     return tuple(StopTime(**{**s.__dict__, "scheduled_distance_m": distance})
-                 for s, distance in zip(effective.stops, distances))
+                 for s, distance in zip(stops, distances))

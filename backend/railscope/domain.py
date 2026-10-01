@@ -44,6 +44,11 @@ class InfrastructureLine:
     construction_status: str = "unknown"
     verification_status: str = "unverified"
     confidence: float | None = None
+    design_speed_kmh: int | None = None
+    railway_class: str = "unknown"
+    line_role: str = "unknown"
+    snapshot_id: str | None = None
+    provenance: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,14 @@ class NetworkEdge:
     source_tags: dict = field(default_factory=dict)
     verification_status: str = "unverified"
     confidence: float | None = None
+    railway_class: str = "unknown"
+    line_role: str = "unknown"
+    track_role: str = "unknown"
+    facility_id: str | None = None
+    yard_id: str | None = None
+    zone_id: str | None = None
+    provenance: dict = field(default_factory=dict)
+    track_type: str | None = None  # Legacy display classification, never a core fact.
 
 
 @dataclass(frozen=True)
@@ -114,6 +127,8 @@ class TrainRun:
     source_id: str | None = None
     source_version: str | None = None
     verification_status: str = "unverified"
+    vehicle_id: str | None = None
+    traffic_type: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -129,6 +144,7 @@ class StopTime:
     station_route_id: str | None = None
     stop_edge_id: str | None = None
     stop_offset_m: float | None = None
+    stop_edge_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +184,69 @@ class LineMembership:
 
 
 @dataclass(frozen=True)
+class OperationalPoint:
+    """Business control point referencing physical nodes, never their geometry."""
+    id: str
+    name: str
+    point_type: str = "other_control_point"
+    station_id: str | None = None
+    node_ids: tuple[str, ...] = ()
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Yard:
+    id: str
+    station_id: str
+    name: str
+    yard_type: str = "unknown"
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StationZone:
+    """A station region, e.g. a throat; it does not classify track functions."""
+    id: str
+    station_id: str
+    name: str
+    zone_type: str = "throat"
+    yard_id: str | None = None
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RouteIntentStep:
+    sequence: int
+    kind: str  # operational_point / infrastructure_line / node / station
+    reference_id: str
+    direction: str = "unknown"
+
+
+@dataclass(frozen=True)
+class RouteIntent:
+    """Saved endpoint/line choices; no geometry and no second physical path."""
+    id: str
+    name: str
+    steps: tuple[RouteIntentStep, ...] = ()
+    snapshot_id: str | None = None
+    source_id: str | None = None
+    verification_status: str = "unverified"
+    provenance: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RouteSection:
     id: str
     edge_refs: tuple[DirectedEdgeRef, ...]
@@ -187,6 +266,14 @@ class Corridor:
     source_id: str | None = None
     verification_status: str = "unverified"
     confidence: float | None = None
+    color: str = "#466979"
+    route_intent_id: str | None = None
+    resolution_mode: str = "automatic_reference"
+    provenance: dict = field(default_factory=dict)
+
+
+# The resolved path remains the same shared Corridor entity and identifier.
+ResolvedCorridor = Corridor
 
 
 @dataclass(frozen=True)
@@ -197,6 +284,10 @@ class StationRoute:
     entry_node_id: str
     exit_node_id: str
     verification_status: str = "unverified"
+    source: str = "manual"
+    snapshot_id: str | None = None
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -225,6 +316,8 @@ class Platform:
     name: str
     area_id: str | None = None
     source_id: str | None = None
+    station_track_ids: tuple[str, ...] = ()
+    verification_status: str = "unverified"
 
 
 @dataclass(frozen=True)
@@ -272,6 +365,57 @@ class StationTrack:
     direction: str = "both"
     length_m: float = 0
     is_virtual: bool = True
+    edge_refs: tuple[DirectedEdgeRef, ...] = ()
+    role: str = "unknown"
+    source_member_ids: tuple[str, ...] = ()
+    snapshot_id: str | None = None
+    verification_status: str = "unverified"
+    track_role: str = "unknown"
+    railway_class: str = "unknown"
+    infrastructure_line_id: str | None = None
+    yard_id: str | None = None
+    zone_id: str | None = None
+    source_id: str | None = None
+    confidence: float | None = None
+    provenance: dict = field(default_factory=dict)
+    legacy_metadata: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StationTrackEdge:
+    station_track_id: str
+    edge_id: str
+    sequence: int
+    direction: str = "forward"
+
+    @property
+    def forward(self) -> bool:
+        return self.direction == "forward"
+
+
+@dataclass(frozen=True)
+class ServiceArea:
+    """One business entity; point/outline/buildings are representations of it."""
+    id: str
+    name: str
+    lon: float
+    lat: float
+    source_member_ids: tuple[str, ...] = ()
+    attributes: dict = field(default_factory=dict)
+    verification_status: str = "source_unverified"
+    source: str = "OpenStreetMap"
+    snapshot_id: str | None = None
+    association_version: int = 1
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class ServiceAreaGeometry:
+    id: str
+    service_area_id: str
+    geometry_type: str
+    geometry: dict
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +487,38 @@ class ImportReport:
     objects_skipped: int = 0
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InfrastructureLifecycle:
+    """An optional calendar interval owned by an existing stable infrastructure ID."""
+    id: str
+    construction_started: str | None = None
+    opened: str | None = None
+    closed: str | None = None
+    parent_id: str | None = None
+    mode: str = "rail"
+    source: str = "manual"
+    snapshot_id: str | None = None
+    verification_status: str = "user_defined"
+    confidence: float | None = None
+    source_aliases: tuple[str, ...] = ()
+    display_name: str = ""
+
+
+@dataclass(frozen=True)
+class Vehicle:
+    """A real numbered vehicle/unit, independently referenced by train instances."""
+    id: str
+    name: str
+    mode: str = "rail"
+    model: str = ""
+    code: str = ""
+    infrastructure_line_id: str | None = None
+    photo_asset: str | None = None
+    parameters: dict = field(default_factory=dict)
+    source: str = "manual"
+    verification_status: str = "user_defined"
 
 
 def shifted_stop(stop: StopTime, seconds: int) -> StopTime:

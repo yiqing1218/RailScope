@@ -11,8 +11,10 @@ import sqlite3
 from uuid import uuid4
 
 try:
+    from .artifact_manifest import manifest, install_manifest, read_manifest
     from .provinces import VERSION
 except ImportError:
+    from artifact_manifest import manifest, install_manifest, read_manifest
     from provinces import VERSION
 
 
@@ -23,8 +25,25 @@ def index_path(directory):
     return Path(directory) / "rail_catalog.sqlite"
 
 
+def _install_in_place(target, replacement):
+    """Windows cannot replace an open SQLite file; update its rows atomically."""
+    with closing(sqlite3.connect(target, timeout=30)) as db:
+        db.execute("ATTACH DATABASE ? AS replacement", (str(replacement),))
+        try:
+            with db:
+                db.execute("DELETE FROM catalog")
+                db.execute("INSERT INTO catalog SELECT * FROM replacement.catalog")
+                db.execute("INSERT OR REPLACE INTO metadata SELECT * FROM replacement.metadata")
+                # Presentation rows derived from the old catalog must be rebuilt.
+                db.execute("DELETE FROM metadata WHERE key IN ('paged_directory_signature','directory_cache_revision','station_cache_revision','station_catalog_signature')")
+                db.execute("DELETE FROM metadata WHERE key='way_lookup_schema'")
+        finally:
+            db.execute("DETACH DATABASE replacement")
+
+
 def build_index(directory, catalog=None):
     directory = Path(directory)
+    directory.mkdir(parents=True,exist_ok=True)
     topology = directory / "rail_catalog.topology.json"
     fallback = directory / "rail_catalog.json"
     source = fallback
@@ -32,10 +51,16 @@ def build_index(directory, catalog=None):
         with topology.open("r", encoding="utf-8") as stream:
             header = stream.read(256)
         match = re.search(r'"version"\s*:\s*"([^"]+)"', header)
-        if match and match.group(1) == VERSION:
+        # V9 already has stable RL/ST catalog keys. Keep it visible while V10
+        # semantics are regenerated; the name-only fallback loses those keys
+        # and strands every saved workspace override.
+        if match and match.group(1) in (VERSION, "topology-line-endpoint-catalog-v9"):
             source = topology
     target = index_path(directory)
-    stamp = f"{source.name}:{source.stat().st_size}:{source.stat().st_mtime_ns}" if source.exists() else "empty"
+    render = directory / "rail.sqlite"
+    source_stamp = f"{source.name}:{source.stat().st_size}:{source.stat().st_mtime_ns}" if source.exists() else "empty"
+    render_stamp = f"{render.stat().st_size}:{render.stat().st_mtime_ns}" if render.exists() else "empty"
+    stamp = f"{source_stamp}:render:{render_stamp}:coverage-v1"
     if target.is_file() and catalog is None:
         try:
             with closing(sqlite3.connect(target)) as db:
@@ -78,11 +103,74 @@ def build_index(directory, catalog=None):
                      int(name.startswith("未命名轨道")),
                      json.dumps(record, ensure_ascii=False, separators=(",", ":"))),
                 )
+            # Rendering and topology caches may be from different import
+            # snapshots. Every rendered stable RL/ST group remains addressable
+            # until the next topology refresh reconciles the two caches.
+            if render.exists():
+                with closing(sqlite3.connect(render)) as rendered:
+                    has_groups = rendered.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rail_feature_groups'"
+                    ).fetchone()
+                    if has_groups:
+                        try:
+                            from .rail_categories import track_type
+                            from .rail_semantics import semantic_record
+                        except ImportError:
+                            from rail_categories import track_type
+                            from rail_semantics import semantic_record
+                        groups = rendered.execute(
+                            "SELECT group_id,min(feature_id) FROM rail_feature_groups GROUP BY group_id"
+                        )
+                        for group_id, feature_id in groups:
+                            if group_id in catalog:
+                                continue
+                            raw = rendered.execute("SELECT data FROM features WHERE id=?", (feature_id,)).fetchone()
+                            if raw is None:
+                                continue
+                            props = json.loads(raw[0]).get("properties", {})
+                            if not group_id.startswith(("RL-", "ST-")):
+                                continue
+                            tags = props.get("way_tags")
+                            if not isinstance(tags, dict):
+                                tags = {}
+                            track_kind, evidence = track_type(tags)
+                            facts = semantic_record({"way_tags": tags})
+                            station = group_id.startswith("ST-")
+                            name = str(props.get("station_name") or props.get("line_name") or "未命名轨道")
+                            if "\ufffd" in name:
+                                name = "未命名轨道 · " + group_id
+                            record = {
+                                "id": group_id, "catalog_group_id": group_id,
+                                "name": name, "line_name": None if station else name,
+                                "line_id": None if station else group_id,
+                                "station_name": props.get("station_name") if station else None,
+                                "track_type": props.get("track_type") or track_kind,
+                                "type_evidence": props.get("track_type_evidence") or evidence,
+                                "construction": bool(props.get("construction")),
+                                "way_ids": [], "section_count": 0,
+                                **facts,
+                                "facility_only": station or facts.get("facility_only", False),
+                                "source": "rendered_group_fallback",
+                                "snapshot": render_stamp,
+                                "verification_status": "unresolved",
+                                "classification": VERSION,
+                            }
+                            searchable = (name + " " + group_id).casefold()
+                            db.execute("INSERT INTO catalog VALUES(?,?,?,?,?,?,?,?)",
+                                       (group_id, name, None, record["station_name"], record["line_id"],
+                                        searchable, int(name.startswith("未命名轨道")),
+                                        json.dumps(record, ensure_ascii=False, separators=(",", ":"))))
             db.executemany("INSERT INTO metadata VALUES(?,?)", [
                 ("schema", str(SCHEMA)), ("source", stamp),
             ])
+            install_manifest(db, manifest('source-catalog', VERSION, {'source': stamp}, schema=SCHEMA))
             db.commit()
-        temporary.replace(target)
+        try:
+            temporary.replace(target)
+        except PermissionError:
+            if not target.is_file():
+                raise
+            _install_in_place(target, temporary)
     finally:
         temporary.unlink(missing_ok=True)
     return target
@@ -106,6 +194,23 @@ class RailCatalogIndex(Mapping):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+    def ensure_way_lookup(self):
+        """Index legacy map way IDs once instead of scanning every catalog row."""
+        with closing(sqlite3.connect(self.path)) as db:
+            ready = db.execute("SELECT value FROM metadata WHERE key='way_lookup_schema'").fetchone()
+            if ready and ready[0] == "1":
+                return
+            with db:
+                db.execute("CREATE TABLE IF NOT EXISTS rail_catalog_way_ids (way_id TEXT NOT NULL,catalog_id TEXT NOT NULL,PRIMARY KEY(way_id,catalog_id))")
+                db.execute("DELETE FROM rail_catalog_way_ids")
+                db.execute("INSERT OR IGNORE INTO rail_catalog_way_ids SELECT cast(j.value AS TEXT),c.id FROM catalog c,json_each(c.data,'$.way_ids') j")
+                db.execute("INSERT OR REPLACE INTO metadata VALUES('way_lookup_schema','1')")
+
+    def groups_for_way(self, way_id):
+        self.ensure_way_lookup()
+        return [row[0] for row in self._connect().execute(
+            "SELECT catalog_id FROM rail_catalog_way_ids WHERE way_id=?", (str(way_id),))]
 
     def __del__(self):
         self.close()

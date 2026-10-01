@@ -13,10 +13,14 @@ try:
     from .geometry import distance_m
     from .data_install import active_directory
     from .transport_modes import other_transport
+    from .rail_station_directory import compatible_area
+    from .rail_station_types import TAG_TYPES, station_point_kind
 except ImportError:
     from geometry import distance_m
     from data_install import active_directory
     from transport_modes import other_transport
+    from rail_station_directory import compatible_area
+    from rail_station_types import TAG_TYPES, station_point_kind
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -24,6 +28,8 @@ from railscope.services.importers.native_paths import native_path  # noqa: E402
 
 
 def polygon_points(geometry):
+    if geometry['type'] == 'LineString':
+        return geometry['coordinates']
     polygons = (
         geometry["coordinates"]
         if geometry["type"] == "MultiPolygon"
@@ -64,11 +70,27 @@ def classify_stations(stations, highspeed_edges):
 
 
 def associate(features, stations):
+    from shapely.geometry import shape
+    from shapely.strtree import STRtree
+    try:
+        from .station_search import rail_name_key
+    except ImportError:
+        from station_search import rail_name_key
+    by_node = {s['properties'].get('osm_node_id', s['properties'].get('station_source_id')):s for s in stations}
+    by_name = defaultdict(list)
+    for s in stations:
+        name = rail_name_key(s['properties'].get('name', ''))
+        if name: by_name[name].append(s)
     grid = defaultdict(list)
     for station in stations:
         x, y = station["geometry"]["coordinates"]
         grid[int(x / 0.02), int(y / 0.02)].append(station)
-    for feature in sorted(features, key=lambda f: f["properties"]["infrastructure_id"]):
+    outlines = []
+    outline_shapes = []
+    tree = None
+    # Resolve real station footprints first; platforms can inherit their owner.
+    ordered = sorted(features, key=lambda f: (f['properties'].get('boundary_kind') == 'platform', f['properties']['infrastructure_id']))
+    for feature in ordered:
         props = feature["properties"]
         points = polygon_points(feature["geometry"])
         xs, ys = zip(*points)
@@ -79,36 +101,60 @@ def associate(features, stations):
             for a in range(x - 1, x + 2)
             for b in range(y - 1, y + 2)
             for s in grid[a, b]
+            if compatible_area(props, s['properties'])
         ]
         nearest = min(
             nearby,
             key=lambda s: (
                 distance_m(center, s["geometry"]["coordinates"]),
-                s["properties"]["osm_node_id"],
+                str(s['properties'].get('osm_node_id', s['properties'].get('station_source_id'))),
             ),
             default=None,
         )
         source_id = props["infrastructure_id"]
-        if nearest and distance_m(center, nearest["geometry"]["coordinates"]) <= 1200:
-            node = nearest["properties"]["osm_node_id"]
+        evidence = '空间关联真实铁路车站，待复核'
+        confidence = .5
+        explicit = {node for node in props.get('member_station_ids', []) if node in by_node}
+        if source_id in by_node and props.get('boundary_kind') != 'platform':
+            nearest = by_node[source_id]
+            evidence, confidence = 'same_osm_source_area', 1.0
+        elif len(explicit) == 1:
+            nearest = by_node[next(iter(explicit))]
+            evidence, confidence = 'osm_stop_area_membership', .95
+        elif len(explicit) > 1:
+            nearest = None  # multiple explicit owners cannot become an arbitrary nearest station
+        elif props.get('boundary_kind') != 'platform' and len(by_name.get(rail_name_key(props.get('source_name','')), [])) == 1:
+            nearest = by_name[rail_name_key(props['source_name'])][0]
+            evidence, confidence = 'unique_source_station_name', .8
+        elif props.get('boundary_kind') == 'platform' and outlines:
+            if tree is None: tree = STRtree(outline_shapes)
+            geometry = shape(feature['geometry'])
+            candidates = {owner for index in tree.query(geometry, predicate='intersects')
+                          for owner in outlines[int(index)]['properties'].get('associated_station_ids', [])}
+            if len(candidates) == 1 and next(iter(candidates)) in by_node:
+                nearest = by_node[next(iter(candidates))]
+                evidence, confidence = 'real_station_outline_intersection', .8
+        if nearest and (evidence != '空间关联真实铁路车站，待复核' or distance_m(center, nearest["geometry"]["coordinates"]) <= 1200):
+            node = nearest['properties'].get('osm_node_id', nearest['properties'].get('station_source_id'))
             name = nearest["properties"]["name"]
-            props["station_id"] = "node/" + str(node)
+            props["station_id"] = nearest['properties'].get('station_source_id') or "node/" + str(node)
             props["station_id"] = nearest["properties"].get("station_id") or props["station_id"]
             props["associated_station_ids"] = [node]
-            props["association_source"] = "空间关联真实铁路车站，待复核"
+            props["association_source"] = evidence
             props["association_verification_status"] = "automatic_match"
-            props["association_confidence"] = .5
+            props["association_confidence"] = confidence
             props["facility_class"] = nearest["properties"].get(
                 "facility_class", "铁路车站（高铁属性未判定）"
             )
         else:
-            name = props["source_name"] or "未关联铁路车站"
-            props["associated_station_ids"] = []
+            name = props.get("source_name") or "未关联铁路车站"
+            props["associated_station_ids"] = sorted(explicit, key=str)
+            props.pop('station_id', None)
             props["association_source"] = "尚未关联车站"
             props["association_verification_status"] = "unresolved"
             props["association_confidence"] = None
         kind = props["boundary_kind"]
-        ref = props["way_tags"].get("ref") or props["way_tags"].get("local_ref")
+        ref = props.get("way_tags", {}).get("ref") or props.get("way_tags", {}).get("local_ref")
         label = (
             "站台 " + (str(ref) if ref else "未标号")
             if kind == "platform"
@@ -117,7 +163,37 @@ def associate(features, stations):
             else "站区"
         )
         props["name"] = f"{name} · {label} · {source_id}"
+        if kind == 'station_outline' and props.get('associated_station_ids'):
+            geometry = shape(feature['geometry'])
+            if geometry.is_valid:
+                outlines.append(feature); outline_shapes.append(geometry); tree = None
     return features
+
+
+def stop_area_members(pbf, stations):
+    """Actual relation membership, including nested stop-area groups."""
+    import osmium
+    known = {s['properties'].get('osm_node_id') for s in stations} - {None}
+    nodes, ways, children = {}, {}, {}
+    processor = (osmium.FileProcessor(str(native_path(Path(pbf).resolve())), entities=osmium.osm.RELATION)
+                 .with_filter(osmium.filter.TagFilter(('public_transport','stop_area'), ('public_transport','stop_area_group'))))
+    for relation in processor:
+        nodes[relation.id] = {m.ref for m in relation.members if m.type == 'n' and m.ref in known}
+        ways[relation.id] = [m.ref for m in relation.members if m.type == 'w']
+        children[relation.id] = [m.ref for m in relation.members if m.type == 'r']
+    def owners(ident, visited=None):
+        visited = set() if visited is None else visited
+        if ident in visited: return set()
+        visited.add(ident)
+        result = set(nodes.get(ident, ()))
+        for child in children.get(ident, ()): result.update(owners(child, visited))
+        return result
+    result = defaultdict(set)
+    for ident in nodes:
+        members = owners(ident)
+        for way in ways[ident]: result['way',way].update(members)
+        for child in children[ident]: result['relation',child].update(members)
+    return result
 
 
 def extract(pbf, directory, progress=print):
@@ -125,11 +201,16 @@ def extract(pbf, directory, progress=print):
 
     directory = Path(directory).resolve()
     source = directory / "rail.sqlite"
+    try:
+        from .rail_line_store import fingerprint, refresh_station_index
+    except ImportError:
+        from rail_line_store import fingerprint, refresh_station_index
+    previous_signature = fingerprint(source, [])
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as db:
         stations = [
             json.loads(raw)
             for (raw,) in db.execute(
-                "SELECT data FROM features WHERE kind='railPoints' AND json_extract(data,'$.properties.kind') IN ('station','halt')"
+                "SELECT data FROM features WHERE kind='railPoints' AND json_extract(data,'$.properties.kind') IN ('station','halt','yard','depot','workshop','works','engine_shed')"
             )
         ]
         old = [
@@ -138,12 +219,20 @@ def extract(pbf, directory, progress=print):
                 "SELECT data FROM features WHERE kind IN ('railPlatforms','railStationAreas')"
             )
         ]
+        known_point_nodes = {node for (node,) in db.execute(
+            "SELECT json_extract(data,'$.properties.osm_node_id') FROM features WHERE kind='railPoints'")}
+    progress('检查铁路站区关系中的真实站台成员…')
+    memberships = stop_area_members(pbf, stations)
     tags = osmium.filter.TagFilter(
         ("railway", "station"),
         ("railway", "halt"),
         ("railway", "platform"),
         ("public_transport", "platform"),
         ("building", "train_station"),
+        ('railway', 'yard'), ('railway', 'depot'), ('railway', 'workshop'),
+        ('railway', 'works'), ('railway', 'engine_shed'), ('landuse', 'railway'),
+        ('railway', 'service_station'), ('building', 'depot'), ('building', 'service_station'),
+        *(("railway:facility", value) for value in TAG_TYPES),
     )
     index_path = directory / ".rail-boundary-locations.idx"
     locations = osmium.index.create_map(
@@ -157,6 +246,35 @@ def extract(pbf, directory, progress=print):
         .with_filter(tags)
     )
     factory, features, invalid = osmium.geom.GeoJSONFactory(), [], []
+    facility_points = []
+    try:
+        from .catalog_metadata import station_type
+        from .station_search import rail_name_key
+    except ImportError:
+        from catalog_metadata import station_type
+        from station_search import rail_name_key
+    # Recover explicit facility POIs omitted by older imports. Keep every raw
+    # node and all operational references; this only adds missing map owners.
+    known_nodes = known_point_nodes
+    progress('补查铁路站场设施点位…')
+    for node in (osmium.FileProcessor(str(native_path(Path(pbf).resolve())), entities=osmium.osm.NODE)
+                 .with_filter(osmium.filter.KeyFilter('railway', 'railway:facility', 'landuse', 'building'))):
+        raw = dict(node.tags)
+        point_kind = station_point_kind(raw)
+        if not point_kind or node.id in known_nodes or other_transport(raw) or not node.location.valid():
+            continue
+        source_id = f'node/{node.id}'
+        label = station_type(raw, point_kind)
+        feature = {'type': 'Feature', 'properties': {
+            'osm_node_id': node.id, 'station_source_id': source_id, 'kind': point_kind,
+            'name': raw.get('name') or raw.get('name:zh') or f'未命名{label}（{source_id}）',
+            'node_tags': raw, 'source': 'OpenStreetMap', 'source_member_ids': [source_id],
+            'geometry_source': 'osm_node', 'verification_status': 'osm_derived',
+            'snapshot_id': str(Path(pbf).stat().st_mtime_ns)},
+            'geometry': {'type': 'Point', 'coordinates': [node.location.lon, node.location.lat]}}
+        stations.append(feature)
+        facility_points.append(feature)
+        known_nodes.add(node.id)
     metro_path = active_directory(ROOT) / "china_metro_station_areas.geojson"
     metro_platforms = set()
     if metro_path.exists():
@@ -172,6 +290,9 @@ def extract(pbf, directory, progress=print):
         for area in processor:
             raw = dict(area.tags)
             if other_transport(raw):
+                continue
+            facility_type = station_type(raw, raw.get('railway',''))
+            if raw.get('landuse') == 'railway' and not raw.get('railway') and facility_type == '未定义':
                 continue
             try:
                 geometry = json.loads(factory.create_multipolygon(area))
@@ -211,10 +332,30 @@ def extract(pbf, directory, progress=print):
                         "geometry_source": "osm_polygon",
                         "verification_status": "osm_derived",
                         "license": "ODbL 1.0",
+                        'snapshot_id': str(Path(pbf).stat().st_mtime_ns),
+                        'member_station_ids': sorted(memberships.get((kind, area.orig_id()), ())),
                     },
                     "geometry": geometry,
                 }
             )
+            area_name = raw.get('name') or raw.get('name:zh')
+            if not platform and (station_point_kind(raw) or (area_name and raw.get('railway') == 'station')):
+                from shapely.geometry import shape
+                point = shape(geometry).representative_point()
+                coordinate = [point.x, point.y]
+                existing = [s for s in stations if area_name and rail_name_key(s['properties'].get('name','')) == rail_name_key(area_name)
+                            and distance_m(s['geometry']['coordinates'], coordinate) <= 3000]
+                if not existing:
+                    source_id = f'{kind}/{area.orig_id()}'
+                    point_kind = station_point_kind(raw) or 'yard'
+                    feature = {'type':'Feature', 'properties':{'station_source_id':source_id,
+                        'infrastructure_id':source_id, 'kind':point_kind,
+                        'name':area_name or f'未命名{facility_type}（{source_id}）',
+                        'node_tags':raw, 'source':'OpenStreetMap', 'source_member_ids':[source_id],
+                        'geometry_source':'osm_area_representative_point', 'verification_status':'osm_derived',
+                        'snapshot_id':str(Path(pbf).stat().st_mtime_ns)},
+                        'geometry':{'type':'Point','coordinates':coordinate}}
+                    stations.append(feature);facility_points.append(feature)
     finally:
         area = None
         locations.clear()
@@ -239,7 +380,7 @@ def extract(pbf, directory, progress=print):
         if (kind, props.get("osm_" + kind + "_id")) in metro_platforms:
             continue
         if (
-            feature["geometry"]["type"] not in ("Polygon", "MultiPolygon")
+            feature["geometry"]["type"] not in ("Polygon", "MultiPolygon", "LineString")
             or ident in identities
             or ident.endswith("/None")
         ):
@@ -249,6 +390,7 @@ def extract(pbf, directory, progress=print):
             source_name=props.get("source_name", props.get("name", "")),
             boundary_kind=props.get("boundary_kind", "platform"),
             retained_previous_snapshot=True,
+            member_station_ids=sorted(memberships.get((kind, props.get('osm_' + kind + '_id')), ())),
         )
         features.append(feature)
         identities.add(ident)
@@ -267,7 +409,7 @@ def extract(pbf, directory, progress=print):
                 )
             ),
         )
-    station_lookup = {s["properties"]["osm_node_id"]: s for s in stations}
+    station_lookup = {s['properties'].get('osm_node_id',s['properties'].get('station_source_id')): s for s in stations}
     for feature in features:
         associated = feature["properties"].get("associated_station_ids", [])
         # Names and shared station IDs are unchanged; classification never splits a station.
@@ -277,13 +419,13 @@ def extract(pbf, directory, progress=print):
             ]["facility_class"]
     coverage = [
         {
-            "station_id": "node/" + str(s["properties"]["osm_node_id"]),
+            "station_id": s['properties'].get('station_source_id') or "node/" + str(s["properties"]["osm_node_id"]),
             "name": s["properties"]["name"],
             "facility_class": s["properties"].get("facility_class"),
             "highspeed_distance_m": s["properties"].get("highspeed_distance_m"),
-            "boundary_types": sorted(covered[s["properties"]["osm_node_id"]]),
+            "boundary_types": sorted(covered[s['properties'].get('osm_node_id',s['properties'].get('station_source_id'))]),
             "status": "已有真实多边形（关联待复核）"
-            if covered[s["properties"]["osm_node_id"]]
+            if covered[s['properties'].get('osm_node_id',s['properties'].get('station_source_id'))]
             else "OSM 未获取到真实面，需补充合法来源",
         }
         for s in stations
@@ -294,7 +436,7 @@ def extract(pbf, directory, progress=print):
             ids = [
                 row[0]
                 for row in db.execute(
-                    "SELECT id FROM features WHERE kind IN ('railPlatforms','railStationAreas') AND json_extract(data,'$.geometry.type') IN ('Polygon','MultiPolygon')"
+                    "SELECT id FROM features WHERE kind IN ('railPlatforms','railStationAreas')"
                 )
             ]
             db.executemany("DELETE FROM bounds WHERE id=?", ((i,) for i in ids))
@@ -302,6 +444,19 @@ def extract(pbf, directory, progress=print):
             number = db.execute("SELECT coalesce(max(id),0) FROM features").fetchone()[
                 0
             ]
+            existing_facility_points = defaultdict(list)
+            for ident, source_id in db.execute("SELECT id,json_extract(data,'$.properties.station_source_id') FROM features "
+                                               "WHERE kind='railPoints' AND json_extract(data,'$.properties.station_source_id') IS NOT NULL"):
+                existing_facility_points[source_id].append(ident)
+            for feature in facility_points:
+                source_id = feature['properties']['station_source_id']
+                old_ids = existing_facility_points.get(source_id, [])
+                for ident in old_ids:
+                    db.execute('DELETE FROM bounds WHERE id=?',(ident,));db.execute('DELETE FROM features WHERE id=?',(ident,))
+                number += 1
+                x,y = feature['geometry']['coordinates']
+                db.execute('INSERT INTO features VALUES(?,?,?,?)',(number,'railPoints','main',json.dumps(feature,ensure_ascii=False)))
+                db.execute('INSERT INTO bounds VALUES(?,?,?,?,?)',(number,x,x,y,y))
             for feature in features:
                 number += 1
                 points = polygon_points(feature["geometry"])
@@ -321,6 +476,7 @@ def extract(pbf, directory, progress=print):
                 )
     report = {
         "source": str(Path(pbf).resolve()),
+        'facility_points': len(facility_points),
         "polygons": len(features),
         "platform_polygons": sum(
             f["properties"]["boundary_kind"] == "platform" for f in features
@@ -347,9 +503,6 @@ def extract(pbf, directory, progress=print):
             for f in features
             if (f["properties"]["boundary_kind"] == "platform") == (kind == "platform")
         ]
-        if kind == "platform":
-            # An open platform way is not an outline, but must not disappear from exports.
-            subset.extend(f for f in old if f["geometry"]["type"] == "LineString")
         outputs.append((filename, {"type": "FeatureCollection", "features": subset}))
     for name, value in outputs:
         target = directory / name
@@ -358,6 +511,7 @@ def extract(pbf, directory, progress=print):
             json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         temporary.replace(target)
+    refresh_station_index(source, directory / 'rail_lines.sqlite', previous_signature, progress)
     return report
 
 

@@ -1,0 +1,168 @@
+{
+  "dataset": {
+    "rail.sqlite": 3163963392,
+    "rail_catalog.sqlite": 485822464,
+    "rail_lines.sqlite": 2703171584
+  },
+  "timings_ms": {
+    "sync_station_catalog": [
+      54364.08
+    ],
+    "populate": [
+      55384.977
+    ],
+    "catalog_initialization": [
+      56632.91
+    ],
+    "line_library": [
+      901.164,
+      0.418,
+      0.562,
+      0.428,
+      0.359
+    ],
+    "rail_station_records": [
+      43.262,
+      37.093,
+      39.373
+    ],
+    "station_lookup": [
+      43.3,
+      37.127,
+      39.407
+    ],
+    "connection_selector.__init__": [
+      68.494,
+      28.312,
+      74.072
+    ],
+    "connection_selector.connections": [
+      0.015,
+      0.008,
+      0.012
+    ],
+    "_write_entries": [
+      23.812,
+      13.352,
+      13.14,
+      13.188,
+      12.536,
+      12.951,
+      13.657,
+      13.356,
+      12.622,
+      12.868
+    ],
+    "_save_local_overrides": [
+      23.901,
+      13.437,
+      13.217,
+      13.243,
+      12.591,
+      13.077,
+      13.709,
+      13.422,
+      12.68,
+      12.942
+    ],
+    "_refresh_station_items": [
+      0.035,
+      0.028,
+      0.031,
+      0.03,
+      0.033
+    ],
+    "update_station_label": [
+      6.231,
+      6.658,
+      8.933
+    ],
+    "save_station_override": [
+      31.814,
+      21.639,
+      23.582,
+      12.907,
+      391.11
+    ],
+    "editor_save_click": [
+      32.201,
+      21.924,
+      23.911,
+      0.161
+    ],
+    "open_edit_save_total": [
+      162.438,
+      76.95,
+      123.822
+    ],
+    "save_overrides": [
+      15.131,
+      22.819,
+      14.485,
+      15.116,
+      25.575
+    ],
+    "line_remarks_save": [
+      15.144
+    ],
+    "update_directory_labels": [
+      7.187,
+      9.442
+    ],
+    "line_rename_save": [
+      22.828
+    ],
+    "line_color_save": [
+      14.492
+    ],
+    "line_width_save": [
+      15.122
+    ],
+    "line_open_edit_save_total": [
+      55.015
+    ],
+    "station_remarks_save": [
+      12.914
+    ],
+    "station_type_save": [
+      391.126
+    ]
+  },
+  "stations": [
+    {
+      "id": "node/10003809933",
+      "cache_updated": true,
+      "persisted": true
+    },
+    {
+      "id": "node/10010678106",
+      "cache_updated": true,
+      "persisted": true
+    },
+    {
+      "id": "node/10011281789",
+      "cache_updated": true,
+      "persisted": true
+    }
+  ],
+  "errors": [],
+  "exceptions": [],
+  "pbf_accesses": [],
+  "line_entity_id": "RL-003763f8c776e2dfa17a",
+  "source_ref": "working-tree",
+  "map_commands": [
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "patchRailEntities",
+    "setRailAssetSelection",
+    "setRailPointExclusions",
+    "setRailPointSelection",
+    "setRailControlPointSelection"
+  ],
+  "boundary": "Production Qt slots / SQLite; MapStub excludes browser paint and full active TrainRun load."
+}

@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from .catalog_workspace import read_overrides, override_stamp, routing_revision
+    from .persistence import write_json_atomic
     from .operating_ui import OperationsEditor
     from .operating import Plan, read_plan
     from .rail import (
@@ -36,7 +38,11 @@ try:
     from .operating import parse_time, format_time
     from .rail_lines import resolution_policy, RESOLUTION_KEY
     from .station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
+    from .rail_station_directory import refresh_plan_names
+    from .route_intent import promote_route, reresolve_route
 except ImportError:
+    from catalog_workspace import read_overrides, override_stamp, routing_revision
+    from persistence import write_json_atomic
     from operating_ui import OperationsEditor
     from operating import Plan, read_plan
     from rail import (
@@ -52,6 +58,8 @@ except ImportError:
     from operating import parse_time, format_time
     from rail_lines import resolution_policy, RESOLUTION_KEY
     from station_positions import POSITION_KEY, STOP_POSITION_KEY, route_positions, position_distance
+    from rail_station_directory import refresh_plan_names
+    from route_intent import promote_route, reresolve_route
 
 
 class RailMap:
@@ -104,6 +112,7 @@ class RailEditor(OperationsEditor):
                 ]
         self.rail_payload = None
         self._autosave_ready = False
+        self._plan_load_error = ''
         self.visible_corridors = set()
         self.displayed_train_id = ""
         super().__init__(Plan([], "rail"), RailMap(map_view), [], path)
@@ -114,6 +123,7 @@ class RailEditor(OperationsEditor):
             try:
                 self.apply_payload(read_plan(path))
             except (ValueError, OSError, KeyError, TypeError) as error:
+                self._plan_load_error = str(error)
                 self.message.setText("国铁计划未载入：" + str(error))
         if self.rail_payload is None:
             self.apply_payload(self.initial_g1_payload())
@@ -123,6 +133,8 @@ class RailEditor(OperationsEditor):
                 else "当前铁路库尚不能组合完整 G1 通道；请先导入覆盖京沪高铁的全国铁路数据。"
             )
         self._autosave_ready = True
+        if self._plan_load_error:
+            self.message.setText('原国铁计划未成功载入，已保留原文件：' + self._plan_load_error)
 
     def changed(self, message):
         super().changed(message)
@@ -169,13 +181,20 @@ class RailEditor(OperationsEditor):
                 return self.empty_payload()
         return self.empty_payload()
 
-    def canonical_repository(self, identity_path):
+    def canonical_repository(self, identity_path, *, graph=None, payload=None):
         """Expose the shared domain contract; desktop dictionaries are DTOs only."""
         try:
             from .domain_adapter import build_repository
         except ImportError:
             from domain_adapter import build_repository
-        return build_repository(self.graph, self.document(), identity_path)
+        shared = Path(__file__).resolve().parents[1] / 'data/catalog/rail_catalog_overrides.json'
+        values = {}
+        for path in (shared, self.catalog_metadata_path):
+            for key, value in read_overrides(path).items():
+                values[key] = {**values.get(key, {}), **value}
+        return build_repository(self.graph if graph is None else graph,
+            self.document() if payload is None else payload,
+            identity_path, values, self.directory / 'rail.sqlite', self.catalog_metadata_path.parent/'workspace.sqlite')
 
     def play(self):
         if not self.plan.trains:
@@ -185,6 +204,9 @@ class RailEditor(OperationsEditor):
 
     def apply_payload(self, payload, show_route=False):
         original_payload = shared_document(payload)
+        library = self.line_library(interactive=False)
+        if hasattr(library, 'station_directory'):
+            refresh_plan_names(original_payload, library)
         for train in original_payload["trains"]:
             for section in train.get("station_paths", []):
                 if "sequence" in section:
@@ -223,6 +245,12 @@ class RailEditor(OperationsEditor):
             if (self.directory / "rail.sqlite").exists()
             else []
         )
+        from railscope.workspace import WorkspaceObjects
+        try:
+            from .temporal_adapter import temporal_edges
+        except ImportError:
+            from temporal_adapter import temporal_edges
+        edges=temporal_edges(edges,WorkspaceObjects(self.catalog_metadata_path.parent/'workspace.sqlite').collection('lifecycles'),original_payload['service_date'])
         original_payload = resolve_edge_aliases(original_payload, edges)
         found = {e["id"] for e in edges} | {
             e["requested_edge_alias"] for e in edges if e.get("requested_edge_alias")
@@ -281,6 +309,46 @@ class RailEditor(OperationsEditor):
                     )
         coordinates = {node: coord for edge in edges for node, coord in zip(
             edge.get("node_ids", [edge["from_node"], edge["to_node"]]), edge["coordinates"])}
+        # A timetable stop may refer to a switch or an unlabelled track anchor.
+        # Recover the station alias for display without changing that reference.
+        labels = {}
+        stop_nodes = {s['node_id'] for t in original_payload['trains'] for s in t['stops']}
+        line_index = self.directory / 'rail_lines.sqlite'
+        if line_index.exists() and stop_nodes:
+            with sqlite3.connect(line_index) as db:
+                nodes = sorted(stop_nodes, key=str)
+                for start in range(0, len(nodes), 800):
+                    batch = nodes[start:start+800]
+                    for node, alias, source in db.execute(
+                        'SELECT anchor_node,alias,station_node_id FROM station_aliases WHERE anchor_node IN ('
+                        + ','.join('?' for _ in batch) + ') AND confidence>=0.5 '
+                        'ORDER BY distance_m,length(alias),alias', batch):
+                        labels.setdefault(node, (alias, source))
+        for train in original_payload['trains']:
+            for stop in train['stops']:
+                matched = stop.get('extensions', {}).get('railscope.org/stop-name', {})
+                anchor = stop.get('extensions', {}).get('railscope.org/station-anchor', {})
+                position = stop.get('extensions', {}).get(STOP_POSITION_KEY, {})
+                station_key = position.get('station_id') or matched.get('station_key')
+                source = str(station_key).removeprefix('station:node/') if str(station_key).startswith('station:node/') else anchor.get('source_station_node')
+                source = int(source) if str(source).isdigit() else source
+                source = source or labels.get(stop['node_id'], ('', None))[1]
+                if 'node/' + str(source) in getattr(library, 'station_directory', {}):
+                    labels[stop['node_id']] = (library.endpoint_label('station:node/' + str(source)), source)
+                    if matched:
+                        matched['display_name'] = labels[stop['node_id']][0]
+                elif matched.get('display_name'):
+                    labels[stop['node_id']] = (matched['display_name'], labels.get(stop['node_id'], ('', stop['node_id']))[1])
+                if position and hasattr(library, 'station_directory') and str(station_key).removeprefix('station:') in library.station_directory:
+                    position['station_name'] = library.endpoint_label(station_key)
+                    stop.setdefault('extensions', {}).setdefault('railscope.org/stop-name', {})['display_name'] = position['station_name']
+        for node, (label, source) in labels.items():
+            if node not in coordinates:
+                continue
+            points = [p for p in points if p['properties'].get('osm_node_id') != node]
+            points.append({'type': 'Feature', 'properties': {'osm_node_id': node, 'name': label,
+                'kind': 'stop', 'source_station_node': source or node, 'name_source': 'station_alias'},
+                'geometry': {'type': 'Point', 'coordinates': coordinates[node]}})
         for route in original_payload["routes"]:
             for position in route.get("extensions", {}).get(POSITION_KEY, []):
                 node = position["node_id"]
@@ -293,17 +361,8 @@ class RailEditor(OperationsEditor):
                     "source_station_node":int(source_node) if source_node.isdigit() else node},
                     "geometry":{"type":"Point", "coordinates":coordinates[node]}})
         validate_corridors(original_payload["routes"], edges)
+        payload = expanded_document(original_payload)
         plan, lines = compile_rail_plan(payload, edges, points, self.platforms)
-        self.pause()
-        self.set_enabled(False)
-        self.graph["points"] = points
-        self.graph["edges"] = edges
-        self.shared_station_features = {
-            p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
-        }
-        self.visible_corridors.intersection_update(
-            r["id"] for r in original_payload["routes"]
-        )
         for profile, train, shared_train in zip(
             lines, payload["trains"], original_payload["trains"]
         ):
@@ -322,12 +381,22 @@ class RailEditor(OperationsEditor):
                 + " · 单向参考通道",
             )
             route.setdefault("track_changes", [])
+        graph = {**self.graph, 'points': points, 'edges': edges}
+        document = self.document(plan=plan, payload=original_payload, graph=graph)
+        domain_repo, domain_bindings = self.canonical_repository(
+            self.workspace_identity_path, graph=graph, payload=document)
+        # Publish only after both DTO and shared domain validation succeed.
+        self.pause()
+        self.set_enabled(False)
+        self.graph = graph
+        self.shared_station_features = {
+            p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
+        }
+        self.visible_corridors.intersection_update(r['id'] for r in original_payload['routes'])
         self.plan = plan
         self.base_lines = lines
         self.rail_payload = original_payload
-        self.domain_repo, self.domain_bindings = self.canonical_repository(
-            self.workspace_identity_path
-        )
+        self.domain_repo, self.domain_bindings = domain_repo, domain_bindings
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.line_combo.blockSignals(True)
@@ -381,7 +450,37 @@ class RailEditor(OperationsEditor):
 
         QTimer.singleShot(0, self.updated.emit)
 
+    def refresh_station_names(self):
+        library = self.line_library(interactive=False)
+        if not hasattr(library, 'station_directory') or not getattr(self, 'rail_payload', None):
+            return
+        refresh_plan_names(self.rail_payload, library)
+        for p in self.graph['points']:
+            props = p['properties']
+            source = props.get('source_station_node', props.get('osm_node_id'))
+            if 'node/' + str(source) in library.station_directory:
+                props['name'] = library.endpoint_label('station:node/' + str(source))
+        for train in self.rail_payload['trains']:
+            profile = self.plan.lines.get('rail/' + train['id'], {})
+            for stop, station in zip(train['stops'], profile.get('stations', [])):
+                extensions = stop.get('extensions', {})
+                position = extensions.get(STOP_POSITION_KEY, {})
+                key = position.get('station_id') or extensions.get('railscope.org/stop-name', {}).get('station_key')
+                if not key:
+                    props = self.shared_station_features.get(stop['node_id'], {}).get('properties', {})
+                    key = 'station:node/' + str(props.get('source_station_node', props.get('osm_node_id')))
+                if str(key).removeprefix('station:') in library.station_directory:
+                    name = library.endpoint_label(key)
+                    station['name'] = name
+                    if position:
+                        position['station_name'] = name
+                    matched = extensions.get('railscope.org/stop-name')
+                    if matched:
+                        matched['display_name'] = name
+        self.refresh_table()
+
     def push_corridors(self):
+        self.refresh_station_names()
         features = []
         drawn_paths, drawn_stations = set(), set()
         lookup = {edge["id"]: edge for edge in self.graph["edges"]}
@@ -406,6 +505,7 @@ class RailEditor(OperationsEditor):
                 "name": route.get("name", corridor_id) if route else "单向参考通道",
                 "source": self.rail_payload["source"],
                 "corridor_id": corridor_id,
+                "color": route.get("color", "#466979"),
                 "train_ids": trains,
                 "track_changes": (route or {}).get("track_changes", []),
             }
@@ -417,8 +517,9 @@ class RailEditor(OperationsEditor):
                 coords.extend(part if not coords else part[1:])
             positions = route.get("extensions", {}).get(POSITION_KEY, [])
             requested = route.get("extensions", {}).get(RESOLUTION_KEY, {}).get("selection", {}).get("requested_sequence", [])
-            boundaries = [next((p for p in positions if p["station_id"] == entry.get("node_id")), None)
-                          for entry in ([requested[0], requested[-1]] if requested else [])]
+            boundaries = [next((p for p in (positions if i == 0 else positions[::-1])
+                                if p["station_id"] == entry.get("node_id")), None)
+                          for i, entry in enumerate([requested[0], requested[-1]] if requested else [])]
             if len(boundaries) == 2 and any(boundaries):
                 try:
                     from .geometry import distance_m, interpolate
@@ -437,7 +538,7 @@ class RailEditor(OperationsEditor):
                         "verification_status":boundary["verification_status"],
                         "position_source":boundary["source"]},
                         "geometry":{"type":"Point", "coordinates":boundary["coordinate"]}})
-            key = tuple((leg["edge_id"], leg["direction"]) for leg in route["path"])
+            key = (route.get("color", "#466979"), tuple((leg["edge_id"], leg["direction"]) for leg in route["path"]))
             if key not in drawn_paths:
                 drawn_paths.add(key)
                 features.append(
@@ -467,21 +568,21 @@ class RailEditor(OperationsEditor):
                     for item in profile.get("stations", [])
                     if str(item.get("id", "")).isdigit()
                 }
-            stop_ids = {
-                s["node_id"] for s in selected_train.get("stops", [])
-            } if selected_train else set()
-            for station in self.graph["points"]:
+            for stop_index, stop in enumerate(selected_train.get('stops', []) if selected_train else []):
+                station = self.shared_station_features.get(stop['node_id'], {
+                    'properties': {'osm_node_id': stop['node_id']}})
                 data = station["properties"]
-                if data["osm_node_id"] not in stop_ids:
-                    continue
+                position = stop.get('extensions', {}).get(STOP_POSITION_KEY, {})
+                key = position.get('station_id') or stop.get('extensions', {}).get('railscope.org/stop-name', {}).get('station_key')
                 source_node = data.get("source_station_node", data["osm_node_id"])
                 shared = self.shared_station_features.get(source_node, station)
-                display_name = shared["properties"].get("name") or data.get("name")
-                if not display_name or str(display_name).isdigit():
+                station_profile = profile.get('stations', [])[stop_index]
+                display_name = position.get('station_name') or station_profile.get('name') or shared["properties"].get("name")
+                if not display_name or str(display_name).isdigit() or str(display_name).startswith('未命名'):
                     display_name = stop_names.get(data["osm_node_id"]) or stop_names.get(source_node)
                 if not display_name or str(display_name).isdigit():
                     display_name = "未命名铁路控制点"
-                station_key = "node/" + str(source_node)
+                station_key = str(key).removeprefix('station:') if key else "node/" + str(source_node)
                 if station_key in drawn_stations:
                     continue
                 drawn_stations.add(station_key)
@@ -494,16 +595,20 @@ class RailEditor(OperationsEditor):
                             "name": display_name,
                             "train_id": selected_train["id"],
                             "infrastructure_id": station_key,
+                            "station_key": 'station:' + station_key,
                         },
-                        "geometry": {"type":"Point", "coordinates": next(
-                            (s.get("extensions", {}).get(STOP_POSITION_KEY, {}).get("coordinate", node_coordinates[data["osm_node_id"]])
-                             for s in selected_train["stops"] if s["node_id"] == data["osm_node_id"]),
-                            node_coordinates[data["osm_node_id"]])},
+                        "geometry": {"type":"Point", "coordinates": position.get('coordinate', node_coordinates[stop['node_id']])},
                     }
                 )
-        self.map.call(
-            "setRailPlan", {"type": "FeatureCollection", "features": features}
-        )
+        try:
+            from .display_names import apply_names
+        except ImportError:
+            from display_names import apply_names
+        collection = {'type': 'FeatureCollection', 'features': features}
+        library = self.line_library(interactive=False)
+        apply_names(collection, getattr(library, 'metadata', {}),
+                    station_directory=getattr(library, 'station_directory', {}))
+        self.map.call('setRailPlan', collection)
         self.map.call("setVisibility", "railPlan", bool(features))
 
     def load_g1_example(self):
@@ -668,14 +773,17 @@ class RailEditor(OperationsEditor):
                 self.route_switch.setChecked(False)
                 self.route_switch.blockSignals(False)
 
-    def document(self):
-        if self.rail_payload is None:
+    def document(self, *, plan=None, payload=None, graph=None):
+        plan = self.plan if plan is None else plan
+        payload = self.rail_payload if payload is None else payload
+        graph = self.graph if graph is None else graph
+        if payload is None:
             raise ValueError("请先导入国铁车次计划和实际基础设施")
-        self.plan.validate()
-        payload = deepcopy(self.rail_payload)
+        plan.validate()
+        payload = deepcopy(payload)
         payload["trains"] = []
-        for train in self.plan.trains:
-            profile = self.plan.lines[train["line_id"]]
+        for train in plan.trains:
+            profile = plan.lines[train["line_id"]]
             stops = []
             for stop in train["stops"]:
                 original = deepcopy(
@@ -700,9 +808,22 @@ class RailEditor(OperationsEditor):
                     profile["station_paths"]
                 )
         compile_rail_plan(
-            payload, self.graph["edges"], self.graph["points"], self.platforms
+            payload, graph["edges"], graph["points"], self.platforms
         )
-        return payload
+        return shared_document(payload)
+
+    def reresolve_corridor(self, route_id):
+        """Explicit re-resolution; dependent runs validate before atomic apply."""
+        before = self.document()
+        candidate = deepcopy(before)
+        library = self.line_library(interactive=True)
+        for index, route in enumerate(candidate['routes']):
+            if route['id'] == route_id:
+                snapshot = str(library.path.stat().st_mtime_ns) if hasattr(library, 'path') else 'portable_reference'
+                candidate['routes'][index] = reresolve_route(route, library, snapshot)
+                self.accept_batch(candidate, before)
+                return
+        raise ValueError('通道不存在')
 
     def variant_changed(self):
         super().variant_changed()
@@ -753,8 +874,10 @@ class RailEditor(OperationsEditor):
                 {
                     "id": route["id"],
                     "name": route.get("name", route["id"]),
+                    "color": route.get("color", "#466979"),
                     "sequence": sequence,
                     "extensions": extensions,
+                    **{key: deepcopy(route[key]) for key in ('route_intent','resolved_corridor') if key in route},
                 }
             )
         return {
@@ -797,7 +920,7 @@ class RailEditor(OperationsEditor):
             str(database),
             stamp,
             names_path.stat().st_mtime_ns if names_path.exists() else None,
-            metadata_path.stat().st_mtime_ns if metadata_path.exists() else None,
+            routing_revision(metadata_path),
             shared_metadata_path.stat().st_mtime_ns if shared_metadata_path.exists() else None,
         )
         if getattr(self, "_line_library_signature", None) == signature:
@@ -808,9 +931,7 @@ class RailEditor(OperationsEditor):
             else {}
         )
         metadata = (
-            json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata_path.exists()
-            else {}
+            read_overrides(metadata_path)
         )
         shared_metadata = (json.loads(shared_metadata_path.read_text(encoding="utf-8"))
                            if shared_metadata_path.exists() else {})
@@ -835,8 +956,39 @@ class RailEditor(OperationsEditor):
         self._line_library_signature = signature
         return self._line_library
 
+    def retain_line_library_for_directory_move(self):
+        """Folder edits change the file stamp, but not any routing-library input."""
+        signature = getattr(self, '_line_library_signature', None)
+        if signature is None:
+            return
+        metadata = self.catalog_metadata_path
+        stamp = routing_revision(metadata)
+        self._line_library_signature = (*signature[:3], stamp, *signature[4:])
+
     def invalidate_line_library(self):
         self._line_library_signature = None
+
+    def patch_catalog_metadata(self, overrides, changes):
+        """Patch names/notes on the live library; topology changes still invalidate."""
+        try:
+            from .entity_refresh import ROUTING_FIELDS
+        except ImportError:
+            from entity_refresh import ROUTING_FIELDS
+        if any(ROUTING_FIELDS & change.keys() for change in changes.values()):
+            self.invalidate_line_library()
+            return
+        library = getattr(self, '_line_library', None)
+        if library is not None and hasattr(library, 'metadata'):
+            for key in changes:
+                if key in overrides:
+                    library.metadata[key] = overrides[key]
+                else:
+                    library.metadata.pop(key, None)
+            # Names and remarks do not change traversal permissions.
+            if any({'rail_semantics', 'track_type', 'line_kind'} & delta.keys()
+                   for delta in changes.values()):
+                library._semantic_cache.clear()
+        self.retain_line_library_for_directory_move()
 
     def show_corridor(self, corridor_id, train_id=""):
         route = next(r for r in self.rail_payload["routes"] if r["id"] == corridor_id)
@@ -921,7 +1073,7 @@ class RailEditor(OperationsEditor):
                 strict_fields(
                     route,
                     {"id", "name", "sequence", "extensions"},
-                    set(),
+                    {"color", "route_intent", "resolved_corridor"},
                     "端点—线路通道",
                 )
                 # Resolve from the infrastructure every time, including G1 notation.
@@ -1001,8 +1153,8 @@ class RailEditor(OperationsEditor):
                         requested_sequence = old_selection.get("requested_sequence", requested_sequence)
                     resolution.update({
                         "source": "automatic_reference",
-                        "method": "reachable_lines_with_local_station_connections",
-                        "version": 2,
+                        "method": "reachable_lines_with_station_and_fragment_connections",
+                        "version": 3,
                         "verification_status": "automatic_reference_not_dispatch_verified",
                         "confidence": None,
                         "snapshot": membership.get("snapshot") if membership else "portable_reference",
@@ -1016,11 +1168,13 @@ class RailEditor(OperationsEditor):
                 legacy = route["extensions"].get("railscope.org/legacy-track-changes")
                 if legacy is not None:
                     route["track_changes"] = deepcopy(legacy)
+                promoted = promote_route(route, refresh=True)
+                route.update(promoted)
         for route in incoming:
             strict_fields(
                 route,
                 {"id", "path", "extensions"},
-                {"name", "track_changes", "sequence"},
+                {"name", "track_changes", "sequence", "color", "route_intent", "resolved_corridor"},
                 "单向运行通道",
             )
             routes[route["id"]] = {**routes.get(route["id"], {}), **deepcopy(route)}
@@ -1218,6 +1372,14 @@ class RailEditor(OperationsEditor):
             for key, name in names.items()
         ):
             raise ValueError("编号不存在或名称为空")
+        editor = getattr(self, 'catalog_editor', None)
+        if editor is not None:
+            changes = {member: {'display_name': name.strip(), 'line_name': name.strip()}
+                       for key, name in names.items() for member in library.workspace.members(key)
+                       if member in editor.catalog}
+            editor.save_overrides(changes)
+            self.updated.emit()
+            return
         path = Path(self.path).parent / "rail_line_names.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".json.tmp")
@@ -1332,7 +1494,7 @@ class RailEditor(OperationsEditor):
                 "目标股道",
                 "道岔节点",
                 "变道时刻",
-                "站台 OSM 编号",
+                "真实站台引用",
                 "到发线编号",
                 "车站进路编号",
             ]
@@ -1347,6 +1509,12 @@ class RailEditor(OperationsEditor):
                 display_name, recommended = self.stop_display_name(
                     node_id, index, len(train["stops"]), candidates
                 )
+                saved = stop.get('extensions', {}).get('railscope.org/rail-stop', {}).get('extensions', {})
+                key = saved.get(STOP_POSITION_KEY, {}).get('station_id') or saved.get('railscope.org/stop-name', {}).get('station_key')
+                if key and str(key).removeprefix('station:') in getattr(getattr(self, '_line_library', None), 'station_directory', {}):
+                    display_name, recommended = self._line_library.endpoint_label(key), False
+                elif saved.get('railscope.org/stop-name', {}).get('display_name'):
+                    display_name, recommended = saved['railscope.org/stop-name']['display_name'], False
                 station_item = self.table.item(row, 3)
                 station_item.setText(display_name)
                 station_item.setToolTip(
@@ -1790,14 +1958,10 @@ class RailEditor(OperationsEditor):
                 QMessageBox.warning(self, "模板未保存", str(error))
 
     def write(self, path):
+        if self._plan_load_error and Path(path).resolve() == Path(self.path).resolve():
+            raise ValueError('原计划未成功载入，禁止覆盖；请修复后重新打开或导入有效计划')
         payload = self.document()
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(path)
+        write_json_atomic(path, payload)
 
     def save(self):
         try:
@@ -1817,6 +1981,8 @@ class RailEditor(OperationsEditor):
             return
         try:
             self.apply_payload(read_plan(path), show_route=True)
+            self._plan_load_error = ''
+            self.write(self.path)
         except (ValueError, OSError, KeyError, TypeError) as error:
             QMessageBox.warning(self, "国铁计划导入失败", str(error))
 

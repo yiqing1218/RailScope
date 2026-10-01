@@ -197,6 +197,8 @@ def station_distances(repo: RailRepository, edge_refs, station_ids: Iterable[str
 def stop_distances(repo, edge_refs, stops):
     """Track offsets share the canonical edge contract across all adapters."""
     stops = tuple(stops)
+    if any(s.stop_edge_sequence is not None and s.stop_edge_id is None for s in stops):
+        raise ValueError('停站通道区间序号必须同时指定轨道')
     if all(stop.stop_edge_id is None and stop.stop_offset_m is None for stop in stops):
         return station_distances(repo, edge_refs, (stop.station_id for stop in stops))
     station_distances(repo, edge_refs, ())  # Validate connectivity and cumulative distances too.
@@ -209,14 +211,19 @@ def stop_distances(repo, edge_refs, stops):
             if distance is None:
                 raise ValueError('停站点不在通道上或站序倒退')
         else:
-            ref = next((ref for ref in edge_refs if ref.edge_id == stop.stop_edge_id), None)
+            occurrence = stop.stop_edge_sequence
+            if occurrence is not None and (type(occurrence) is not int or occurrence < 1):
+                raise ValueError('停站通道区间序号无效')
+            refs = [ref for ref in edge_refs if ref.edge_id == stop.stop_edge_id
+                    and (occurrence is None or ref.sequence == occurrence)]
             offset = stop.stop_offset_m
-            if ref is None or type(offset) not in (int, float) or not isfinite(offset):
+            if not refs or type(offset) not in (int, float) or not isfinite(offset):
                 raise ValueError('站内停靠轨道不在完整通道中或偏移无效')
-            edge = repo.edges[ref.edge_id]
+            edge = repo.edges[stop.stop_edge_id]
             if not 0 <= offset <= edge.length_m:
                 raise ValueError('站内轨道偏移超出物理区间')
-            distance = ref.start_distance_m + (offset if ref.forward else edge.length_m - offset)
+            distances = [ref.start_distance_m + (offset if ref.forward else edge.length_m - offset) for ref in refs]
+            distance = next((d for d in distances if not result or d > result[-1]), distances[0])
         if result and distance <= result[-1]:
             raise ValueError('站内停靠位置不按通道方向排列')
         result.append(distance)
@@ -227,9 +234,10 @@ def _complete_endpoints(corridor, stops, distances):
     if not distances or not corridor.edge_refs:
         return False
     first, last = corridor.edge_refs[0], corridor.edge_refs[-1]
-    return ((stops[0].stop_edge_id == first.edge_id if stops[0].stop_edge_id else distances[0] == 0)
-            and (stops[-1].stop_edge_id == last.edge_id if stops[-1].stop_edge_id
-                 else distances[-1] == last.end_distance_m))
+    return ((stops[0].stop_edge_id == first.edge_id and first.start_distance_m <= distances[0] <= first.end_distance_m
+             if stops[0].stop_edge_id else distances[0] == 0)
+            and (stops[-1].stop_edge_id == last.edge_id and last.start_distance_m <= distances[-1] <= last.end_distance_m
+                 if stops[-1].stop_edge_id else distances[-1] == last.end_distance_m))
 
 
 def match_corridors(repo: RailRepository, train_id: str) -> dict:

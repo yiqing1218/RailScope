@@ -4,6 +4,7 @@ from copy import deepcopy
 import sqlite3
 from uuid import uuid4
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -21,6 +22,8 @@ from PySide6.QtWidgets import (
     QCompleter,
     QMenu,
     QCheckBox,
+    QLabel,
+    QColorDialog,
 )
 
 try:
@@ -34,7 +37,7 @@ except ImportError:
 class SearchChoice(QComboBox):
     """At most 100 search candidates, regardless of the national dataset size."""
 
-    selectionEdited = Signal()
+    selection_committed = Signal()
 
     def __init__(self, search, placeholder, value=None, label=""):
         super().__init__()
@@ -50,8 +53,6 @@ class SearchChoice(QComboBox):
         self.lineEdit().setPlaceholderText(placeholder)
         self.lineEdit().setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.currentIndexChanged.connect(self.reveal_name)
-        self.currentIndexChanged.connect(self.selectionEdited)
-        self.activated.connect(lambda: QTimer.singleShot(0, self.reveal_name))
         self.lineEdit().editingFinished.connect(self.reveal_name)
         self.completer().setCompletionMode(
             QCompleter.CompletionMode.UnfilteredPopupCompletion
@@ -60,35 +61,45 @@ class SearchChoice(QComboBox):
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.timeout.connect(self.find_results)
-        self.lineEdit().textEdited.connect(lambda: self._search_timer.start(220))
-        self.lineEdit().textEdited.connect(self.selectionEdited)
+        self.lineEdit().textEdited.connect(self.text_edited)
+        self.currentIndexChanged.connect(self.selection_committed)
+        self.activated.connect(lambda: self.reveal_name())
         if value is not None:
-            self.add_choice(value, label)
+            self.addItem(label, value)
         else:
             self.setCurrentIndex(-1)
         self.reveal_name()
 
-    def currentData(self, role=Qt.ItemDataRole.UserRole):
-        # An edited label is a query, not the previously selected object's ID.
-        if self.currentIndex() < 0 or self.currentText() != self.itemText(self.currentIndex()):
-            return None
-        return super().currentData(role)
-
     def reveal_name(self, *args):
-        self.setToolTip(super().currentData(Qt.ItemDataRole.ToolTipRole) or self.currentText())
+        self.setToolTip(self.currentData(Qt.ItemDataRole.ToolTipRole) or self.currentText())
         self.lineEdit().setCursorPosition(0)
 
+    def text_edited(self, text):
+        # An edited label is not a committed object, even if Qt retains the old
+        # combo index. Otherwise the other column filters on a stale endpoint.
+        had_selection = self.currentData() is not None
+        self.blockSignals(True)
+        self.setCurrentIndex(-1)
+        self.setEditText(text)
+        self.blockSignals(False)
+        self._choices_dirty = True
+        self._search_timer.start(220)
+        if had_selection:
+            self.selection_committed.emit()
+
     def add_choice(self, key, label):
-        short = label.split(" · 接轨：", 1)[0]
-        self.addItem(short if isinstance(key, str) else f"{short} · {key}", key)
+        self.addItem(label.split(' · 接轨：', 1)[0], key)
         self.setItemData(self.count() - 1, label, Qt.ItemDataRole.ToolTipRole)
 
     def select_result(self, text):
+        self._search_timer.stop()
         index = self.findText(text)
         if index >= 0:
+            unchanged = index == self.currentIndex()
             self.setCurrentIndex(index)
-            self.selectionEdited.emit()
-            QTimer.singleShot(0, self.reveal_name)
+            if unchanged:
+                self.selection_committed.emit()
+            self.reveal_name()
 
     def find_results(self):
         query = self.currentText().strip()
@@ -99,7 +110,7 @@ class SearchChoice(QComboBox):
         self.blockSignals(True)
         self.clear()
         for key, label in choices:
-            self.add_choice(key, label)
+            self.add_choice(key, label if isinstance(key, str) else f"{label} · {key}")
         self.setCurrentIndex(-1)
         self.setEditText(query)
         self.blockSignals(False)
@@ -118,7 +129,7 @@ class SearchChoice(QComboBox):
         try:
             self.clear()
             for key, text in self.search(""):
-                self.add_choice(key, text)
+                self.add_choice(key, text if isinstance(key, str) else f"{text} · {key}")
             index = self.findData(value) if value is not None else -1
             if value is not None and index < 0:
                 self.addItem(label, value)
@@ -141,6 +152,36 @@ class SearchChoice(QComboBox):
             super().wheelEvent(event)
 
 
+class ChoiceCell(QWidget):
+    """Keep secondary context outside the editable field."""
+    def __init__(self, choice):
+        super().__init__()
+        self.choice = choice
+        choice.setFixedHeight(38)
+        self.hint = QLabel()
+        self.hint.setStyleSheet('color:#587580; font-size:11px; background:transparent; border:0;')
+        self.hint.setMinimumWidth(0)
+        self.hint.setFixedHeight(20)
+        self._hint_text = ''
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 4)
+        layout.setSpacing(3)
+        layout.addWidget(choice)
+        layout.addWidget(self.hint)
+
+    def set_hint(self, text):
+        self._hint_text = text
+        self.hint.setToolTip(text)
+        self.hint.setAccessibleName(text)
+        self.resizeEvent(None)
+
+    def resizeEvent(self, event):
+        if event is not None:
+            super().resizeEvent(event)
+        self.hint.setText(self.hint.fontMetrics().elidedText(
+            self._hint_text, Qt.TextElideMode.ElideRight, max(0, self.width() - 16)))
+
+
 class CorridorSequenceTable(QTableWidget):
     """Point + outgoing line rows, with one final point and the v2 wire format."""
 
@@ -150,13 +191,28 @@ class CorridorSequenceTable(QTableWidget):
         super().__init__(0, 2, parent)
         self.library = library
         self.physical = False
+        self.reference = True
         self._updating = False
-        self.setHorizontalHeaderLabels(["车站 / 换线点", "驶向下一站的线路"])
-        self.setAlternatingRowColors(True)
-        self.setShowGrid(False)
-        self.verticalHeader().setFixedWidth(36)
-        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.setHorizontalHeaderLabels(["端点 · 起点 / 换线点 / 终点", "前往下一点的线路 · 终点留空"])
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.setShowGrid(False)
+        self.setAlternatingRowColors(True)
+        self.verticalHeader().setDefaultSectionSize(82)
+
+    def cellWidget(self, row, column):
+        cell = super().cellWidget(row, column)
+        return cell.choice if isinstance(cell, ChoiceCell) else cell
+
+    def update_hint(self, row):
+        cell = super().cellWidget(row, 0)
+        if not isinstance(cell, ChoiceCell):
+            return
+        point = cell.choice.currentData()
+        if point is None:
+            cell.set_hint('选择车站后显示接轨线路')
+            return
+        names = list(dict.fromkeys(record['name'] for record in self.library.connected_lines(point, **self.options())))
+        cell.set_hint('接轨线路：' + (' / '.join(names) if names else '待关联'))
 
     def options(self):
         return {"physical": self.physical} if hasattr(self.library, "workspace") else {}
@@ -174,10 +230,16 @@ class CorridorSequenceTable(QTableWidget):
             start, previous_line = [self.cellWidget(row - 1, c).currentData() for c in (0, 1)]
             if start is None or previous_line is None:
                 return []
+            if hasattr(self.library, 'reference_library'):
+                return self.library.reachable_nodes(start, previous_line, query, limit=100,
+                    reference=self.reference, next_line=line, **self.options())
             choices = self.library.reachable_nodes(start, previous_line, query, limit=1000, **self.options())
         else:
-            choices = self.library.search_endpoints(query, line_id=line, **self.options())
+            extra = {'reference': self.reference} if hasattr(self.library, 'reference_library') else {}
+            choices = self.library.search_endpoints(query, line_id=line, **extra, **self.options())
         if line:
+            if self.reference and hasattr(self.library, 'reference_candidates'):
+                return [(key, label) for key, label in choices if self.library.reference_candidates(key, line)][:100]
             choices = [(key, label) for key, label in choices if line in {
                 value["id"] for value in self.library.connected_lines(key, **self.options())}]
         return choices[:100]
@@ -186,6 +248,15 @@ class CorridorSequenceTable(QTableWidget):
         point = self.cellWidget(row, 0).currentData()
         records = (self.library.connected_lines(point, query, **self.options()) if point is not None
                    else self.library.search_lines(query))
+        if point is not None and self.reference and hasattr(self.library, 'reference_candidates'):
+            contextual = [self.cellWidget(row, 1).currentData()]
+            if row:
+                contextual.append(self.cellWidget(row - 1, 1).currentData())
+            for line in dict.fromkeys(contextual):
+                if line and line not in {record['id'] for record in records}:
+                    record = self.library.lines[line]
+                    if query.casefold() in record['name'].casefold() and self.library.reference_candidates(point, line):
+                        records.append(record)
         return [(record["id"], record["name"]) for record in records]
 
     def add_point(self, point=None, line=None, section=None):
@@ -195,12 +266,13 @@ class CorridorSequenceTable(QTableWidget):
             # Find the current row from the widget; row deletion/reordering must
             # not leave callbacks referring to old numerical positions.
             combo = SearchChoice(lambda q: [], "搜索车站 / 线路所" if column == 0 else "搜索线路（可先选线）", value, self.label(column, value))
-            self.setCellWidget(row, column, combo)
+            self.setCellWidget(row, column, ChoiceCell(combo))
             combo.search = lambda q, c=column, w=combo: (self.point_choices if c == 0 else self.line_choices)(self.widget_row(w), q)
-            combo.selectionEdited.connect(lambda c=column, w=combo: self.selection_changed(self.widget_row(w), c))
+            combo.selection_committed.connect(lambda c=column, w=combo: self.selection_changed(self.widget_row(w), c))
             combo._choices_dirty = True
         self.cellWidget(row, 1).setProperty("sectionId", section)
-        self.setRowHeight(row, 46)
+        self.setRowHeight(row, 82)
+        self.update_hint(row)
 
     def widget_row(self, widget):
         return next((r for r in range(self.rowCount()) if widget in [self.cellWidget(r, c) for c in (0, 1)]), -1)
@@ -216,6 +288,8 @@ class CorridorSequenceTable(QTableWidget):
         combo._choices_dirty = True
         combo.blockSignals(False)
         combo.reveal_name()
+        if column == 0:
+            self.update_hint(row)
         if notify:
             self.selection_changed(row, column)
 
@@ -239,11 +313,16 @@ class CorridorSequenceTable(QTableWidget):
                 if r == row and column == 0:
                     continue
                 point = self.cellWidget(r, 0).currentData()
-                if point is not None and r:
+                if point is not None and (r or self.cellWidget(r, 1).currentData() is not None):
                     # Query by the selected name so the first 100 other stations
                     # cannot invalidate a distant selected station.
-                    allowed = dict(self.point_choices(r, self.library.endpoint_label(point)))
-                    if point not in allowed:
+                    if r == 0:
+                        outgoing = self.cellWidget(r, 1).currentData()
+                        valid = bool(self.library.reference_candidates(point, outgoing)) if self.reference and hasattr(self.library, 'reference_candidates') else any(
+                            entry['id'] == outgoing for entry in self.library.connected_lines(point, **self.options()))
+                    else:
+                        valid = point in dict(self.point_choices(r, self.library.endpoint_label(point)))
+                    if not valid:
                         self.assign(r, 0, None, notify=False)
                         self.cellWidget(max(0, r - 1), 1).setProperty("sectionId", None)
                 if r and self.cellWidget(r, 0).currentData() is None and self.cellWidget(r, 1).currentData() is not None:
@@ -260,6 +339,8 @@ class CorridorSequenceTable(QTableWidget):
                                 self.assign(r, 0, inferred, notify=False)
         finally:
             self._updating = False
+        for r in range(row, self.rowCount()):
+            self.update_hint(r)
         self.changed.emit()
 
     def set_sequence(self, sequence):
@@ -477,10 +558,18 @@ class CorridorPanel(QWidget):
         train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
         menu = QMenu(self)
         menu.addAction('编辑通道…', lambda: self.edit_table(route_id))
+        menu.addAction('按业务径路意图在当前数据中重新解析…', lambda: self.reresolve(route_id))
         menu.addAction('删除通道', lambda: self.delete_selected(route_id))
         menu.addAction("查看引用关系…", lambda: self.show_references(route_id, train_id))
         menu.exec(self.tree.viewport().mapToGlobal(position))
         menu.deleteLater()
+
+    def reresolve(self, route_id):
+        try:
+            self.editor.reresolve_corridor(route_id)
+            self.refresh()
+        except (ValueError, KeyError, OSError) as error:
+            QMessageBox.warning(self, '重新解析未保存，原通道保留', str(error))
 
     def show_references(self, route_id, selected_train=""):
         route = next(r for r in self.editor.rail_payload["routes"] if r["id"] == route_id)
@@ -539,64 +628,88 @@ class CorridorPanel(QWidget):
             (r for r in self.editor.rail_payload["routes"] if r["id"] == ident), None
         )
         dialog = QDialog(self)
+        dialog.setObjectName('corridorDialog')
         dialog.setWindowTitle("单向通道 · 端点—铁路线—端点")
-        dialog.setObjectName("corridorDialog")
-        dialog.resize(1080, 660)
+        dialog.resize(1100, 760)
+        dialog.setStyleSheet(
+            "QDialog#corridorDialog { background: #f3f6f8; } "
+            "QTableWidget { background: white; alternate-background-color: #f5f9fa; border: 1px solid #cad8df; border-radius: 8px; } "
+            "QHeaderView::section { background: #e4eeef; padding: 12px 10px; border: 0; color: #285760; } "
+            "QTableWidget QComboBox { margin: 0; padding: 6px 12px; } "
+            "QTableWidget QComboBox QLineEdit { border: none; padding: 0; background: transparent; }"
+        )
         form = QFormLayout(dialog)
-        form.setContentsMargins(20, 18, 20, 18)
-        form.setVerticalSpacing(10)
-        heading = text_label("通道编排")
-        heading.setObjectName("dialogTitle")
-        form.addRow(heading)
+        form.setContentsMargins(16, 10, 16, 12)
+        form.setVerticalSpacing(6)
+        title_row = QHBoxLayout()
+        heading = text_label("通道编排", 'dialogTitle')
+        title_row.addWidget(heading)
+        title_row.addStretch()
+        title_row.addWidget(text_label('单向 · 共享物理路径', 'badge'))
+        form.addRow(title_row)
+        identity = QHBoxLayout()
+        identity.setSpacing(10)
         code = QLineEdit(ident or "COR-" + uuid4().hex[:12].upper())
         code.setObjectName("corridorId")
         code.setPlaceholderText("唯一编号，例如 COR-JINGHU-DOWN")
         code.setReadOnly(bool(ident))
-        form.addRow("通道编号", code)
         name = QLineEdit(route.get("name", ident) if route else "")
         name.setObjectName("corridorName")
-        form.addRow("通道名称", name)
+        name.setPlaceholderText('选择起终点后自动生成，也可自行命名')
+        for label, control, stretch in [('通道名称', name, 3), ('稳定编号', code, 2)]:
+            column = QVBoxLayout()
+            column.addWidget(text_label(label, 'sectionLabel'))
+            column.addWidget(control)
+            identity.addLayout(column, stretch)
+        form.addRow(identity)
+        color = QPushButton(route.get('color', '#466979') if route else '#466979')
+        color.setObjectName('corridorColor')
+        color.setToolTip('通道在地图上的显示颜色')
+        def choose_color():
+            selected = QColorDialog.getColor(QColor(color.text()), dialog, '通道颜色')
+            if selected.isValid():
+                color.setText(selected.name())
+                color.setStyleSheet('color: ' + selected.name())
+        color.clicked.connect(choose_color)
         manual_name = [bool(route)]
         name.textEdited.connect(lambda: manual_name.__setitem__(0, True))
         policy = QComboBox()
         policy.setObjectName("corridorResolutionPolicy")
-        policy.addItem("自动参考路径 · 可手工调整", "auto")
+        policy.addItem("自动选择可走通的参考路径（默认，可手工调整）", "auto")
         policy.addItem("严格唯一径路 · 有歧义时手工选择", "strict")
         saved_resolution = route.get("extensions", {}).get(RESOLUTION_KEY, {}) if route else {}
         if saved_resolution.get("policy") in ("strict", "mainline"):
             policy.setCurrentIndex(1)
-        form.addRow("拼接方式", policy)
         source = (
             "已导入的全国铁路库"
             if (self.editor.directory / "rail.sqlite").exists()
             else "尚未导入全国铁路库"
         )
-        form.addRow(
-            text_label(
-                "基础设施来源："
-                + source
-                + " · 自动补齐真实连接轨，结果为参考路径，未经调度核验。",
-                wrap=True,
-            )
-        )
-        form.addRow(
-            text_label(
-                "点、线均可先选，候选自动联动。换线点须同时接入前后两条线路；末行只填终点。停站和站台在车次中设置。",
-                wrap=True,
-            )
-        )
+        policy.setToolTip(source + '。自动参考模式可补齐站内连接轨和同一线路名称中断处的真实运营区间；'
+            '实际经过的线路随通道保存，仍可指定物理区间。严格模式保持唯一性校验。'
+            '停站、站台由车次定义；参考路径不是已核验调度进路。')
         sequence = (
             (route.get("sequence") or library.describe(route["path"])) if route else []
         )
         saved_selection = saved_resolution.get("selection", {})
         if saved_resolution.get("policy") == "auto" and sequence == saved_selection.get("resolved_sequence"):
             sequence = saved_selection.get("requested_sequence", sequence)
+        if route and route.get('route_intent', {}).get('sequence'):
+            sequence = route['route_intent']['sequence']
         table = CorridorSequenceTable(library)
         table.setObjectName("corridorSequence")
-        physical = QCheckBox("手工调整 · 显示道岔、轨道节点和物理区间")
+        physical = QCheckBox("手工调整 · 显示道岔与轨道节点")
         physical.setObjectName("corridorPhysicalEndpoints")
         physical.setEnabled(hasattr(library, "workspace"))
-        form.addRow(physical)
+        physical.setToolTip('显示真实道岔和轨道节点，便于指定物理区间；末行只填终点。')
+        settings = QHBoxLayout()
+        settings.setSpacing(8)
+        settings.addWidget(text_label('颜色', 'sectionLabel'))
+        settings.addWidget(color)
+        settings.addWidget(text_label('拼接方式', 'sectionLabel'))
+        settings.addWidget(policy, 1)
+        settings.addWidget(physical)
+        form.addRow(settings)
 
         def physical_changed(on):
             table.physical = on
@@ -605,6 +718,13 @@ class CorridorPanel(QWidget):
                     table.cellWidget(row, col)._choices_dirty = True
 
         physical.toggled.connect(physical_changed)
+        table.reference = policy.currentData() == 'auto'
+        def policy_changed():
+            table.reference = policy.currentData() == 'auto'
+            for row in range(table.rowCount()):
+                for col in (0, 1):
+                    table.cellWidget(row, col)._choices_dirty = True
+        policy.currentIndexChanged.connect(policy_changed)
 
         def suggest_name():
             if manual_name[0] or table.rowCount() < 2:
@@ -626,13 +746,14 @@ class CorridorPanel(QWidget):
             expand.clicked.connect(expand_saved)
             form.addRow(expand)
         actions = QHBoxLayout()
+        actions.setSpacing(8)
         add = QPushButton("添加下一行")
         add.clicked.connect(lambda: table.add_point())
         remove = QPushButton("删除所选行")
         remove.clicked.connect(lambda: table.remove_point(table.currentRow()))
         actions.addWidget(add)
         actions.addWidget(remove)
-        choose_section = QPushButton("选择本行物理区间…")
+        choose_section = QPushButton("指定物理区间…")
 
         def select_section():
             row = table.currentRow() if table.currentRow() >= 0 else 0
@@ -690,8 +811,7 @@ class CorridorPanel(QWidget):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("应用通道")
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName('primary')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.rejected.connect(dialog.reject)
 
@@ -716,6 +836,7 @@ class CorridorPanel(QWidget):
                         {
                             "id": code.text().strip(),
                             "name": name.text().strip(),
+                            "color": color.text(),
                             "sequence": result,
                             "extensions": deepcopy(route["extensions"])
                             if route

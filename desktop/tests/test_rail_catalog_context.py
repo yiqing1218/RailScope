@@ -36,7 +36,8 @@ def test_real_platform_lines_and_switches_are_browsable_without_map_selection(qt
     widget.focus_switch_node(2)
     assert widget.tabs.currentWidget() is current_tab
     assert any(call[0] == "focus" and "道岔" in call[-1] for call in map_view.calls)
-    widget.tabs.setCurrentWidget(widget.platform_page)
+    assert [widget.tabs.tabText(i) for i in range(widget.tabs.count())] == ["线路目录", "车站目录"]
+    widget.populate_platform_tree()
     assert widget.platform_tree.topLevelItemCount() == 1
     widget.focus_platform_item(widget.platform_tree.topLevelItem(0), 0)
     assert any(call[0] == "focus" for call in map_view.calls)
@@ -107,7 +108,7 @@ def test_construction_master_keeps_individually_selected_operating_lines(qtbot,t
     widget.save_overrides({'track21':{'construction':True}})
     widget.toggle('track20',True)
     widget.set_line_master('construction',True)
-    assert widget.visible == {'track20','track21'}
+    assert widget.visible == {'track20'}
     widget.set_line_master('construction',False)
     assert widget.visible == {'track20'}
 
@@ -155,7 +156,10 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
     menu = widget.item_menu(widget.items["track20"])
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
         "重命名…",
+        "编辑对象信息…",
         "移动到",
+        "移动到线路目录",
+        "移动到车站目录…",
         "查看端点与相邻线段…",
         "归档",
     ]
@@ -219,8 +223,8 @@ def test_failed_directory_save_leaves_state_and_map_unchanged(
     widget.toggle("track20", True)
     previous_calls = list(widget.map.calls)
     monkeypatch.setattr(
-        Path,
-        "replace",
+        widget.workspace,
+        "_write_entries",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("保存失败")),
     )
     with pytest.raises(OSError):
@@ -241,7 +245,8 @@ def test_move_context_action_uses_existing_folder_cascade_without_rebuild(
         "populate",
         lambda: (_ for _ in ()).throw(AssertionError("移动不应重建整棵线路树")),
     )
-    move = widget.item_menu(original_item).actions()[1].menu()
+    move = next(action.menu() for action in widget.item_menu(original_item).actions()
+                if action.text() == "移动到")
     province = next(action.menu() for action in move.actions() if action.text() == "上海市")
     city = next(action.menu() for action in province.actions() if action.text() == "上海市")
     next(action for action in city.actions() if action.text() == "虹桥站").trigger()
@@ -287,13 +292,17 @@ def test_large_directory_prioritizes_named_business_lines_and_includes_station_y
     widget.resize(380, 900)
     widget.show()
     qtbot.wait(1)
-    assert "RL-NAMED" in widget.items
-    assert "ST-YARD" in widget.items
-    assert widget.yard_tree.topLevelItemCount() >= 1
-    assert not any(key.startswith("RL-U-") for key in widget.items)
-    assert widget.tree.topLevelItemCount() > 0
-    assert widget.tree.verticalScrollBar().value() == 0
-    assert widget.tree.y() < 80
+    from PySide6.QtWidgets import QTreeView
+    assert isinstance(widget.line_browser, QTreeView)
+    assert widget.items == {}, "全国目录不能构建逐项 QTreeWidget 编辑适配器"
+    assert widget.tree.topLevelItemCount() == 0
+    assert widget.yard_tree.topLevelItemCount() == 0
+    line = widget.line_model.reveal_catalog_id("RL-NAMED")
+    assert line.isValid()
+    assert not widget.line_model.reveal_catalog_id("ST-YARD").isValid()
+    assert widget.facility_model.reveal_catalog_id("ST-YARD").isValid()
+    assert widget.line_browser.verticalScrollBar().value() == 0
+    assert widget.line_browser.y() < 80
 
 
 def test_station_context_menu_requests_the_shared_metadata_editor(
@@ -322,7 +331,7 @@ def test_station_context_menu_requests_the_shared_metadata_editor(
     widget.station_edit_requested.connect(requested.append)
     menu = widget.station_item_menu(widget.station_items["node/100"])
     assert [action.text() for action in menu.actions()] == [
-        "编辑名称、目录、类型和接轨线路…",
+        "编辑对象信息…",
         "移动到",
         "在地图中定位",
         "归档",
@@ -445,7 +454,8 @@ def test_switch_rename_uses_workspace_override_and_keeps_directory(qtbot, tmp_pa
     widget.save_switch_name(101, "东咽喉 1 号岔")
     assert widget.tabs.currentWidget() is before
     assert widget.switch_name(101) == "东咽喉 1 号岔"
-    assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["switch:node/101"]["display_name"] == "东咽喉 1 号岔"
+    from desktop.catalog_workspace import read_overrides
+    assert read_overrides(tmp_path / "settings.json")["switch:node/101"]["display_name"] == "东咽喉 1 号岔"
 
 
 def test_station_connection_override_persists_and_updates_station_directory(
@@ -479,7 +489,8 @@ def test_station_connection_override_persists_and_updates_station_directory(
         "verification_status": "user_verified",
     }
     widget.save_station_override("node/100", connected_lines=[connection])
-    stored = json.loads(settings.read_text(encoding="utf-8"))
+    from desktop.catalog_workspace import read_overrides
+    stored = read_overrides(settings)
     assert stored["station:node/100"]["connected_lines"] == [
         {**connection, "distance_m": 52.1, "anchor_policy": "auto_reachable",
          "anchor_verification_status": "automatic_nearest_hint"}
@@ -555,7 +566,8 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     widget.save_station_changes({"node/100"}, archived=True)
     assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
     assert widget.station_items["node/100"].parent().parent().text(0).startswith("已归档")
-    stored = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    from desktop.catalog_workspace import read_overrides
+    stored = read_overrides(tmp_path / "settings.json")
     assert stored["station:node/100"]["overview_attributes"]["foreign_name"].startswith("Yanzhoubei")
     assert stored["station:node/100"]["custom_attributes"]["年货运量"] == "611.9百万吨"
     from desktop.catalog_metadata import station_overview
@@ -578,6 +590,238 @@ def test_station_directory_is_the_only_display_region():
     assert station_directory_path(record, custom) == ("山东省", "泰安", "麻套支线")
     assert station_overview({}, record, custom)["region"] == "山东省泰安"
     assert "region" not in normalize_station_attributes({"region": "山东省济南"})
+
+
+def test_line_semantics_and_name_reopen_from_workspace_override(qtbot, tmp_path):
+    widget, source = make_catalog(qtbot, tmp_path)
+    original = source.read_bytes()
+    widget.save_overrides({"track20": {
+        "display_name": "虹桥站 20 道",
+        "rail_semantics": {"railway_class": "high_speed", "line_role": "connecting_line",
+                           "source": "workspace_override", "verification_status": "user_verified"},
+    }})
+    reopened = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(reopened)
+    assert reopened.display_name("track20") == "虹桥站 20 道"
+    assert reopened.meta("track20")["railway_class"] == "high_speed"
+    assert reopened.meta("track20")["line_role"] == "connecting_line"
+    assert source.read_bytes() == original
+
+
+def test_line_editor_saves_and_reopens_name_and_semantics(qtbot, tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QDialog, QMainWindow
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-main": {"name": "甲线", "way_ids": [1], "track_role": "main_track"}
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = widget
+    host.route_lookup = {}
+    host.rail_operations = SimpleNamespace()
+    host.load_status = SimpleNamespace(setText=lambda text: None)
+    host.refresh_map_names = lambda: None
+    host.display_feature = lambda feature: None
+    observed = []
+
+    def exec_dialog(dialog):
+        observed.append((dialog.name.text(),
+                         dialog.rail_semantics["railway_class"].currentData(),
+                         dialog.rail_semantics["line_role"].currentData(),
+                         dialog.rail_semantics["track_role"].currentData()))
+        if len(observed) == 2:
+            return QDialog.DialogCode.Rejected
+        dialog.name.setText("甲线新名")
+        dialog.line_kind.setCurrentIndex(dialog.line_kind.findData('station'))
+        for key, value in (("railway_class", "freight"),
+                           ("track_role", "arrival_departure_track")):
+            control = dialog.rail_semantics[key]
+            control.setCurrentIndex(control.findData(value))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(launcher.LineMetadataDialog, "exec", exec_dialog)
+    feature = {"layer": "rail", "properties": {"catalog_group_id": "RL-main"}}
+    launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
+    launcher.Desk.edit_line_metadata(host, feature, "rail", rail_groups=["RL-main"])
+    assert observed[1][0:2] == ("甲线新名", "freight")
+    assert observed[1][3] == "arrival_departure_track"
+    assert widget.meta("RL-main")["railway_class"] == "freight"
+    assert widget.meta("RL-main")["line_role"] == "unknown"
+    def edit_one_segment(dialog):
+        assert dialog.directory_view.currentData() == "facilities"
+        dialog.name.setText("单段显示名")
+        dialog.track_type.setCurrentText("渡线 / 道岔连接轨")
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(launcher.LineMetadataDialog, "exec", edit_one_segment)
+    segment = {"layer": "rail", "properties": {"catalog_group_id": "RL-main",
+               "network_edge_id": "RS-one", "line_name": "旧线段"}}
+    launcher.Desk.edit_line_metadata(host, segment, "rail", rail_groups=["RL-main"])
+    edit = widget.overrides["object:network_edge_id:RS-one"]
+    assert (edit["display_name"], edit["line_name"], edit["track_type"]) == (
+        "单段显示名", "单段显示名", "渡线 / 道岔连接轨")
+    assert widget.display_name("RL-main") == "甲线新名"
+
+
+def test_station_tracks_have_separate_master_and_follow_station(qtbot, tmp_path, monkeypatch):
+    source = {
+        "RL-main": {"name": "甲线", "way_ids": [1], "track_role": "main_track"},
+        "ST-yard": {"name": "甲站 1 道", "station_name": "甲站", "provinces": ["甲省"],
+                    "way_ids": [2], "track_role": "arrival_departure_track"},
+        "RL-yard": {"name": "甲站 2 道", "station_name": "甲站", "station_source": "node/10",
+                    "way_ids": [3], "track_role": "arrival_departure_track"},
+    }
+    (tmp_path / "rail_catalog.json").write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    record = {"id": "node/10", "name": "甲站", "kind": "station", "station_type": "客运站",
+              "province": "甲省", "city": "甲市", "coordinates": [110, 30], "osm_node_id": 10,
+              "line_ids": [], "line_names": [], "properties": {}}
+    monkeypatch.setattr("desktop.rail_catalog_ui.rail_station_records",
+                        lambda *args, **kwargs: ([dict(record)], 1))
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    widget.set_line_master("operating", True)
+    assert widget.is_visible("RL-main") and not widget.is_visible("ST-yard")
+    assert not widget.line_model.reveal_catalog_id("RL-yard").isValid()
+    assert widget.station_yard_keys["node/10"] == {"ST-yard", "RL-yard"}
+    widget.set_station_track_master(True)
+    assert widget.is_visible("ST-yard") and widget.is_visible("RL-yard")
+    widget.set_station_track_master(False)
+    assert not widget.is_visible("ST-yard") and not widget.is_visible("RL-yard")
+    widget.toggle_station(widget.station_record_by_id["node/10"], True)
+    assert widget.is_visible("ST-yard") and widget.is_visible("RL-yard")
+    widget.toggle_station(widget.station_record_by_id["node/10"], False)
+    assert not widget.is_visible("ST-yard") and not widget.is_visible("RL-yard")
+    widget.save_overrides({"RL-main": {"rail_semantics": {
+        "track_role": "arrival_departure_track", "source": "workspace_override",
+        "verification_status": "user_verified"}, "station_source": "node/10"}})
+    assert not widget.line_model.reveal_catalog_id("RL-main").isValid()
+    assert "RL-main" in widget.station_yard_keys["node/10"]
+    assert not widget.is_visible("RL-main")
+
+
+def test_line_directory_context_menu_opens_shared_editor(qtbot, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-main": {"name": "甲线", "way_ids": [1], "track_role": "main_track"}
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    requested = []
+    widget.line_edit_requested.connect(requested.append)
+    index = widget.line_model.reveal_catalog_id("RL-main")
+    assert index.isValid()
+    monkeypatch.setattr(type(widget.line_browser), "indexAt", lambda self, point: index)
+    original_item_menu = widget.item_menu
+    def choose_edit(item, selected_keys=None, directory_context=None):
+        menu = original_item_menu(item, selected_keys, directory_context)
+        next(action for action in menu.actions() if action.text() == "编辑对象信息…").trigger()
+        return SimpleNamespace(exec=lambda *_: None, deleteLater=lambda: None)
+    monkeypatch.setattr(widget, "item_menu", choose_edit)
+    widget._paged_context_menu(widget.line_browser, widget.line_browser.rect().center())
+    assert requested == [["RL-main"]]
+
+
+def test_map_and_directory_station_open_same_full_editor(qtbot, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QDialog, QLabel, QMainWindow, QTabWidget, QWidget
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    record = {"id": "node/7", "name": "甲站", "station_type": "客运站", "osm_node_id": 7,
+              "province": "甲省", "city": "甲市", "line_ids": [], "line_names": [],
+              "properties": {"kind": "station", "node_tags": {"platforms": "3", "tracks": "8"}}}
+    opened = []
+    class CapturedDialog(QDialog):
+        def exec(self):
+            tabs = self.findChild(QTabWidget)
+            labels = {label.text() for label in self.findChildren(QLabel)}
+            opened.append((self.windowTitle(), [tabs.tabText(i) for i in range(tabs.count())], labels))
+            return QDialog.DialogCode.Rejected
+
+    class ConnectionStub(QWidget):
+        def __init__(self, *args):
+            super().__init__()
+
+    class Host(QMainWindow):
+        _rail_station_record_for_feature = launcher.Desk._rail_station_record_for_feature
+
+    host = Host()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = SimpleNamespace(
+        station_record=lambda value: record if value == "node/7" else None,
+        station_record_by_id={"node/7": record}, overrides={}, catalog={"RL-other": {}},
+    )
+    host.rail_operations = SimpleNamespace(line_library=lambda: object())
+    host.route_lookup = {}
+    host.station_lookup = {}
+    host.edit_selected_metadata = lambda feature=None: launcher.Desk.edit_selected_metadata(host, feature)
+    monkeypatch.setattr(launcher, "QDialog", CapturedDialog)
+    monkeypatch.setattr(launcher, "StationConnectionSelector", ConnectionStub)
+
+    host.edit_selected_metadata({"layer": "rail-points", "properties": {
+        "osm_node_id": 7, "catalog_group_id": "RL-other", "kind": "station"}})
+    launcher.Desk.edit_rail_station_metadata(host, "node/7")
+    assert len(opened) == 2 and opened[0] == opened[1]
+    assert opened[0][1] == ["车站信息", "原始属性 JSON"]
+    assert {"经过线路（接轨关系）", "站台数量", "股道数量", "补充属性"} <= opened[0][2]
+
+
+def test_map_context_menu_edits_the_selected_object(qtbot, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtWidgets import QMainWindow, QMenu
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    selected = {"layer": "rail", "properties": {"catalog_group_id": "RL-main"}}
+    edited = []
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.selected_features = [selected]
+    host.selected_switch_ids = lambda: []
+    host.edit_selected_metadata = edited.append
+    for action in ("create_signal_box_from_selection", "move_map_selection",
+                   "rename_map_selection", "archive_map_selection",
+                   "merge_map_rail_segments", "split_map_rail_assembly"):
+        setattr(host, action, lambda: None)
+    class CapturedMenu(QMenu):
+        def exec(self, *_):
+            next(action for action in self.actions() if action.text() == "编辑对象信息…").trigger()
+    monkeypatch.setattr(launcher, "QMenu", CapturedMenu)
+    launcher.Desk.map_context_menu(host)
+    assert edited == [selected]
+
+
+def test_map_rail_label_opens_full_line_editor(qtbot, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QMainWindow
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = SimpleNamespace(catalog={"ST-yard": {}})
+    host.route_lookup = {}
+    opened = []
+    host.edit_line_metadata = lambda feature, kind, **kwargs: opened.append((feature, kind, kwargs))
+    feature = {"layer": "rail-line-labels", "properties": {
+        "catalog_group_id": "ST-yard", "network_edge_id": "RS-1",
+        "track_type": "高速铁路站场股道", "line_name": "甲站8道"}}
+
+    launcher.Desk.edit_selected_metadata(host, feature)
+
+    assert opened == [(feature, "rail", {"rail_groups": ["ST-yard"]})]
 
 
 def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
@@ -611,16 +855,110 @@ def test_map_station_detail_uses_the_same_workspace_directory(monkeypatch):
     rows = []
     inspector = SimpleNamespace(
         rail_catalog_widget=catalog, route_lookup={}, selected_title=Field(),
-        rail_operations=SimpleNamespace(line_library=lambda: SimpleNamespace(connected_lines=lambda *args, **kwargs: [{'id':'RL-test','name':'测试接轨线'}])),
+        rail_operations=SimpleNamespace(line_library=lambda: (_ for _ in ()).throw(AssertionError("地图选站不应扫描运行拓扑"))),
         selected_type=Field(), raw=Field(), right=Field(), detail_rail=Field(),
         set_property_rows=rows.extend, _restore_inspector_width=lambda: None,
     )
+    inspector._rail_station_record_for_feature = lambda feature: Desk._rail_station_record_for_feature(inspector, feature)
     Desk.display_feature(inspector, {
         "layer": "rail-points",
         "properties": {"osm_node_id": 101, "kind": "station", "name": "麻套"},
     })
     assert inspector.selected_title.value == "麻套编辑名"
     assert ("所属目录", "山东省 / 泰安") in rows
-    assert ('经过线路', '1. 测试接轨线') in rows
+    assert ("经过线路", "") in rows
     assert not {"所属地区", "省级行政区", "城市"} & {label for label, _value in rows}
     assert inspector.selected_data["properties"]["station_overview"]["region"] == "山东省泰安"
+
+
+def test_line_catalog_segment_edit_reclassifies_whole_line(qtbot, tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QDialog, QMainWindow
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-a": {"name": "甲线A", "line_id": "IL-main", "way_ids": [1], "track_role": "main_track"},
+        "RL-b": {"name": "甲线B", "line_id": "IL-main", "way_ids": [2], "track_role": "main_track"},
+        "RL-c": {"name": "乙线", "line_id": "IL-other", "way_ids": [3], "track_role": "main_track"},
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.rail_catalog_widget = widget
+    host.route_lookup = {}
+    host.rail_operations = SimpleNamespace(line_library=lambda: None)
+    host.load_status = SimpleNamespace(setText=lambda text: None)
+    host.refresh_map_names = lambda: None
+    host.display_feature = lambda feature: None
+
+    def exec_dialog(dialog):
+        dialog.track_type.setCurrentText("联络线 / 匝道")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(launcher.LineMetadataDialog, "exec", exec_dialog)
+    segment = {"layer": "rail", "properties": {
+        "catalog_group_id": "RL-a", "network_edge_id": "RS-one",
+        "line_name": "甲线A", "track_type": "高速铁路线"}}
+    launcher.Desk.edit_line_metadata(host, segment, "rail", rail_groups=["RL-a"])
+
+    assert widget.meta("RL-a")["track_type"] == "联络线 / 匝道"
+    assert widget.meta("RL-b")["track_type"] == "联络线 / 匝道"
+    assert widget.meta("RL-c").get("track_type") != "联络线 / 匝道"
+
+
+def test_map_context_menu_offers_batch_merge_and_split(qtbot, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtWidgets import QMainWindow, QMenu
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))
+    import launcher
+
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    host.selected_features = [
+        {"layer": "rail", "properties": {"catalog_group_id": "RL-a"}},
+        {"layer": "rail", "properties": {"catalog_group_id": "RL-b"}},
+    ]
+    host.selected_switch_ids = lambda: []
+    for action in ("edit_selected_metadata", "create_signal_box_from_selection",
+                   "move_map_selection", "rename_map_selection", "archive_map_selection",
+                   "merge_map_rail_segments", "split_map_rail_assembly"):
+        setattr(host, action, lambda *args, **kwargs: None)
+
+    captured = []
+
+    class CapturedMenu(QMenu):
+        def exec(self, *_):
+            captured.extend(action.text() for action in self.actions() if not action.isSeparator())
+
+    monkeypatch.setattr(launcher, "QMenu", CapturedMenu)
+    launcher.Desk.map_context_menu(host)
+    assert "组合所选铁路段为线路…" in captured
+    assert "拆分所选组合线路" in captured
+
+
+def test_merge_shares_attributes_across_members(qtbot, tmp_path):
+    from desktop.rail_catalog_ui import RailCatalog
+    from desktop.tests.test_operating_ui import MapStub
+
+    (tmp_path / "rail_catalog.json").write_text(json.dumps({
+        "RL-a": {"name": "甲线", "way_ids": [1], "track_role": "main_track",
+                  "railway_class": "conventional", "line_role": "main_line"},
+        "RL-b": {"name": "乙线", "way_ids": [2], "track_role": "main_track",
+                  "railway_class": "high_speed", "line_role": "main_line"},
+    }, ensure_ascii=False), encoding="utf-8")
+    widget = RailCatalog(tmp_path, tmp_path / "settings.json", MapStub())
+    qtbot.addWidget(widget)
+    widget.merge_line_segments({"RL-a", "RL-b"}, "甲乙线")
+    for key in ("RL-a", "RL-b"):
+        meta = widget.meta(key)
+        assert meta.get("assembly_id")
+        assert meta.get("display_name") == "甲乙线"
+        assert meta.get("line_name") == "甲乙线"
+        assert meta.get("railway_class") == "conventional"
+        assert meta.get("line_role") == "main_line"
+        assert meta.get("track_role") == "main_track"

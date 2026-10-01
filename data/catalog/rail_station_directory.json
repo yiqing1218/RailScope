@@ -1,0 +1,2213 @@
+{
+  "kind": "rail-stations",
+  "overrides": {
+    "station:node/10120263940": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/10120263942": {
+      "display_name": "临沂",
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/10120263951": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/10277100557": {
+      "folder_path": [
+        "山东省",
+        "莱芜"
+      ]
+    },
+    "station:node/10572429526": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/10572429550": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/10650882518": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/10650882519": {
+      "display_name": "聊城西站",
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/10650882521": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/11029495367": {
+      "display_name": "石湖荡",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "货运站"
+    },
+    "station:node/11247678023": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/11296772784": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/11296772787": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/12064373406": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/12065949878": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/12066013376": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/12066084776": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/12125759365": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/12125759370": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/12125759371": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/12501009355": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/12501009358": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/12501009361": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/12501009366": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/12674175578": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/12721905848": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/1282629210": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/1301361569": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/13026034783": {
+      "display_name": "莱芜",
+      "folder_path": [
+        "山东省",
+        "莱芜"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/13026166601": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/13026166602": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/1306269935": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/13325733862": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/13325733863": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/13333616439": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/13394453201": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/13394453203": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/13711702746": {
+      "archived": true
+    },
+    "station:node/1565198993": {
+      "display_name": "威海",
+      "folder_path": [
+        "山东省",
+        "威海"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/1605321289": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/1613209999": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/1613210002": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/1613210008": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/1672448034": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/1672448051": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/1673581107": {
+      "display_name": "临沂东",
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/1709861023": {
+      "display_name": "南翔",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "编组站"
+    },
+    "station:node/1775221285": {
+      "display_name": "商丘",
+      "folder_path": [
+        "河南省",
+        "商丘"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/2061664087": {
+      "display_name": "博山",
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/2339632251": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/2339632256": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/2339632936": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/2371591471": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/2417820308": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2419166513": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/2483530943": {
+      "display_name": "南京南",
+      "folder_path": [
+        "江苏省",
+        "南京"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/2651716243": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/2651768079": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/2662698171": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/2662698277": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/267225237": {
+      "display_name": "南京",
+      "folder_path": [
+        "江苏省",
+        "南京"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/269996666": {
+      "display_name": "北京站",
+      "folder_path": [
+        "北京市",
+        "北京"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/272494359": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/2727040405": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/2912792720": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2912804740": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2912812635": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913728104": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913735192": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913747385": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913752530": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913762899": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2913764246": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/2945730075": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/2945730153": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/3090617078": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/3163707180": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/3176631800": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/3178717101": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/3265625561": {
+      "display_name": "玉符河所",
+      "folder_path": [
+        "山东省",
+        "济南"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/3315766282": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/3315768037": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/3341441115": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/3644642693": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/3855828881": {
+      "display_name": "东营南",
+      "folder_path": [
+        "山东省",
+        "东营"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/3885769230": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/3991630280": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/4025119050": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/4039416860": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/4039416861": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/4071777100": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/4253918671": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/4391676555": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/4391676558": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/4559350598": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/4585491663": {
+      "display_name": "东营",
+      "folder_path": [
+        "山东省",
+        "东营"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/4617869310": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/4632069463": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/4729023821": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/5075522332": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/5075522342": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/5075522343": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/5075522354": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/5109695769": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/5109697031": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/5109697046": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/5175784960": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/5218876252": {
+      "display_name": "苏州站",
+      "folder_path": [
+        "江苏省",
+        "苏州"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/5248595705": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/5293825951": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/5299448847": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/5303369729": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/5322560852": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/539260172": {
+      "display_name": "北京南站",
+      "folder_path": [
+        "北京市",
+        "北京"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/5517787951": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/5518559613": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/5530871827": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/5530871859": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/5566980856": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/5570292382": {
+      "display_name": "徐州",
+      "folder_path": [
+        "江苏省",
+        "徐州"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/5610619909": {
+      "display_name": "汕头",
+      "folder_path": [
+        "广东",
+        "汕头"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/581375688": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/581386965": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/582812869": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/6169941145": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/6176057504": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/6176057517": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/6176058067": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/6184600989": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/6193950294": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/6198704798": {
+      "display_name": "德州",
+      "folder_path": [
+        "山东省",
+        "德州"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/6202567108": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/6214911057": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/6216630894": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/6225072999": {
+      "display_name": "聊城",
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/6229705449": {
+      "display_name": "菏泽",
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/6233214903": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/6233986121": {
+      "display_name": "合肥北城",
+      "folder_path": [
+        "安徽省",
+        "合肥"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/6240924033": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/6267918153": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/6382928240": {
+      "folder_path": [
+        "山东省",
+        "威海"
+      ]
+    },
+    "station:node/6427566587": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/6524836174": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/6527623010": {
+      "display_name": "厦门北",
+      "folder_path": [
+        "福建省",
+        "厦门"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/6569986043": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/6569986064": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/6570063478": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/6654827885": {
+      "display_name": "郑州东",
+      "folder_path": [
+        "河南省",
+        "郑州"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/6758716662": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/6758716668": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/6844103016": {
+      "display_name": "泰安",
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/7128808607": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/7128808616": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/7154080023": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/7160108921": {
+      "display_name": "杭州东",
+      "folder_path": [
+        "浙江省",
+        "杭州"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/7160140850": {
+      "display_name": "上海松江",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/7161749775": {
+      "display_name": "上海站",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/7168565706": {
+      "display_name": "莘庄",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/7168621492": {
+      "display_name": "新龙华",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "编组站"
+    },
+    "station:node/7171261760": {
+      "display_name": "上海南",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/7197518162": {
+      "display_name": "合肥南",
+      "folder_path": [
+        "安徽省",
+        "合肥"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/7212021583": {
+      "station_type": "客货运站"
+    },
+    "station:node/7719582540": {
+      "display_name": "福州南",
+      "folder_path": [
+        "福建省",
+        "福州"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/7733885004": {
+      "display_name": "徐州东",
+      "folder_path": [
+        "江苏省",
+        "徐州"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/7733885005": {
+      "display_name": "济南西",
+      "folder_path": [
+        "山东省",
+        "济南"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/7777687788": {
+      "display_name": "秦皇岛东",
+      "folder_path": [
+        "省界外 / 待核对",
+        "唐山"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/7837226369": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/7837330995": {
+      "folder_path": [
+        "山东省",
+        "莱芜"
+      ]
+    },
+    "station:node/7837341982": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/7855842556": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/7855842557": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8069276053": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/8069276054": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/808126191": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/808126207": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/808126461": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8093813874": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8093813875": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8093813876": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8093813877": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8093813886": {
+      "display_name": "临淄",
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/8094193382": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8229961825": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/8239658402": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8239658421": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8239658478": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8244168173": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244168187": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244169099": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244169117": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244169152": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244259544": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/8244544275": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/8244544482": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/8244544702": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/8244544750": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8259765804": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/8345587836": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8345730468": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8345730521": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8347697335": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8384078493": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8395232067": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8395249614": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8395249615": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8395249616": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8396321414": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/8415534944": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8418440633": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8418956317": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8418956434": {
+      "folder_path": [
+        "山东省",
+        "莱芜"
+      ]
+    },
+    "station:node/8419766776": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/8419766777": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8419766778": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8419766779": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8419766780": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8429529323": {
+      "display_name": "宁阳东",
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/8429539646": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8429540365": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8429540384": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8429540526": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8429540714": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8429540784": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8429690204": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8429754319": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8429754475": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8432585664": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8432585744": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8432585812": {
+      "display_name": "山家林",
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ],
+      "station_type": "货运站"
+    },
+    "station:node/8432585861": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8436993844": {
+      "archived": true
+    },
+    "station:node/8437402279": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8437828906": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8437839707": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8437848569": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8438213461": {
+      "display_name": "济西",
+      "folder_path": [
+        "山东省",
+        "济南"
+      ],
+      "station_type": "编组站"
+    },
+    "station:node/8439739101": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8439759446": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8440044938": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8440165333": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8440244101": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8442829812": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8444275806": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/8444280830": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/8444329739": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/8445590870": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/8445607907": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8445725542": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8445785323": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8445860961": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8445944502": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8445967195": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/8445993262": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8446034574": {
+      "display_name": "兖州西",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "货运站"
+    },
+    "station:node/8447564477": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8447586421": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8447604703": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8447641489": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8452913704": {
+      "display_name": "兖州",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "客货运站"
+    },
+    "station:node/8453216528": {
+      "station_type": "客货运站"
+    },
+    "station:node/8454007046": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8455171495": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8455171496": {
+      "folder_path": [
+        "山东省",
+        "德州"
+      ]
+    },
+    "station:node/8455171500": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8455171501": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8455171503": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8455171504": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8455171505": {
+      "display_name": "兖州北",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "编组站"
+    },
+    "station:node/8455171506": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/8455171507": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8455171508": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8455171509": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/8456936296": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8456941082": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8456964130": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8456966874": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/8457132633": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8457282556": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8462998257": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8463026934": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/8463034285": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9075118249": {
+      "display_name": "滨州港",
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/9197168316": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9218083767": {
+      "display_name": "太仓南站",
+      "folder_path": [
+        "江苏省",
+        "苏州"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/9242148031": {
+      "display_name": "南翔北",
+      "folder_path": [
+        "上海市",
+        "上海"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/9242869547": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869548": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869549": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869550": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869551": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869553": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869554": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869555": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869556": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869557": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869558": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869559": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869561": {
+      "display_name": "东庄",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "货运站"
+    },
+    "station:node/9242869562": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9242869563": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/9242869569": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/9242869571": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/9242869572": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/9242869573": {
+      "folder_path": [
+        "山东省",
+        "枣庄"
+      ]
+    },
+    "station:node/9242869574": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/9242869600": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/9246201036": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9246201040": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9246201041": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9246201042": {
+      "folder_path": [
+        "山东省",
+        "泰安"
+      ]
+    },
+    "station:node/9246201048": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9246201049": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9246201050": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9246201064": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9251152703": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/9251152704": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/9251152705": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/9251152707": {
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ]
+    },
+    "station:node/9251972099": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9251972101": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9251972104": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9251972105": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9251972106": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9251972108": {
+      "display_name": "龙口北",
+      "folder_path": [
+        "山东省",
+        "烟台"
+      ],
+      "station_type": "未定义"
+    },
+    "station:node/9254936100": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/9254936101": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9254936103": {
+      "folder_path": [
+        "山东省",
+        "潍坊"
+      ]
+    },
+    "station:node/9254936104": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9254936105": {
+      "folder_path": [
+        "山东省",
+        "东营"
+      ]
+    },
+    "station:node/9254936106": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9254936107": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9254936108": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9254936109": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9255881277": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9255881278": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/9255881279": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/9255881280": {
+      "folder_path": [
+        "山东省",
+        "临沂"
+      ]
+    },
+    "station:node/9255881284": {
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ]
+    },
+    "station:node/9255881285": {
+      "folder_path": [
+        "山东省",
+        "滨州"
+      ]
+    },
+    "station:node/9262897538": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/928056895": {
+      "display_name": "厦门",
+      "folder_path": [
+        "福建省",
+        "厦门"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/9354508776": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9354508777": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9354508778": {
+      "display_name": "济宁北",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "客运站"
+    },
+    "station:node/9354508779": {
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ]
+    },
+    "station:node/9354508780": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/9354508781": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/9512632285": {
+      "folder_path": [
+        "山东省",
+        "聊城"
+      ]
+    },
+    "station:node/9565762623": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/9577248882": {
+      "folder_path": [
+        "山东省",
+        "菏泽"
+      ]
+    },
+    "station:node/9854691986": {
+      "display_name": "丁公",
+      "folder_path": [
+        "山东省",
+        "淄博"
+      ],
+      "station_type": "编组站"
+    },
+    "station:signalbox/RSB-ec1ae3b528d03907": {
+      "archived": true,
+      "display_name": "南夏宋线路所",
+      "folder_path": [
+        "山东省",
+        "济宁"
+      ],
+      "station_type": "线路所"
+    }
+  },
+  "schema": "railscope.catalog-exchange.v1"
+}

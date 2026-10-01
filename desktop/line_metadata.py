@@ -1,26 +1,29 @@
 """Editable line facts stored in the workspace layer, separate from OSM."""
 
 RAIL_LINE_FIELDS = (
+    ("start_terminal", "全线起点", "整条铁路的起点城市或车站，用于布置图方向；不是相邻节点"),
+    ("end_terminal", "全线终点", "整条铁路的终点城市或车站，用于布置图方向；不是相邻节点"),
     ("operating_status", "运营状态", "如：运营中、在建、规划、停运"),
-    ("design_speed_kmh", "设计速度（km/h）", "线路设计速度"),
+    ("design_speed_kmh", "设计速度（km/h）", "如 350、250、200、160；独立于运营限速和建设状态"),
+    ("speed_band", "样式速度范围", "高速铁路使用范围匹配样式；不替代实际运行限速"),
     ("civil_design_speed_kmh", "线下设计速度（km/h）", "土建标准；分段参数须保留适用区间"),
     ("track_design_speed_kmh", "线上设计速度（km/h）", "轨道标准；不等同于运行限速"),
+    ("pricing_distance_km", "计价里程（km）", "计价口径，不等同于几何长度"),
+    ("train_control_system", "列控系统", "分段保留适用区间"),
+    ("track_spacing_m", "线间距（m）", "线路中心线之间的距离"),
+    ("arrival_departure_track_length_m", "到发线长度（m）", "来源标注值"),
+    ("track_structure", "轨道结构", "有砟、无砟及轨道板类型"),
+    ("curve_radius_m", "曲线半径（m）", "保留来源范围与条件"),
+    ("gradient", "坡度", "保留来源单位，如 ‰"),
     ("max_speed_kmh", "最高运行速度（km/h）", "当前允许的最高运行速度"),
     ("construction_start_date", "开工时间", "可填写 YYYY、YYYY-MM 或完整日期"),
     ("opening_date", "开通时间", "可填写分期开通信息"),
     ("length_km", "线路长度（km）", "营业或正线长度"),
-    ("pricing_distance_km", "计价里程（km）", "计价口径，不等同于几何长度"),
     ("track_count", "正线线数", "如：复线、四线"),
     ("gauge_mm", "轨距（mm）", "标准轨通常为 1435"),
     ("electrification", "电气化方式", "如：电气化、非电气化"),
     ("power_supply", "供电制式", "如：25 kV 50 Hz 接触网"),
     ("signal_system", "信号 / 闭塞制式", "如：CTCS-3、自动闭塞"),
-    ("train_control_system", "列控系统", "如：CTCS-2；分段保留适用区间"),
-    ("track_spacing_m", "线间距（m）", "线路中心线之间的距离"),
-    ("arrival_departure_track_length_m", "到发线长度（m）", "来源标注值，不作为已核验股道长度"),
-    ("track_structure", "轨道结构", "有砟、无砟及轨道板类型；区别于线路业务分类"),
-    ("curve_radius_m", "曲线半径（m）", "保留来源范围与条件"),
-    ("gradient", "坡度", "保留来源单位，如 ‰"),
     ("route_usage", "线路用途", "如：客运、货运、客货共线"),
     ("owner", "资产 / 建设单位", "线路资产或建设责任单位"),
     ("operator", "运营单位", "实际运营维护单位"),
@@ -53,9 +56,13 @@ def source_line_attributes(properties, kind, custom=None):
     """Prefer explicit source tags, then apply user-owned workspace values."""
     properties = properties or {}
     tags = {**properties.get("way_tags", {}), **properties.get("relation_tags", {})}
+    from railscope.presentation import source_design_speed
     result = {
+        "start_terminal": tags.get('from', ''),
+        "end_terminal": tags.get('to', ''),
         "operating_status": "在建" if properties.get("construction") else "运营中",
         "max_speed_kmh": tags.get("maxspeed", ""),
+        "design_speed_kmh": properties.get('design_speed_kmh') or source_design_speed(tags) or '',
         "construction_start_date": tags.get("construction:start_date", ""),
         "opening_date": tags.get("opening_date") or tags.get("start_date", ""),
         "length_km": tags.get("length") or tags.get("distance", ""),
@@ -108,5 +115,15 @@ def normalize_line_attributes(values, kind):
         if len(text) > limit or any(ord(character) < 32 and character not in "\n\t" for character in text):
             raise ValueError("线路概览属性内容过长或包含控制字符")
         if text:
+            if key == 'speed_band':
+                try:
+                    from .rail_style_resolver import SPEED_BANDS
+                except ImportError:
+                    from rail_style_resolver import SPEED_BANDS
+                if text not in SPEED_BANDS:
+                    raise ValueError('未知速度范围')
+            if key == 'design_speed_kmh':
+                from railscope.presentation import design_speed
+                text = str(design_speed(text))
             result[key] = text
     return result

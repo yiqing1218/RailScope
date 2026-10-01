@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="4251" viewBox="0 0 2400 4251">
+<style>text{font-family:Microsoft YaHei;fill:#213c49}</style>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="65" y="58" font-size="30" font-weight="700">济南西平面布置图</text>
+<text x="65" y="91" font-size="16">类型待核实</text>
+<g data-track-bounds="440,230,1960,4090.4573435073253">
+<rect data-platform-id="way/551772486:0" data-source-geometry="LineString" x="903.44" y="2084.29" width="798.40" height="8.00" transform="rotate(89.4254 1302.64 2088.29)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772487:0" data-source-geometry="LineString" x="866.63" y="2085.61" width="798.40" height="8.00" transform="rotate(89.4708 1265.82 2089.61)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772488:0" data-source-geometry="LineString" x="828.92" y="2086.27" width="799.43" height="8.00" transform="rotate(89.4903 1228.64 2090.27)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772489:0" data-source-geometry="LineString" x="774.56" y="2088.11" width="796.16" height="8.00" transform="rotate(89.5459 1172.64 2092.11)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772490:0" data-source-geometry="LineString" x="738.24" y="2087.81" width="794.11" height="8.00" transform="rotate(89.6138 1135.30 2091.81)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772491:0" data-source-geometry="LineString" x="704.40" y="2089.52" width="793.45" height="8.00" transform="rotate(89.7104 1101.12 2093.52)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772492:0" data-source-geometry="LineString" x="666.05" y="2089.33" width="794.48" height="7.90" transform="rotate(89.8776 1063.29 2093.28)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<rect data-platform-id="way/551772485:0" data-source-geometry="LineString" x="951.55" y="2083.64" width="801.28" height="4.00" transform="rotate(-90.6773 1352.19 2085.64)" fill="#d7e4df" stroke="#85a69a" stroke-width="1"/>
+<path data-edge-id="NE-304c46f0b1da4650a4f5aa1e3c02386a" d="M1157.72,2993.42 L1081.03,2633.36 L1066.58,2558.39" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-45362783fbb4463c88588cad0f3698be" d="M1193.40,3014.58 L1188.83,2556.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-3e9a1c1ce8c044f8aa9f919e61c32c47" d="M1081.50,1633.62 L1088.33,1577.27 L1097.76,1506.36 L1142.49,1207.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-cc66af81133746f8bbce97189fd6d19c" d="M1197.86,834.68 L1201.91,1632.31" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-9ab5359ff0a642fbbf621fc1cd831b55" d="M1193.43,1632.93 L1188.49,834.71" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-9d84ea264b944de5b632a38d54ef867b" d="M1239.17,1324.76 L1260.49,1495.95 L1268.43,1563.15 L1274.15,1630.35" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-40b9d8f1d5a643f9b12d209445704c54" d="M1257.43,1292.37 L1290.95,1491.80 L1302.81,1569.06 L1309.36,1631.14" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-2e3aac7ed5aa45d58c19327857494eba" d="M1218.56,1351.71 L1236.16,1631.81" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e4752f3fdee7460f860e803129cf4147" d="M1209.90,1189.69 L1213.04,1631.60" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e25cbbcaeeb24c97a22500668b3225a1" d="M1182.28,1632.39 L1180.05,1191.55" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e57a2e4c87b947ed90ecdd9f6a9f97e9" d="M1146.58,1357.05 L1122.59,1631.51" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-88b47d95812f47278d123b9edf193587" d="M1173.84,1352.24 L1148.17,1631.47" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a6b9ad6b22f44e4fa8ef1352417562f5" d="M1281.17,2557.37 L1277.73,2610.36 L1271.98,2674.49 L1250.88,2888.06" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b47ef9c28bcd424487e438d84b2aae1a" d="M1129.72,2834.15 L1087.27,2556.76" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-d0feb8abf74c4e5db91aa092a557e89d" d="M1129.72,2834.15 L1111.72,2675.92 L1099.90,2555.30" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-1e30fe7630914fa484520aa34606eddf" d="M1201.91,1632.31 L1202.47,1693.34" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-aaf581eed8a64af49b90bfe5f5ac9863" d="M1208.50,2556.80 L1217.45,3485.78" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-9fdac5898afe44699f0bec1be8878a5d" d="M1193.80,1692.34 L1193.43,1632.93" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-210db213770e42b083dbf909660210d0" d="M1198.07,2496.87 L1193.80,1692.34" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-752a77c526ed4322b6eaba37228979f5" d="M1146.58,1357.05 L1112.46,1631.85" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-4cd47206b3ea46c2bffdf93a77a0c2d7" d="M1242.25,2556.22 L1241.16,2582.34 L1229.83,2851.17" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ed0ce93fadee46de879928b8cd617bfe" d="M1218.56,1351.71 L1247.30,1630.99" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-00afab58a11644b599919621f5c299de" d="M1327.30,2555.36 L1321.45,2622.01 L1311.79,2694.09 L1268.20,2918.48" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-fb26f8180e8343548a927f1256d1f452" d="M1316.34,2556.86 L1311.85,2620.03 L1302.23,2693.47 L1268.20,2918.48" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-c662d5b4ca4a4d218d886f2641ff659f" d="M1185.24,2850.86 L1154.14,2557.34" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-bf43505885f44271911d9c3cc3709b75" d="M1185.24,2850.86 L1166.59,2555.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ec39bc56e8ad4753a38577602bbd9caf" d="M1066.58,2558.39 L1058.36,2497.76" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f5d9418477d744219f535b4ca9501a5b" d="M1058.36,2497.76 L1051.57,2419.93 L1049.10,2332.92 L1044.68,1840.54 L1048.36,1762.36 L1054.52,1691.57" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-09bb790d9a144992a2aee14e50d57268" d="M1087.27,2556.76 L1079.69,2498.05" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a5811950c9ff4990adb1b352711136b4" d="M1079.69,2498.05 L1073.24,2423.14 L1070.78,2328.46 L1069.53,1839.60 L1071.05,1764.81 L1075.84,1692.30" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-212a59acb1764d31854bc25f41a9ed9e" d="M1099.90,2555.30 L1091.99,2496.68" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-883196414b294d38bef60faa2c9ad47f" d="M1091.99,2496.68 L1085.48,2423.73 L1081.85,2329.19 L1083.13,1841.43 L1083.41,1766.25 L1088.11,1691.95" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0cd5156d2ba7443c9c6f678c2f1a9e97" d="M1128.70,2555.70 L1125.45,2497.56" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-c6211a346060416fb1ea2e1eba521a1e" d="M1117.92,2557.07 L1114.37,2497.81" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b0c805069673437aa0b3a24cc1e5b771" d="M1114.37,2497.81 L1108.35,1693.32" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-7be6f388601d4996a9893d7d67321f33" d="M1157.87,2855.06 L1128.70,2555.70" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a57e646dd6d542bca7aa04e1e5c26556" d="M1188.83,2556.93 L1187.94,2496.12" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-c9a299456a1c488894352bafee3c4d2d" d="M1166.59,2555.59 L1163.30,2497.26" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0cf25ae8863943db8cce67f84fe24281" d="M1154.14,2557.34 L1150.30,2497.41" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-05ecb40c239a45968b2f4b888411a468" d="M1150.30,2497.41 L1145.31,1693.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e1d1c911785d4d798542a230caabab21" d="M1163.30,2497.26 L1158.92,1692.67" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-af2106f53a494984bf43a7324e373648" d="M1206.90,2496.43 L1208.50,2556.80" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-f6fc3d2d9ecc4776b195d2239f7921c8" d="M1208.61,3485.49 L1199.41,2556.97" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-5229520969a44d6d80b18630117b2d7c" d="M1218.23,2496.05 L1219.07,2556.51" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-17c833e6e9c54ac5998c517b6f79a1fb" d="M1242.41,2495.83 L1242.25,2556.22" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-505a6a5cdead4ddaabb0f3b45062f6f5" d="M1256.21,2495.99 L1254.27,2556.20" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ea87f0c7bf6a4426b7fb06763cb278eb" d="M1281.85,2496.22 L1281.17,2557.37" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-1f5486d7a7374e6688685cd26c7c0299" d="M1293.44,2496.24 L1292.12,2555.55" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-bd099d235144450eac6e2b13adbe8d74" d="M1318.53,2497.31 L1316.34,2556.86" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-7e244cce6fe449cfa66deb55f2b32562" d="M1329.90,2495.58 L1327.30,2555.36" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-fa83963dd71c44b09fb5454a2e8d1cb6" d="M1324.46,1690.57 L1329.90,2495.58" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e9e64a8ea1134a5d9c057f3c027c6ebb" d="M1312.75,1691.90 L1318.53,2497.31" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a35e9afef72148e9ab4135f8dcdf64e4" d="M1287.76,1692.42 L1293.44,2496.24" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-c6dc65fddd8e49d0853a52b61ac08b17" d="M1276.81,1691.63 L1281.85,2496.22" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-4b3f3057701f485aa77eb36e11cbf5d0" d="M1249.58,1691.66 L1256.21,2495.99" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-aff74d89c8b042dca7618b4c97715a04" d="M1238.27,1692.11 L1242.41,2495.83" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-82208a7af7074a0dbf86421097786ad2" d="M1202.47,1693.34 L1206.90,2496.43" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-d1d9ab449fc4496e8fdf1352317de840" d="M1199.41,2556.97 L1198.07,2496.87" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-412b8249a8d64d55a403fb7e5f53871a" d="M1212.77,1692.49 L1218.23,2496.05" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-2be7d6bc32be44adb8f7e8e1eca15338" d="M1054.52,1691.57 L1062.85,1633.10" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-32594a064ac34f2aa049758c215016f1" d="M1081.50,1633.62 L1075.84,1692.30" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-1139210a012d474daeb390931f75b7f7" d="M1088.11,1691.95 L1093.44,1633.16" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-8905aa48ca4547c2bb655767f28c454c" d="M1112.46,1631.85 L1108.35,1693.32" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-dc0f52e1a86a45568bafcbeb37c20152" d="M1122.59,1631.51 L1119.55,1693.61" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b15fa73f134c46359f95e3f26f3d3916" d="M1148.17,1631.47 L1145.31,1693.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-fb5b429a0e7f464d964083154e373aa2" d="M1160.85,1631.70 L1158.92,1692.67" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-45cf338e8e4b45c7a1f787781d73b940" d="M1182.65,1692.76 L1182.28,1632.39" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-863c2dea63c94ce791febefa0220ae87" d="M1213.04,1631.60 L1212.77,1692.49" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-061f7b23177742a18dab72c583ea0b4b" d="M1236.16,1631.81 L1238.27,1692.11" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ce3bc9e6a1354fd6a092dec467ec9b2a" d="M1247.30,1630.99 L1249.58,1691.66" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-be1b3141d2734330b228376ab04984b9" d="M1274.15,1630.35 L1276.81,1691.63" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-8d17ef5fcf9343c188b023ce6239430f" d="M1284.72,1630.93 L1287.76,1692.42" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-82bc64076b2d4a61a5b848cb9039cca1" d="M1309.36,1631.14 L1312.75,1691.90" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e0c75543c96a4d3999be4ad0290c04a0" d="M1319.55,1631.29 L1324.46,1690.57" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-881bb337ac444fdf9a57cd199e29cd71" d="M1292.12,2555.55 L1288.28,2612.15 L1281.85,2675.59 L1250.88,2888.06" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b6072a31d3ba465cad02475f779d8c79" d="M1254.27,2556.20 L1229.83,2851.17" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e29a9cc2b03a42049c337ca013eee1c0" d="M1257.43,1292.37 L1299.37,1491.22 L1311.99,1567.00 L1319.55,1631.29" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-78d4eb9b92e44349b900baf00dc56769" d="M1219.07,2556.51 L1224.42,3015.42" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-480900ff04654a08aed55b95e48cf972" d="M1187.94,2496.12 L1182.65,1692.76" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a38ba162284d477d86c70229b6b17ae6" d="M1173.84,1352.24 L1160.85,1631.70" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0a59cc5c8f924375821d1378dfaee26a" d="M1125.45,2497.56 L1119.55,1693.61" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-7999ba7b6af54a93b9eda1f30c73e1ef" d="M1157.87,2855.06 L1117.92,2557.07" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-01e9b18eb25e46918df49ac815130853" d="M1093.44,1633.16 L1102.60,1562.88 L1124.60,1439.66 L1136.98,1362.90 L1160.80,1195.32" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-71ec58d7a2ea41639d6b7fc91ec01d40" d="M1239.17,1324.76 L1267.89,1496.09 L1273.91,1538.46 L1276.79,1558.75 L1284.72,1630.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-2677fa2853f84e1d9341476b0b10cba4" d="M1062.85,1633.10 L1071.93,1571.35 L1083.21,1507.72 L1142.49,1207.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-52160683e42642239860cd6dc7dffca7" d="M1164.75,976.16 L1165.00,840.41 L1164.72,719.10 L1163.08,575.53" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-326ce96ca8a9494da74352d363c3ff24" d="M1233.54,3485.42 L1230.54,3596.37" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b796cfb6ef3940d68daa490cc8b983ef" d="M1236.56,3372.80 L1233.54,3485.42" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-44317b4d0b1043aa8f398c443252fecd" d="M1224.42,3015.42 L1228.82,3485.28" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-5dd5110d02404115844baaec41a516a2" d="M1157.72,2993.42 L1129.72,2834.15" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0cdc25690bf54a05a35f9317fdefd699" d="M1160.80,1195.32 L1167.42,1115.70 L1172.45,1039.13 L1179.16,881.80" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-451a8346a0f249f0bcc581d7078028b1" d="M1185.24,2850.86 L1193.40,3014.58" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-2c5382695c8d4236a72b3e18d58ca208" d="M1229.83,2851.17 L1224.42,3015.42" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-364d43a112a64e5386433cb56a43af94" d="M1184.13,3229.34 L1177.49,3143.08 L1168.39,3065.71 L1157.72,2993.42" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0ec9f24b8a68421c9d12bb7bb12c6d3c" d="M1250.88,2888.06 L1241.02,2998.10 L1236.05,3069.96 L1234.15,3139.88 L1236.17,3325.15" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-5da8d65eb2064c128ab0cd84c3badf56" d="M1209.09,3597.09 L1208.61,3485.49" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-84e31acdca004ca582baa720279eb7f1" d="M1146.58,1357.05 L1160.80,1195.32" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-2c73a625455e43adb62ca9892f18b6ad" d="M1188.86,3486.36 L1187.95,3382.57 L1184.13,3229.34" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-253019968c0d45b382b7e9a0bb333254" d="M1180.05,1191.55 L1180.01,1140.97" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-8c4a81b4909a477a9320f63e90b5fbbc" d="M1180.01,1140.97 L1179.16,881.80" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-17debe64f65a40faa013f85d60bf6e06" d="M1179.16,881.80 L1175.60,718.50" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-d5c172737cb14fcfaa11bfd2f8eb83d7" d="M1196.39,3304.81 L1189.96,3168.13 L1183.73,3089.69 L1175.81,3020.67 L1157.87,2855.06" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a591680e49984a4fb37cda4728ec99ae" d="M1268.20,2918.48 L1255.32,2997.38 L1246.99,3071.15 L1241.96,3141.69 L1236.17,3325.15" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a7ca5bd336d04920a165054f6c8a3d65" d="M1216.77,810.34 L1217.28,863.33" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f42906687ca944409c64f4eb0b00e9ca" d="M1217.28,863.33 L1220.39,1042.61 L1221.80,1123.22" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-20bf15c9b9b84bec930d38bbf35ce0ad" d="M1142.49,1207.59 L1153.07,1125.49 L1159.88,1046.76 L1164.75,976.16" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-eb278a67f81646c798147a321e569681" d="M1164.75,976.16 L1175.60,718.50" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-4e67500b81c340afac3d0da64418a0b6" d="M1236.17,3325.15 L1236.56,3372.80" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-478e1980aa604fbd8de7ed2fdc20980b" d="M1236.56,3372.80 L1237.47,3485.49" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-e399025d0a04421da44419dad6dbada6" d="M1197.89,3485.90 L1196.39,3304.81" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-e48980d0c50846f4a3c161cc9e563feb" d="M1196.39,3304.81 L1193.40,3014.58" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-7f6ceadad7554b0d8e937706507a523a" d="M1208.27,863.06 L1221.80,1123.22" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-787e03ecc8904e429633e4a514ebb408" d="M1221.80,1123.22 L1226.15,1191.38 L1231.30,1256.04 L1239.17,1324.76" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-4632253e74954b6bb83770bfc280f3e2" d="M1209.90,1189.69 L1218.56,1351.71" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-c007329f70f54039946ed322830322b2" d="M1217.28,863.33 L1225.24,1033.18 L1231.35,1112.41 L1240.45,1182.70 L1257.43,1292.37" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-39158643926c4625888f6cb99153fe67" d="M1180.05,1191.55 L1173.84,1352.24" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ecfba5f9ac9e463da64bd9fb49113a6b" d="M1197.55,766.22 L1197.86,834.68" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-e5d4f3467d894921961d968658ccd8e0" d="M1188.49,834.71 L1182.31,522.30" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-5d13a1f5b3384686a5b631841abdeb32" d="M1206.49,575.53 L1208.27,863.06" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b585e01d59a14e3ca03ee381b3cdef68" d="M1208.27,863.06 L1209.13,1139.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-b62c9e3584e74a289b157e654a3467c2" d="M1209.13,1139.93 L1209.90,1189.69" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-db3a023f2e44494d964adf1b168d4710" d="M1197.89,3485.90 L1197.96,3522.63" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f51ff677879a44e693fe66eb9397200b" d="M1217.45,3485.78 L1218.23,3596.87" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-a6e10b96f1fb414f9ed7223cfec665fb" d="M1228.82,3485.28 L1229.26,3596.66" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-99ea32f910c74c3f96fb329952416321" d="M1237.47,3485.49 L1238.19,3596.16" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-062d6b4386b3432aa3879596ec9db560" d="M1197.89,3485.90 L1184.13,3229.34" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-843baf0dd8c24091b7e56491ddc5c718" d="M1180.01,1140.97 L1188.49,834.71" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-a5b464f6eb9b40a89e91f54b2abdfcdd" d="M1197.86,834.68 L1209.13,1139.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-1058fd5f153448a7ad808a13eb62766b" d="M1230.54,3596.37 L1229.60,3631.49" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-20f36852ac364d11ad77c5293ee5c655" d="M1211.08,3825.75 L1209.09,3597.09" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-9321d2e4bc3b4fbb8a545788ada0c43e" d="M1189.28,3568.78 L1188.86,3486.36" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-609a9155fce34881aa54b84dbdde69c4" d="M1175.60,718.50 L1175.26,652.11" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-dd2955694bb243edba2b0d4659b70a05" d="M1207.21,575.53 L1216.77,810.34" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f3e4d937f6df4a78bf4dfa7b4dd04b51" d="M1189.62,230.00 L1197.55,766.22" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-e97937fe384449a593c72e5780c2e14f" d="M1185.63,575.53 L1197.55,766.22" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f03cc994d0984a8f84e838c61a28b2e9" d="M1182.31,522.30 L1181.21,350.23" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-17de41886374497ba63caef74c31eae5" d="M1201.16,3596.59 L1197.96,3522.63" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-71682d89f8a54719a6dc3062d629af9d" d="M1197.96,3522.63 L1198.12,3596.61" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-62c5154d482e4a42943786d91a194899" d="M1218.23,3596.87 L1221.70,3985.66" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-62297c03b6a14604a8bf200e690a25a3" d="M1229.26,3596.66 L1229.60,3631.49" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0de27d6273fb4f20b01b00d078df4a5a" d="M1238.19,3596.16 L1239.03,3681.64" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-76cff8f281874e879d23e84dcd1cfe85" d="M1175.26,652.11 L1173.58,575.53" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-7bf7521a8bd447dead85b75e8c72eb1d" d="M1229.60,3631.49 L1230.08,3681.58" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-70ec4eb378994624954f6546407df780" d="M1207.58,3744.93 L1201.16,3596.59" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-f7da18fa87a3490aafb4e732ece59228" d="M1211.89,3892.78 L1211.08,3825.75" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-b079429d39ef49e48209b90404a7b7b0" d="M1190.37,3596.20 L1189.28,3568.78" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-886dbc175f024ebcbf6edb307596eec8" d="M1189.42,3596.26 L1189.28,3568.78" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-7ac6baae331c4e599da610bc4ef4290e" d="M1175.26,652.11 L1176.77,575.53" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ed4af1d554c946118398a24cb7fe3313" d="M1181.21,350.23 L1180.47,282.10" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-ac0aafe2307147a7bdac8218369ccfa3" d="M1199.05,3744.93 L1198.12,3596.61" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-0e490967cd334bb7828154e9955ce424" d="M1230.08,3681.58 L1228.34,3744.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-d9248289980f4631a70fd2f8ae2a5719" d="M1221.70,3985.66 L1221.94,4090.46" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-72663ff6d558427485cfc7ec133d43bb" d="M1239.03,3681.64 L1237.26,3744.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-3bc27c65d54c4be8beb53279f425bc81" d="M1239.03,3681.64 L1243.70,4090.46" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-c845a0443c774a41a7987f6e06daff44" d="M1230.08,3681.58 L1230.51,3744.93" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-ac1af5066e1e4a04abfd947eba0fa8d1" d="M1213.17,4090.46 L1211.89,3892.78" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<path data-edge-id="NE-4b59de18720748899357d10206273e22" d="M1196.30,3744.93 L1190.37,3596.20" fill="none" stroke="#617078" stroke-width="2.2"/>
+<path data-edge-id="NE-495127deaa394fb49075883d37cf714b" d="M1191.90,4090.46 L1189.42,3596.26" fill="none" stroke="#ba4141" stroke-width="2.2"/>
+<path data-edge-id="NE-0e38aef74bf24a0dbe339668cd6248e3" d="M1180.47,282.10 L1179.94,230.00" fill="none" stroke="#2774b5" stroke-width="2.2"/>
+<circle data-node-id="NN-d09566c4159d47478197af96c4e579a7" cx="1157.72" cy="2993.42" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-03b71660b05544778f3871f16846fcb4" cx="1193.40" cy="3014.58" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-1aeda8ecc95945e6826f473c6a50311c" cx="1142.49" cy="1207.59" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-2eb1f032cf8b4cdcb5c9675179391bc9" cx="1197.86" cy="834.68" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-85110f95aea14505b0561be34a588cb9" cx="1188.49" cy="834.71" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-37cccf1a2cdf491aaca81d872d81978a" cx="1239.17" cy="1324.76" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-88815f18c0c8444b82e32c934d955eab" cx="1257.43" cy="1292.37" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-70d0869b61b84a239dd833905016fcd6" cx="1218.56" cy="1351.71" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-874c5d93515a44f885c8a6aec34f8f9b" cx="1209.90" cy="1189.69" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-35cfefa649374660ab0454e5d6eae07c" cx="1180.05" cy="1191.55" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-9d04600350e344b9bcad72514247cb30" cx="1146.58" cy="1357.05" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-b40a83ef7b2743c5b65737d22be4085b" cx="1173.84" cy="1352.24" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-cf614f594e65414ab6d892d819b97e39" cx="1250.88" cy="2888.06" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-83e1c6d7eda64736b36dca3dac11e123" cx="1129.72" cy="2834.15" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-6fb432361055460c868fb9ef184fa245" cx="1229.83" cy="2851.17" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-4095170e8bd144e0a78fd2bdda2b1b7d" cx="1268.20" cy="2918.48" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-1e82a704dc80480c992ef5c70ed85e83" cx="1185.24" cy="2850.86" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-c38e8884ecb741c3831e3dce6542607f" cx="1157.87" cy="2855.06" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-58acf611b5de4a8b86fae14dd8ec7fab" cx="1224.42" cy="3015.42" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-373019b5465d468f8aa55373263e4f39" cx="1160.80" cy="1195.32" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-0deb857cce3240528ff98fc106f4c320" cx="1164.75" cy="976.16" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-38f00b385ea942ed99ce4953ca463291" cx="1236.56" cy="3372.80" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-a251f5057f5046f584bcb9a6aa1be390" cx="1179.16" cy="881.80" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-4c9314593b194bbda9df3599cf6c603d" cx="1184.13" cy="3229.34" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-9b6d092290c94b078f98a8cfb8e3f71e" cx="1236.17" cy="3325.15" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-0e7117c7ee4c42e2babc875957e3134d" cx="1180.01" cy="1140.97" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-ed2d13b6f1144d2997a6f64894e27510" cx="1175.60" cy="718.50" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-21184dfc1f1c49468e57d60e84991679" cx="1196.39" cy="3304.81" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-bcd96c82c88642889696268809aee666" cx="1217.28" cy="863.33" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-2261ab02278c4f6395df281e3d9721ba" cx="1221.80" cy="1123.22" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-7e29606dc3c64db7925233b50c87542d" cx="1197.89" cy="3485.90" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-e0cd2bb2713541c9a18c892f42f8ecc1" cx="1208.27" cy="863.06" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-ce2cab9745954d86a210487003e4d0c5" cx="1197.55" cy="766.22" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-5911bacc3cfd4bfa9825212ad7de8b0a" cx="1182.31" cy="522.30" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-a28089faebab422196a78fbdd8436a6c" cx="1209.13" cy="1139.93" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-9d353e77fffa4e06a409ee33a8958932" cx="1197.96" cy="3522.63" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-480bec562dab4ddca7666b3c09c3c0a8" cx="1229.60" cy="3631.49" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-ad416be85f024c69b85abf978cd8b8b9" cx="1211.08" cy="3825.75" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-a19e3e6cab71428da1c371244f772234" cx="1189.28" cy="3568.78" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-b5fa8bdbcf3f4dd3863e351e3be8c9ae" cx="1175.26" cy="652.11" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-4d5e7793a0b64717a670c5992d98754c" cx="1181.21" cy="350.23" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-7d076a7236f3480e84449c918a429a19" cx="1221.70" cy="3985.66" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-12a72895cc6a4fe69c646eb6781d215f" cx="1239.03" cy="3681.64" r="3.3" fill="#426574"/>
+<circle data-node-id="NN-95dbdd4e692049b39c358ce6511f6339" cx="1230.08" cy="3681.58" r="3.3" fill="#426574"/>
+</g>
+<circle data-port-line="IL-06e92ec6c6734e16ac942b273cb2ba9f" cx="1179.94" cy="230.00" r="3.3" fill="#2774b5"/>
+<circle data-port-line="IL-06e92ec6c6734e16ac942b273cb2ba9f" cx="1189.62" cy="230.00" r="3.3" fill="#2774b5"/>
+<text data-line-id="IL-06e92ec6c6734e16ac942b273cb2ba9f" data-end="top" data-port-x="1184.78" data-port-y="230.00" data-track-count="2" data-port-edges="NE-0e38aef74bf24a0dbe339668cd6248e3 NE-f3e4d937f6df4a78bf4dfa7b4dd04b51" x="1184.78" y="165.00" text-anchor="middle" font-size="19.00" style="fill:#2774b5">京沪高速线 · 往北京</text>
+<circle data-port-line="IL-06e92ec6c6734e16ac942b273cb2ba9f" cx="1213.17" cy="4090.46" r="3.3" fill="#2774b5"/>
+<circle data-port-line="IL-06e92ec6c6734e16ac942b273cb2ba9f" cx="1221.94" cy="4090.46" r="3.3" fill="#2774b5"/>
+<text data-line-id="IL-06e92ec6c6734e16ac942b273cb2ba9f" data-end="bottom" data-port-x="1217.56" data-port-y="4090.46" data-track-count="2" data-port-edges="NE-ac1af5066e1e4a04abfd947eba0fa8d1 NE-d9248289980f4631a70fd2f8ae2a5719" x="1217.56" y="4140.46" text-anchor="middle" font-size="19.00" style="fill:#2774b5">京沪高速线 · 往上海</text>
+<circle data-port-line="IL-0fe1108c094441e2afc97d119fdf9b2d" cx="1191.90" cy="4090.46" r="3.3" fill="#ba4141"/>
+<circle data-port-line="IL-0fe1108c094441e2afc97d119fdf9b2d" cx="1243.70" cy="4090.46" r="3.3" fill="#ba4141"/>
+<text data-line-id="IL-0fe1108c094441e2afc97d119fdf9b2d" data-end="bottom" data-port-x="1217.80" data-port-y="4090.46" data-track-count="2" data-port-edges="NE-3bc27c65d54c4be8beb53279f425bc81 NE-495127deaa394fb49075883d37cf714b" x="1477.56" y="4140.46" text-anchor="middle" font-size="16.33" style="fill:#ba4141">济郑高速线 · 全线端点待补充</text>
+<text x="65" y="4189" font-size="14">同色轨道与文字对应一个线路出口 · 站台用矩形图示 · 轨道按地图原形等比绘制</text>
+<text x="65" y="4219" font-size="12">自动参考，非联锁进路图 · 数据 © OpenStreetMap contributors</text>
+</svg>

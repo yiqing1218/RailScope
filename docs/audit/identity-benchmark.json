@@ -1,0 +1,8 @@
+{
+  "fixture": "all source IDs replaced; synthetic straight edges; no real PBF",
+  "count": 2000,
+  "before_ref": "147cb55",
+  "before_seconds": 1.461775,
+  "after_seconds": 0.061478,
+  "speedup": 23.78
+}

@@ -12,9 +12,11 @@ import io
 try:
     from .geometry import distance_m
     from .rail_categories import track_type
+    from .rail_semantics import semantic_record, aggregate_semantics
 except ImportError:
     from geometry import distance_m
     from rail_categories import track_type
+    from rail_semantics import semantic_record, aggregate_semantics
 
 RESOLUTION_KEY = "railscope.org/line-resolution"
 
@@ -70,6 +72,8 @@ LEGACY_CORRIDOR_COLUMNS = tuple(
     column for column in CORRIDOR_COLUMNS if column != "section_id"
 )
 EXTENDED_CORRIDOR_COLUMNS = (*CORRIDOR_COLUMNS, "extensions")
+COLORED_CORRIDOR_COLUMNS = (*EXTENDED_CORRIDOR_COLUMNS, "color")
+DOMAIN_CORRIDOR_COLUMNS = (*COLORED_CORRIDOR_COLUMNS, 'route_intent', 'resolved_corridor')
 
 
 def edge_endpoints(edge):
@@ -100,7 +104,7 @@ def _endpoint(value):
 
 def import_corridor_csv(text):
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS)):
+    if reader.fieldnames not in (list(CORRIDOR_COLUMNS), list(LEGACY_CORRIDOR_COLUMNS), list(EXTENDED_CORRIDOR_COLUMNS), list(COLORED_CORRIDOR_COLUMNS), list(DOMAIN_CORRIDOR_COLUMNS)):
         raise ValueError(
             "通道 CSV 表头必须为：" + ",".join(CORRIDOR_COLUMNS)
             + "（旧版不含 section_id 仍可导入）"
@@ -120,11 +124,22 @@ def import_corridor_csv(text):
             {
                 "id": row["corridor_id"],
                 "name": row["corridor_name"],
+                **({"color": row["color"]} if row.get("color") else {}),
                 "sequence": [],
                 "extensions": {RESOLUTION_KEY: {"policy": "strict"}},
             },
         )
         sequence = route["sequence"]
+        for field in ('route_intent', 'resolved_corridor'):
+            if row.get(field):
+                if sequence:
+                    raise ValueError('通道 CSV 的领域对象只填写在首行')
+                route[field] = json.loads(row[field])
+        if row.get('color'):
+            from railscope.presentation import valid_color
+            valid_color(row['color'])
+        if row.get('color', '') != route.get('color', ''):
+            raise ValueError('同一通道的颜色必须一致')
         if row.get("extensions"):
             if sequence:
                 raise ValueError("通道 CSV 的 extensions 只填写在每个通道的首行")
@@ -159,7 +174,7 @@ def import_corridor_csv(text):
 
 def export_corridor_csv(document):
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=EXTENDED_CORRIDOR_COLUMNS)
+    writer = csv.DictWriter(output, fieldnames=DOMAIN_CORRIDOR_COLUMNS)
     writer.writeheader()
     for route in document["corridors"]:
         sequence = route["sequence"]
@@ -168,12 +183,15 @@ def export_corridor_csv(document):
                 {
                     "corridor_id": route["id"],
                     "corridor_name": route["name"],
+                    "color": route.get("color", ""),
                     "segment": (index + 1) // 2,
                     "from_node": sequence[index - 1]["node_id"],
                     "line_id": sequence[index]["line_id"],
                     "section_id": sequence[index].get("section_id", ""),
                     "to_node": sequence[index + 1]["node_id"],
                     "extensions": json.dumps(route.get("extensions", {}), ensure_ascii=False, separators=(",", ":")) if index == 1 else "",
+                    **{key: json.dumps(route[key], ensure_ascii=False, separators=(',', ':'))
+                       if index == 1 and key in route else '' for key in ('route_intent','resolved_corridor')},
                 }
             )
     return output.getvalue()
@@ -254,6 +272,7 @@ class RailLineLibrary:
             for node in (a, b):
                 self.nodes[node] = labels.get(node) or control_point_label(node)
         for ident, record in self.lines.items():
+            record.update(aggregate_semantics(semantic_record(self.edges[key]) for key in record['edge_ids']))
             record["name"] = (
                 self.names.get(ident, record["source_name"]) + " · " + ident
             )
@@ -411,10 +430,11 @@ class RailLineLibrary:
         """Replay a saved reference choice without choosing another branch."""
         if not isinstance(path, list) or not path:
             raise ValueError("已保存的参考路径为空，请重新选择端点或线路")
-        cursor, visited = 0, {sequence[0]["node_id"]}
+        cursor = 0
         for index in range(1, len(sequence), 2):
             line = sequence[index]
             start, end = sequence[index - 1]["node_id"], sequence[index + 1]["node_id"]
+            visited = {start}
             node, first = start, cursor
             while cursor < len(path) and node != end:
                 leg = path[cursor]
@@ -433,7 +453,7 @@ class RailLineLibrary:
                         or not traversal_allowed(edge, leg["direction"])):
                     raise ValueError("已保存的参考路径不连续、非运营状态或方向不允许")
                 if b in visited:
-                    raise ValueError("通道组合重复经过端点，当前不支持循环通道")
+                    raise ValueError("本行路径包含回环，请把折返点作为单独一行")
                 visited.add(b)
                 node, cursor = b, cursor + 1
             if node != end or cursor == first:
@@ -537,16 +557,8 @@ class RailLineLibrary:
                     "两个端点之间存在分支 / 多条合法径路；请增加车站、线路所或道岔端点消歧，不自动采用几何最短路"
                 )
             path.extend(reversed(legs))
-        if sequence[0]["node_id"] == sequence[-1]["node_id"]:
-            raise ValueError("当前通道为单向非循环，反向请另建通道")
-        visited = {sequence[0]["node_id"]}
-        for leg in path:
-            edge = self.edges[leg["edge_id"]]
-            a, b = edge_endpoints(edge)
-            end = b if leg["direction"] == "forward" else a
-            if end in visited:
-                raise ValueError("通道组合重复经过端点，当前不支持循环通道")
-            visited.add(end)
+        # Each requested leg is already connected and direction-checked.
+        # Explicit intermediate rows may describe a station turnback.
         return path
 
     def describe(self, path):
@@ -564,7 +576,8 @@ class RailLineLibrary:
             ident = self.edge_lines[edge["id"]]
             if index == 0:
                 sequence.append({"kind": "endpoint", "node_id": a})
-            if ident != previous_line:
+            turnback = index > 0 and path[index-1]['edge_id'] == leg['edge_id'] and path[index-1]['direction'] != leg['direction']
+            if ident != previous_line or turnback:
                 if previous_line is not None:
                     sequence.append({"kind": "endpoint", "node_id": a})
                 sequence.append({"kind": "line", "line_id": ident})
@@ -649,6 +662,7 @@ class RailLineLibrary:
                             "from_node": start,
                             "to_node": end,
                             "path": legs,
+                            **aggregate_semantics(semantic_record(self.edges[leg['edge_id']]) for leg in legs),
                         }
                     )
         return deepcopy(output)

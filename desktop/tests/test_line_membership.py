@@ -8,7 +8,7 @@ from desktop.rail_lines import line_identity
 
 
 def edge(ident, a, b, name="仙宁线", highspeed="no", **extra):
-    return {"id": ident, "from_node": a, "to_node": b,
+    return {"id": ident, "from_node": a, "to_node": b, "construction_status": "operating",
             "node_ids": [a, b],
             "coordinates": [[118 + a / 10000, 32], [118 + b / 10000, 32]],
             "way_tags": {"name": name, "ref": "X", "highspeed": highspeed}, **extra}
@@ -151,7 +151,8 @@ def test_catalog_operations_change_corridor_membership_and_undo_keeps_references
     qtbot.addWidget(widget)
 
     def library():
-        return DiskRailLineLibrary(index, metadata=json.loads(settings.read_text(encoding="utf-8")))
+        from desktop.catalog_workspace import read_overrides
+        return DiskRailLineLibrary(index, metadata=read_overrides(settings))
 
     assembly = widget.merge_line_segments(set(ids), "手工线")
     sequence = seq(1, assembly, 3)

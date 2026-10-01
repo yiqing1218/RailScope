@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 import argparse
 import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -58,17 +59,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from components import Fold, Switch, THEME, switch_row, text_label, GrowingTree
+from components import Fold, SquareSwitch, THEME, visibility_row, directory_checkbox_style, text_label
 from geometry import build_demo_path
 from hierarchy import Hierarchy
 from hierarchy_ui import HierarchyDialog
-from metro_data import (
-    associate_station_areas,
-    build_shanghai_lines,
-    display_stations,
-    display_station_areas,
-    iter_geojson_features,
-)
+from metro_data import build_shanghai_lines
 from operating import Plan
 from operating_ui import OperationsEditor
 from bootstrap import ensure_assets
@@ -85,12 +80,14 @@ from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
 from layer_state import initial_visibility, editor_sizes
 from map_commands import MapCommands
+from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation, restore_presentation
+from yard_track_names import yard_track_key
+from rail_station_directory import RAIL_STATION_LAYERS
 from road_store import database_path as road_database_path, viewport as road_viewport
 from admin_store import database_path as admin_database_path, viewport as admin_viewport
 from metro_store import (
     StationLookup, area_summary as metro_area_summary,
-    database_path as metro_database_path, ensure_index as ensure_metro_index,
-    feature_count as metro_feature_count, find_physical_aliases,
+    ensure_index as ensure_metro_index, find_physical_aliases,
     find_station as find_metro_station, iter_features as iter_metro_features,
     iter_relation_features as iter_metro_relation_features,
     route_summaries as metro_route_summaries,
@@ -110,7 +107,6 @@ from railscope.services.topology import validate_topology
 from railscope.services.stations import StationRegistry
 from catalog_metadata import (
     CatalogOverrides,
-    metro_station_directory,
     station_type,
     STATION_TYPES,
     STATION_OVERVIEW_FIELDS,
@@ -214,8 +210,6 @@ def logo_pixmap():
 class LocalHandler(SimpleHTTPRequestHandler):
     """Serve only the map assets and local GIS files needed by this app."""
 
-    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -238,7 +232,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
         allowed = (
             (
                 path.startswith("/desktop/assets/")
-                and Path(path).suffix in {".html", ".css", ".js", ".mjs"}
+                and Path(path).suffix in {".html", ".css", ".js"}
             )
             or path
             in {
@@ -262,6 +256,34 @@ class LocalHandler(SimpleHTTPRequestHandler):
         return getattr(self, "_body_query", None) or parse_qs(urlsplit(self.path).query)
 
     def do_POST(self):
+        if self.valid_host() and urlsplit(self.path).path == '/api/entity-presentation':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 8_000_000:
+                    raise ValueError('Invalid body length')
+                features = json.loads(self.rfile.read(length))
+                if not isinstance(features, list) or any(not isinstance(f, dict) or
+                        not isinstance(f.get('properties'), dict) or
+                        not isinstance(f.get('geometry'), dict) for f in features):
+                    raise ValueError('Invalid presentation query')
+                collection = {'features': features}
+                for feature in features:
+                    restore_presentation(feature['properties'])
+                config = self.server.config
+                overrides = config.get('railDisplayOverrides', {})
+                apply_names(collection, overrides, config.get('railLineNames', {}), config.get('railWayNames', {}))
+                apply_rail_presentation(collection, config.get('railLinePresentation', {}), overrides)
+                payload = json.dumps([f['properties'] for f in features], ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except ConnectionError:
+                pass
+            except (ValueError, KeyError, TypeError, UnicodeError):
+                self.send_error(400)
+            return
         # Large directory selections do not fit in HTTP's request line.
         # These are read-only viewport queries; the body contains only filters.
         if not self.valid_host() or urlsplit(self.path).path not in {"/api/metro", "/api/roads", "/api/rail"}:
@@ -316,6 +338,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     [float(value) for value in query["bbox"][0].split(",")],
                     selected,
                 )
+                apply_names(result, getattr(self.server, 'config', {}).get('metroDisplayOverrides'))
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -345,6 +368,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     result = road_services_viewport(road_database_path(ROOT), bbox, selected, zoom)
                 else:
                     result = road_viewport(road_database_path(ROOT), bbox, route_key, route_keys=selected, zoom=zoom)
+                apply_names(result, getattr(self.server, 'config', {}).get('railDisplayOverrides'))
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -362,12 +386,15 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
                 query = self.request_query()
                 selection = {}
-                for query_name in ("sections", "ways", "groups"):
+                for query_name in ("sections", "ways", "groups", "states", "facility_groups", "included_edges", "excluded_edges"):
                     if query_name in query:
                         value = json.loads(query[query_name][0])
                         if not isinstance(value, list):
                             raise ValueError("线路选择无效")
                         selection[query_name] = value
+                selection["exclude"] = query.get("exclude", ["false"])[0] == "true"
+                selection["facility"] = query.get("facility", ["all"])[0]
+                selection['only_explicit'] = query.get('only_explicit',['false'])[0]=='true'
                 result = viewport(
                     active_rail_directory(ROOT),
                     query["kind"][0],
@@ -378,6 +405,20 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
                 )
+                from rail_station_directory import load_directory
+                apply_rail_presentation(result, self.server.config.get('railLinePresentation', {}),
+                                        self.server.config.get('railDisplayOverrides'))
+                apply_names(result, self.server.config.get('railDisplayOverrides'),
+                            self.server.config.get('railLineNames'), self.server.config.get('railWayNames'),
+                            load_directory(active_rail_directory(ROOT) / 'rail_lines.sqlite'))
+                if query["kind"][0] == "railPoints":
+                    switch_names = self.server.config.get("railSwitchNames", {})
+                    for feature in result["features"]:
+                        props = feature["properties"]
+                        if props.get("kind") == "switch":
+                            renamed = switch_names.get(str(props.get("osm_node_id")))
+                            if renamed:
+                                props["display_name"] = renamed
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -405,6 +446,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
 
 class Bridge(QObject):
     selected = Signal(str)
+    activated = Signal(str)
     selections = Signal(str)
     contextRequested = Signal()
     initialized = Signal()
@@ -424,6 +466,10 @@ class Bridge(QObject):
     @Slot(str)
     def featureSelected(self, data):
         self.selected.emit(data)
+
+    @Slot(str)
+    def featureActivated(self, data):
+        self.activated.emit(data)
 
     @Slot(str)
     def featuresSelected(self, data):
@@ -688,6 +734,14 @@ class Desk(QMainWindow):
             ROOT / "data/processed/operations/rail_plan.json",
             ROOT / "data/user_settings/rail_catalog.json",
         )
+        from session_time import SessionTime
+        from operations_workbench import Workbench
+        from history_ui import HistoryController
+        self.session_time=SessionTime(self)
+        self.operations.bind_session(self.session_time)
+        self.rail_operations.bind_session(self.session_time)
+        self.workbench=Workbench(self,ROOT/'data/user_settings/workspace.sqlite',self.session_time)
+        self.history=HistoryController(self,self.workbench.store,self.session_time)
         self.build()
         self.switches["vehicles"] = self.operations.vehicle_switch
         self.operations.vehicle_switch.toggled.connect(
@@ -757,6 +811,17 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "高速公路样式未保存", str(error))
 
+    def set_line_names_visible(self, on):
+        value = deepcopy(self.config["railPointStyles"])
+        value["labels"]["show_line_names"] = bool(on)
+        path = ROOT / "data/user_settings/rail_point_styles.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+        self.config["railPointStyles"] = value
+        self.map.call("setRailPointStyles", value)
+
     def edit_rail_point_styles(self):
         path = ROOT / "data/user_settings/rail_point_styles.json"
         dialog = RailPointStyleDialog(load_rail_point_styles(path), self)
@@ -769,6 +834,9 @@ class Desk(QMainWindow):
                 temporary.replace(path)
                 self.config["railPointStyles"] = value
                 self.map.call("setRailPointStyles", value)
+                self.line_names_action.blockSignals(True)
+                self.line_names_action.setChecked(value["labels"]["show_line_names"])
+                self.line_names_action.blockSignals(False)
             except OSError as error:
                 QMessageBox.warning(self, "站点样式未保存", str(error))
 
@@ -950,6 +1018,8 @@ class Desk(QMainWindow):
         temporary.replace(path)
 
     def export_catalog_overrides(self, kind):
+        from rail_catalog_ui import (LINE_DIRECTORY_PATH, STATION_DIRECTORY_PATH,
+                                     line_directory_overrides, station_directory_overrides)
         labels = {
             "rail-lines": "铁路线目录",
             "rail-stations": "铁路站目录",
@@ -959,7 +1029,8 @@ class Desk(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "导出" + labels[kind],
-            str(ROOT / "data/logs" / (kind + ".json")),
+            str(LINE_DIRECTORY_PATH if kind == "rail-lines" else STATION_DIRECTORY_PATH if kind == "rail-stations"
+                else ROOT / "data/logs" / (kind + ".json")),
             "JSON (*.json)",
         )
         if not path:
@@ -970,6 +1041,10 @@ class Desk(QMainWindow):
                 key: value for key, value in self.rail_catalog_widget.local_overrides.items()
                 if key.startswith("station:") == station
             }
+            if kind == "rail-lines":
+                values = line_directory_overrides(self.rail_catalog_widget.overrides)
+            elif kind == "rail-stations":
+                values = station_directory_overrides(self.rail_catalog_widget.overrides)
         else:
             values = dict(
                 self.metro_line_overrides.values
@@ -986,8 +1061,10 @@ class Desk(QMainWindow):
         temporary.replace(path)
 
     def import_catalog_overrides(self, kind):
+        from rail_catalog_ui import (LINE_DIRECTORY_PATH, line_directory_overrides,
+                                     station_directory_overrides)
         path, _ = QFileDialog.getOpenFileName(
-            self, "导入目录分类", "", "JSON (*.json)"
+            self, "导入目录分类", str(LINE_DIRECTORY_PATH.parent if kind.startswith("rail-") else ROOT / "data/logs"), "JSON (*.json)"
         )
         if not path:
             return
@@ -996,10 +1073,19 @@ class Desk(QMainWindow):
             if payload.get("schema") != "railscope.catalog-exchange.v1" or payload.get("kind") != kind or not isinstance(payload.get("overrides"), dict):
                 raise ValueError("目录文件类型或格式不匹配")
             values = payload["overrides"]
+            if kind == "rail-lines":
+                values = line_directory_overrides(values)
+                if not values:
+                    raise ValueError("目录文件中没有可导入的铁路线调整")
+            elif kind == "rail-stations":
+                if any(not isinstance(key, str) or not key.startswith("station:") for key in values):
+                    raise ValueError("铁路站目录文件包含非车站对象")
+                values = station_directory_overrides(values)
             if kind.startswith("rail-"):
                 self.rail_catalog_widget._save_local_overrides(values)
                 self.rail_catalog_widget.populate()
-                self.rail_catalog_widget.populate_station_tree()
+                if kind == "rail-stations":
+                    self.rail_catalog_widget.populate_station_tree()
                 self.refresh_signal_boxes()
             else:
                 store = self.metro_line_overrides if kind == "metro-lines" else self.metro_station_overrides
@@ -1015,10 +1101,9 @@ class Desk(QMainWindow):
         self.add_action(file, "保存工作区", self.save_workspace, "Ctrl+S")
         self.add_action(file, "工作区另存为…", self.save_workspace_as, "Ctrl+Shift+S")
         file.addSeparator()
-        self.add_action(file, "导入 GeoJSON…", self.import_file, "Ctrl+I")
-        self.add_action(file, "导入国铁运行通道…", self.rail_operations.import_corridors)
-        self.add_action(file, "导出国铁运行通道…", self.rail_operations.export_corridors)
         self.add_action(file, "导出当前可见图层…", self.export_visible, "Ctrl+E")
+        self.add_action(file, "当前页面高质量导出…", self.export_high_quality_map)
+        self.add_action(file, "一键导出所选站场示意图…", self.export_station_schematic)
         shots = file.addMenu("导出截图")
         self.add_action(shots, "导出当前地图 PNG…", self.capture_map)
         self.add_action(shots, "导出完整运行图 PNG…", self.capture_diagram)
@@ -1035,6 +1120,7 @@ class Desk(QMainWindow):
         edit.addSeparator()
         self.add_action(edit, "单击选择工具", lambda: self.set_map_selection_mode("click"), "V")
         self.add_action(edit, "框选工具", lambda: self.set_map_selection_mode("box"), "B")
+        self.add_action(edit, "编辑所选对象属性…", self.edit_selected_metadata)
         self.add_action(edit, "移动所选对象到目录…", self.move_map_selection)
         self.add_action(edit, "组合所选铁路段为线路…", self.merge_map_rail_segments)
         self.add_action(edit, "拆分所选组合线路", self.split_map_rail_assembly)
@@ -1050,8 +1136,13 @@ class Desk(QMainWindow):
         self.add_action(
             edit, "国铁物理线路规范命名…", self.rail_operations.organize_lines
         )
+        self.add_action(edit, "站场股道命名 / 自动编号…", self.edit_station_tracks)
         map_menu = bar.addMenu("显示")
         self.add_action(map_menu, "打开图层控制", lambda: self.open_sidebar(0))
+        self.line_names_action = map_menu.addAction("显示线路名称")
+        self.line_names_action.setCheckable(True)
+        self.line_names_action.setChecked(self.config["railPointStyles"]["labels"]["show_line_names"])
+        self.line_names_action.toggled.connect(self.set_line_names_visible)
         styles = map_menu.addMenu("线路显示样式")
         self.add_action(styles, "地铁线路样式…", self.edit_metro_styles)
         self.add_action(styles, "国铁线路样式…", self.edit_rail_styles)
@@ -1128,6 +1219,8 @@ class Desk(QMainWindow):
         self.add_action(data, "从中国动车组补全参考属性…", self.import_china_emu_references)
         self.add_action(data, "线路、站场与车型参考资料…", self.show_china_emu_references)
         data.addSeparator()
+        self.add_action(data, "导入 GeoJSON…", self.import_file, "Ctrl+I")
+        data.addSeparator()
         self.add_action(data, "从全国 OSM 建立高速公路目录…", self.start_road_import)
         self.add_action(data, "从全国 OSM 建立省市县行政边界…", self.start_admin_import)
         for kind, title in (
@@ -1160,12 +1253,10 @@ class Desk(QMainWindow):
         )
         self.add_action(data, "查看数据概览", self.show_data_summary)
         topology = bar.addMenu("工具")
-        self.add_action(topology, "单击选择", lambda: self.set_map_selection_mode("click"))
-        self.add_action(topology, "框选对象", lambda: self.set_map_selection_mode("box"))
         self.add_action(topology, "清除地图选择", lambda: self.map.call("clearSelection"))
         self.add_action(topology, "由所选道岔新建线路所…", self.create_signal_box_from_selection)
         topology.addSeparator()
-        self.add_action(topology, "打开国铁运行通道编排", lambda: self.open_sidebar(2))
+        self.add_action(topology, "打开国铁运行通道编排", self.open_rail_operations)
         self.add_action(
             topology,
             "导出铁路拓扑图（端点—线路—端点）…",
@@ -1212,12 +1303,11 @@ class Desk(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("地图元素加载上限")
         form = QFormLayout(dialog)
-        form.addRow(text_label("按当前地图范围加载。无上限模式会使用更多内存。", wrap=True))
+        form.addRow(text_label("按当前地图范围加载；为避免卡顿和崩溃，所有配置均受安全上限约束。", wrap=True))
         preset = QComboBox()
         preset.addItem("默认", "default")
         preset.addItem("高内存电脑", "high")
         preset.addItem("自定义", "custom")
-        preset.addItem("无上限", "unlimited")
         fields = {}
         for key, label, divisor in (
             ("features", "元素数 / 图层", 1),
@@ -1410,24 +1500,167 @@ class Desk(QMainWindow):
             except OSError as error:
                 QMessageBox.warning(self, "无法导出", str(error))
 
+    def edit_service_area(self, feature):
+        from road_services import service_repository
+        props = feature['properties']
+        repo = service_repository(self.road_catalog_widget.database, self.rail_catalog_widget.overrides, [props['service_id']])
+        entity = repo.service_areas[props['service_id']]
+        dialog = QDialog(self); dialog.setWindowTitle("服务区实体 · 名称与行政属性")
+        layout = QFormLayout(dialog)
+        fields = {}
+        for key, label, value in [('display_name', '服务区名称', entity.name), *[(k, label, entity.attributes.get(k, '')) for k, label in [('province', '省'), ('city', '市'), ('county', '县 / 区')]]]:
+            fields[key] = QLineEdit(str(value)); layout.addRow(label, fields[key])
+        layout.addRow('实体编号', QLabel(entity.id))
+        layout.addRow('来源成员', QLabel('、'.join(entity.source_member_ids)))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); layout.addRow(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            values = {key: field.text().strip() for key, field in fields.items()}
+            if not values['display_name']:
+                QMessageBox.warning(self, '未保存', '服务区名称不能为空'); return
+            self.rail_catalog_widget._save_local_overrides({'object:service_id:' + entity.id: {**values, 'source': 'manual', 'verification_status': 'user_named'}})
+            self.rail_catalog_widget.metadata_changed.emit()
+            props.update(values); self.display_feature(feature)
+
+    def selected_station_tracks(self):
+        from station_tracks import load_station_tracks
+        from rail_station_directory import load_directory, station_key
+        props = dict(self.selected_data.get('properties', {}))
+        group = props.get('catalog_group_id')
+        if group:
+            props.update({key: value for key, value in self.rail_catalog_widget.overrides.get(group, {}).items()
+                          if key in ('station_source', 'station_name')})
+        directory = self.rail_catalog_widget.directory
+        records = load_directory(directory / 'rail_lines.sqlite')
+        source = props.get('station_source') or station_key(props)
+        if source in records:
+            props = {**records[source]['feature']['properties'], 'infrastructure_id': source}
+        elif props.get('catalog_group_id', '').startswith('ST-'):
+            pass
+        else:
+            name, ok = QInputDialog.getText(self, '选择站场', '车站名称（也可以先在地图上选中车站或站场股道）')
+            if not ok or not name.strip(): return None
+            matches = [(key, item) for key, item in records.items() if item['name'].removesuffix('站') == name.strip().removesuffix('站')]
+            if len(matches) != 1:
+                raise ValueError('未找到唯一车站，请在地图上选中具体车站后再操作')
+            key, item = matches[0]; props = {**item['feature']['properties'], 'infrastructure_id': key}
+        return load_station_tracks(directory, self.rail_operations.workspace_identity_path, props, self.rail_catalog_widget.overrides)
+
+    def edit_station_tracks(self):
+        from station_track_ui import StationTrackDialog
+        from station_tracks import track_overrides
+        try:
+            selected = self.selected_station_tracks()
+            if selected is None: return
+            repo, rows, context = selected
+            dialog = StationTrackDialog(repo, self)
+            props = self.selected_data.get('properties', {})
+            chosen = props.get('station_track_id') or next((key for key, track in repo.station_tracks.items()
+                if props.get('section_id') in track.source_member_ids), None)
+            if chosen in dialog.keys:
+                row = dialog.keys.index(chosen)
+                dialog.table.selectRow(row)
+                dialog.table.scrollToItem(dialog.table.item(row, 0))
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.rail_catalog_widget._save_local_overrides(track_overrides(repo, rows))
+                self.rail_catalog_widget.metadata_changed.emit()
+        except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+            QMessageBox.warning(self, '站场股道无法载入', str(error))
+
+    def export_station_schematic(self):
+        from station_schematic import station_svg
+        from station_diagram_ui import StationDiagramDialog
+        from station_diagram_render import write_diagram
+        try:
+            selected = self.selected_station_tracks()
+            if selected is None: return
+            repo, rows, context = selected
+            name = next(iter(repo.stations.values())).name
+            from station_tracks import schematic_station_info, load_station_tracks
+            info = schematic_station_info(self.rail_catalog_widget.directory, repo, rows,
+                                          self.rail_catalog_widget.overrides)
+            source = next((row.get('station_source') for row in rows.values() if row.get('station_source')), None)
+            def reload_diagram(depth):
+                if not source:
+                    return repo, context, info
+                loaded, loaded_rows, loaded_context = load_station_tracks(self.rail_catalog_widget.directory,
+                    self.rail_operations.workspace_identity_path,
+                    {'name': name, 'station_source_id': source}, self.rail_catalog_widget.overrides,
+                    approach_depth=depth)
+                loaded_info = schematic_station_info(self.rail_catalog_widget.directory, loaded, loaded_rows,
+                                                     self.rail_catalog_widget.overrides)
+                return loaded, loaded_context, loaded_info
+            dialog = StationDiagramDialog(repo, context, info, self,
+                ROOT / 'data/user_settings/station_diagram.json', reload_callback=reload_diagram)
+            if dialog.exec() != QDialog.DialogCode.Accepted: return
+            options = dialog.options()
+            repo, context, info = dialog.repo, dialog.context, dialog.info
+            svg = station_svg(repo, context, station_info=info, options=options)
+            format_name = {'svg': '矢量 SVG', 'png': '高清 PNG', 'pdf': '矢量 PDF'}[options.output_format]
+            path, _ = QFileDialog.getSaveFileName(self, '导出站场示意图',
+                str(ROOT / 'data/logs' / (name + '-站场.' + options.output_format)),
+                format_name + ' (*.' + options.output_format + ')')
+            if not path: return
+            if Path(path).suffix.lower() != '.' + options.output_format:
+                path += '.' + options.output_format
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            write_diagram(path, svg, options)
+            dialog.save_settings(options)
+            self.load_status.setText('  站场示意图已保存：' + path)
+        except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+            QMessageBox.warning(self, '站场示意图未导出', str(error))
+
+    def export_high_quality_map(self):
+        if not self.map.is_ready:
+            return
+        if getattr(self, '_capture_path', None):
+            self.load_status.setText('  正在导出地图，请等待当前导出完成')
+            return
+        width, ok = QInputDialog.getInt(self, "高质量地图导出", "输出宽度（像素，保持当前地图范围）", 6000, 1600, 12000, 400)
+        if not ok:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "高质量地图 PNG · 300 DPI", str(ROOT / "data/logs/map-print.png"), "PNG (*.png)")
+        if path:
+            self._capture_path = path
+            self._capture_dpi = 300
+            self.load_status.setText("  正在独立渲染高分辨率地图…")
+            self.map.call("exportHighQuality", width)
+
     def capture_map(self):
         if not self.map.is_ready:
+            return
+        if getattr(self, '_capture_path', None):
+            self.load_status.setText('  正在导出地图，请等待当前导出完成')
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "保存当前地图截图", str(ROOT / "data/logs/map.png"), "PNG (*.png)"
         )
         if path:
             self._capture_path = path
+            self._capture_dpi = 96
             self.map.call("captureMap")
 
     def save_map_capture(self, data):
+        callback=getattr(self,'_archive_capture',None)
+        if callback:
+            self._archive_capture=None
+            callback(data)
+            return
         if not getattr(self, "_capture_path", None):
             return
         try:
             if not data.startswith("data:image/png;base64,"):
-                raise ValueError("地图截图未成功，请等待底图加载后重试")
+                raise ValueError(data if data.startswith("error:") else "地图导出未成功，请等待地图加载后重试")
             image = base64.b64decode(data.split(",", 1)[1], validate=True)
-            Path(self._capture_path).write_bytes(image)
+            from PySide6.QtGui import QImage
+            rendered = QImage.fromData(image)
+            if rendered.isNull():
+                raise ValueError("地图图像解码失败")
+            dots = round(getattr(self, "_capture_dpi", 96) / .0254)
+            rendered.setDotsPerMeterX(dots)
+            rendered.setDotsPerMeterY(dots)
+            if not rendered.save(self._capture_path):
+                raise ValueError("无法写入地图图像")
             self.load_status.setText("  地图截图已保存：" + self._capture_path)
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "截图失败", str(error))
@@ -1497,9 +1730,14 @@ class Desk(QMainWindow):
         layout.addStretch()
         self.search_type = QComboBox()
         self.search_type.addItems(
-            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所"]
+            ["全部", "城市", "地铁线路", "地铁站", "铁路线", "车站及线路所", "站场股道", "服务区"]
         )
         self.search_type.setMinimumWidth(105)
+        history_button=QToolButton()
+        history_button.setText('时间回溯')
+        history_button.setToolTip('查看不同日期的建设、运营与停运状态')
+        history_button.clicked.connect(self.history.show)
+        layout.addWidget(history_button)
         layout.addWidget(self.search_type)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索名称或稳定编号   Ctrl+F")
@@ -1534,6 +1772,11 @@ class Desk(QMainWindow):
         )
         layout.addWidget(self.map_rail)
         layout.addWidget(self.run_rail)
+        self.module_buttons=[self.map_rail,self.run_rail]
+        for index,title in enumerate(('车辆','分析','编辑','导入\n导出'),2):
+            button=self.rail_button(title,title.replace('\n','')+'工作台',lambda checked=False,i=index:self.open_or_toggle(i))
+            self.module_buttons.append(button)
+            layout.addWidget(button)
         layout.addStretch()
         self.detail_rail = self.rail_button(
             "详情", "展开或收起右侧对象详情", self.toggle_right
@@ -1584,14 +1827,16 @@ class Desk(QMainWindow):
         self.side_pages = QStackedWidget()
         self.side_pages.addWidget(self.map_controls())
         self.side_pages.addWidget(self.run_controls())
+        for index in range(2,6):
+            self.side_pages.addWidget(self.workbench.page(index))
         layout.addWidget(self.side_pages, 1)
         return panel
 
     def new_switch(self, key, title, subtitle=""):
-        control = Switch(self.flags[key])
+        control = SquareSwitch(self.flags[key])
         control.toggled.connect(lambda on, k=key: self.set_flag(k, on))
         self.switches[key] = control
-        return switch_row(title, control, subtitle)
+        return visibility_row(title, control, subtitle)
 
     def map_controls(self):
         scroll = QScrollArea()
@@ -1630,13 +1875,13 @@ class Desk(QMainWindow):
             ("其他文字与 POI", "labels"),
             ("建筑信息", "buildings"),
         ]:
-            switch = Switch(True)
+            switch = SquareSwitch(True)
             switch.toggled.connect(
                 lambda on, k=key: self.map.call("setBaseDetail", k, on)
             )
             switch.setEnabled(False)
             self.base_switches[key] = switch
-            detail_layout.addWidget(switch_row(title, switch))
+            detail_layout.addWidget(visibility_row(title, switch))
         layout.addWidget(Fold("信息显示", details, expanded=False, count="4 项"))
         self.base_hint = text_label("底图连接中…", wrap=True)
         layout.addWidget(self.base_hint)
@@ -1660,6 +1905,7 @@ class Desk(QMainWindow):
         self.line_search.textChanged.connect(self.filter_tree)
         line_layout.addWidget(self.line_search)
         self.tree = QTreeView()
+        self.tree.setStyleSheet(directory_checkbox_style())
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(14)
@@ -1677,7 +1923,7 @@ class Desk(QMainWindow):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.metro_context_menu)
         line_layout.addWidget(self.tree)
-        self.line_count = text_label("")
+        self.line_count = text_label("", wrap=True)
         line_layout.addWidget(self.line_count)
         self.metro_catalog_tabs.addTab(self.metro_line_page, "地铁线路目录")
         self.metro_station_page = QWidget()
@@ -1685,6 +1931,7 @@ class Desk(QMainWindow):
         station_layout.setContentsMargins(0, 0, 0, 0)
         station_layout.addWidget(text_label("地铁站目录", "sectionLabel"))
         self.station_tree = QTreeView()
+        self.station_tree.setStyleSheet(directory_checkbox_style())
         self.station_tree.setHeaderHidden(True)
         self.station_tree.setRootIsDecorated(True)
         self.station_tree.setIndentation(14)
@@ -1698,7 +1945,7 @@ class Desk(QMainWindow):
         self.station_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.station_tree.customContextMenuRequested.connect(self.metro_station_context_menu)
         station_layout.addWidget(self.station_tree)
-        self.station_count = text_label("")
+        self.station_count = text_label("", wrap=True)
         station_layout.addWidget(self.station_count)
         self.metro_catalog_tabs.addTab(self.metro_station_page, "地铁站目录")
         layout.addWidget(self.metro_catalog_tabs)
@@ -2370,6 +2617,7 @@ class Desk(QMainWindow):
         layout.addWidget(self.new_switch("rail", "铁路线"))
         for key, title in [
             ("railConstruction", "在建铁路"),
+            ("railStationTracks", "车站轨道"),
             ("railStations", "车站及线路所"),
         ]:
             layout.addWidget(self.new_switch(key, title))
@@ -2387,23 +2635,31 @@ class Desk(QMainWindow):
         layout.addWidget(self.rail_catalog_widget)
         names_path = self.rail_operations.path.parent / "rail_way_names.json"
         self.rail_catalog_widget.reload_names(names_path)
+        self.rail_operations.catalog_editor = self.rail_catalog_widget
         self.rail_operations.names_changed.connect(
             lambda: self.rail_catalog_widget.reload_names(names_path)
         )
+        self.rail_operations.names_changed.connect(self.refresh_map_names)
         self.rail_catalog_widget.line_names_changed.connect(
             self.rail_operations.save_line_names
         )
-        self.rail_catalog_widget.metadata_changed.connect(
-            self.rail_operations.invalidate_line_library
-        )
-        self.rail_catalog_widget.metadata_changed.connect(self.refresh_signal_boxes)
+        self.rail_catalog_widget.topology_changed.connect(self.refresh_topology_changes)
+        self.rail_catalog_widget.semantic_changed.connect(self.refresh_semantic_changes)
+        self.rail_catalog_widget.station_assignment_changed.connect(self.refresh_directory_overrides)
+        self.rail_catalog_widget.presentation_changed.connect(self.refresh_catalog_presentation)
+        self.rail_catalog_widget.entities_changed.connect(self.refresh_entity_changes)
+        self.rail_catalog_widget.directory_changed.connect(self.refresh_directory_overrides)
+        self.rail_catalog_widget.station_presentation_changed.connect(self.refresh_signal_boxes)
         self.rail_catalog_widget.switch_names_changed.connect(self.refresh_switch_names)
-        self.rail_catalog_widget.display_names_changed.connect(self.refresh_rail_display_names)
-        self.refresh_rail_display_names()
         self.refresh_switch_names()
+        self.refresh_map_names()
         self.rail_catalog_widget.station_edit_requested.connect(
             self.edit_rail_station_metadata
         )
+        self.rail_catalog_widget.line_edit_requested.connect(
+            self.edit_rail_line_metadata
+        )
+        self.rail_catalog_widget.segment_edit_requested.connect(self.edit_selected_metadata)
         self.rail_catalog_widget.feature_activated.connect(self.display_feature)
         self.rail_catalog_widget.enabled_requested.connect(
             self.enable_rail_from_catalog
@@ -2462,22 +2718,21 @@ class Desk(QMainWindow):
         self.selected_type.setMaximumWidth(200)
         layout.addWidget(self.selected_type)
         self.detail_tabs = QTabWidget()
-        self.properties = QTableWidget(0, 2)
-        self.properties.setHorizontalHeaderLabels(["属性", "值"])
-        self.properties.horizontalHeader().hide()
-        self.properties.verticalHeader().hide()
-        self.properties.setShowGrid(False)
-        self.properties.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.properties.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.properties.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.properties.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        from property_overview import PropertyOverview
+        self.properties = PropertyOverview()
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
         self.detail_tabs.addTab(self.properties, "概览")
+        self.detail_views={}
+        for title in ('地图','基础设施','运行','统计','历史'):
+            body=QWidget();body_layout=QVBoxLayout(body);body_layout.setContentsMargins(0,4,0,4)
+            info=PropertyOverview();body_layout.addWidget(info,1);self.detail_views[title]=info
+            if title=='地图':self.workbench.button(body_layout,'地图定位',self.workbench.locate_selected)
+            elif title=='基础设施':self.workbench.button(body_layout,'线路技术视图',self.workbench.show_line_technical)
+            elif title=='运行':self.workbench.button(body_layout,'车站时刻表与站场状态',self.workbench.show_station)
+            elif title=='统计':self.workbench.button(body_layout,'跨通道区间统计',self.workbench.show_section_statistics)
+            else:self.workbench.button(body_layout,'编辑对象历史',self.history.edit_selected)
+            self.detail_tabs.addTab(body,title)
         self.detail_tabs.addTab(self.raw, "全部属性")
         layout.addWidget(self.detail_tabs, 1)
         copy = QPushButton("复制对象属性")
@@ -2517,6 +2772,7 @@ class Desk(QMainWindow):
     def connect_map(self):
         bridge = self.map.bridge
         bridge.selected.connect(self.select_map_feature)
+        bridge.activated.connect(self.select_map_feature)
         bridge.selections.connect(self.map_selection_changed)
         bridge.contextRequested.connect(self.map_context_menu)
         bridge.dataLoaded.connect(
@@ -2543,6 +2799,7 @@ class Desk(QMainWindow):
         self.map.call(
             "setBase", BASE_TYPES[self.base_combo.currentIndex()]
         )
+        self.history.publish()
         for key, control in self.base_switches.items():
             self.map.call("setBaseDetail", key, control.isChecked())
         for key, action in self.overlay_actions.items():
@@ -2576,9 +2833,16 @@ class Desk(QMainWindow):
     def map_context_menu(self):
         menu = QMenu(self)
         switches = self.selected_switch_ids()
+        edit = menu.addAction("编辑对象信息…", lambda: self.edit_selected_metadata(self.selected_features[0]))
+        edit.setEnabled(len(self.selected_features) == 1)
+        menu.addSeparator()
         menu.addAction("由所选道岔新建线路所…", self.create_signal_box_from_selection).setEnabled(len(switches) >= 2)
         menu.addAction("移动所选对象到目录…", self.move_map_selection).setEnabled(bool(self.selected_features))
         menu.addAction("重命名所选对象…", self.rename_map_selection).setEnabled(bool(self.selected_features))
+        menu.addAction("组合所选铁路段为线路…", self.merge_map_rail_segments).setEnabled(
+            len(self.selected_features) >= 2)
+        menu.addAction("拆分所选组合线路", self.split_map_rail_assembly).setEnabled(
+            bool(self.selected_features))
         menu.addAction("归档所选对象", self.archive_map_selection).setEnabled(bool(self.selected_features))
         menu.exec(QCursor.pos())
         menu.deleteLater()
@@ -2645,6 +2909,7 @@ class Desk(QMainWindow):
 
     def _selected_catalog_objects(self):
         rail_lines, rail_stations, metro_lines, metro_stations = set(), set(), set(), set()
+        physical_station_ids = set()
         for feature in self.selected_features:
             props, layer = feature.get("properties", {}), feature.get("layer", "")
             group = props.get("catalog_group_id")
@@ -2663,10 +2928,8 @@ class Desk(QMainWindow):
                 metro_lines.add(int(relation))
             physical = props.get("infrastructure_id") or props.get("station_id")
             if physical:
-                metro_stations.update(
-                    key for key, record in self.station_lookup.items()
-                    if record.get("physical_station_id") == str(physical)
-                )
+                physical_station_ids.add(str(physical))
+        metro_stations = self.station_lookup.aliases_for_physical(physical_station_ids)
         return rail_lines, rail_stations, metro_lines, metro_stations
 
     def move_map_selection(self):
@@ -2689,13 +2952,16 @@ class Desk(QMainWindow):
                 lambda path: self.move_metro_lines(metro_lines, path),
             )
         elif rail_lines:
+            line_move = menu.addMenu("移动到线路目录")
             add_folder_move_menu(
-                menu,
+                line_move,
                 self.rail_catalog_widget.line_destination_paths(),
                 lambda path: self.rail_catalog_widget.save_overrides({
-                    key: {"folder_path": path} for key in rail_lines
+                    key: {"directory_view": "lines", "folder_path": path} for key in rail_lines
                 }),
             )
+            menu.addAction("移动到车站目录…",
+                           lambda: self.rail_catalog_widget._prompt_station_assignment(rail_lines))
         elif rail_stations:
             add_folder_move_menu(
                 menu,
@@ -2755,15 +3021,27 @@ class Desk(QMainWindow):
     def rename_map_selection(self):
         if len(self.selected_features) == 1:
             feature = self.selected_features[0]
-            props = feature.get("properties", {})
-            if (props.get("osm_node_id") is not None and props.get("kind") not in {"station", "halt"}) or feature.get("layer") in {"rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"}:
-                name, ok = QInputDialog.getText(self, "重命名地图对象", "显示名称", text=str(props.get("display_name") or props.get("name") or ""))
-                if ok and name.strip():
-                    if props.get("kind") == "switch":
-                        self.rail_catalog_widget.save_switch_name(props["osm_node_id"], name)
-                    else:
-                        self.rail_catalog_widget.save_feature_name(props, name)
+            props = feature.get('properties', {})
+            layer = feature.get('layer', feature.get('__layer', ''))
+            if props.get('service_id'):
+                self.edit_service_area(feature)
                 return
+            track_key = yard_track_key(props)
+            if props.get('station_track_id') or str(props.get('catalog_group_id', '')).startswith('ST-'):
+                self.edit_selected_metadata(feature)
+                return
+            if layer not in ('metro', 'stations', 'rail-vehicles', 'rail-vehicle-symbols', 'rail-plan-path') and props.get('kind') != 'switch' and (track_key or not props.get('catalog_group_id')):
+                key = track_key or object_key(props)
+                if key and props.get('kind') not in ('station', 'halt', 'signal_box'):
+                    value, accepted = QInputDialog.getText(self, '重命名对象', '地图显示名称',
+                        text=props.get('display_name') or props.get('name') or '')
+                    if accepted and value.strip():
+                        self.rail_catalog_widget._save_local_overrides({key: {
+                            'display_name': value.strip(), 'source': 'manual', 'verification_status': 'user_named'}})
+                        self.rail_catalog_widget.metadata_changed.emit()
+                        props['display_name'] = value.strip()
+                        self.display_feature(feature)
+                    return
         if len(self.selected_switch_ids()) == 1 and len(self.selected_features) == 1:
             self.rail_catalog_widget.rename_switch(self.selected_switch_ids()[0])
             return
@@ -2803,6 +3081,7 @@ class Desk(QMainWindow):
             })
         self.map.call("setRailStyles", self.config["railStyles"])
         self.map.call("setRoadStyles", self.config["roadStyles"])
+        self.refresh_map_names()
         self.change_run_mode(self.run_mode.currentIndex())
 
     def change_base(self, index):
@@ -2880,16 +3159,15 @@ class Desk(QMainWindow):
         self.rail_operations.show_corridor(corridor_id, train_id)
 
     def open_sidebar(self, index):
-        if index == 2:
-            self.open_rail_operations()
-            return
         self.left.show()
         self.side_pages.setCurrentIndex(index)
         self.map_rail.setChecked(index == 0)
         self.run_rail.setChecked(index == 1)
-        self.side_title.setText(["图层控制", "运行控制", "国铁运行通道"][index])
+        for i,button in enumerate(self.module_buttons):button.setChecked(i==index)
+        if index==2:self.workbench.refresh_vehicles()
+        self.side_title.setText(["图层控制", "运行控制", "车辆档案", "铁路分析", "编辑工作台", "导入导出"][index])
         self.side_subtitle.setText(
-            ["按要素与线路组织地图", "列车展示与车辆图层", "共享单向径路与股道衔接"][
+            ["按要素与线路组织地图", "列车展示与车辆图层", "车辆、车型与车次担当", "通道运行图、站场与区间统计", "对象、历史、站内进路与样式", "复用统一数据与专业成果出口"][
                 index
             ]
         )
@@ -2916,6 +3194,7 @@ class Desk(QMainWindow):
         self.run_rail.setChecked(
             self.left.isVisible() and self.side_pages.currentIndex() == 1
         )
+        for index,button in enumerate(self.module_buttons):button.setChecked(self.left.isVisible() and self.side_pages.currentIndex()==index)
 
     def toggle_right(self):
         opening = not self.right.isVisible()
@@ -2937,7 +3216,11 @@ class Desk(QMainWindow):
             control.blockSignals(True)
             control.setChecked(on)
             control.blockSignals(False)
-        self.map.call("setVisibility", key, on)
+        # Install the compact catalog filter before enabling a national rail
+        # layer, so the WebView never requests an unfiltered first frame.
+        defer_visibility = bool(on) and key in ("rail", "railConstruction", "railStationTracks")
+        if not defer_visibility:
+            self.map.call("setVisibility", key, on)
         if key == "metro":
             operating = {route["osm_relation_id"] for route in self.catalog}
             if on and not (self.visible_lines & operating):
@@ -2965,12 +3248,16 @@ class Desk(QMainWindow):
             self.rail_catalog_widget.set_line_master(
                 "operating" if key == "rail" else "construction", on
             )
+        elif key == "railStationTracks":
+            self.rail_catalog_widget.set_station_track_master(on)
         elif key == "railStations":
             self.rail_catalog_widget.set_station_master("station", on)
         elif key in ('road', 'roadConstruction'):
             self.road_catalog_widget.set_all(on, construction=key == 'roadConstruction')
         elif key == 'roadServices':
             self.road_catalog_widget.set_services_all(on)
+        if defer_visibility:
+            self.map.call("setVisibility", key, on)
 
     def set_all_lines(self, on):
         self.visible_lines = (
@@ -2992,13 +3279,95 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.update_count()
 
-    def refresh_rail_display_names(self):
-        from rail_display import display_manifest
-        catalog = self.rail_catalog_widget
-        names = display_manifest(catalog.catalog, catalog.overrides, catalog.way_names)
-        if self.config.get("railDisplayNames") != names:
-            self.config["railDisplayNames"] = names
-            self.map.call("setRailDisplayNames", names)
+    def refresh_map_names(self):
+        """HTTP viewport responses and on-map labels use the same overrides."""
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
+        if hasattr(self, 'road_catalog_widget'):
+            self.road_catalog_widget.set_overrides(self.rail_catalog_widget.overrides)
+        path = self.rail_operations.path.parent
+        self.config['railLineNames'] = read_json(path / 'rail_line_names.json', {})
+        self.config['railWayNames'] = read_json(path / 'rail_way_names.json', {})
+        self.config['railLinePresentation'] = rail_line_presentation(self.rail_operations.line_library())
+        self.config['metroDisplayOverrides'] = {
+            **self.metro_line_overrides.values, **self.metro_station_overrides.values,
+            **self.rail_catalog_widget.overrides}
+        self.map.call('reloadRailViewport')
+        self.map.call('reloadMetroViewport')
+        self.map.call('reloadRoadViewport')
+        self.rail_operations.push_corridors()
+        if self.rail_operations.rail_payload:
+            self.rail_operations.domain_repo, self.rail_operations.domain_bindings = self.rail_operations.canonical_repository(
+                self.rail_operations.workspace_identity_path)
+        selected = getattr(self, 'selected_data', {})
+        if selected:
+            apply_names({'features': [selected]}, self.config['railDisplayOverrides'],
+                        self.config['railLineNames'], self.config['railWayNames'])
+            apply_rail_presentation({'features': [selected]}, self.config['railLinePresentation'],
+                                    self.config['railDisplayOverrides'])
+
+    def refresh_catalog_presentation(self, change=None):
+        """Refresh map labels after an override edit without rebuilding line topology."""
+        change = change or self.rail_catalog_widget.workspace.last_change or {}
+        overrides = self.rail_catalog_widget.overrides
+        self.refresh_entity_changes({key: overrides.get(key, {}) for key in change.get('ids', ())})
+
+    def refresh_entity_changes(self, changes):
+        """Only touched owners enter the map bridge; notes have no map work."""
+        from entity_refresh import needs_map, NAME_FIELDS
+        overrides = self.rail_catalog_widget.overrides
+        live = self.config.setdefault('railDisplayOverrides', {})
+        for key in changes:
+            if key in overrides:
+                live[key] = overrides[key]
+            else:
+                live.pop(key, None)
+        operations = self.rail_operations
+        if hasattr(operations, 'patch_catalog_metadata'):
+            operations.patch_catalog_metadata(overrides, changes)
+        else:
+            RailEditor.patch_catalog_metadata(operations, overrides, changes)
+        map_changes = {key: overrides.get(key) for key, delta in changes.items() if needs_map(delta)}
+        if map_changes:
+            self.map.call('patchRailEntities', map_changes)
+        selected = getattr(self, 'selected_data', {})
+        from display_names import presentation_keys
+        if selected and set(presentation_keys(selected.get('properties', {}))) & changes.keys():
+            restore_presentation(selected.get('properties', {}))
+            apply_names({'features': [selected]}, live,
+                        self.config.get('railLineNames', {}), self.config.get('railWayNames', {}))
+            apply_rail_presentation({'features': [selected]}, self.config.get('railLinePresentation', {}), live)
+            self.display_feature(selected)
+        if any(NAME_FIELDS & delta.keys() for delta in changes.values()) and getattr(operations, 'rail_payload', None):
+            operations.refresh_station_names()
+
+    def refresh_directory_overrides(self, change=None):
+        """A directory move has no effect on topology, labels or simulation."""
+        change = change or self.rail_catalog_widget.workspace.last_change or {}
+        overrides = self.rail_catalog_widget.overrides
+        live = self.config.setdefault('railDisplayOverrides', {})
+        for key in change.get('ids', ()):
+            if key in overrides:
+                live[key] = overrides[key]
+            else:
+                live.pop(key, None)
+        self.rail_operations.retain_line_library_for_directory_move()
+
+    def refresh_semantic_changes(self, change):
+        ids = change.get('ids', ())
+        overrides = self.rail_catalog_widget.overrides
+        deltas = {key: overrides.get(key, {}).get('attributes', overrides.get(key, {})) for key in ids}
+        self.refresh_entity_changes(deltas)
+
+    def refresh_topology_changes(self, change):
+        self.rail_operations.invalidate_line_library()
+        self.refresh_directory_overrides(change)
+        self.config['railLinePresentation'] = rail_line_presentation(self.rail_operations.line_library())
+        self.map.call('reloadRailViewport')
+        self.refresh_signal_boxes()
+        if self.rail_operations.rail_payload:
+            self.rail_operations.push_corridors()
+            self.rail_operations.domain_repo, self.rail_operations.domain_bindings = self.rail_operations.canonical_repository(
+                self.rail_operations.workspace_identity_path)
 
     def refresh_switch_names(self):
         self.config["railSwitchNames"] = {
@@ -3006,7 +3375,8 @@ class Desk(QMainWindow):
             for key, value in self.rail_catalog_widget.overrides.items()
             if key.startswith("switch:node/") and value.get("display_name")
         }
-        self.refresh_rail_display_names()
+        self.map.call("reloadRailViewport")
+        self.config['railDisplayOverrides'] = dict(self.rail_catalog_widget.overrides)
         selected = getattr(self, "selected_data", {})
         if (hasattr(self, "properties") and selected.get("properties", {}).get("kind") == "switch"):
             self.display_feature(selected)
@@ -3028,10 +3398,10 @@ class Desk(QMainWindow):
                 if layer != "rail-plan-path"
                 else ""
             )
-            self.open_sidebar(2)
+            self.open_rail_operations()
             self.corridor_panel.focus_item(props["corridor_id"], train_id)
             self.rail_operations.show_corridor(props["corridor_id"], train_id)
-        elif layer in ("rail", "rail-stripes", "rail-construction") and props.get(
+        elif layer in ("rail", "rail-stripes", "rail-construction", "rail-line-labels") and props.get(
             "osm_way_id"
         ) is not None:
             self.open_sidebar(0)
@@ -3039,28 +3409,13 @@ class Desk(QMainWindow):
                 props["osm_way_id"],
                 section_id=props.get("section_id"),
                 group_id=props.get("catalog_group_id"),
+                network_edge_id=props.get('network_edge_id'),
             )
-        elif layer in ("rail-points", "rail-detail-points") and props.get(
-            "osm_node_id"
-        ) is not None:
-            if props.get("kind") != "switch":
+        elif layer in RAIL_STATION_LAYERS:
+            record = self._rail_station_record_for_feature(feature)
+            if record:
                 self.open_sidebar(0)
-                self.rail_catalog_widget.select_station(props["osm_node_id"])
-        elif layer in ("rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol"):
-            self.open_sidebar(0)
-            self.rail_catalog_widget.select_station_record(
-                str(props.get("infrastructure_id", ""))
-            )
-        elif layer in ("rail-platform-fill", "rail-platform-outline", "rail-station-fill", "rail-station-outline"):
-            associated = props.get("associated_station_ids") or []
-            if isinstance(associated, str):
-                try:
-                    associated = json.loads(associated)
-                except ValueError:
-                    associated = []
-            if len(associated) == 1:
-                self.open_sidebar(0)
-                self.rail_catalog_widget.select_station(associated[0])
+                self.rail_catalog_widget.select_station_record(record["id"])
         else:
             relation_ids = props.get("route_relation_ids", [])
             if isinstance(relation_ids, str):
@@ -3084,7 +3439,22 @@ class Desk(QMainWindow):
     def display_feature(self, data):
         feature = json.loads(data) if isinstance(data, str) else data
         from china_emu import without_previous_reference
-        props = without_previous_reference(feature.get("properties", {}))
+        feature = {**feature, 'properties': without_previous_reference(feature.get('properties', {}))}
+        config = getattr(self, 'config', {})
+        apply_rail_presentation({'features': [feature]}, config.get('railLinePresentation', {}),
+                                config.get('railDisplayOverrides'))
+        apply_names({'features': [feature]}, config.get('railDisplayOverrides'),
+                    config.get('railLineNames'), config.get('railWayNames'))
+        props = dict(feature.get("properties", {}))
+        if props.get('service_id') and hasattr(self, 'road_catalog_widget'):
+            from road_services import service_repository
+            repo = service_repository(self.road_catalog_widget.database, config.get('railDisplayOverrides'), [props['service_id']])
+            entity = repo.service_areas.get(props['service_id'])
+            if entity:
+                props.update(entity.attributes)
+                props.update(display_name=entity.name, entity_id=entity.id,
+                             source_member_ids=list(entity.source_member_ids),
+                             representations=sorted({g.geometry_type for g in repo.service_area_geometries.values()}))
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             props["display_name"] = self.rail_catalog_widget.switch_name(props["osm_node_id"])
         if props.get("corridor_id"):
@@ -3130,38 +3500,38 @@ class Desk(QMainWindow):
                     props, "metro", custom.get("technical_attributes", {})
                 )
             )
-        for key, value in props.items():
-            if isinstance(value, str) and value[:1] in ("{", "["):
-                try:
-                    props[key] = json.loads(value)
-                except ValueError:
-                    pass
         rail_group = props.get("catalog_group_id")
         if rail_group in self.rail_catalog_widget.catalog:
             catalog_meta = self.rail_catalog_widget.meta(rail_group)
-            props["display_name"] = self.rail_catalog_widget.display_name(rail_group)
-            props["track_type"] = catalog_meta.get(
+            object_edit = self.rail_catalog_widget.overrides.get(object_key(props), {})
+            props["display_name"] = (props.get('display_name') if yard_track_key(props) and props.get('display_name')
+                                     else self.rail_catalog_widget.display_name(rail_group))
+            props["track_type"] = object_edit.get("track_type") or catalog_meta.get(
                 "track_type", props.get("track_type", "未确认类型")
             )
-            props["folder_path"] = list(self.rail_catalog_widget.parents(rail_group))
+            props["folder_path"] = list(self.rail_catalog_widget.effective_directory_path(rail_group))
             if catalog_meta.get("external_reference"):
                 props["external_reference"] = catalog_meta["external_reference"]
             props.update(
                 source_line_attributes(
                     props,
                     "rail",
-                    catalog_meta.get("technical_attributes", {}),
+                    object_edit.get("technical_attributes", catalog_meta.get("technical_attributes", {})),
                 )
             )
+            from rail_semantics import semantic_record
+            from rail_style_resolver import (line_selection, GROUP_LABELS, CATEGORY_LABELS,
+                                            TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS)
+            facts = {**props, **catalog_meta}
+            facts.update(semantic_record(facts, {} if catalog_meta.get('assembly_id') else object_edit))
+            group, category, function, band = line_selection(facts)
+            props['line_kind_label'] = GROUP_LABELS[group]
+            props['railway_category_label'] = CATEGORY_LABELS[category]
+            props['line_function_label'] = (TRACK_LINE_LABELS if group=='track' else STATION_LINE_LABELS).get(function, '线路功能待核实')
+            if band: props['speed_band_label'] = SPEED_BANDS[band]
         merged_groups = props.get("merged_catalog_ids", [])
-        if feature.get("layer") in ("rail", "rail-stripes", "rail-construction"):
-            keys = [key for key in [rail_group, *merged_groups] if key in self.rail_catalog_widget.catalog]
-            if keys:
-                props.update(self.rail_catalog_widget.line_relationships(keys))
-            elif props.get("line_id"):
-                library = self.rail_operations.line_library()
-                if hasattr(library, "line_stations") and props["line_id"] in library.lines:
-                    props["station_names"] = [name for _, name in library.line_stations(props["line_id"])]
+        # National line relationships can traverse thousands of topology nodes.
+        # The editor loads them when needed; map selection must remain immediate.
         if merged_groups:
             first = next(
                 (
@@ -3178,46 +3548,18 @@ class Desk(QMainWindow):
                     first.get("technical_attributes", {}),
                 )
             )
-        rail_station_layers = (
-            "rail-points", "rail-detail-points", "rail-platform-fill",
-            "rail-platform-outline", "rail-station-fill", "rail-station-outline",
-            "rail-signal-box-fill", "rail-signal-box-outline", "rail-signal-box-symbol",
-        )
-        if feature.get("layer") in rail_station_layers:
-            if "osm_node_id" not in props:
-                associated = props.get("associated_station_ids") or []
-                if isinstance(associated, str):
-                    try:
-                        associated = json.loads(associated)
-                    except ValueError:
-                        associated = []
-                if len(associated) == 1:
-                    props["osm_node_id"] = associated[0]
-            props.setdefault(
-                "station_type",
-                station_type(props.get("node_tags", {}), props.get("kind", "")),
-            )
-            osm_node_id = props.get("osm_node_id")
-            station_id = str(props.get("infrastructure_id") or "")
-            if station_id not in self.rail_catalog_widget.station_record_by_id:
-                station_id = f"node/{osm_node_id}"
-            record = self.rail_catalog_widget.station_record_by_id.get(station_id)
-            if record:
-                station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
-                folder = station_directory_path(record, station_custom)
-                props["display_name"] = record["name"]
-                props["province"] = folder[0] if folder else ""
-                props["city"] = folder[1] if len(folder) > 1 else ""
-                props["folder_path"] = list(folder)
-                props["station_type"] = record["station_type"]
-                connected = self.rail_operations.line_library().connected_lines('station:' + record['id'], limit=10000)
-                props["line_ids"] = [line['id'] for line in connected]
-                props["line_names"] = [line['name'] for line in connected]
-                props["station_overview"] = station_overview(
-                    props,
-                    record,
-                    station_custom,
-                )
+        record = self._rail_station_record_for_feature(feature)
+        if record:
+            station_custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
+            folder = station_directory_path(record, station_custom)
+            props.update(station_source_id=record["id"], station_key="station:" + record["id"],
+                         display_name=record["name"], station_type=record["station_type"],
+                         province=folder[0] if folder else "", city=folder[1] if len(folder) > 1 else "",
+                         folder_path=list(folder), line_ids=record.get("line_ids", []),
+                         line_names=record.get("line_names", []))
+            props["station_overview"] = station_overview(
+                {**record.get("properties", {}), **props}, record, station_custom)
+            props['station_type_provenance'] = record.get('station_type_provenance', {})
         feature["properties"] = props
         self.selected_data = feature
         self._last_operating_detail = None
@@ -3243,7 +3585,12 @@ class Desk(QMainWindow):
             r"\s*·\s*(?:RS|RL|IL|ST|NE|NN|SA|MS)-[A-Za-z0-9_-]+\s*$", "", title
         )
         layers = {
+            **{key: '服务区（统一实体）' for key in ('road-service-poi','road-service-labels','road-service-outline-fill','road-service-outline','road-service-buildings')},
             "rail-points": "国铁车站 / 线路所 / 道岔",
+            "rail-detail-points": "国铁控制点 / 设施点位",
+            "rail-station-labels": "国铁站场名称",
+            "rail-station-fill": "国铁真实站场区域",
+            "rail-station-outline": "国铁真实站场轮廓",
             "rail-platform-fill": "国铁真实站台面",
             "rail-platform-outline": "国铁站台轮廓",
             "rail-construction": "在建国铁轨道",
@@ -3266,6 +3613,8 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
+            'service_id': '服务区编号', 'entity_id': '实体编号', 'representations': '点位 / 边界 / 建筑',
+            'station_track_id': '股道编号（稳定 ID）', 'track_number': '股道编号', 'track_name': '股道名称',
             "corridor_id": "单向运行通道编号",
             "corridor_name": "运行通道",
             "shared_trains": "共用通道的车次",
@@ -3285,18 +3634,27 @@ class Desk(QMainWindow):
             "speed_multiplier": "演示速度",
             "color_raw": "原始颜色",
             "color_source": "颜色来源",
-            "infrastructure_id": "稳定基础设施编号",
+            "line_id": "所属线路稳定编号（上下行共用）",
+            "infrastructure_id": ("原始 OSM 要素编号" if str(props.get('infrastructure_id', '')).startswith(('way/', 'node/', 'relation/'))
+                                  else "稳定基础设施编号"),
             "station_id": "唯一车站编号",
+            "station_source_id": "站场原始来源编号",
+            "station_type_provenance": "站型识别依据（自动参考）",
             "area_id": "真实轮廓编号",
             "network_edge_id": "物理轨道段编号",
             "section_id": "端点线段编号",
             "catalog_group_id": "目录对象编号",
-            "line_id": "物理线路编号",
+            "source_line_id": "原始线路分组编号",
             "from_node": "起端点编号",
             "from_name": "起端点",
             "to_node": "终端点编号",
             "to_name": "终端点",
             "track_type": "轨道类型",
+            'line_kind_label': '线的种类',
+            'railway_category_label': '铁路类别',
+            'line_function_label': '线路功能',
+            'speed_band_label': '速度范围',
+            "display_track_type": "地图显示样式类型",
             "kind": "对象种类",
             "station_type": "车站类型",
             "line_names": "经过线路",
@@ -3322,6 +3680,8 @@ class Desk(QMainWindow):
         }
         station_detail = bool(props.get("station_overview") and props.get("folder_path"))
         for key in translated:
+            if props.get('line_kind_label') and key in ('track_type','display_track_type','design_speed_kmh','speed_band'):
+                continue
             if key in props and props[key] is not None:
                 if station_detail and key in ("province", "city"):
                     continue
@@ -3401,7 +3761,7 @@ class Desk(QMainWindow):
         self.detail_rail.setChecked(True)
 
     def edit_rail_station_metadata(self, station_id):
-        record = self.rail_catalog_widget.station_record_by_id.get(station_id)
+        record = self.rail_catalog_widget.station_record(station_id)
         if record is None:
             self.rail_catalog_widget.station_query = station_id.split("/", 1)[-1]
             self.rail_catalog_widget.populate_station_tree()
@@ -3411,11 +3771,33 @@ class Desk(QMainWindow):
             return
         props = {
             **record.get("properties", {}),
-            "osm_node_id": record["osm_node_id"],
+            "osm_node_id": record.get("osm_node_id"),
+            "infrastructure_id": record["id"],
             "display_name": record["name"],
             "station_type": record["station_type"],
         }
         self.edit_selected_metadata({"layer": "rail-points", "properties": props})
+
+    def edit_rail_line_metadata(self, group_ids):
+        group_ids = [group_ids] if isinstance(group_ids, str) else list(group_ids)
+        group_ids = [key for key in group_ids if key in self.rail_catalog_widget.catalog]
+        if not group_ids:
+            QMessageBox.information(self, "不可编辑", "线路目录中不存在该对象。")
+            return
+        props = {**self.rail_catalog_widget.meta(group_ids[0]), "catalog_group_id": group_ids[0]}
+        self.edit_line_metadata({"layer": "rail", "properties": props}, "rail", rail_groups=group_ids)
+
+    def _rail_station_record_for_feature(self, feature):
+        from rail_station_directory import RAIL_STATION_LAYERS, station_candidates
+        if feature.get("layer", "") not in RAIL_STATION_LAYERS:
+            return None
+        for candidate in station_candidates(feature.get("properties", {})):
+            record = getattr(self.rail_catalog_widget, 'station_record_by_id', {}).get(candidate)
+            if record is None:
+                record = self.rail_catalog_widget.station_record(candidate)
+            if record:
+                return record
+        return None
 
     def edit_line_metadata(self, feature, kind, relation=None, rail_groups=None):
         props = feature.get("properties", {})
@@ -3439,14 +3821,31 @@ class Desk(QMainWindow):
             if not rail_groups:
                 return
             primary = self.rail_catalog_widget.meta(rail_groups[0])
+            facility_edit = rail_groups[0] in self.rail_catalog_widget.station_track_keys()
+            selected_object = object_key(props) if props.get("network_edge_id") or props.get("section_id") else None
+            if primary.get('assembly_id'):
+                selected_object = None
+            if selected_object and not facility_edit:
+                # 线路目录中的长线路按整条业务线编辑：选中其中一个线段修改类型，
+                # 应作用到整条同名/同 line_id 线路，而不是只改选中线段。
+                line_id = self.rail_catalog_widget.catalog[rail_groups[0]].get("line_id")
+                if line_id:
+                    with sqlite3.connect(self.rail_catalog_widget.catalog.path) as db:
+                        rail_groups = sorted(
+                            row[0] for row in db.execute(
+                                "SELECT id FROM catalog WHERE line_id=?", (line_id,)))
+                    selected_object = None
+                    primary = self.rail_catalog_widget.meta(rail_groups[0])
+            object_edit = self.rail_catalog_widget.overrides.get(selected_object, {})
+            current_line_name = str(object_edit.get("line_name", props.get("line_name")) or "")
+            current_track_type = object_edit.get("track_type") or props.get("track_type") or primary.get("track_type", "未确认类型")
             current_path = list(self.rail_catalog_widget.parents(rail_groups[0]))
-            display_name = props.get("display_name") or self.rail_catalog_widget.display_name(
-                rail_groups[0]
-            )
+            display_name = (object_edit.get("display_name") or props.get("display_name") or current_line_name
+                            if selected_object else self.rail_catalog_widget.display_name(rail_groups[0]))
             attributes = source_line_attributes(
                 {**primary, **props},
                 "rail",
-                primary.get("technical_attributes", {}),
+                object_edit.get("technical_attributes", primary.get("technical_attributes", {})),
             )
             dialog = LineMetadataDialog(
                 "rail",
@@ -3454,27 +3853,68 @@ class Desk(QMainWindow):
                 current_path,
                 attributes,
                 TRACK_TYPES,
-                primary.get("track_type", "未确认类型"),
+                current_track_type,
                 self,
+                rail_semantics={**primary, **object_edit.get("rail_semantics", {})},
+                directory_view="facilities" if facility_edit else "lines",
+                line_name=current_line_name,
+                path_options=self.rail_catalog_widget.line_destination_paths(),
             )
             from rail_relationship_ui import RelationshipSelector
             from rail_relationships import line_relationships, relationship_changes
-            library = self.rail_operations.line_library()
-            line_ids = list(dict.fromkeys(library.workspace.canonical(self.rail_catalog_widget.catalog[key]['line_id'])
-                for key in rail_groups if self.rail_catalog_widget.catalog[key].get('line_id')))
+            raw_line_ids = [self.rail_catalog_widget.catalog[key].get('line_id')
+                            for key in rail_groups if self.rail_catalog_widget.catalog[key].get('line_id')]
+            library = self.rail_operations.line_library() if raw_line_ids else None
+            line_ids = list(dict.fromkeys(library.workspace.canonical(line_id) for line_id in raw_line_ids)) if library else []
+            station_track_selector = None
+            station_track_sources = {}
+            if any(key.startswith('ST-') for key in rail_groups):
+                directory_db = self.rail_catalog_widget.directory / 'rail_lines.sqlite'
+                current_source = str(primary.get('station_source') or '')
+                with sqlite3.connect(directory_db) as db:
+                    current_row = db.execute('SELECT name FROM station_directory WHERE source_id=?', (current_source,)).fetchone()
+                initial = [(current_source, current_row[0])] if current_row else []
+
+                def find_station(query):
+                    with sqlite3.connect(directory_db) as db:
+                        return db.execute('SELECT source_id,name FROM station_directory WHERE name LIKE ? ORDER BY name LIMIT 150',
+                                          ('%' + query.strip() + '%',)).fetchall()
+
+                station_track_selector = RelationshipSelector(find_station, initial, '搜索车站名称')
+                station_track_selector.layout().insertWidget(0, text_label(
+                    '选择一个车站，人工建立股道与车站的工作区关联；原始 OSM 数据不修改。', wrap=True))
+                dialog.tabs.addTab(station_track_selector, '关联车站')
             if line_ids:
-                relationships = line_relationships(library, line_ids)
-                station_selector = RelationshipSelector(
-                    lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
-                    zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
-                line_selector = RelationshipSelector(
-                    lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
-                    zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
-                dialog.tabs.addTab(station_selector, '途经站点')
-                dialog.tabs.addTab(line_selector, '联络 / 相接线路')
-                line_selector.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
-                dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
-                    station_selector.values(), line_selector.values())
+                station_host, line_host = QWidget(), QWidget()
+                for host in (station_host, line_host):
+                    QVBoxLayout(host).addWidget(text_label('打开此页后加载关联信息。', wrap=True))
+                relation_tabs = {dialog.tabs.addTab(station_host, '途经站点'),
+                                 dialog.tabs.addTab(line_host, '联络 / 相接线路')}
+                loaded = False
+                def load_relationships(index):
+                    nonlocal loaded
+                    if loaded or index not in relation_tabs:
+                        return
+                    from background_work import prepare_with_progress
+                    try:
+                        relationships = prepare_with_progress(dialog, '读取线路关联',
+                            lambda report: line_relationships(library, line_ids))
+                        station_selector = RelationshipSelector(
+                            lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
+                            zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
+                        line_selector = RelationshipSelector(
+                            lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
+                            zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
+                        for host, selector in ((station_host, station_selector), (line_host, line_selector)):
+                            host.layout().takeAt(0).widget().deleteLater()
+                            host.layout().addWidget(selector)
+                        line_host.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
+                        dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
+                            station_selector.values(), line_selector.values())
+                        loaded = True
+                    except (ValueError, OSError, sqlite3.Error) as error:
+                        QMessageBox.warning(dialog, '关联信息未载入', str(error))
+                dialog.tabs.currentChanged.connect(load_relationships)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -3505,29 +3945,95 @@ class Desk(QMainWindow):
             else:
                 relationship_updates = dialog.relationship_updates
                 changed = {}
-                if value["display_name"] != display_name:
+                if station_track_selector is not None:
+                    selected_sources = station_track_selector.values()
+                    if len(selected_sources) > 1:
+                        raise ValueError('一组站场股道只能关联一个车站')
+                    selected_source = selected_sources[0] if selected_sources else None
+                    if selected_source != (primary.get('station_source') or None):
+                        station_name = None
+                        if selected_source:
+                            with sqlite3.connect(self.rail_catalog_widget.directory / 'rail_lines.sqlite') as db:
+                                row = db.execute('SELECT name FROM station_directory WHERE source_id=?', (selected_source,)).fetchone()
+                            if row is None:
+                                raise ValueError('所选车站已不在当前铁路快照中')
+                            station_name = row[0]
+                            from railscope.identity import IdentityRegistry
+                            station_identity = IdentityRegistry(self.rail_operations.workspace_identity_path).resolve_alias(
+                                'station', 'osm/' + selected_source, 'ST')
+                        else:
+                            station_identity = None
+                        station_track_sources = {'station_source': selected_source,
+                                                 'station_id': station_identity,
+                                                 'station_name': station_name,
+                                                 'station_assignment_status': 'manual',
+                                                 'source': 'manual',
+                                                 'verification_status': 'user_verified'}
+                if not selected_object and value["display_name"] != display_name:
                     changed["display_name"] = value["display_name"]
                 if value["folder_path"] != list(current_path):
                     changed["folder_path"] = value["folder_path"]
-                if value["track_type"] != primary.get("track_type", "未确认类型"):
-                    changed["track_type"] = value["track_type"]
-                if value["technical_attributes"] != attributes:
+                if value["directory_view"] != ("facilities" if facility_edit else "lines"):
+                    changed["directory_view"] = value["directory_view"]
+                from rail_style_resolver import line_selection
+                if value['line_kind'] != line_selection(primary)[0]:
+                    changed['line_kind'] = value['line_kind']
+                if not selected_object and value["technical_attributes"] != attributes:
                     changed["technical_attributes"] = value["technical_attributes"]
+                if not selected_object and value["track_type"] != current_track_type:
+                    changed["track_type"] = value["track_type"]
+                if not selected_object and value["line_name"] != (current_line_name or display_name):
+                    changed["line_name"] = value["line_name"]
+                if value.get('rail_semantics'):
+                    from railscope.rail_semantics import validate_semantic_fields
+                    semantic_override = {**primary.get('rail_semantics', {}), **value['rail_semantics'],
+                        'verification_status': 'user_verified', 'source': 'workspace_override'}
+                    validate_semantic_fields(semantic_override)
+                    if selected_object:
+                        object_semantics = semantic_override
+                    else:
+                        changed['rail_semantics'] = semantic_override
                 changes = {
-                    key: dict(changed)
+                    key: {**changed, **(station_track_sources if key.startswith('ST-') else {})}
                     for key in rail_groups
                 }
+                object_changes = {}
+                if selected_object:
+                    object_values = {}
+                    if value["display_name"] != display_name:
+                        object_values["display_name"] = value["display_name"]
+                    if value["line_name"] != current_line_name:
+                        object_values["line_name"] = value["line_name"]
+                    if value["track_type"] != current_track_type:
+                        object_values["track_type"] = value["track_type"]
+                    if value["technical_attributes"] != attributes:
+                        object_values["technical_attributes"] = value["technical_attributes"]
+                    if value.get('rail_semantics'):
+                        object_values['rail_semantics'] = object_semantics
+                    if object_values:
+                        object_changes[selected_object] = {
+                            **object_values, "source": "manual",
+                            "verification_status": "user_verified"}
+                line_semantics_changes = {}
+                if value.get('rail_semantics') and not selected_object:
+                    for key in rail_groups:
+                        line_id = self.rail_catalog_widget.catalog[key].get('line_id')
+                        if line_id:
+                            line_semantics_changes[line_id] = {'rail_semantics': changed['rail_semantics']}
                 if relationship_updates:
                     for key, values in changes.items():
                         relationship_updates.setdefault(key, {}).update(values)
-                    self.rail_catalog_widget._save_local_overrides(relationship_updates)
+                    self.rail_catalog_widget._save_local_overrides({**relationship_updates, **line_semantics_changes,
+                                                                    **object_changes})
                     self.rail_catalog_widget.metadata_changed.emit()
                     self.rail_catalog_widget._refresh_station_items({key.removeprefix('station:') for key in relationship_updates if key.startswith('station:')})
                     self.rail_catalog_widget.populate()
                     self.rail_catalog_widget.send_visibility(False)
-                elif changed:
-                    self.rail_catalog_widget.save_overrides(changes)
-                if "display_name" in changed:
+                elif changed or station_track_sources or object_changes:
+                    if line_semantics_changes:
+                        self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
+                    self.rail_catalog_widget.save_overrides(changes, object_changes)
+                if "display_name" in changed and not facility_edit:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
                             "display_name"
@@ -3538,8 +4044,10 @@ class Desk(QMainWindow):
                     if line_names:
                         self.rail_catalog_widget.line_names_changed.emit(line_names)
             self.load_status.setText("  线路概览已保存到工作区；原始 OSM 数据未修改")
+            if kind == "metro":
+                self.refresh_map_names()
             self.display_feature(feature)
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, sqlite3.Error) as error:
             QMessageBox.warning(self, "线路信息未保存", str(error))
 
     def edit_selected_metadata(self, feature=None):
@@ -3550,19 +4058,39 @@ class Desk(QMainWindow):
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout
 
         props = feature.get("properties", {})
+        if props.get("service_id"):
+            self.edit_service_area(feature)
+            return
+        # Station-yard numbering needs a station relationship, but editing a
+        # physical track's own attributes does not.
         if props.get("kind") == "switch" and props.get("osm_node_id") is not None:
             self.rail_catalog_widget.rename_switch(props["osm_node_id"])
             self.display_feature(feature)
             return
         layer = feature.get("layer", "")
+        from rail_station_directory import RAIL_STATION_LAYERS
+        rail_station_layers = RAIL_STATION_LAYERS
+        rail_station_record = self._rail_station_record_for_feature(feature) if layer in rail_station_layers else None
+        if layer in rail_station_layers and not rail_station_record:
+            QMessageBox.information(self, "不可编辑", "此地图要素尚未关联到唯一车站，请先在车站目录核对归属。")
+            return
+        if rail_station_record:
+            props = {
+                **rail_station_record.get("properties", {}), **props,
+                "infrastructure_id": rail_station_record["id"],
+                "osm_node_id": rail_station_record.get("osm_node_id"),
+                "display_name": rail_station_record["name"],
+                "station_type": rail_station_record["station_type"],
+            }
+            feature = {**feature, "properties": props}
         relation = props.get("route_relation_id", props.get("osm_relation_id"))
-        if relation in self.route_lookup and layer == "metro":
+        if not rail_station_record and relation in self.route_lookup and layer == "metro":
             self.edit_line_metadata(feature, "metro", relation=relation)
             return
         merged_groups = props.get("merged_catalog_ids", [])
         rail_group = props.get("catalog_group_id")
         rail_groups = merged_groups or ([rail_group] if rail_group else [])
-        if rail_groups and layer in ("rail", "rail-stripes", "rail-construction"):
+        if not rail_station_record and rail_groups and layer in ("rail", "rail-stripes", "rail-construction", "rail-line-labels"):
             self.edit_line_metadata(feature, "rail", rail_groups=rail_groups)
             return
         dialog = QDialog(self)
@@ -3573,7 +4101,17 @@ class Desk(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(fields)
-        dialog_layout.addWidget(scroll)
+        station_tabs = QTabWidget() if rail_station_record else None
+        if station_tabs:
+            station_tabs.addTab(scroll, "车站信息")
+            raw_source = QPlainTextEdit()
+            raw_source.setReadOnly(True)
+            raw_source.setPlainText(json.dumps(rail_station_record.get("properties", {}),
+                                               ensure_ascii=False, indent=2))
+            station_tabs.addTab(raw_source, "原始属性 JSON")
+            dialog_layout.addWidget(station_tabs)
+        else:
+            dialog_layout.addWidget(scroll)
         name = QLineEdit(
             str(props.get("display_name") or props.get("source_name") or props.get("name") or "")
         )
@@ -3602,7 +4140,34 @@ class Desk(QMainWindow):
             and props.get("infrastructure_id")
             else None
         )
-        if relation in self.route_lookup:
+        if rail_station_record:
+            record = rail_station_record
+            custom = self.rail_catalog_widget.overrides.get("station:" + record["id"], {})
+            directory = station_directory_path(record, custom)
+            province.setText(directory[0] if directory else "")
+            city.setText(directory[1] if len(directory) > 1 else "")
+            folder.setText(directory[2] if len(directory) > 2 else "")
+            station_kind.setCurrentText(record["station_type"])
+            form.addRow("车站类型", station_kind)
+            connection_selector = StationConnectionSelector(
+                self.rail_operations.line_library(), "station:" + record["id"])
+            form.addRow("经过线路（接轨关系）", connection_selector)
+            overview = station_overview(props, record, custom)
+            for key, label in STATION_OVERVIEW_FIELDS:
+                if key == "region":
+                    continue
+                control = QLineEdit(overview.get(key, ""))
+                form.addRow(label, control)
+                station_overview_controls[key] = control
+            station_custom = QPlainTextEdit()
+            station_custom.setPlaceholderText("每行填写：属性名=属性值；原始属性保留在右侧 JSON 页")
+            station_custom.setPlainText("\n".join(
+                f"{key}={value}" for key, value in custom.get("custom_attributes", {}).items()))
+            station_custom.setMaximumHeight(110)
+            form.addRow("补充属性", station_custom)
+            dialog.setWindowTitle("编辑国铁车站信息 · 工作区覆盖")
+            dialog.resize(800, 750)
+        elif relation in self.route_lookup:
             current = self.hierarchy.parent(self.route_lookup[relation])
             province.setText(current[0])
             city.setText(current[1])
@@ -3623,18 +4188,42 @@ class Desk(QMainWindow):
                     city.setText(current[1])
                     folder.setText(current[2])
         elif rail_group in self.rail_catalog_widget.catalog:
-            current = self.rail_catalog_widget.parents(rail_group)
+            facility = rail_group in self.rail_catalog_widget.station_track_keys()
+            selected_key = object_key(props) if props.get('network_edge_id') else None
+            owned_path = self.rail_catalog_widget.effective_directory_path(selected_key) if selected_key else ()
+            owned = bool(owned_path and owned_path[0]=='车站目录')
+            facility = facility or owned
+            current = owned_path if owned else self.rail_catalog_widget.effective_directory_path(rail_group)
             province.setText(current[0] if current else "全国铁路线")
             city.setText(current[1] if len(current) > 1 else "")
-            folder.setText(current[2] if len(current) > 2 else "")
-            rail_track_type = QComboBox()
-            rail_track_type.addItems(TRACK_TYPES)
-            rail_track_type.setCurrentText(
-                self.rail_catalog_widget.meta(rail_group).get(
-                    "track_type", "未确认类型"
-                )
-            )
-            form.addRow("轨道类型", rail_track_type)
+            folder.setText(" / ".join(current[2:]) if facility else
+                           current[2] if len(current) > 2 else "")
+            if facility:
+                for control in (province, city, folder):
+                    control.setReadOnly(True)
+            from railscope.rail_semantics import RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES
+            from rail_style_resolver import CLASS_LABELS, LINE_ROLE_LABELS, ROLE_LABELS
+            current_facts = self.rail_catalog_widget.meta(rail_group)
+            if owned:
+                current_facts={**current_facts,**{key:props[key] for key in ('railway_class','line_role','track_role') if key in props},
+                               **self.rail_catalog_widget.overrides.get(selected_key,{}).get('rail_semantics',{})}
+            rail_semantic_controls = {}
+            for key, title, labels, allowed in (
+                ('railway_class', '铁路类别', CLASS_LABELS, RAILWAY_CLASSES),
+                ('line_role', '线路网络角色', LINE_ROLE_LABELS, LINE_ROLES),
+                ('track_role', '此物理轨道用途', ROLE_LABELS, TRACK_ROLES),
+            ):
+                if facility and key != 'track_role':
+                    continue
+                if key == 'track_role' and not props.get('network_edge_id'):
+                    continue
+                control = QComboBox()
+                for semantic_id, label in labels.items():
+                    if semantic_id in allowed:
+                        control.addItem(label, semantic_id)
+                control.setCurrentIndex(max(0, control.findData(props.get(key, current_facts.get(key, 'unknown')))))
+                form.addRow(title, control)
+                rail_semantic_controls[key] = control
         elif rail_node is not None or rail_station_id is not None:
             if rail_node is not None:
                 self.rail_catalog_widget.select_station(rail_node)
@@ -3689,7 +4278,25 @@ class Desk(QMainWindow):
 
         def save():
             try:
-                if relation in self.route_lookup:
+                if rail_station_record:
+                    connections = connection_selector.connections()
+                    custom_attributes = {}
+                    for line in station_custom.toPlainText().splitlines():
+                        if not line.strip():
+                            continue
+                        separator = "=" if "=" in line else "：" if "：" in line else None
+                        if not separator:
+                            raise ValueError("自定义属性每行应为“属性名=属性值”")
+                        key, value = line.split(separator, 1)
+                        custom_attributes[key.strip()] = value.strip()
+                    self.rail_catalog_widget.save_station_override(
+                        record["id"], name.text(),
+                        [value.strip() for value in (province.text(), city.text(), folder.text()) if value.strip()],
+                        station_kind.currentText(), connections,
+                        {key: control.text() for key, control in station_overview_controls.items()},
+                        custom_attributes,
+                    )
+                elif relation in self.route_lookup:
                     self.hierarchy.set_parent({int(relation)}, province.text(), city.text(), folder.text())
                     self.hierarchy.save()
                     self.refresh_hierarchy({int(relation)})
@@ -3705,23 +4312,38 @@ class Desk(QMainWindow):
                     )
                     self.metro_station_model.refresh_affected(affected)
                     self._refresh_metro_station_paths()
+                elif rail_group in self.rail_catalog_widget.catalog and owned:
+                    display_name=name.text().strip()
+                    semantics={key:control.currentData() for key,control in rail_semantic_controls.items()
+                               if control.currentData()!=current_facts.get(key,'unknown')}
+                    self.rail_catalog_widget.save_facility_track_metadata(selected_key,display_name,semantics)
                 elif rail_group in self.rail_catalog_widget.catalog:
                     path = [value for value in (province.text(), city.text(), folder.text()) if value.strip()]
                     display_name = name.text().strip()
                     if not display_name:
                         raise ValueError("名称不能为空")
-                    self.rail_catalog_widget.save_overrides(
-                        {
-                            rail_group: {
-                                "display_name": display_name,
-                                "folder_path": path,
-                                "track_type": rail_track_type.currentText(),
-                            }
-                        }
-                    )
+                    semantic_change = {key: control.currentData() for key, control in rail_semantic_controls.items()
+                        if control.currentData() != current_facts.get(key, 'unknown')}
+                    current_override = self.rail_catalog_widget.overrides.get(rail_group, {}).get('rail_semantics', {})
+                    group_facts = {key: value for key, value in semantic_change.items() if key != 'track_role'}
+                    changes = {rail_group: {'display_name': display_name}}
+                    if rail_group not in self.rail_catalog_widget.station_track_keys():
+                        changes[rail_group]['folder_path'] = path
+                    if group_facts:
+                        changes[rail_group]['rail_semantics'] = {**current_override, **group_facts,
+                            'verification_status': 'user_verified', 'source': 'workspace_override'}
+                    self.rail_catalog_widget.save_overrides(changes)
                     line_id = self.rail_catalog_widget.catalog[rail_group].get("line_id")
                     if line_id:
                         self.rail_operations.save_line_names({line_id: display_name})
+                        if group_facts:
+                            self.rail_catalog_widget._save_local_overrides({line_id: {
+                                'rail_semantics': changes[rail_group]['rail_semantics']}})
+                    if 'track_role' in semantic_change and props.get('network_edge_id'):
+                        self.rail_catalog_widget._save_local_overrides({
+                            'object:network_edge_id:' + str(props['network_edge_id']): {
+                                'rail_semantics': {'track_role': semantic_change['track_role'],
+                                    'verification_status': 'user_verified', 'source': 'workspace_override'}}})
                 elif (rail_node is not None or rail_station_id is not None) and record:
                     connections = connection_selector.connections()
                     custom_attributes = {}
@@ -3751,34 +4373,19 @@ class Desk(QMainWindow):
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")
+                if not (rail_station_record or rail_group in self.rail_catalog_widget.catalog
+                        or ((rail_node is not None or rail_station_id is not None) and record)):
+                    self.refresh_map_names()
                 self.display_feature(feature)
-            except (ValueError, OSError) as error:
+            except (ValueError, OSError, sqlite3.Error) as error:
                 QMessageBox.warning(dialog, "目录修改未保存", str(error))
 
         buttons.accepted.connect(save)
         dialog.exec()
 
     def set_property_rows(self, rows):
-        self.properties.setRowCount(len(rows))
-        for row, (key, value) in enumerate(rows):
-            self.properties.removeCellWidget(row, 1)
-            left = QTableWidgetItem(key)
-            left.setForeground(QColor("#536875"))
-            self.properties.setItem(row, 0, left)
-            right = QTableWidgetItem(value)
-            right.setToolTip(value)
-            self.properties.setItem(row, 1, right)
-            if "\n" in value:
-                # The transparent editor used to paint over the item's own
-                # multiline text, producing two overlapping copies.
-                right.setText('')
-                text = QPlainTextEdit(value)
-                text.setReadOnly(True)
-                text.setStyleSheet("QPlainTextEdit { border: 0; background: transparent; }")
-                self.properties.setCellWidget(row, 1, text)
-                self.properties.setRowHeight(row, min(240, max(90, 24 * (value.count("\n") + 1) + 16)))
-            else:
-                self.properties.setRowHeight(row, 37)
+        self.properties.set_rows(rows)
+        if hasattr(self,'detail_views'):self.workbench.refresh_details(rows)
 
     def _show_demo_details(self):
         if self.demo_error:
@@ -3841,13 +4448,9 @@ class Desk(QMainWindow):
             if signature == getattr(self, "_last_operating_detail", None):
                 return
             self._last_operating_detail = signature
-            for row in range(self.properties.rowCount()):
-                title = self.properties.item(row, 0).text()
-                if title == "已行驶里程（千米）":
-                    self.properties.item(row, 1).setText(str(properties["distance_km"]))
-                if title == "运行状态":
-                    self.properties.item(row, 1).setText(properties["state"])
-            if self.detail_tabs.currentIndex() == 1:
+            self.properties.update_value("已行驶里程（千米）", properties["distance_km"])
+            self.properties.update_value("运行状态", properties["state"])
+            if self.detail_tabs.currentIndex() == self.detail_tabs.indexOf(self.raw):
                 raw = json.dumps(self.selected_data, ensure_ascii=False, indent=2)
                 if self.raw.toPlainText() != raw:
                     self.raw.setPlainText(raw)
@@ -3965,6 +4568,27 @@ class Desk(QMainWindow):
             self.load_status.setText("  已清除目录筛选")
             return
         kind = self.search_type.currentText()
+        if kind == "服务区":
+            self.open_sidebar(0)
+            self.road_catalog_widget.tabs.setCurrentIndex(1)
+            self.road_catalog_widget.search.setText(query)
+            return
+        if kind in ("全部", "站场股道"):
+            hits = [(key, value) for key, value in self.rail_catalog_widget.overrides.items()
+                    if value.get('station_track_id') and value.get('bounds')
+                    and query.casefold() in (' '.join(str(value.get(k, '')) for k in ('station_name', 'display_name', 'track_number', 'station_track_id'))).casefold()]
+            hits = list({value['station_track_id']: (key, value) for key, value in hits}.values())
+            if hits:
+                labels = [f"{v['display_name']} · {v['station_track_id']}" for _, v in hits]
+                label, ok = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(self, '选择股道', '匹配到的股道', labels, editable=False)
+                if ok:
+                    value = hits[labels.index(label)][1]
+                    self.map.call('fit', value['bounds'], value['display_name'])
+                    self.display_feature({'layer': 'rail', 'properties': value})
+                return
+            if kind == '站场股道':
+                self.edit_station_tracks()
+                return
         for city, province, lon, lat in REGIONS if kind in ("全部", "城市") else []:
             if query in (city, city + "市"):
                 self.map.call("focus", lon, lat, 11, city + " · 轨道交通")
@@ -4177,7 +4801,7 @@ def main():
                 checks = {
                     "single_workspace": not hasattr(window, "pages"),
                     "sidebar_reopen": False,
-                    "switch_has_thumb": isinstance(window.switches["metro"], Switch),
+                    "visibility_square_left": isinstance(window.switches["metro"], SquareSwitch),
                     "continuous_demo_km": round(window.demo["length_m"] / 1000, 2),
                     "startup_simulation_disabled": not window.operations.enabled
                     and not window.operations.playing
@@ -4289,7 +4913,7 @@ def main():
                             window.rail_catalog_widget.mode.currentText()
                             == "全国铁路业务分类 → 整条线路"
                         )
-                        window.open_sidebar(2)
+                        window.open_rail_operations()
                         app.processEvents()
                         checks["corridor_navigation_replaces_location"] = (
                             window.side_pages.currentIndex() == 1

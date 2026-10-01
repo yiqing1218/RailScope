@@ -1,0 +1,2138 @@
+{
+  "source_ref": "347cef1c5cc08b7e3852a3e3d18bcca98380d09e",
+  "boundary": "Current production Qt slots/SQLite, instrumented wall time; MapStub excludes browser paint. Timed slots use no active TrainRun and record push_corridors; installed active-plan integrity is verified separately. Synthetic notes are injected before timing.",
+  "synthetic": {
+    "directory_scaling": [
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 0,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 18.796,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                6.421
+              ],
+              "_save_local_overrides": [
+                7.41
+              ],
+              "update_catalog_directory": [
+                7.683
+              ],
+              "refresh_affected": [
+                0.594,
+                0.003
+              ],
+              "_update_paged_directory": [
+                10.071
+              ],
+              "save_overrides": [
+                18.739
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 250.578,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                9.845
+              ],
+              "_save_local_overrides": [
+                12.181
+              ],
+              "update_catalog_directory": [
+                82.212
+              ],
+              "refresh_affected": [
+                1.095,
+                0.004
+              ],
+              "_update_paged_directory": [
+                151.889
+              ],
+              "save_overrides": [
+                249.398
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 184.036,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.655
+              ],
+              "update_catalog_directory": [
+                107.62
+              ],
+              "refresh_affected": [
+                0.731,
+                0.004
+              ],
+              "_update_paged_directory": [
+                173.342
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 166.981,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.29
+              ],
+              "update_catalog_directory": [
+                85.698
+              ],
+              "refresh_affected": [
+                0.66,
+                0.004
+              ],
+              "_update_paged_directory": [
+                156.805
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 7000,
+        "unrelated_override_count": 0,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 21.245,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                6.574
+              ],
+              "_save_local_overrides": [
+                7.587
+              ],
+              "update_catalog_directory": [
+                9.625
+              ],
+              "refresh_affected": [
+                0.741,
+                0.003
+              ],
+              "_update_paged_directory": [
+                12.562
+              ],
+              "save_overrides": [
+                21.174
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 261.773,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                9.31
+              ],
+              "_save_local_overrides": [
+                11.821
+              ],
+              "update_catalog_directory": [
+                102.978
+              ],
+              "refresh_affected": [
+                0.715,
+                0.003
+              ],
+              "_update_paged_directory": [
+                171.088
+              ],
+              "save_overrides": [
+                260.596
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 219.936,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.731
+              ],
+              "update_catalog_directory": [
+                135.995
+              ],
+              "refresh_affected": [
+                0.868,
+                0.004
+              ],
+              "_update_paged_directory": [
+                208.261
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 183.31,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.49
+              ],
+              "update_catalog_directory": [
+                103.076
+              ],
+              "refresh_affected": [
+                0.737,
+                0.004
+              ],
+              "_update_paged_directory": [
+                172.046
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 1000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 23.917,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                7.584
+              ],
+              "_save_local_overrides": [
+                9.637
+              ],
+              "update_catalog_directory": [
+                9.356
+              ],
+              "refresh_affected": [
+                0.753,
+                0.003
+              ],
+              "_update_paged_directory": [
+                12.826
+              ],
+              "save_overrides": [
+                23.799
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 254.298,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.945
+              ],
+              "_save_local_overrides": [
+                11.251
+              ],
+              "update_catalog_directory": [
+                82.702
+              ],
+              "refresh_affected": [
+                0.66,
+                0.004
+              ],
+              "_update_paged_directory": [
+                155.465
+              ],
+              "save_overrides": [
+                252.967
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 184.919,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.076
+              ],
+              "update_catalog_directory": [
+                108.924
+              ],
+              "refresh_affected": [
+                0.651,
+                0.004
+              ],
+              "_update_paged_directory": [
+                174.881
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 160.658,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                9.144
+              ],
+              "update_catalog_directory": [
+                80.202
+              ],
+              "refresh_affected": [
+                0.622,
+                0.005
+              ],
+              "_update_paged_directory": [
+                149.294
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 10000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 21.39,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                7.14
+              ],
+              "_save_local_overrides": [
+                8.287
+              ],
+              "update_catalog_directory": [
+                9.25
+              ],
+              "refresh_affected": [
+                0.661,
+                0.003
+              ],
+              "_update_paged_directory": [
+                12.015
+              ],
+              "save_overrides": [
+                21.308
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 245.855,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.64
+              ],
+              "_save_local_overrides": [
+                11.12
+              ],
+              "update_catalog_directory": [
+                80.013
+              ],
+              "refresh_affected": [
+                0.733,
+                0.003
+              ],
+              "_update_paged_directory": [
+                150.574
+              ],
+              "save_overrides": [
+                244.697
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 193.771,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.056
+              ],
+              "update_catalog_directory": [
+                115.049
+              ],
+              "refresh_affected": [
+                0.674,
+                0.004
+              ],
+              "_update_paged_directory": [
+                183.564
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 160.585,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.454
+              ],
+              "update_catalog_directory": [
+                80.912
+              ],
+              "refresh_affected": [
+                0.666,
+                0.004
+              ],
+              "_update_paged_directory": [
+                149.876
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      },
+      {
+        "catalog_count": 700,
+        "unrelated_override_count": 100000,
+        "operations": {
+          "one_line": {
+            "elapsed_ms": 24.111,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 1,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                7.317
+              ],
+              "_save_local_overrides": [
+                8.407
+              ],
+              "update_catalog_directory": [
+                8.515
+              ],
+              "refresh_affected": [
+                0.771,
+                0.003
+              ],
+              "_update_paged_directory": [
+                12.476
+              ],
+              "save_overrides": [
+                23.94
+              ]
+            },
+            "map_commands": {}
+          },
+          "hundred_lines": {
+            "elapsed_ms": 368.909,
+            "calls": {
+              "save_overrides": 1,
+              "_save_local_overrides": 1,
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                9.466
+              ],
+              "_save_local_overrides": [
+                12.2
+              ],
+              "update_catalog_directory": [
+                95.091
+              ],
+              "refresh_affected": [
+                1.893,
+                0.013
+              ],
+              "_update_paged_directory": [
+                188.157
+              ],
+              "save_overrides": [
+                367.108
+              ]
+            },
+            "map_commands": {}
+          },
+          "undo": {
+            "elapsed_ms": 240.532,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                12.233
+              ],
+              "update_catalog_directory": [
+                138.385
+              ],
+              "refresh_affected": [
+                0.734,
+                0.007
+              ],
+              "_update_paged_directory": [
+                224.323
+              ]
+            },
+            "map_commands": {}
+          },
+          "redo": {
+            "elapsed_ms": 211.666,
+            "calls": {
+              "_write_entries": 1,
+              "workspace_rows_written": 100,
+              "_update_paged_directory": 1,
+              "update_catalog_directory": 1,
+              "refresh_affected": 2
+            },
+            "nested_timings_ms": {
+              "_write_entries": [
+                8.873
+              ],
+              "update_catalog_directory": [
+                116.092
+              ],
+              "refresh_affected": [
+                0.825,
+                0.005
+              ],
+              "_update_paged_directory": [
+                200.844
+              ]
+            },
+            "map_commands": {}
+          }
+        }
+      }
+    ],
+    "assembly_expansion_and_persistence": [
+      {
+        "member_count": 1,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.051,
+            "sqlite_commit_ms": 9.082
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.043,
+            "sqlite_commit_ms": 7.501
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.035,
+            "sqlite_commit_ms": 7.935
+          }
+        ]
+      },
+      {
+        "member_count": 100,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.043,
+            "sqlite_commit_ms": 7.652
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.037,
+            "sqlite_commit_ms": 7.581
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.038,
+            "sqlite_commit_ms": 7.417
+          }
+        ]
+      },
+      {
+        "member_count": 1000,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.042,
+            "sqlite_commit_ms": 8.046
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.037,
+            "sqlite_commit_ms": 8.204
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.035,
+            "sqlite_commit_ms": 7.917
+          }
+        ]
+      },
+      {
+        "member_count": 10000,
+        "total_overrides": 10001,
+        "samples": [
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.057,
+            "sqlite_commit_ms": 7.506
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.036,
+            "sqlite_commit_ms": 7.531
+          },
+          {
+            "expanded_owners": 1,
+            "expansion_ms": 0.034,
+            "sqlite_commit_ms": 7.507
+          }
+        ]
+      }
+    ]
+  },
+  "national": {
+    "file_bytes": {
+      "rail.sqlite": 3163963392,
+      "rail_catalog.sqlite": 540495872,
+      "rail_lines.sqlite": 2703171584
+    },
+    "initialization_ms": 98304.415,
+    "row_counts_before_moves": {
+      "catalog": 87451,
+      "rail_directory_nodes": 31473,
+      "rail_station_nodes": 134676,
+      "rail_facility_track_owners": 32803
+    },
+    "override_count_before_moves": 243473,
+    "operations": {
+      "one_line": {
+        "elapsed_ms": 170.272,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_update_paged_directory": 1,
+          "catalog_sql_changed_rows": 25,
+          "update_catalog_directory": 1,
+          "refresh_affected": 2,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            41.3
+          ],
+          "_save_local_overrides": [
+            43.644
+          ],
+          "update_catalog_directory": [
+            93.984
+          ],
+          "refresh_affected": [
+            3.265,
+            0.056
+          ],
+          "_update_paged_directory": [
+            113.488
+          ],
+          "retain_line_library_for_directory_move": [
+            2.162
+          ],
+          "save_overrides": [
+            170.0
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_line_undo": {
+        "elapsed_ms": 56.472,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "retain_line_library_for_directory_move": 1,
+          "_update_paged_directory": 1,
+          "catalog_sql_changed_rows": 32,
+          "update_catalog_directory": 1,
+          "refresh_affected": 2
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            10.299
+          ],
+          "retain_line_library_for_directory_move": [
+            1.699
+          ],
+          "update_catalog_directory": [
+            17.462
+          ],
+          "refresh_affected": [
+            2.241,
+            0.064
+          ],
+          "_update_paged_directory": [
+            34.754
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_line_redo": {
+        "elapsed_ms": 61.6,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "retain_line_library_for_directory_move": 1,
+          "_update_paged_directory": 1,
+          "catalog_sql_changed_rows": 25,
+          "update_catalog_directory": 1,
+          "refresh_affected": 2
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            13.157
+          ],
+          "retain_line_library_for_directory_move": [
+            1.651
+          ],
+          "update_catalog_directory": [
+            15.119
+          ],
+          "refresh_affected": [
+            3.909,
+            0.055
+          ],
+          "_update_paged_directory": [
+            35.372
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_station": {
+        "elapsed_ms": 50.346,
+        "calls": {
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "catalog_sql_changed_rows": 16,
+          "refresh_affected": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            11.646
+          ],
+          "_save_local_overrides": [
+            13.033
+          ],
+          "refresh_affected": [
+            4.704
+          ],
+          "retain_line_library_for_directory_move": [
+            2.413
+          ],
+          "_refresh_station_changes": [
+            37.287
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_station_undo": {
+        "elapsed_ms": 39.175,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "catalog_sql_changed_rows": 14,
+          "refresh_affected": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            9.518
+          ],
+          "refresh_affected": [
+            2.405
+          ],
+          "retain_line_library_for_directory_move": [
+            1.732
+          ],
+          "_refresh_station_changes": [
+            27.736
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_station_redo": {
+        "elapsed_ms": 41.712,
+        "calls": {
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_refresh_station_changes": 1,
+          "catalog_sql_changed_rows": 16,
+          "refresh_affected": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            10.509
+          ],
+          "refresh_affected": [
+            3.384
+          ],
+          "retain_line_library_for_directory_move": [
+            2.504
+          ],
+          "_refresh_station_changes": [
+            29.521
+          ]
+        },
+        "map_commands": {}
+      },
+      "hundred_lines": {
+        "elapsed_ms": 1392.524,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 100,
+          "_update_paged_directory": 1,
+          "catalog_sql_changed_rows": 968,
+          "update_catalog_directory": 1,
+          "refresh_affected": 2,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            29.712
+          ],
+          "_save_local_overrides": [
+            34.707
+          ],
+          "update_catalog_directory": [
+            619.048
+          ],
+          "refresh_affected": [
+            7.669,
+            0.19
+          ],
+          "_update_paged_directory": [
+            915.352
+          ],
+          "retain_line_library_for_directory_move": [
+            1.849
+          ],
+          "save_overrides": [
+            1387.595
+          ]
+        },
+        "map_commands": {}
+      },
+      "hundred_stations": {
+        "elapsed_ms": 185.062,
+        "calls": {
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 100,
+          "_refresh_station_changes": 1,
+          "catalog_sql_changed_rows": 1068,
+          "refresh_affected": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            27.625
+          ],
+          "_save_local_overrides": [
+            32.873
+          ],
+          "refresh_affected": [
+            29.038
+          ],
+          "retain_line_library_for_directory_move": [
+            2.509
+          ],
+          "_refresh_station_changes": [
+            152.063
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_facility_folder": {
+        "elapsed_ms": 149.724,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "_update_paged_directory": 1,
+          "catalog_sql_changed_rows": 23,
+          "update_catalog_directory": 1,
+          "refresh_affected": 2,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            13.096
+          ],
+          "_save_local_overrides": [
+            15.718
+          ],
+          "update_catalog_directory": [
+            96.04
+          ],
+          "refresh_affected": [
+            0.048,
+            4.312
+          ],
+          "_update_paged_directory": [
+            118.235
+          ],
+          "retain_line_library_for_directory_move": [
+            1.844
+          ],
+          "save_overrides": [
+            148.633
+          ]
+        },
+        "map_commands": {}
+      },
+      "one_track_assignment": {
+        "elapsed_ms": 51.722,
+        "calls": {
+          "save_overrides": 1,
+          "_save_local_overrides": 1,
+          "_write_entries": 1,
+          "workspace_rows_written": 1,
+          "catalog_sql_changed_rows": 26,
+          "refresh_affected": 1,
+          "retain_line_library_for_directory_move": 1
+        },
+        "nested_timings_ms": {
+          "_write_entries": [
+            11.763
+          ],
+          "_save_local_overrides": [
+            14.873
+          ],
+          "refresh_affected": [
+            4.309
+          ],
+          "retain_line_library_for_directory_move": [
+            2.51
+          ],
+          "save_overrides": [
+            51.688
+          ]
+        },
+        "map_commands": {}
+      }
+    },
+    "repeated_operations": {
+      "one_line": [
+        {
+          "elapsed_ms": 72.125,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 23,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              15.855
+            ],
+            "_save_local_overrides": [
+              18.466
+            ],
+            "update_catalog_directory": [
+              17.79
+            ],
+            "refresh_affected": [
+              2.932,
+              0.092
+            ],
+            "_update_paged_directory": [
+              39.121
+            ],
+            "retain_line_library_for_directory_move": [
+              2.485
+            ],
+            "save_overrides": [
+              72.06
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 66.357,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 25,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.748
+            ],
+            "_save_local_overrides": [
+              13.132
+            ],
+            "update_catalog_directory": [
+              17.207
+            ],
+            "refresh_affected": [
+              2.944,
+              0.059
+            ],
+            "_update_paged_directory": [
+              38.93
+            ],
+            "retain_line_library_for_directory_move": [
+              1.817
+            ],
+            "save_overrides": [
+              66.286
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 64.111,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 25,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              11.011
+            ],
+            "_save_local_overrides": [
+              13.809
+            ],
+            "update_catalog_directory": [
+              16.012
+            ],
+            "refresh_affected": [
+              2.852,
+              0.058
+            ],
+            "_update_paged_directory": [
+              35.524
+            ],
+            "retain_line_library_for_directory_move": [
+              1.768
+            ],
+            "save_overrides": [
+              64.049
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 67.343,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 25,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.311
+            ],
+            "_save_local_overrides": [
+              12.993
+            ],
+            "update_catalog_directory": [
+              16.835
+            ],
+            "refresh_affected": [
+              2.996,
+              0.089
+            ],
+            "_update_paged_directory": [
+              40.698
+            ],
+            "retain_line_library_for_directory_move": [
+              2.359
+            ],
+            "save_overrides": [
+              67.267
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 62.438,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 25,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.531
+            ],
+            "_save_local_overrides": [
+              13.627
+            ],
+            "update_catalog_directory": [
+              16.139
+            ],
+            "refresh_affected": [
+              2.975,
+              0.056
+            ],
+            "_update_paged_directory": [
+              34.91
+            ],
+            "retain_line_library_for_directory_move": [
+              1.795
+            ],
+            "save_overrides": [
+              62.371
+            ]
+          },
+          "map_commands": {}
+        }
+      ],
+      "one_station": [
+        {
+          "elapsed_ms": 48.239,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 13,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              11.579
+            ],
+            "_save_local_overrides": [
+              14.683
+            ],
+            "refresh_affected": [
+              2.925
+            ],
+            "retain_line_library_for_directory_move": [
+              2.216
+            ],
+            "_refresh_station_changes": [
+              33.507
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 42.91,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 15,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              9.574
+            ],
+            "_save_local_overrides": [
+              11.649
+            ],
+            "refresh_affected": [
+              3.103
+            ],
+            "retain_line_library_for_directory_move": [
+              2.457
+            ],
+            "_refresh_station_changes": [
+              31.222
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 46.321,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 15,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.263
+            ],
+            "_save_local_overrides": [
+              13.518
+            ],
+            "refresh_affected": [
+              3.769
+            ],
+            "retain_line_library_for_directory_move": [
+              2.395
+            ],
+            "_refresh_station_changes": [
+              32.765
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 44.778,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 15,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.348
+            ],
+            "_save_local_overrides": [
+              13.195
+            ],
+            "refresh_affected": [
+              3.092
+            ],
+            "retain_line_library_for_directory_move": [
+              2.196
+            ],
+            "_refresh_station_changes": [
+              31.536
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 46.687,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 15,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.222
+            ],
+            "_save_local_overrides": [
+              13.476
+            ],
+            "refresh_affected": [
+              3.272
+            ],
+            "retain_line_library_for_directory_move": [
+              2.452
+            ],
+            "_refresh_station_changes": [
+              33.17
+            ]
+          },
+          "map_commands": {}
+        }
+      ],
+      "hundred_lines": [
+        {
+          "elapsed_ms": 1081.038,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 820,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              34.66
+            ],
+            "_save_local_overrides": [
+              41.111
+            ],
+            "update_catalog_directory": [
+              459.913
+            ],
+            "refresh_affected": [
+              2.669,
+              0.076
+            ],
+            "_update_paged_directory": [
+              754.479
+            ],
+            "retain_line_library_for_directory_move": [
+              2.376
+            ],
+            "save_overrides": [
+              1080.856
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 1041.281,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 829,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              25.517
+            ],
+            "_save_local_overrides": [
+              32.087
+            ],
+            "update_catalog_directory": [
+              441.179
+            ],
+            "refresh_affected": [
+              2.643,
+              0.074
+            ],
+            "_update_paged_directory": [
+              739.052
+            ],
+            "retain_line_library_for_directory_move": [
+              1.959
+            ],
+            "save_overrides": [
+              1041.101
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 1063.209,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 829,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              37.767
+            ],
+            "_save_local_overrides": [
+              42.722
+            ],
+            "update_catalog_directory": [
+              449.811
+            ],
+            "refresh_affected": [
+              2.52,
+              0.076
+            ],
+            "_update_paged_directory": [
+              750.998
+            ],
+            "retain_line_library_for_directory_move": [
+              2.082
+            ],
+            "save_overrides": [
+              1063.036
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 1084.827,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 829,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              38.202
+            ],
+            "_save_local_overrides": [
+              45.651
+            ],
+            "update_catalog_directory": [
+              448.638
+            ],
+            "refresh_affected": [
+              2.658,
+              0.075
+            ],
+            "_update_paged_directory": [
+              758.891
+            ],
+            "retain_line_library_for_directory_move": [
+              2.255
+            ],
+            "save_overrides": [
+              1084.666
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 1060.523,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 829,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              34.697
+            ],
+            "_save_local_overrides": [
+              41.467
+            ],
+            "update_catalog_directory": [
+              436.045
+            ],
+            "refresh_affected": [
+              2.446,
+              0.074
+            ],
+            "_update_paged_directory": [
+              728.651
+            ],
+            "retain_line_library_for_directory_move": [
+              1.709
+            ],
+            "save_overrides": [
+              1060.376
+            ]
+          },
+          "map_commands": {}
+        }
+      ],
+      "hundred_stations": [
+        {
+          "elapsed_ms": 146.337,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 902,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              26.202
+            ],
+            "_save_local_overrides": [
+              31.904
+            ],
+            "refresh_affected": [
+              4.024
+            ],
+            "retain_line_library_for_directory_move": [
+              2.511
+            ],
+            "_refresh_station_changes": [
+              114.288
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 270.018,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 1100,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              23.196
+            ],
+            "_save_local_overrides": [
+              28.074
+            ],
+            "refresh_affected": [
+              3.359
+            ],
+            "retain_line_library_for_directory_move": [
+              2.511
+            ],
+            "_refresh_station_changes": [
+              241.853
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 128.227,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 1100,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              22.74
+            ],
+            "_save_local_overrides": [
+              27.917
+            ],
+            "refresh_affected": [
+              2.534
+            ],
+            "retain_line_library_for_directory_move": [
+              1.695
+            ],
+            "_refresh_station_changes": [
+              100.2
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 139.838,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 1100,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              26.4
+            ],
+            "_save_local_overrides": [
+              33.214
+            ],
+            "refresh_affected": [
+              2.911
+            ],
+            "retain_line_library_for_directory_move": [
+              2.365
+            ],
+            "_refresh_station_changes": [
+              106.491
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 139.726,
+          "calls": {
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 100,
+            "_refresh_station_changes": 1,
+            "catalog_sql_changed_rows": 1100,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              25.436
+            ],
+            "_save_local_overrides": [
+              31.876
+            ],
+            "refresh_affected": [
+              2.622
+            ],
+            "retain_line_library_for_directory_move": [
+              2.445
+            ],
+            "_refresh_station_changes": [
+              107.717
+            ]
+          },
+          "map_commands": {}
+        }
+      ],
+      "one_facility_folder": [
+        {
+          "elapsed_ms": 68.062,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 27,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              11.976
+            ],
+            "_save_local_overrides": [
+              13.644
+            ],
+            "update_catalog_directory": [
+              17.63
+            ],
+            "refresh_affected": [
+              0.049,
+              3.501
+            ],
+            "_update_paged_directory": [
+              38.563
+            ],
+            "retain_line_library_for_directory_move": [
+              2.558
+            ],
+            "save_overrides": [
+              67.988
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 67.761,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 34,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.486
+            ],
+            "_save_local_overrides": [
+              12.375
+            ],
+            "update_catalog_directory": [
+              16.958
+            ],
+            "refresh_affected": [
+              0.076,
+              3.215
+            ],
+            "_update_paged_directory": [
+              38.577
+            ],
+            "retain_line_library_for_directory_move": [
+              2.296
+            ],
+            "save_overrides": [
+              67.688
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 67.216,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 34,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.568
+            ],
+            "_save_local_overrides": [
+              13.518
+            ],
+            "update_catalog_directory": [
+              17.202
+            ],
+            "refresh_affected": [
+              0.05,
+              2.984
+            ],
+            "_update_paged_directory": [
+              39.211
+            ],
+            "retain_line_library_for_directory_move": [
+              2.477
+            ],
+            "save_overrides": [
+              67.149
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 60.768,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 34,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              11.103
+            ],
+            "_save_local_overrides": [
+              13.365
+            ],
+            "update_catalog_directory": [
+              14.605
+            ],
+            "refresh_affected": [
+              0.057,
+              2.271
+            ],
+            "_update_paged_directory": [
+              32.703
+            ],
+            "retain_line_library_for_directory_move": [
+              2.531
+            ],
+            "save_overrides": [
+              60.707
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 64.687,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "_update_paged_directory": 1,
+            "catalog_sql_changed_rows": 34,
+            "update_catalog_directory": 1,
+            "refresh_affected": 2,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.549
+            ],
+            "_save_local_overrides": [
+              13.109
+            ],
+            "update_catalog_directory": [
+              16.954
+            ],
+            "refresh_affected": [
+              0.048,
+              3.202
+            ],
+            "_update_paged_directory": [
+              37.53
+            ],
+            "retain_line_library_for_directory_move": [
+              2.368
+            ],
+            "save_overrides": [
+              64.614
+            ]
+          },
+          "map_commands": {}
+        }
+      ],
+      "one_track_assignment": [
+        {
+          "elapsed_ms": 46.333,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "catalog_sql_changed_rows": 18,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              9.506
+            ],
+            "_save_local_overrides": [
+              12.186
+            ],
+            "refresh_affected": [
+              3.131
+            ],
+            "retain_line_library_for_directory_move": [
+              2.664
+            ],
+            "save_overrides": [
+              46.294
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 45.182,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "catalog_sql_changed_rows": 18,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              9.917
+            ],
+            "_save_local_overrides": [
+              12.207
+            ],
+            "refresh_affected": [
+              3.502
+            ],
+            "retain_line_library_for_directory_move": [
+              2.779
+            ],
+            "save_overrides": [
+              45.148
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 49.538,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "catalog_sql_changed_rows": 18,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.128
+            ],
+            "_save_local_overrides": [
+              12.771
+            ],
+            "refresh_affected": [
+              3.395
+            ],
+            "retain_line_library_for_directory_move": [
+              2.153
+            ],
+            "save_overrides": [
+              49.505
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 44.796,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "catalog_sql_changed_rows": 18,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              9.585
+            ],
+            "_save_local_overrides": [
+              11.921
+            ],
+            "refresh_affected": [
+              3.132
+            ],
+            "retain_line_library_for_directory_move": [
+              2.183
+            ],
+            "save_overrides": [
+              44.769
+            ]
+          },
+          "map_commands": {}
+        },
+        {
+          "elapsed_ms": 47.181,
+          "calls": {
+            "save_overrides": 1,
+            "_save_local_overrides": 1,
+            "_write_entries": 1,
+            "workspace_rows_written": 1,
+            "catalog_sql_changed_rows": 18,
+            "refresh_affected": 1,
+            "retain_line_library_for_directory_move": 1
+          },
+          "nested_timings_ms": {
+            "_write_entries": [
+              10.537
+            ],
+            "_save_local_overrides": [
+              12.595
+            ],
+            "refresh_affected": [
+              3.448
+            ],
+            "retain_line_library_for_directory_move": [
+              2.499
+            ],
+            "save_overrides": [
+              47.143
+            ]
+          },
+          "map_commands": {}
+        }
+      ]
+    },
+    "loaded_plan_integrity": {
+      "domain_sha256_before": "3e72fa0a9a1ff44c5d7b42638d211033e81729216eab8f640b52c71cb1b17380",
+      "domain_sha256_after": "3e72fa0a9a1ff44c5d7b42638d211033e81729216eab8f640b52c71cb1b17380",
+      "train_runs": 83,
+      "corridors": 12,
+      "station_routes": 0,
+      "edges": 16798,
+      "line_library_retained": true,
+      "plan_document_unchanged": true,
+      "repository_validation_passed": true
+    },
+    "source_files_size_and_mtime_unchanged": false,
+    "external_mutable_projection_changes": [
+      "rail_catalog.sqlite"
+    ],
+    "geometry_topology_size_and_mtime_unchanged": true,
+    "catalog_source_rows_sha256_before": "36d5e84bae3500f5bf803ed2d31445c8f85a970be81703101017ab0b3642f143",
+    "catalog_source_rows_sha256_after": "36d5e84bae3500f5bf803ed2d31445c8f85a970be81703101017ab0b3642f143",
+    "source_sha256_before": {
+      "rail.sqlite": "0d439451dee371efe19863b83d02399d805d66b49121ebcd4b9dacfba4fb507a",
+      "rail_lines.sqlite": "3d4eb121f95a35ad57c30e47c23eedd34db74ae6969b347fc2023512872112ff"
+    },
+    "source_sha256_after": {
+      "rail.sqlite": "0d439451dee371efe19863b83d02399d805d66b49121ebcd4b9dacfba4fb507a",
+      "rail_lines.sqlite": "3d4eb121f95a35ad57c30e47c23eedd34db74ae6969b347fc2023512872112ff"
+    }
+  },
+  "exceptions": []
+}
