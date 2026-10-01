@@ -2667,19 +2667,8 @@ class Desk(QMainWindow):
         self.selected_type.setMaximumWidth(200)
         layout.addWidget(self.selected_type)
         self.detail_tabs = QTabWidget()
-        self.properties = QTableWidget(0, 2)
-        self.properties.setHorizontalHeaderLabels(["属性", "值"])
-        self.properties.horizontalHeader().hide()
-        self.properties.verticalHeader().hide()
-        self.properties.setShowGrid(False)
-        self.properties.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.properties.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.properties.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.properties.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        from property_overview import PropertyOverview
+        self.properties = PropertyOverview()
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
         self.detail_tabs.addTab(self.properties, "概览")
@@ -4286,26 +4275,7 @@ class Desk(QMainWindow):
         dialog.exec()
 
     def set_property_rows(self, rows):
-        self.properties.setRowCount(len(rows))
-        for row, (key, value) in enumerate(rows):
-            self.properties.removeCellWidget(row, 1)
-            left = QTableWidgetItem(key)
-            left.setForeground(QColor("#536875"))
-            self.properties.setItem(row, 0, left)
-            right = QTableWidgetItem(value)
-            right.setToolTip(value)
-            self.properties.setItem(row, 1, right)
-            if "\n" in value:
-                # The transparent editor used to paint over the item's own
-                # multiline text, producing two overlapping copies.
-                right.setText('')
-                text = QPlainTextEdit(value)
-                text.setReadOnly(True)
-                text.setStyleSheet("QPlainTextEdit { border: 0; background: transparent; }")
-                self.properties.setCellWidget(row, 1, text)
-                self.properties.setRowHeight(row, min(240, max(90, 24 * (value.count("\n") + 1) + 16)))
-            else:
-                self.properties.setRowHeight(row, 37)
+        self.properties.set_rows(rows)
 
     def _show_demo_details(self):
         if self.demo_error:
@@ -4368,12 +4338,8 @@ class Desk(QMainWindow):
             if signature == getattr(self, "_last_operating_detail", None):
                 return
             self._last_operating_detail = signature
-            for row in range(self.properties.rowCount()):
-                title = self.properties.item(row, 0).text()
-                if title == "已行驶里程（千米）":
-                    self.properties.item(row, 1).setText(str(properties["distance_km"]))
-                if title == "运行状态":
-                    self.properties.item(row, 1).setText(properties["state"])
+            self.properties.update_value("已行驶里程（千米）", properties["distance_km"])
+            self.properties.update_value("运行状态", properties["state"])
             if self.detail_tabs.currentIndex() == 1:
                 raw = json.dumps(self.selected_data, ensure_ascii=False, indent=2)
                 if self.raw.toPlainText() != raw:
