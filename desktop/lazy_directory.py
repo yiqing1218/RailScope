@@ -11,7 +11,7 @@ from contextlib import closing
 import json
 import sqlite3
 
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal
+from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal, QSignalBlocker, QItemSelectionModel
 
 
 PAGE_SIZE = 128
@@ -230,14 +230,13 @@ class SqliteDirectoryModel(QAbstractItemModel):
 
     def index_for_key(self, key):
         with self._connect() as db:
-            row = db.execute(f"SELECT path FROM {self.table} WHERE id=?", (key,)).fetchone()
-        if row is None:
+            rows = db.execute('WITH RECURSIVE a(id,parent_id) AS ('
+                f'SELECT id,parent_id FROM {self.table} WHERE id=? UNION ALL '
+                f'SELECT n.id,n.parent_id FROM {self.table} n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,)).fetchall()
+        if not rows:
             return QModelIndex()
-        path = json.loads(row[0])
         parent = QModelIndex()
-        keys = ["folder:" + json.dumps(path[:depth], ensure_ascii=False) for depth in range(1, len(path) + 1)]
-        if not keys or key != keys[-1]:
-            keys.append(key)
+        keys = [row[0] for row in reversed(rows) if row[0] != self.root.key]
         for target in keys:
             while True:
                 matches = [self.index(i, 0, parent) for i in range(self.rowCount(parent))]
@@ -249,6 +248,58 @@ class SqliteDirectoryModel(QAbstractItemModel):
                     return QModelIndex()
                 self.fetchMore(parent)
         return parent
+
+    def refresh_view_affected(self, view, keys):
+        """Restore moved selection/focus/expansion by stable identities, silently."""
+        selection = view.selectionModel()
+        if selection is None:
+            self.refresh_affected(keys)
+            return
+        def token(index):
+            node = self._node(index)
+            return (node.key, node.kind, node.object_id) if index.isValid() else None
+        selected = [token(index) for index in selection.selectedRows()]
+        current = token(selection.currentIndex())
+        expanded = []
+        def walk(parent=QModelIndex()):
+            for row in range(self.rowCount(parent)):
+                index = self.index(row, 0, parent)
+                if view.isExpanded(index):
+                    expanded.append(token(index))
+                walk(index)
+        walk()
+        # Model removals and selection restoration must not trigger map actions.
+        with QSignalBlocker(selection), QSignalBlocker(view):
+            self.refresh_affected(keys)
+            def resolve(value):
+                if value is None:
+                    return QModelIndex()
+                key, kind, object_id = value
+                if kind == 'object' and hasattr(self, 'view'):
+                    with self._connect() as db:
+                        row = db.execute('SELECT d.id FROM rail_directory_members m JOIN rail_directory_nodes d ON d.id=m.node_id WHERE m.catalog_id=? AND d.view=?', (object_id,self.view)).fetchone()
+                    if row is None:
+                        return QModelIndex()
+                    key = row[0]
+                return self.index_for_key(key)
+            for value in expanded:
+                index = resolve(value)
+                if index.isValid():
+                    view.setExpanded(index, True)
+            if selected:
+                selection.clearSelection()
+                for value in selected:
+                    index = resolve(value)
+                    if index.isValid():
+                        selection.select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                        parent = index.parent()
+                        while parent.isValid():
+                            view.setExpanded(parent, True)
+                            parent = parent.parent()
+            if current:
+                index = resolve(current)
+                if index.isValid():
+                    selection.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
 
     def ids_below(self, key):
         with self._connect() as db:
@@ -282,11 +333,11 @@ class SqliteDirectoryModel(QAbstractItemModel):
         with self._connect() as db:
             if node is not self.root:
                 row = db.execute(
-                    f"SELECT label,child_count,total,archived FROM {self.table} WHERE id=?",
+                    f"SELECT label,child_count,total,archived,kind,object_id FROM {self.table} WHERE id=?",
                     (node.key,),
                 ).fetchone()
                 if row:
-                    node.label, node.child_count, node.total, archived = row
+                    node.label, node.child_count, node.total, archived, node.kind, node.object_id = row
                     node.archived = bool(archived)
                     self.dataChanged.emit(index, index)
             if not node.fetched:
@@ -312,6 +363,7 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 child = _Node(key, node, label, kind, object_id, child_count, total, bool(archived))
             else:
                 child.label, child.child_count, child.total, child.archived = label, child_count, total, bool(archived)
+                child.kind, child.object_id = kind, object_id
             if position < len(node.children) and node.children[position] is child:
                 continue
             if child in node.children:

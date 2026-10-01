@@ -840,7 +840,8 @@ class RailCatalog(QWidget):
             old, new = before_selection.get(model.view, {}), after_selection.get(model.view, {})
             for key in old.keys() | new.keys():
                 model.visible_counts[key] = max(0, model.visible_counts.get(key, 0) + new.get(key, 0) - old.get(key, 0))
-            model.refresh_affected(delta.nodes | delta.ancestors)
+            browser = self.line_browser if model.view == 'lines' else self.facility_browser
+            model.refresh_view_affected(browser, delta.nodes | delta.ancestors)
         # A folder has no effect on inferred physical ownership or map visibility.
         if not delta.facility_changed:
             self._mark_station_fresh()
@@ -854,13 +855,21 @@ class RailCatalog(QWidget):
                 if model is None:
                     continue
                 counts = Counter()
-                for key in set(keys) & model.visible_ids:
+                grouped = set()
+                for key in set(keys):
+                    assembly = bool(self.meta(key).get('assembly_id')) if key in self.catalog else False
+                    if not assembly and key not in model.visible_ids:
+                        continue
                     for node, raw in db.execute('SELECT n.id,n.path FROM rail_directory_nodes n '
                         'JOIN rail_directory_members m ON m.node_id=n.id WHERE m.catalog_id=? AND n.view=?', (key, model.view)):
-                        counts[node] += 1
+                        if assembly and node in grouped:
+                            continue
+                        grouped.add(node)
+                        weight = model.visible_counts.get(node, 0) if assembly else 1
+                        counts[node] += weight
                         path = json.loads(raw)
                         for depth in range(2, len(path) + 1):
-                            counts['folder:' + json.dumps(path[:depth], ensure_ascii=False)] += 1
+                            counts['folder:' + json.dumps(path[:depth], ensure_ascii=False)] += weight
                 result[model.view] = counts
         return result
 
@@ -2969,7 +2978,7 @@ class RailCatalog(QWidget):
                 selection = self.station_model.capture_membership(station_ids)
                 affected = update_station_directory(self.catalog.path, placements)
                 self.station_model.reconcile_membership(selection)
-                self.station_model.refresh_affected(affected)
+                self.station_model.refresh_view_affected(self.station_browser, affected)
                 self._mark_station_fresh()
             elif visible_ids:
                 self.station_model.refresh_labels({'station:' + sid for sid in visible_ids})
@@ -3169,7 +3178,7 @@ class RailCatalog(QWidget):
             self._update_paged_directory(catalog_keys)
         if hasattr(self, 'station_model'):
             self.station_model.reconcile_membership(selection)
-            self.station_model.refresh_affected(affected)
+            self.station_model.refresh_view_affected(self.station_browser, affected)
         self._mark_station_fresh()
         self.station_assignment_changed.emit(self.workspace.last_change or {})
 

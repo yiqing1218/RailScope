@@ -25,6 +25,8 @@ PRESENTATION_FIELDS = ('display_name', 'line_display_name', 'line_name', 'name',
 
 def presentation_keys(props):
     keys = {object_key(props), yard_track_key(props), props.get('catalog_group_id'), props.get('line_id')}
+    if props.get('assembly_id'):
+        keys.add('line-assembly:' + props['assembly_id'])
     for field in ('station_source_id', 'infrastructure_id', 'station_key', 'station_id'):
         if props.get(field):
             keys.add('station:' + str(props[field]).removeprefix('station:'))
@@ -145,9 +147,8 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         if props.get('network_edge_id'):
             tags = props.get('way_tags', {})
             from railscope.presentation import source_design_speed
-            speed = next((overrides[key]['technical_attributes']['design_speed_kmh']
-                          for key in (object_key(props), props.get('catalog_group_id'), entry.get('line_id'), source)
-                          if key in overrides and overrides[key].get('technical_attributes', {}).get('design_speed_kmh')),
+            speed = next((value for key in (object_key(props), props.get('catalog_group_id'), entry.get('line_id'), source)
+                          if (value := effective_override(overrides, key, {}).get('technical_attributes', {}).get('design_speed_kmh'))),
                          None) or entry.get('design_speed_kmh') or source_design_speed(tags)
             if speed:
                 from railscope.presentation import design_speed
@@ -161,9 +162,8 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         props['line_id'] = entry['line_id']
         props.pop('display_track_type', None)
         props.pop('display_style_provenance', None)
-        custom = next((overrides[key]['track_type'] for key in
-                       (object_key(props), props.get('catalog_group_id'), props['line_id'])
-                       if key in overrides and overrides[key].get('track_type')), entry.get('override_type'))
+        custom = next((value for key in (object_key(props), props.get('catalog_group_id'), props['line_id'])
+                       if (value := effective_override(overrides, key, {}).get('track_type'))), entry.get('override_type'))
         style = custom or (entry.get('fallback_type') if props.get('track_type') == '未确认类型' else None)
         if style:
             props['display_track_type'] = style
@@ -179,10 +179,11 @@ def apply_rail_presentation(collection, presentation, overrides=None):
         props.update(semantic_record(props))
         for key in (props.get('line_id'), props.get('catalog_group_id'), object_key(props)):
             if key in overrides:
-                props.update(semantic_record(props, overrides[key]))
-                if overrides[key].get('line_kind'):
-                    props['line_kind'] = overrides[key]['line_kind']
-                technical = overrides[key].get('technical_attributes', {})
+                edit = effective_override(overrides, key, {})
+                props.update(semantic_record(props, edit))
+                if edit.get('line_kind'):
+                    props['line_kind'] = edit['line_kind']
+                technical = edit.get('technical_attributes', {})
                 if technical.get('speed_band'):
                     props['speed_band'] = technical['speed_band']
         group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
@@ -286,7 +287,7 @@ def apply_names(collection, overrides=None, line_names=None, way_names=None, sta
         group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
         if group_edit.get('assembly_id'):
             keys.insert(0, props.get('catalog_group_id'))
-        custom = next((overrides[key] for key in keys if key in overrides and overrides[key].get('display_name')), {})
+        custom = next((effective_override(overrides, key) for key in keys if key in overrides and effective_override(overrides, key, {}).get('display_name')), {})
         station_edit = next((overrides[key] for key in presentation_keys(props)
                              if key.startswith('station:') and key in overrides), {})
         if station_edit.get('station_type'):

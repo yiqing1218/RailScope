@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from contextlib import closing
 from functools import wraps
 import gc
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -170,6 +171,16 @@ def national(ui, app, probe, base):
     directory.mkdir()
     stamps = {path.name: (path.stat().st_size, path.stat().st_mtime_ns)
               for path in source.iterdir() if path.is_file() and path.suffix in ('.json', '.sqlite')}
+    def content_hashes():
+        hashes = {}
+        for name in ('rail.sqlite', 'rail_lines.sqlite', 'rail_catalog.sqlite'):
+            digest = hashlib.sha256()
+            with (source / name).open('rb') as stream:
+                while block := stream.read(8*1024*1024):
+                    digest.update(block)
+            hashes[name] = digest.hexdigest()
+        return hashes
+    original_hashes = content_hashes()
     for path in source.iterdir():
         if path.name == 'rail_catalog.sqlite':
             with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as src, \
@@ -293,12 +304,54 @@ def national(ui, app, probe, base):
                   'initialization_ms': round(init_ms, 3), 'row_counts_before_moves': counts,
                   'override_count_before_moves': override_count,
                   'operations': cases, 'repeated_operations': dict(repeated)}
+        plan_source = ROOT / 'data/processed/operations/rail_plan.json'
+        if plan_source.exists():
+            print('verify installed active plan references', flush=True)
+            from dataclasses import asdict
+            from railscope.integrity import validate_repository
+            plan_path = settings.with_name('active-plan.json')
+            shutil.copy2(plan_source, plan_path)
+            editor = RailEditor(widget.map, directory, plan_path, catalog_metadata_path=settings)
+            editor.timer.stop()
+            if editor._plan_load_error:
+                raise RuntimeError('Installed active plan failed validation: ' + editor._plan_load_error)
+            def domain_snapshot(repo):
+                validate_repository(repo)
+                fields = ('nodes','edges','lines','stations','corridors','station_routes','train_runs','train_services')
+                values = {field: {key: asdict(value) for key,value in getattr(repo,field).items()} for field in fields}
+                values['stops'] = [asdict(value) for value in repo.stops]
+                return hashlib.sha256(json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            before = domain_snapshot(editor.domain_repo)
+            original_document = json.dumps(editor.document(), ensure_ascii=False, sort_keys=True)
+            retained_library = editor.line_library()
+            widget.directory_changed.connect(lambda change: editor.retain_line_library_for_directory_move())
+            widget.station_assignment_changed.connect(lambda change: editor.retain_line_library_for_directory_move())
+            widget.move_items({lines[0]}, ['Audit','active-plan-line'])
+            widget.save_station_changes({stations[0]}, folder_path=['Audit','active-plan-station'])
+            widget._assign_station_assets(set(), {track[0]}, stations[1])
+            widget.undo_catalog()
+            widget.redo_catalog()
+            repo, _ = editor.canonical_repository(editor.workspace_identity_path)
+            after_domain = domain_snapshot(repo)
+            if before != after_domain or json.dumps(editor.document(), ensure_ascii=False, sort_keys=True) != original_document:
+                raise RuntimeError('Directory edit changed physical/operating references in installed plan')
+            result['loaded_plan_integrity'] = {'domain_sha256_before': before, 'domain_sha256_after': after_domain,
+                'train_runs': len(repo.train_runs), 'corridors': len(repo.corridors), 'station_routes': len(repo.station_routes),
+                'edges': len(repo.edges), 'line_library_retained': editor.line_library() is retained_library,
+                'plan_document_unchanged': True, 'repository_validation_passed': True}
+            editor.close()
         close_widget(widget)
         app.processEvents()
     after = {name: (source / name).stat() for name in stamps}
     if any((after[name].st_size, after[name].st_mtime_ns) != value for name, value in stamps.items()):
         raise RuntimeError('Source snapshot changed during audit; timings cannot be certified')
     result['source_files_size_and_mtime_unchanged'] = True
+    print('verify source content hashes', flush=True)
+    after_hashes = content_hashes()
+    if original_hashes != after_hashes:
+        raise RuntimeError('Source content changed during edit verification')
+    result['source_sha256_before'] = original_hashes
+    result['source_sha256_after'] = after_hashes
     return result
 
 
@@ -329,7 +382,8 @@ def run(output, include_national=False):
             base = Path(temporary)
             result = {'source_ref': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                       'boundary': 'Current production Qt slots/SQLite, instrumented wall time; MapStub excludes browser paint. '
-                                  'No active TrainRun; push_corridors is recorded, not executed. Synthetic notes are injected before timing.',
+                                  'Timed slots use no active TrainRun and record push_corridors; installed active-plan integrity is verified separately. '
+                                  'Synthetic notes are injected before timing.',
                       'synthetic': synthetic(ui, app, probe, base)}
             if include_national:
                 result['national'] = national(ui, app, probe, base)

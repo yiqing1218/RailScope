@@ -211,6 +211,8 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
         remaining = db.execute('SELECT total FROM rail_directory_nodes WHERE id=?', (node_id,)).fetchone()[0]
         if remaining == 0:
             db.execute("DELETE FROM rail_directory_nodes WHERE id=?", (node_id,))
+        else:
+            db.execute('UPDATE rail_directory_nodes SET object_id=(SELECT catalog_id FROM rail_directory_members WHERE node_id=? LIMIT 1) WHERE id=?', (node_id,node_id))
 
     # 2) Insert the new rows.
     inserted_object_ids = set()

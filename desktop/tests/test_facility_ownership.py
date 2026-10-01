@@ -92,6 +92,24 @@ def test_manual_owner_pending_and_role_override_replay_without_source_changes(tm
     assert 'NE-a' not in facility_track_owners(tmp_path,stations,edits)
 
 
+def test_new_source_snapshot_replaces_baseline_before_assignment_undo(tmp_path,monkeypatch):
+    import desktop.rail_station_catalog_model as module
+    stations, _, catalog = dataset(tmp_path)
+    monkeypatch.setattr(module,'rail_station_records',lambda *args,**kwargs:(stations,3))
+    sync_station_catalog(tmp_path,catalog.path,[],{})
+    with sqlite3.connect(tmp_path/'rail.sqlite') as db:
+        raw = json.loads(db.execute("SELECT data FROM features WHERE id=4").fetchone()[0])
+        raw['properties'].update(infrastructure_id='way/2', associated_station_ids=['way/2'])
+        db.execute('UPDATE features SET data=? WHERE id=4',(json.dumps(raw),))
+    assert sync_station_catalog(tmp_path,catalog.path,[],{})
+    key = 'object:network_edge_id:NE-a'
+    module.update_station_assignments(catalog.path,{key:{}},{key:{'station_id':'node/3','station_assignment':'manual'}})
+    module.update_station_assignments(catalog.path,{key:{}},{})
+    with sqlite3.connect(catalog.path) as db:
+        assert db.execute('SELECT station_id FROM rail_facility_track_baseline WHERE object_id=?',(key,)).fetchone()[0] == 'way/2'
+        assert db.execute('SELECT station_id FROM rail_facility_track_owners WHERE object_id=?',(key,)).fetchone()[0] == 'way/2'
+
+
 def test_facility_track_checkbox_and_toggle_do_not_show_other_depot(qtbot,tmp_path,monkeypatch):
     import desktop.rail_station_catalog_model as module
     stations,_,catalog=dataset(tmp_path)

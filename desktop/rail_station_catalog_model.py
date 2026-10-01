@@ -88,6 +88,12 @@ def sync_station_catalog(directory, catalog_path, regions, overrides, signature=
         db.execute('CREATE INDEX IF NOT EXISTS rail_facility_track_catalog ON rail_facility_track_owners(catalog_id)')
         db.execute('CREATE TABLE IF NOT EXISTS rail_facility_track_baseline(object_id TEXT PRIMARY KEY,station_id TEXT,data TEXT,catalog_id TEXT)')
         db.execute('CREATE INDEX IF NOT EXISTS rail_facility_baseline_catalog ON rail_facility_track_baseline(catalog_id)')
+        baseline_inputs = _key([(path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else None
+            for path in (directory/'rail.sqlite', directory/'rail_lines.sqlite')])
+        previous_baseline = db.execute("SELECT value FROM metadata WHERE key='ownership_baseline_snapshot'").fetchone()
+        if previous_baseline != (baseline_inputs,):
+            db.execute('DELETE FROM rail_facility_track_baseline')
+            db.execute("INSERT OR REPLACE INTO metadata VALUES('ownership_baseline_snapshot',?)", (baseline_inputs,))
         db.execute('DELETE FROM rail_facility_track_owners')
         rows = []
         folders = set()
@@ -323,10 +329,11 @@ def update_station_assignments(catalog_path, changes, overrides):
                     roots += db.execute("SELECT * FROM rail_station_nodes WHERE object_id=? AND kind='facility_track'", (object_id,)).fetchall()
             for row in roots:
                 object_id = row['object_id']
-                owner = custom.get('station_id') or custom.get('station_source')
-                if custom.get('station_assignment') == 'pending':
+                edit = {**custom, **overrides.get(object_id, {})}
+                owner = edit.get('station_id') or edit.get('station_source')
+                if edit.get('station_assignment') == 'pending':
                     owner = None
-                elif 'station_id' not in custom and 'station_source' not in custom:
+                elif 'station_id' not in edit and 'station_source' not in edit:
                     if is_track or row['kind'] == 'facility_track':
                         baseline = db.execute('SELECT station_id FROM rail_facility_track_baseline WHERE object_id=?', (object_id,)).fetchone()
                         if not baseline:
@@ -337,6 +344,10 @@ def update_station_assignments(catalog_path, changes, overrides):
                         source = json.loads(raw[0]) if raw else {}
                         owner = source.get('station_id') or source.get('station_source')
                 station = db.execute("SELECT id,path FROM rail_station_nodes WHERE id=?", ('station:' + str(owner),)).fetchone() if owner else None
+                if not station and edit.get('station_assignment') != 'pending' and edit.get('station_source'):
+                    station = db.execute('SELECT id,path FROM rail_station_nodes WHERE id=?', ('station:' + edit['station_source'],)).fetchone()
+                    if station:
+                        owner = edit['station_source']
                 if station:
                     parent, path = station['id'], json.loads(station['path'])
                     path += ['站内轨道']
