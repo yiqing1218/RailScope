@@ -1,6 +1,8 @@
-# 目录与工作区重构实施计划（待用户确认）
+# 目录与工作区重构实施计划（已批准并实施）
 
-基线与根因：[专项审计](DIRECTORY_PERSISTENCE_ARCHITECTURE_AUDIT.md)。本文件是待实施设计，不代表完成状态。
+基线与根因：[专项审计](DIRECTORY_PERSISTENCE_ARCHITECTURE_AUDIT.md)。用户批准后，以下四阶段已实施并完成回归；结果、性能证据与验收边界见 [完成报告](DIRECTORY_REFACTOR_COMPLETION_REPORT.md)。本计划保留原实施要求，后续菜单 / Dock / Workspace 重构仍以独立 UI 路线为准。
+
+性能状态：禁止全量工作等结构断言全部通过；最终全国样本车站 / 轨道 assignment 中位数 <50 ms，线路 / 设施目录约 66–67 ms，尚未全部达到本文的 <50 ms 目标。首次迁移 / 缓存准备仍有成本。详见完成报告，不把代码实施状态等同于所有延迟目标达成。
 
 ## 实施范围与顺序
 

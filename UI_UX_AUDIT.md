@@ -1,5 +1,7 @@
 # RailScope UI / UX 专项审计
 
+实施补充：目录编辑的全量副作用与移动后多选 / 焦点 / 展开丢失已修复；统一详情概览已采用上下布局、名称灰色 / 内容深色和长编号换行。见 [完成报告](docs/audit/DIRECTORY_REFACTOR_COMPLETION_REPORT.md)。其余产品架构和工作空间建议保留原审计状态。
+
 ## 证据与边界
 
 审计基于当前源码、生产 Qt 保存调用、全国内部 SQLite、回归测试与实际 Qt 编辑器截图。入口证据：`desktop/launcher.py` 的 `Desk.build`、`build_menus`、`edit_rail_station_metadata`、`edit_line_metadata`；`rail_catalog_ui.py`；`operating_ui.py`；`components.THEME`；`assets/map.js`；`rail_style_ui.defaults`。

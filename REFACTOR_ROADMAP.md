@@ -12,6 +12,10 @@
 
 退出条件：普通字段不触发全国重建；保存失败不推进历史；车站 record / 缓存 / 持久化一致；回归全部通过。浏览器 GPU 整体延迟、完整活动 TrainRun 负载属于仍需补测的边界，不由 MapStub 数字代替。
 
+### 目录与分层持久化（本次补充）
+
+上一阶段补充已完成：批准的四阶段目录与持久化方案，包括分表 workspace SQLite、局部目录 / 车站投影、assembly 共享属性、人工归属覆盖和 typed revision / signal / artifact manifest。普通目录操作不使几何、拓扑、线路库或运行路径失效；统一概览采用上下布局与名称 / 内容分色。完整回归和全国复测见 [完成报告](docs/audit/DIRECTORY_REFACTOR_COMPLETION_REPORT.md)。已另行验证现有计划中的 83 个 TrainRun、12 个 Corridor、16,798 条 edge 在目录操作前后内容摘要一致；这不替代浏览器绘制 / 播放负载测试。R1–R5 未实施的结构变更仍保持后续状态。
+
 ## R1：统一命令、选择与状态（建议下一阶段）
 
 范围：F03 / F04 / F07。提取 `CommandRegistry` 与 `SelectionController`；目录、地图、运行表格共用 ID 集合；模式与选择范围分离；状态栏显示任务、主选对象、数量和历史作用域。

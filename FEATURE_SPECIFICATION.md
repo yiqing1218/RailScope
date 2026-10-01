@@ -14,7 +14,9 @@
 
 当前：PBF 导入生成内部几何、线路、目录与拓扑文件；另有本地设置、目录交换、计划导入 / 导出。
 
-本次：目录人工修改写入 JSON 种子同名的 `.edits.sqlite`，每次只事务写入触及的 owner；启动合并种子和增量层。原 JSON 保留，不在每次属性保存时重写。目录交换仍导出完整有效视图；备份工作区必须包含 JSON 与增量 SQLite。
+本次：目录人工修改写入 `rail_catalog.workspace.sqlite`，目录、展示、人工归属、assembly 共享属性与 membership 分表，事务只写本次触及的 owner。旧 `.edits.sqlite` 与 JSON 按原优先级迁移，迁移保留备份；JSON 保留交换 / 导出角色。此库是现有领域契约的编辑 adapter，已有运行领域 `workspace.sqlite` 保持独立职责。备份工作区须包含工作数据库、来源 / 身份映射及必要交换文件。见 [完成报告](docs/audit/DIRECTORY_REFACTOR_COMPLETION_REPORT.md)。
+
+目录命令只修改 membership、受影响父节点与祖先计数 / 搜索；Undo/Redo 同路径。Assembly 共享属性写逻辑 owner 一次，成员读取继承。详情概览对全部对象统一采用名称在上、内容在下，名称灰色、内容深色；长 ID 完整换行，复制保留原值。
 
 后续目标：数据维护页面统一列出来源、快照、导入阶段、覆盖层、冲突和派生缓存状态。重导入在后台进行；取消不破坏旧快照；切换快照前完成引用迁移检查。
 

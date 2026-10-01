@@ -42,11 +42,13 @@ flowchart LR
 | 变化入口 | 持久化 / Undo | 依赖事件 | 消费方 |
 |---|---|---|---|
 | `save_station_override` | `CatalogWorkspace.update` 按 station owner | `entities_changed`，必要 placement / visibility | materialised record、车站分页模型、详情、地图常驻表示 |
-| `save_overrides` | 按线路 / 区间 owner；assembly 展开保留 | 字段 delta；结构变更保留专门刷新 | 目录标题 / 搜索、运行库 metadata、地图表示 |
+| `save_overrides` | 按线路 / 区间 owner；assembly 共享属性写逻辑 owner，成员读取继承 | typed ChangeSet；目录、展示、语义、人工归属、拓扑分别通知 | 受影响目录 / 搜索、运行库 metadata、常驻地图表示 |
 | `undo_catalog` / `redo_catalog` | 同一持久化入口，成功后移动历史栈 | 与正向修改同一种字段 delta | 同一消费方，恢复原 presentation |
 | 导入 / 成员 / 拓扑重建 | 现有专门工作流，不能伪装为普通属性编辑 | 快照 / 结构失效 | 派生目录、路径校验、空间几何，后台准备 |
 
 `entity_id` 列在覆盖库中保存现有 editor owner key；这里的 station source alias 仍是兼容 ID。后续需由 IdentityRegistry 映射统一领域 ID，不能把列名当作已经完成身份迁移的证明。
+
+已实施分层 adapter：`desktop/workspace_sqlite.py` 管 `rail_catalog.workspace.sqlite` 的分表事务、迁移和 revision；`artifact_manifest.py` 管可重建中间产物依赖记录；目录 / 车站 Model 接收局部 delta；`property_overview.py` 供统一 Inspector 复用上下属性与分色。实际调用链与数据不变量验证见 [完成报告](docs/audit/DIRECTORY_REFACTOR_COMPLETION_REPORT.md)。
 
 ## 结构重构边界
 
