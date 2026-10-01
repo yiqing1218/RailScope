@@ -270,53 +270,55 @@ def update_station_label(catalog_path, station_id, label):
 
 def update_station_placement(catalog_path, record, custom):
     """Move one owner and its cached children; no nationwide ownership scan."""
+    return bool(update_station_directory(catalog_path, [(record, custom)]))
+
+
+def update_station_directory(catalog_path, records):
+    """One transaction for K stations; descendants inherit their parent's place."""
+    affected = set()
+    with closing(sqlite3.connect(catalog_path)) as db, db:
+        db.row_factory = sqlite3.Row
+        for record, custom in records:
+            affected.update(_update_station_directory(db, record, custom))
+    return affected
+
+
+def _update_station_directory(db, record, custom):
     ident = 'station:' + record['id']
     folder = station_directory_path(record, custom)
     kind = custom.get('station_type') or record.get('station_type')
     if not custom.get('folder_path') and kind in FACILITY_TYPES:
         folder = (*folder, kind)
     new_path = ['stations'] + (['已归档'] if custom.get('archived') else []) + list(folder) + [record['id']]
-    with closing(sqlite3.connect(catalog_path)) as db, db:
-        db.row_factory = sqlite3.Row
-        row = db.execute('SELECT * FROM rail_station_nodes WHERE id=?', (ident,)).fetchone()
-        if row is None:
-            return False
-        old_path = json.loads(row['path'])
-        totals = {column: row[column] for column in ('total', 'station_total', 'facility_total', 'track_total')}
-        old_folders = ['folder:' + _key(old_path[:depth]) for depth in range(2, len(old_path))]
-        new_folders = ['folder:' + _key(new_path[:depth]) for depth in range(2, len(new_path))]
-        parent = ''
-        for depth, key in zip(range(2, len(new_path)), new_folders):
-            db.execute("INSERT OR IGNORE INTO rail_station_nodes(id,parent_id,label,kind,path,archived,searchable) VALUES(?,?,?,'folder',?,0,?)",
-                (key, parent, new_path[depth-1], _key(new_path[:depth]), new_path[depth-1].casefold()))
-            parent = key
-        if old_path != new_path:
-            rows = db.execute('WITH RECURSIVE subtree(id) AS (SELECT ? UNION ALL '
-                'SELECT n.id FROM rail_station_nodes n JOIN subtree s ON n.parent_id=s.id) '
-                'SELECT n.* FROM rail_station_nodes n JOIN subtree s ON n.id=s.id', (ident,)).fetchall()
-            renamed = {}
-            for item in rows:
-                if item['id'].startswith('facility-folder:'):
-                    path = new_path + json.loads(item['path'])[len(old_path):]
-                    renamed[item['id']] = 'facility-folder:' + _key(path)
-            for item in rows:
-                path = new_path + json.loads(item['path'])[len(old_path):]
-                parent_id = parent if item['id'] == ident else renamed.get(item['parent_id'], item['parent_id'])
-                db.execute('UPDATE rail_station_nodes SET id=?,parent_id=?,path=? WHERE id=?',
-                    (renamed.get(item['id'], item['id']), parent_id, _key(path), item['id']))
-            for sign, keys in ((-1, set(old_folders) - set(new_folders)), (1, set(new_folders) - set(old_folders))):
-                for key in keys:
-                    db.execute('UPDATE rail_station_nodes SET ' + ','.join(f'{column}={column}+?' for column in totals) + ' WHERE id=?',
-                               (*[sign * value for value in totals.values()], key))
-        label = custom.get('display_name') or record['name']
-        db.execute('UPDATE rail_station_nodes SET label=?,archived=?,searchable=? WHERE id=?',
-            (label, int(bool(custom.get('archived'))), (label+' '+record['id']+' '+' '.join(folder)).casefold(), ident))
-        for key in reversed(old_folders):
-            if not db.execute('SELECT 1 FROM rail_station_nodes WHERE parent_id=? LIMIT 1', (key,)).fetchone():
-                db.execute('DELETE FROM rail_station_nodes WHERE id=?', (key,))
-        for key in set(old_folders) | set(new_folders):
-            db.execute('UPDATE rail_station_nodes SET child_count=(SELECT count(*) FROM rail_station_nodes WHERE parent_id=?) WHERE id=?', (key, key))
-    return True
+    row = db.execute('SELECT * FROM rail_station_nodes WHERE id=?', (ident,)).fetchone()
+    if row is None:
+        return set()
+    old_path = json.loads(row['path'])
+    totals = {column: row[column] for column in ('total', 'station_total', 'facility_total', 'track_total')}
+    old_folders = ['folder:' + _key(old_path[:depth]) for depth in range(2, len(old_path))]
+    new_folders = ['folder:' + _key(new_path[:depth]) for depth in range(2, len(new_path))]
+    parent = ''
+    for depth, key in zip(range(2, len(new_path)), new_folders):
+        db.execute("INSERT OR IGNORE INTO rail_station_nodes(id,parent_id,label,kind,path,archived,searchable) VALUES(?,?,?,'folder',?,0,?)",
+            (key, parent, new_path[depth-1], _key(new_path[:depth]), new_path[depth-1].casefold()))
+        parent = key
+    if old_path != new_path:
+        # parent_id is authoritative. Do not duplicate a changed ancestor path
+        # into every facility/track child, or rename their stable cache IDs.
+        db.execute('UPDATE rail_station_nodes SET parent_id=?,path=? WHERE id=?', (parent, _key(new_path), ident))
+        for sign, keys in ((-1, set(old_folders) - set(new_folders)), (1, set(new_folders) - set(old_folders))):
+            for key in keys:
+                db.execute('UPDATE rail_station_nodes SET ' + ','.join(f'{column}={column}+?' for column in totals) + ' WHERE id=?',
+                           (*[sign * value for value in totals.values()], key))
+    label = custom.get('display_name') or record['name']
+    db.execute('UPDATE rail_station_nodes SET label=?,archived=?,searchable=? WHERE id=?',
+        (label, int(bool(custom.get('archived'))), (label+' '+record['id']+' '+' '.join(folder)).casefold(), ident))
+    for key in reversed(old_folders):
+        if not db.execute('SELECT 1 FROM rail_station_nodes WHERE parent_id=? LIMIT 1', (key,)).fetchone():
+            db.execute('DELETE FROM rail_station_nodes WHERE id=?', (key,))
+    for key in set(old_folders) | set(new_folders):
+        db.execute('UPDATE rail_station_nodes SET child_count=(SELECT count(*) FROM rail_station_nodes WHERE parent_id=?) WHERE id=?', (key, key))
+    return set(old_folders) | set(new_folders) | {ident, ''}
 
 
 class StationCatalogModel(SqliteDirectoryModel):
@@ -475,26 +477,46 @@ class StationCatalogModel(SqliteDirectoryModel):
         self._folder_totals.clear()
         super().reset_from_disk()
 
+    def refresh_affected(self, keys):
+        keys = set(keys)
+        for key in keys:
+            self._folder_totals.pop(key, None)
+        if self.search:
+            literal = '%' + self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+            with self._connect() as db, db:
+                for key in keys:
+                    db.execute('DELETE FROM rail_station_matches WHERE id=?', (key,))
+                    row = db.execute("SELECT kind,searchable FROM rail_station_nodes WHERE id=?", (key,)).fetchone()
+                    if row is None:
+                        continue
+                    if row[0] in ('folder', 'station'):
+                        match = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.parent_id=? LIMIT 1', (key,)).fetchone()
+                    else:
+                        match = None
+                    direct = db.execute("SELECT 1 FROM rail_station_nodes WHERE id=? AND kind<>'folder' AND searchable LIKE ? ESCAPE '\\'", (key, literal)).fetchone()
+                    if match or direct:
+                        db.execute('INSERT OR IGNORE INTO rail_station_matches VALUES(?)', (key,))
+                # New matching station leaves make only their own ancestor chain visible.
+                for key in keys:
+                    db.execute('WITH RECURSIVE parents(id,parent_id) AS ('
+                        'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.id=? '
+                        'UNION ALL SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN parents p ON n.id=p.parent_id) '
+                        'INSERT OR IGNORE INTO rail_station_matches SELECT id FROM parents', (key,))
+        super().refresh_affected(keys)
+
     def ids_below(self, key):
         with self._connect() as db:
-            row = db.execute("SELECT path FROM rail_station_nodes WHERE id=?", (key,)).fetchone()
-            if row is None:
-                return set(), set()
-            path = row[0]
-            rows = db.execute("SELECT kind,object_id FROM rail_station_nodes WHERE path=? "
-                              "OR substr(path,1,length(?))=substr(?,1,length(?)-1)||','",
-                              (path, path, path, path)).fetchall()
+            rows = db.execute('WITH RECURSIVE children(id) AS (SELECT ? UNION ALL '
+                'SELECT n.id FROM rail_station_nodes n JOIN children c ON n.parent_id=c.id) '
+                'SELECT n.kind,n.object_id FROM rail_station_nodes n JOIN children c ON n.id=c.id', (key,)).fetchall()
         return ({ident for kind, ident in rows if kind == "station"},
                 {ident for kind, ident in rows if kind == "facility"})
 
     def track_ids_below(self,key):
         with self._connect() as db:
-            row = db.execute('SELECT path FROM rail_station_nodes WHERE id=?',(key,)).fetchone()
-            if not row:
-                return set()
-            path=row[0]
-            return {ident for (ident,) in db.execute("SELECT object_id FROM rail_station_nodes WHERE kind='facility_track' "
-                "AND (path=? OR substr(path,1,length(?))=substr(?,1,length(?)-1)||',')",(path,path,path,path))}
+            return {ident for (ident,) in db.execute('WITH RECURSIVE children(id) AS (SELECT ? UNION ALL '
+                'SELECT n.id FROM rail_station_nodes n JOIN children c ON n.parent_id=c.id) '
+                "SELECT n.object_id FROM rail_station_nodes n JOIN children c ON n.id=c.id WHERE n.kind='facility_track'", (key,))}
 
     def track_ids_for_catalog(self,groups):
         if not groups:

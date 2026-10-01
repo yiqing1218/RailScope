@@ -289,7 +289,8 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 f"SELECT id,label,kind,object_id,child_count,total,archived "
                 f"FROM {self.table} WHERE parent_id=?" + self._search_clause()
                 + " ORDER BY kind='object',label,id LIMIT ?",
-                (node.key, *self._search_args(), max(PAGE_SIZE, len(node.children))),
+                (node.key, *self._search_args(), max(PAGE_SIZE,
+                    ((len(node.children) + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE)),
             ).fetchall()
         target_keys = [value[0] for value in target]
         existing = {child.key: child for child in node.children}
@@ -309,9 +310,12 @@ class SqliteDirectoryModel(QAbstractItemModel):
                 continue
             if child in node.children:
                 old_position = node.children.index(child)
-                self.beginRemoveRows(index, old_position, old_position)
+                destination = position if old_position > position else position + 1
+                self.beginMoveRows(index, old_position, old_position, index, destination)
                 node.children.pop(old_position)
-                self.endRemoveRows()
+                node.children.insert(position, child)
+                self.endMoveRows()
+                continue
             self.beginInsertRows(index, position, position)
             node.children.insert(position, child)
             self.endInsertRows()

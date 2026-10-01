@@ -226,6 +226,7 @@ def migrate(path, values, tombstones=(), edited=(), backups=()):
                     write_owner(db, key, None)
                 db.executemany('INSERT INTO workspace_meta VALUES(?,?)', (
                     ('created_at', datetime.now(timezone.utc).isoformat()), ('algorithm_version', 'normalized-workspace-v1'),
+                    ('workspace_id', uuid4().hex),
                     ('migration_complete', '1'), ('edited_keys', encoded(list(edited)))))
         # The old workspace remains readable until the fully committed file is published.
         temporary.replace(path)
@@ -240,3 +241,9 @@ def revisions(path):
         return {name: 0 for name in REVISION_NAMES}
     with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
         return dict(db.execute('SELECT kind,value FROM revisions'))
+
+
+def identity(path):
+    with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        row = db.execute("SELECT value FROM workspace_meta WHERE key='workspace_id'").fetchone()
+    return row[0] if row else str(Path(path).resolve())

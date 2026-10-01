@@ -136,6 +136,7 @@ class CatalogWorkspace:
         self.values.update(proposed)
         self.undo_stack.clear()
         self.redo_stack.clear()
+        self.identity = layered.identity(edit_database(self.path))
         self.load_failed = False
         self.dirty = False
 

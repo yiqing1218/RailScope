@@ -4,6 +4,7 @@ The cache contains presentation memberships only. Moving a folder never changes
 infrastructure identity, geometry, track role or an operational path.
 """
 from contextlib import closing
+from dataclasses import dataclass, field
 import hashlib
 import json
 import sqlite3
@@ -23,6 +24,20 @@ except ImportError:
 
 PRESENTATION_VERSION = 10
 LABEL_ONLY_FIELDS = {"display_name"}
+
+
+@dataclass
+class DirectoryDelta:
+    changed: bool = False
+    facility_changed: bool = False
+    nodes: set = field(default_factory=set)
+    ancestors: set = field(default_factory=set)
+    folder_paths: set = field(default_factory=set)
+
+    def __iter__(self):
+        # Compatibility for plugins unpacking the former two-boolean result.
+        yield self.changed
+        yield self.facility_changed
 
 
 def _json(value):
@@ -166,7 +181,8 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
             view, path_value = node_row
             full_path = json.loads(path_value)
             if view == "facilities":
-                removed_facilities.add((node_id, path_value))
+                removed_facilities.add(key)
+            affected_folders.add('folder:' + json.dumps([view], ensure_ascii=False))
             for depth in range(2, len(full_path) + 1):
                 folder_id = 'folder:' + json.dumps(full_path[:depth], ensure_ascii=False)
                 affected_folders.add(folder_id)
@@ -197,7 +213,8 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
                 folder_id = 'folder:' + json.dumps(row['full_path'][:depth], ensure_ascii=False)
                 folder_deltas[folder_id] = folder_deltas.get(folder_id, 0) + 1
             if row["view"] == "facilities":
-                inserted_facilities.add((row["node_id"], json.dumps(row["full_path"], ensure_ascii=False)))
+                inserted_facilities.add(key)
+            affected_folders.add('folder:' + json.dumps([row['view']], ensure_ascii=False))
 
     # 3) Recompute totals and searchable text for affected object nodes.
     for node_id in affected_object_ids | inserted_object_ids:
@@ -250,44 +267,52 @@ def _update_directory_rows(db, catalog, changed_keys, resolve):
 
     changed = bool(affected_object_ids or inserted_object_ids)
     facility_changed = removed_facilities != inserted_facilities
-    return changed, facility_changed
+    return DirectoryDelta(changed, facility_changed, affected_object_ids | inserted_object_ids,
+                          affected_folders | pending)
 
 
-def update_catalog_directory(catalog, keys, overrides, resolve, mode=0, aliases=None):
+def update_catalog_directory(catalog, keys, overrides, resolve, mode=0, aliases=None, revision=None):
     """Update only the listed keys; never rescan the whole national catalog.
 
     Returns ``(changed, facility_changed)``.  The caller must fall back to a
     full rebuild when the cache has not been built yet.
     """
-    signature = _directory_signature(overrides, mode)
     with closing(sqlite3.connect(catalog.path)) as db:
         old = db.execute(
             "SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
         has_nodes = db.execute(
             "SELECT 1 FROM sqlite_master WHERE name='rail_directory_nodes'").fetchone()
-        if old is None or not has_nodes or old[0] == signature:
-            return (False, False)
+        if old is None or not has_nodes:
+            return DirectoryDelta()
         db.execute("BEGIN")
         try:
-            changed, facility_changed = _update_directory_rows(db, catalog, list(keys), resolve)
-            if changed:
+            delta = _update_directory_rows(db, catalog, list(keys), resolve)
+            if delta.changed:
                 db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)",
-                           (signature,))
+                           (revision or 'incremental',))
+                if revision:
+                    db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_cache_revision',?)", (revision,))
             db.commit()
-            return (changed, facility_changed)
+            return delta
         except Exception:
             db.execute("ROLLBACK")
             raise
 
 
-def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
+def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None, revision=None):
     """Stream records into a rebuildable SQLite cache, without Qt row objects."""
     # Names and overview text do not change directory membership. They are
     # updated in place so editing one track does not rebuild the national tree.
-    signature = _directory_signature(overrides, mode)
     with closing(sqlite3.connect(catalog.path)) as db:
+        cached = db.execute("SELECT value FROM metadata WHERE key='directory_cache_revision'").fetchone()
+        if revision and cached and cached[0] == revision:
+            return False
+        signature = _directory_signature(overrides, mode)
         old = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
         if old and old[0] == signature:
+            if revision:
+                db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_cache_revision',?)", (revision,))
+                db.commit()
             return False
         # DDL stays in this transaction: a failed resolver preserves the old index.
         db.execute("BEGIN")
@@ -351,6 +376,8 @@ def sync_catalog_directory(catalog, overrides, resolve, mode=0, aliases=None):
                        ((value, key) for key, value in searches.items()))
         db.execute("UPDATE rail_directory_nodes SET child_count=(SELECT count(*) FROM rail_directory_nodes c WHERE c.parent_id=rail_directory_nodes.id)")
         db.execute("INSERT OR REPLACE INTO metadata VALUES('paged_directory_signature',?)", (signature,))
+        if revision:
+            db.execute("INSERT OR REPLACE INTO metadata VALUES('directory_cache_revision',?)", (revision,))
         db.commit()
         return True
 

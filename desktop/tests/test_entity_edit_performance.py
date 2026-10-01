@@ -145,7 +145,10 @@ def test_station_placement_moves_only_owner_subtree_and_keeps_totals(tmp_path):
     record = {'id': 'way/1', 'name': '甲车辆段', 'station_type': '车辆段'}
     assert update_station_placement(index, record, {'folder_path': ['新省'], 'archived': True})
     with sqlite3.connect(index) as db:
-        assert db.execute('SELECT path FROM rail_station_nodes WHERE id=?', ('facility:ST-1',)).fetchone()[0] == '["stations","已归档","新省","way/1","ST-1"]'
+        # Descendants inherit placement through stable parents; moving a station
+        # must not rewrite every physical track's redundant source-time path.
+        assert db.execute('SELECT parent_id,path FROM rail_station_nodes WHERE id=?', ('facility:ST-1',)).fetchone() == ('station:way/1', '["stations","旧省","way/1","ST-1"]')
+        assert db.execute('SELECT parent_id FROM rail_station_nodes WHERE id=?', ('station:way/1',)).fetchone()[0] == 'folder:["stations","已归档","新省"]'
         assert db.execute('SELECT total,station_total,facility_total FROM rail_station_nodes WHERE id=?', ('folder:["stations","已归档","新省"]',)).fetchone() == (2, 1, 1)
         assert db.execute('SELECT path FROM rail_station_nodes WHERE id=?', ('station:way/2',)).fetchone()[0] == '["stations","way/2"]'
 

@@ -35,7 +35,7 @@ try:
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from .rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
-    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement
+    from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement, update_station_directory
     from .rail_semantics import semantic_record
     from .rail_station_types import FACILITY_TYPES
     from .provinces import geographic_catalog, VERSION
@@ -53,7 +53,7 @@ except ImportError:
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
     from rail_catalog_model import RailDirectoryModel, RailDirectoryView, sync_catalog_directory, update_directory_labels, update_catalog_directory, facility_path
-    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement
+    from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement, update_station_directory
     from rail_semantics import semantic_record
     from rail_station_types import FACILITY_TYPES
     from provinces import geographic_catalog, VERSION
@@ -782,54 +782,60 @@ class RailCatalog(QWidget):
         """
         if not isinstance(self.catalog, RailCatalogIndex):
             return False
-        presentation_overrides = {
-            key: {field: value for field, value in fields.items()
-                  if field not in ("station_id", "station_assignment")}
-            for key, fields in self.overrides.items()
-            if not key.startswith(("object:", "station:", "switch:", "system:"))
-        }
-        directory_changed, facility_changed = update_catalog_directory(
-            self.catalog, changed_keys, presentation_overrides,
-            self._resolve_directory_record, self.mode.currentIndex(), self.way_names)
-        if not directory_changed:
+        before_selection = self._directory_selection_counts(changed_keys)
+        delta = update_catalog_directory(
+            self.catalog, changed_keys, {}, self._resolve_directory_record,
+            self.mode.currentIndex(), self.way_names, revision=self._directory_token())
+        if not delta.changed:
             return False
-        if facility_changed:
+        if delta.facility_changed:
             self._station_track_keys_cache = None
+        after_selection = self._directory_selection_counts(changed_keys)
         for model in (getattr(self, "line_model", None), getattr(self, "facility_model", None)):
             if model is None:
                 continue
-            model.reset_from_disk()
-            if model.search != self.search.text().strip():
-                model.set_search(self.search.text())
-            if not model.root.children:
-                model.fetchMore()
-        if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS and (self.directory / "rail_lines.sqlite").exists():
-            if facility_changed:
-                station_changed = self._prepare_station_catalog()
-                station_model = getattr(self, "station_model", None)
-                if station_model is not None and station_changed:
-                    station_model.reset_from_disk()
-                    station_model.search = ""
-            else:
-                signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
-                if signature is not None:
-                    with closing(sqlite3.connect(self.catalog.path)) as db:
-                        db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)",
-                                   (signature,))
-                        db.commit()
-            station_model = getattr(self, "station_model", None)
-            if station_model is not None:
-                if station_model.search != self.station_query.strip():
-                    station_model.set_search(self.station_query)
-                if not station_model.root.children:
-                    station_model.fetchMore()
-        with closing(sqlite3.connect(self.catalog.path)) as db:
-            self.line_folder_paths = {
-                tuple(json.loads(raw)[1:]) for (raw,) in db.execute(
-                    "SELECT path FROM rail_directory_nodes WHERE kind='folder' AND view='lines' AND archived=0")
-            }
-        self._sync_paged_visibility()
+            old, new = before_selection.get(model.view, {}), after_selection.get(model.view, {})
+            for key in old.keys() | new.keys():
+                model.visible_counts[key] = max(0, model.visible_counts.get(key, 0) + new.get(key, 0) - old.get(key, 0))
+            model.refresh_affected(delta.nodes | delta.ancestors)
+        # A folder has no effect on inferred physical ownership or map visibility.
+        if not delta.facility_changed:
+            self._mark_station_fresh()
         return True
+
+    def _directory_selection_counts(self, keys):
+        from collections import Counter
+        result = {}
+        with closing(sqlite3.connect(self.catalog.path)) as db:
+            for model in (getattr(self, 'line_model', None), getattr(self, 'facility_model', None)):
+                if model is None:
+                    continue
+                counts = Counter()
+                for key in set(keys) & model.visible_ids:
+                    for node, raw in db.execute('SELECT n.id,n.path FROM rail_directory_nodes n '
+                        'JOIN rail_directory_members m ON m.node_id=n.id WHERE m.catalog_id=? AND n.view=?', (key, model.view)):
+                        counts[node] += 1
+                        path = json.loads(raw)
+                        for depth in range(2, len(path) + 1):
+                            counts['folder:' + json.dumps(path[:depth], ensure_ascii=False)] += 1
+                result[model.view] = counts
+        return result
+
+    def _directory_token(self):
+        revisions = self.workspace.revisions
+        shared = self.shared_path.stat().st_mtime_ns if self.shared_path.exists() else None
+        return json.dumps([10, self.workspace.identity, shared,
+                           *[revisions[name] for name in ('directory', 'semantic', 'assignment', 'topology')]])
+
+    def _station_token(self):
+        sources = [(path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else None
+                   for path in (self.directory / 'rail.sqlite', self.directory / 'rail_lines.sqlite')]
+        return json.dumps([12, self._directory_token(), sources])
+
+    def _mark_station_fresh(self):
+        with closing(sqlite3.connect(self.catalog.path)) as db, db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
+                db.execute("INSERT OR REPLACE INTO metadata VALUES('station_cache_revision',?)", (self._station_token(),))
 
     def _populate_paged_directory(self):
         """Build only disk memberships; the visible views fetch individual pages."""
@@ -848,7 +854,7 @@ class RailCatalog(QWidget):
             if not key.startswith(("object:", "station:", "switch:", "system:"))
         }
         directory_changed = sync_catalog_directory(self.catalog, presentation_overrides, self._resolve_directory_record,
-                                                   self.mode.currentIndex(), self.way_names)
+                                                   self.mode.currentIndex(), self.way_names, revision=self._directory_token())
         if directory_changed:
             self._station_track_keys_cache = None
         if len(self.catalog) > MAX_LEGACY_EDITOR_ITEMS:
@@ -933,10 +939,14 @@ class RailCatalog(QWidget):
         self.station_model.refresh_labels(station_keys)
 
     def _prepare_station_catalog(self):
-        signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
         with closing(sqlite3.connect(self.catalog.path)) as db:
+            token = db.execute("SELECT value FROM metadata WHERE key='station_cache_revision'").fetchone()
+            if token and token[0] == self._station_token():
+                return False
             old = db.execute("SELECT value FROM metadata WHERE key='station_catalog_signature'").fetchone()
+        signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
         if old and old[0] == signature:
+            self._mark_station_fresh()
             return False
         try:
             from .background_work import prepare_with_progress
@@ -945,7 +955,9 @@ class RailCatalog(QWidget):
         def build(report):
             report('正在准备站场设施目录；此步骤只在快照或归属结构变化后执行，不读取 PBF。')
             return sync_station_catalog(self.directory, self.catalog.path, self.regions, self.overrides, signature)
-        return prepare_with_progress(self, '准备铁路设施目录', build)
+        changed = prepare_with_progress(self, '准备铁路设施目录', build)
+        self._mark_station_fresh()
+        return changed
 
     def _sync_paged_visibility(self):
         facilities = self.station_track_keys()
@@ -2887,6 +2899,7 @@ class RailCatalog(QWidget):
                        if {'display_name', 'folder_path', 'archived', 'station_type', 'connected_lines'} & delta.keys()}
         self._refresh_station_items(station_ids, tree_ids=visible_ids)
         placement_changed = False
+        placements = []
         for sid in station_ids:
             record = self.station_record_by_id.get(sid)
             delta = deltas['station:' + sid]
@@ -2894,24 +2907,24 @@ class RailCatalog(QWidget):
             placement_changed |= placement
             if hasattr(self, 'station_model') and record:
                 if placement:
-                    update_station_placement(self.catalog.path, record, self.overrides.get('station:' + sid, {}))
+                    placements.append((record, self.overrides.get('station:' + sid, {})))
                 elif 'display_name' in delta:
                     update_station_label(self.catalog.path, sid, record['name'])
         if hasattr(self, 'station_model'):
             if placement_changed:
-                self.station_model.reset_from_disk()
-                self.station_model.search = ''
-                self.station_model.set_search(self.station_query)
-                self.station_model.fetchMore()
-                signature = station_catalog_signature(self.directory, self.catalog.path, self.overrides)
-                with closing(sqlite3.connect(self.catalog.path)) as db, db:
-                    db.execute("INSERT OR REPLACE INTO metadata VALUES('station_catalog_signature',?)", (signature,))
+                affected = update_station_directory(self.catalog.path, placements)
+                self.station_model.refresh_affected(affected)
+                self._mark_station_fresh()
             elif visible_ids:
                 self.station_model.refresh_labels({'station:' + sid for sid in visible_ids})
-        self.entities_changed.emit(deltas)
-        if any(sid.startswith('signalbox/') for sid in visible_ids):
+        folder_only = all(set(delta) <= {'folder_path'} for delta in deltas.values())
+        if folder_only:
+            self.directory_changed.emit()
+        else:
+            self.entities_changed.emit(deltas)
+        if not folder_only and any(sid.startswith('signalbox/') for sid in visible_ids):
             self.station_presentation_changed.emit()
-        if placement_changed:
+        if placement_changed and not folder_only:
             self.send_station_visibility()
         if any('connected_lines' in delta for delta in deltas.values()):
             # A changed connection can alter canonical routing/active plans.
