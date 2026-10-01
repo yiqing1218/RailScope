@@ -1,11 +1,11 @@
 """Read-only diagram layout over the shared RailScope repository.
 
 Coordinates here are drawing units, never infrastructure or operational IDs.
-The same monotone warp is applied to every object; junctions use shared nodes.
+The independent station_diagram package owns engineering layout; shared nodes
+remain actual connections. Legacy option names survive workspace migration.
 """
 from __future__ import annotations
 
-from bisect import bisect_right
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 import math
@@ -32,9 +32,10 @@ class DiagramOptions:
     show_legend: bool = True
     show_title: bool = True
     show_endpoints: bool = True
-    main_width: float = 5.5
+    main_width: float = 3.0
     station_width: float = 3.0
-    connector_width: float = 2.0
+    connector_width: float = 3.0
+    direction_radius_m: float = 2000
     title_size: float = 48
     label_size: float = 30
     platform_fill: str = 'gray'
@@ -50,7 +51,7 @@ class DiagramOptions:
 
     def __post_init__(self):
         import re
-        for name in ('station_compression', 'platform_width',
+        for name in ('station_compression', 'platform_width', 'direction_radius_m',
                      'outside_compression', 'main_width', 'station_width',
                      'connector_width', 'title_size', 'label_size', 'aspect_ratio'):
             value = getattr(self, name)
@@ -99,6 +100,7 @@ class DiagramEdge:
     external: bool
     zone: str
     parts: tuple = ()
+    path: str = ''
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,13 @@ class DiagramLayout:
     station_interval: tuple[float, float]
     visible_source_interval: tuple[float, float]
     baseline: tuple
+    lanes: list = field(default_factory=list)
+    ownership: dict = field(default_factory=dict)
+    yard_labels: list = field(default_factory=list)
+    line_labels: list = field(default_factory=list)
+    boundary_source: str = ''
+    crossings: list = field(default_factory=list)
+    switch_nodes: list[str] = field(default_factory=list)
 
 
 def edge_role(repo, edge, options=None):
@@ -196,92 +205,22 @@ def system_name(line):
 
 
 def connected_systems(repo, keys, options=None):
-    """Nearest named trunk via real nodes; ambiguous assignments stay neutral."""
-    import heapq
-    mainline_label = diagram_helpers()[2]
-    adjacent = defaultdict(list)
-    for key in keys:
-        e = repo.edges[key]
-        adjacent[e.from_node_id].append(key)
-        adjacent[e.to_node_id].append(key)
-    explicit, best, candidates, queue = {}, {}, defaultdict(set), []
-    for key in sorted(keys):
-        edge = repo.edges[key]
-        line = repo.lines.get(edge.infrastructure_line_id)
-        if edge_role(repo, edge, options) == 'main' and line and (mainline_label(line) or options and options.line_overrides.get(line.id,{}).get('role') == 'main'):
-            name = system_name(line)
-            explicit[key] = name
-            best[key] = 0
-            candidates[key].add(name)
-            heapq.heappush(queue, (0,key,name))
-    while queue:
-        distance, key, name = heapq.heappop(queue)
-        if distance != best.get(key):
-            continue
-        edge = repo.edges[key]
-        for node in (edge.from_node_id, edge.to_node_id):
-            for nxt in adjacent[node]:
-                if nxt in explicit or edge_role(repo, repo.edges[nxt], options) == 'auxiliary':
-                    continue
-                # Crossover edges do not relay an assignment to another system.
-                if edge_role(repo, edge, options) == 'connector':
-                    continue
-                d = distance+1
-                if d < best.get(nxt, math.inf):
-                    best[nxt] = d
-                    candidates[nxt] = {name}
-                    heapq.heappush(queue, (d,nxt,name))
-                elif d == best.get(nxt) and name not in candidates[nxt]:
-                    candidates[nxt].add(name)
-                    heapq.heappush(queue, (d,nxt,name))
-    return {key: (options.line_overrides.get(repo.edges[key].infrastructure_line_id,{}).get('system') if options else None)
-            or explicit.get(key) or (next(iter(candidates[key])) if len(candidates[key]) == 1 else None)
-            for key in keys}
+    """Compatibility query: only explicit domain memberships, never diffusion."""
+    try:
+        from .station_diagram.yard_classifier import classify
+    except ImportError:
+        from station_diagram.yard_classifier import classify
+    decisions, _ = classify(repo, keys, options or DiagramOptions())
+    return {key: decision.system for key, decision in decisions.items()}
 
 
 def select_edges(repo, options):
-    """BFS on stable node IDs, never on proximity or geometric crossings.
-
-    External sidings are not traversed. Content visibility is applied after
-    traversal so hiding a connector cannot change which edges are related.
-    """
-    yard = station_inner_edges(repo)
-    adjacent = defaultdict(list)
-    for key, edge in repo.edges.items():
-        adjacent[edge.from_node_id].append(key)
-        adjacent[edge.to_node_id].append(key)
-    def allowed(key):
-        status = repo.edges[key].construction_status
-        return status == 'operating' or status == 'construction' and options.include_construction
-    seeds = {key for key in yard if allowed(key)}
-    distances = {key: 0 for key in seeds}
-    queue = deque(sorted(seeds))
-    while queue:
-        key = queue.popleft()
-        depth = distances[key]
-        if depth >= options.topology_depth:
-            continue
-        edge = repo.edges[key]
-        for node in (edge.from_node_id, edge.to_node_id):
-            for candidate in adjacent[node]:
-                if candidate in distances or not allowed(candidate):
-                    continue
-                if candidate not in yard and edge_role(repo, repo.edges[candidate],options) not in ('main', 'connector'):
-                    continue
-                distances[candidate] = depth + 1
-                queue.append(candidate)
-    chosen = set()
-    for key in distances:
-        role = edge_role(repo, repo.edges[key],options)
-        if not options.line_overrides.get(repo.edges[key].infrastructure_line_id,{}).get('visible',True):
-            continue
-        enabled = ({'main': options.show_main, 'connector': options.show_connectors,
-                    'station': options.show_station, 'auxiliary': options.show_station} if key in yard else
-                   {'main': options.show_main and options.show_outer_main,
-                    'connector': options.show_connectors and options.show_outer_connectors})
-        if enabled.get(role, False):
-            chosen.add(key)
-    return yard, chosen
+    try:
+        from .station_diagram.extractor import extract
+    except ImportError:
+        from station_diagram.extractor import extract
+    result = extract(repo, (), options)
+    return result.inner, result.selected
 
 
 def principal_axis(paths):
@@ -325,9 +264,9 @@ def reliable_platform_axes(paths):
 
 def build_layout(repo, context=(), options=None):
     try:
-        from .station_diagram_geometry import build_layout as build
+        from .station_diagram.pipeline import build_layout as build
     except ImportError:
-        from station_diagram_geometry import build_layout as build
+        from station_diagram.pipeline import build_layout as build
     return build(repo, context, options)
 
 

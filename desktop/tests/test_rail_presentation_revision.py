@@ -192,7 +192,7 @@ def test_real_platform_relation_recovers_far_outline_and_depot(tmp_path):
     assert props['geometry_source']=='osm_area_representative_point'
 
 
-def test_station_svg_shows_line_names_and_destinations_without_track_numbers():
+def test_station_svg_labels_official_track_without_inventing_external_ports():
     from railscope.domain import Station, NetworkNode, NetworkEdge, InfrastructureLine, StationTrack
     from railscope.repository import RailRepository
     from railscope.integrity import path_refs
@@ -208,12 +208,12 @@ def test_station_svg_shows_line_names_and_destinations_without_track_numbers():
     repo.station_tracks={'TRK-a':StationTrack('TRK-a','ST-a','甲站 · 12道','12',length_m=1000,edge_refs=refs)}
     text=station_svg(repo,station_info={'summary':'客运站 · 站台：2 · 股道：6',
         'line_destinations':{'IL-a':{'left':'乙站','right':'丙站'}}})
-    assert '甲乙线' in text and '往乙站' in text and '往丙站' in text
+    assert '甲乙线' in text and 'data-port-arrow' not in text
     assert '客运站 · 站台：2 · 股道：6' not in text  # Side labels only; no extra explanations.
-    assert '12道' not in text and '站台 12' not in text
+    assert 'data-track-number="true"' in text and '>12</text>' in text
     from dataclasses import replace
     repo.lines['IL-a']=replace(repo.lines['IL-a'],name='第12道')
-    assert '12道' not in station_svg(repo)
+    assert '第12道' not in station_svg(repo)
 
 
 @pytest.mark.parametrize('station_name', ['甲站','北京南站','某车辆段'])
@@ -312,7 +312,7 @@ def test_export_station_without_station_directory_track_group(tmp_path):
         {'name':'其他站','station_source_id':'node/1'}, {})
     assert rows and all(row['station_source']=='node/1' for row in rows.values())
     svg = station_svg(repo,context)
-    assert '其他站平面布置图' in svg and 'data-platform-id' in svg
+    assert '其他站平面布置示意图' in svg and 'data-platform-id' in svg
     assert all(edge.id.startswith('NE-') for edge in repo.edges.values())
 
 

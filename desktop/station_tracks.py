@@ -11,7 +11,7 @@ import json
 import math
 import sqlite3
 
-from railscope.domain import Station, StationTrack, StationTrackEdge
+from railscope.domain import Station, StationTrack, StationTrackEdge, Yard
 from railscope.identity import IdentityRegistry
 from railscope.integrity import path_refs
 try:
@@ -205,6 +205,23 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
                 (west,east,south,north))]
             if not features:
                 raise ValueError('该站尚无可导出的真实轨道数据')
+        # Complete extraction from a real boundary, independent of ST catalog.
+        if source:
+            assets = station_assets(db,source)
+            try:
+                from .station_diagram.extractor import station_boundaries
+            except ImportError:
+                from station_diagram.extractor import station_boundaries
+            boundary = station_boundaries(assets)
+            if boundary is not None:
+                from shapely.geometry import shape
+                bx0,by0,bx1,by1 = boundary.bounds
+                inside = [json.loads(raw) for (raw,) in db.execute(
+                    "SELECT f.data FROM bounds b JOIN features f ON f.id=b.id WHERE f.kind='rail' "
+                    "AND b.maxx>=? AND b.minx<=? AND b.maxy>=? AND b.miny<=?",
+                    (bx0,bx1,by0,by1))]
+                features.extend(f for f in inside if f['properties'].get('network_edge_id')
+                                and shape(f['geometry']).intersects(boundary) and f not in features)
         edge_ids = {f['properties']['network_edge_id'] for f in features}
         edges = [json.loads(db.execute('SELECT data FROM edges WHERE id=?', (key,)).fetchone()[0]) for key in sorted(edge_ids)]
         coords = [p for edge in edges for p in edge['coordinates']]
@@ -294,6 +311,11 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
         role = shared_attribute('track_role', 'unknown')
         saved = migrate_track_override(saved, full_name, role)
         raw = saved.get('station_track', {})
+        if saved.get('station_yard'):
+            yard = Yard(**saved['station_yard'])
+            if yard.id != raw.get('yard_id') or yard.station_id != station_id:
+                raise ValueError('分场引用与当前车站不一致，需先迁移核对')
+            repo.yards[yard.id] = yard
         if raw.get('edge_refs') and {ref['edge_id'] for ref in raw['edge_refs']} != {ref.edge_id for ref in refs}:
             raise ValueError('股道物理引用发生变化，需要迁移核对：' + (saved.get('display_name') or ident))
         tags = [edge.get('way_tags', {}) for edge in source_edges]
@@ -314,9 +336,9 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
         track_name = track_name.replace('（参考）', '').replace('(参考)', '').strip()
         entity = StationTrack(raw.get('id') or ident, station_id, track_name or semantic_track_name(full_name, role), number or None,
             length_m=refs[-1].end_distance_m, is_virtual=False, edge_refs=refs,
-            track_role=raw.get('track_role', role), railway_class=shared_attribute('railway_class', 'unknown'),
-            infrastructure_line_id=shared_attribute('infrastructure_line_id'),
-            yard_id=raw.get('yard_id') or shared_attribute('yard_id'), zone_id=raw.get('zone_id') or shared_attribute('zone_id'),
+            track_role=raw.get('track_role', role), railway_class=raw.get('railway_class') or shared_attribute('railway_class', 'unknown'),
+            infrastructure_line_id=raw.get('infrastructure_line_id') if 'infrastructure_line_id' in raw else shared_attribute('infrastructure_line_id'),
+            yard_id=raw['yard_id'] if 'yard_id' in raw else shared_attribute('yard_id'), zone_id=raw.get('zone_id') or shared_attribute('zone_id'),
             provenance=provenance, legacy_metadata=raw.get('legacy_metadata', saved.get('legacy_metadata', {})),
             source_member_ids=source_sections, snapshot_id=str((directory / 'rail.sqlite').stat().st_mtime_ns),
             verification_status=saved.get('verification_status', 'user_named' if saved.get('source') == 'manual' else 'source_unverified'))
@@ -408,6 +430,7 @@ def schematic_station_info(directory, repo, rows, overrides):
 def track_overrides(repo, rows):
     return {source_key: {**rows[key].get('saved_overrides', {}).get(source_key, {}),
             'station_track': asdict(track), 'station_track_id': track.id,
+            'station_yard': asdict(repo.yards[track.yard_id]) if track.yard_id in repo.yards else None,
             'source_edge_ids': list(rows[key]['source_edges']),
             'display_name': track.name, 'track_number': track.track_number,
             'source': 'manual' if track.verification_status == 'user_named' else 'station_track_entity',

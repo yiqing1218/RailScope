@@ -68,13 +68,14 @@ class StationDiagramDialog(QDialog):
                     values['remove_common_bend'] = False
                 if values.get('color_scheme') not in ('systems','mono'):
                     values['color_scheme'] = 'systems'
+                values['station_width'] = values['connector_width'] = values.get('main_width',3)
                 defaults = DiagramOptions(**values)
             except (OSError, ValueError, TypeError):
                 self.settings_warning = '上次设置无效，已恢复默认设置。'
         self.line_rules = dict(defaults.line_overrides)
-        self.port_rules = dict(defaults.port_overrides)
+        self.port_rules = {key:{k:v for k,v in rule.items() if k!='extend'} for key,rule in defaults.port_overrides.items()}
         main = QVBoxLayout(self)
-        hint = QLabel('沿站台方向压缩；自动判断仅作图面参考。可在“逐线编辑 / 两端文字”中修正归属、粗细、颜色、标注和延长，不修改原始铁路数据。')
+        hint = QLabel('按真实连接生成独立工程站场示意图。站台区等距排列，咽喉规则化，站外按真实方向引出。归属不明使用灰色；可先在股道编辑中整理分场与业务线路。')
         hint.setWordWrap(True)
         main.addWidget(hint)
         row = QHBoxLayout()
@@ -90,6 +91,10 @@ class StationDiagramDialog(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
         preview_column.addWidget(self.status)
+        self.warning_details = QTextEdit()
+        self.warning_details.setReadOnly(True)
+        self.warning_details.setMaximumHeight(135)
+        preview_column.addWidget(self.warning_details)
         refresh = QPushButton('刷新预览')
         refresh.clicked.connect(self.refresh_preview)
         preview_column.addWidget(refresh)
@@ -134,16 +139,14 @@ class StationDiagramDialog(QDialog):
             self.controls[name] = control
 
         form = page('布局')
-        check(form, 'auto_rotate', '自动旋正到站场主轴')
         combo(form, 'orientation', '构图方向', [('横向', 'landscape'), ('纵向', 'portrait')])
         check(form, 'show_north', '真实北向指北针')
-        check(form, 'remove_common_bend', '去除共同弯曲（实验，默认关闭）')
-        check(form, 'align_main_outlets', '水平端口示意延长到左右统一边界')
-        number(form, 'station_compression', '站场区域轴向压缩倍数', 1, 12, .25)
-        number(form, 'outside_compression', '站外区域轴向压缩倍数', 1, 30, .5)
+        number(form, 'station_compression', '站台区紧凑度', 1, 12, .25)
+        number(form, 'outside_compression', '站外连接紧凑度', 1, 30, .5)
+        number(form, 'direction_radius_m', '站外方向参考半径 / m', 500, 10000, 250)
         number(form, 'platform_width', '站台符号宽度倍数', .5, 4, .1)
         number(form, 'margin', '全图留白（图面单位）', 10, 240, 5)
-        form.addRow(QLabel('压缩倍数越大，轴向长度越短。画布保持固定；站外压缩加大，会显示更长的站外区间。站场、站外共用总图面尺度。'))
+        form.addRow(QLabel('图面不按实际长度比例。核心股道保持统一间距，咽喉保留真实节点次序；站外方向和端口顺序参考原始几何。'))
 
         form = page('内容')
         for name, title in [('show_main', '正线'), ('show_station', '站线 / 到发线 / 辅助线'),
@@ -154,7 +157,7 @@ class StationDiagramDialog(QDialog):
             check(form, name, title)
         number(form, 'topology_depth', '向外追踪连接层数', 0, 64, 1, True)
         form.addRow(QLabel('外围跟随真实连接的主线和联络线，不按附近几何凑线路。更高层数可扩大数据范围；超出画布的线路只绘制到边界。'))
-        form.addRow(QLabel('只有收束后的正线端口标注名称；不标联络线，不绘制标注引线和道岔说明。'))
+        form.addRow(QLabel('收束处标线路名，边缘端口标去向；道岔符号只绘制在真实共用节点上。'))
 
         def editor_page(title, headers):
             widget = QWidget()
@@ -180,17 +183,17 @@ class StationDiagramDialog(QDialog):
             return table, reset
 
         self.line_table, line_reset = editor_page('逐线编辑', ['线路 / ID', '显示', '角色', '颜色归属系统', '颜色 #RRGGBB', '线宽', '端口标注'])
-        self.port_table, port_reset = editor_page('两端文字', ['线路端口', '标注', '自定义文字（用 \\n 换行）', '示意延长', '水平偏移', '垂直偏移'])
+        self.port_table, port_reset = editor_page('边缘端口', ['线路端口', '标注', '自定义文字（用 \\n 换行）', '引出规则', '水平偏移', '垂直偏移'])
         line_reset.clicked.connect(lambda: self.reset_editor('line'))
         port_reset.clicked.connect(lambda: self.reset_editor('port'))
 
         form = page('样式')
-        for name, title in [('main_width', '正线线宽'), ('station_width', '站线线宽'), ('connector_width', '联络线线宽')]:
+        for name, title in [('main_width', '统一铁路默认线宽')]:
             number(form, name, title, .5, 15, .5)
         number(form, 'title_size', '标题字号', 20, 90, 2)
         number(form, 'label_size', '标注字号', 12, 48, 1)
         combo(form, 'platform_fill', '站台填充', [('浅灰', 'gray'), ('淡绿', 'tint'), ('白底轮廓', 'outline')])
-        combo(form, 'color_scheme', '颜色编码', [('线路系统与相连站线', 'systems'), ('单色打印', 'mono')])
+        combo(form, 'color_scheme', '颜色编码', [('明确线路与分场归属', 'systems'), ('单色打印', 'mono')])
         self.colors = QTextEdit()
         self.colors.setMaximumHeight(140)
         self.colors.setPlaceholderText('每行：线路系统名称或 RailScope 线路 ID = #RRGGBB\n例如：京沪高速线 = #2463a3')
@@ -222,6 +225,7 @@ class StationDiagramDialog(QDialog):
                     raise ValueError('颜色映射须为：线路名称 = #RRGGBB')
                 colors[key.strip()] = value.strip()
         self.read_editors()
+        values['station_width'] = values['connector_width'] = values['main_width']
         return DiagramOptions(**values, color_overrides=colors,
                               line_overrides=self.line_rules, port_overrides=self.port_rules)
 
@@ -266,7 +270,7 @@ class StationDiagramDialog(QDialog):
         for row in range(self.port_table.rowCount()):
             key = self.port_table.item(row,0).data(Qt.ItemDataRole.UserRole)
             rule = {}
-            for col, name in ((1,'visible'),(3,'extend')):
+            for col, name in ((1,'visible'),):
                 value = self.port_table.cellWidget(row,col).currentData()
                 if value is not None:
                     rule[name] = value
@@ -319,10 +323,11 @@ class StationDiagramDialog(QDialog):
             row = self.port_table.rowCount()
             self.port_table.insertRow(row)
             rule = self.port_rules.get(key,{})
-            side = '左' if port['side']=='left' else '右'
+            side = {'left':'左','right':'右','top':'上','bottom':'下'}[port['side']]
             self.port_table.setItem(row,0,self.readonly_item(f'{system_name(port["line"])} · {side}',key))
-            for col,name,titles in ((1,'visible',('标注','不标')),(3,'extend',('延长','不延长'))):
+            for col,name,titles in ((1,'visible',('标注','不标')),):
                 self.port_table.setCellWidget(row,col,self.editor_combo([('自动',None),(titles[0],True),(titles[1],False)],rule.get(name)))
+            self.port_table.setItem(row,3,self.readonly_item('源方向 → 图框',key))
             for col,name in ((2,'text'),(4,'dx'),(5,'dy')):
                 self.port_table.setItem(row,col,QTableWidgetItem(str(rule.get(name,'')).replace('\n','\\n')))
             destination = port_destination({**port,'side':'right' if port['vector'][0]>=0 else 'left'},self.info,local)
@@ -354,9 +359,16 @@ class StationDiagramDialog(QDialog):
             ensure_export_font()
             svg = station_svg(self.repo, self.context, station_info=self.info, options=options)
             self.preview.load(QByteArray(svg.encode('utf-8')))
-            self.sync_editors(build_layout(self.repo,self.context,options))
+            layout = build_layout(self.repo,self.context,options)
+            try:
+                from .station_diagram.renderer import destination_warnings
+            except ImportError:
+                from station_diagram.renderer import destination_warnings
+            layout.warnings.extend(destination_warnings(self.repo,layout,self.info,options))
+            self.sync_editors(layout)
+            self.warning_details.setPlainText('\n'.join(layout.warnings) or '已检查真实轨道连接与明确归属。')
             width, height = options.canvas_size
-            self.status.setText(self.settings_warning + f'预览：{width} × {height}，{options.dpi} DPI。压缩仅沿站台轴；原始拓扑与几何保留。')
+            self.status.setText(self.settings_warning + f'预览：{width} × {height}，{options.dpi} DPI；{len(layout.edges)} 条真实轨道，{len(layout.lanes)} 根核心股道，{len(layout.warnings)} 项核对提示。')
             return True
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             self.status.setText(str(error))

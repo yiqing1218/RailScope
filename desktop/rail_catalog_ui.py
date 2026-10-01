@@ -365,6 +365,7 @@ class RailCatalog(QWidget):
     line_edit_requested = Signal(object)
     segment_edit_requested = Signal(dict)
     line_names_changed = Signal(dict)
+    display_names_changed = Signal()
     metadata_changed = Signal()
     presentation_changed = Signal(dict)
     station_presentation_changed = Signal()
@@ -624,6 +625,22 @@ class RailCatalog(QWidget):
         for key, value in self.overrides.items():
             if value.get('assembly_id') and key in self.catalog:
                 self.assembly_representatives.setdefault(value['assembly_id'], key)
+        self.display_names_changed.emit()
+
+    def save_feature_name(self, properties, name):
+        """Keep the public rename API on the existing workspace transaction."""
+        try:
+            from .rail_display import feature_name_key
+        except ImportError:
+            from rail_display import feature_name_key
+        key = feature_name_key(properties)
+        name = str(name).strip()
+        if not key or not name:
+            raise ValueError("请选择有稳定来源编号的对象并填写名称")
+        self._save_local_overrides({"feature:" + key: {"display_name": name}})
+        self.entities_changed.emit({"feature:" + key: {"display_name": name}})
+        self.display_names_changed.emit()
+        self.metadata_changed.emit()
 
     def name_identified_yards(self):
         """Name already-associated yard groups in the workspace, never in OSM."""

@@ -210,6 +210,8 @@ def logo_pixmap():
 class LocalHandler(SimpleHTTPRequestHandler):
     """Serve only the map assets and local GIS files needed by this app."""
 
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -232,7 +234,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
         allowed = (
             (
                 path.startswith("/desktop/assets/")
-                and Path(path).suffix in {".html", ".css", ".js"}
+                and Path(path).suffix in {".html", ".css", ".js", ".mjs"}
             )
             or path
             in {
@@ -1579,6 +1581,7 @@ class Desk(QMainWindow):
             from station_tracks import schematic_station_info, load_station_tracks
             info = schematic_station_info(self.rail_catalog_widget.directory, repo, rows,
                                           self.rail_catalog_widget.overrides)
+            info['rail_styles'] = self.config.get('railStyles', {})
             source = next((row.get('station_source') for row in rows.values() if row.get('station_source')), None)
             def reload_diagram(depth):
                 if not source:
@@ -1589,6 +1592,7 @@ class Desk(QMainWindow):
                     approach_depth=depth)
                 loaded_info = schematic_station_info(self.rail_catalog_widget.directory, loaded, loaded_rows,
                                                      self.rail_catalog_widget.overrides)
+                loaded_info['rail_styles'] = self.config.get('railStyles', {})
                 return loaded, loaded_context, loaded_info
             dialog = StationDiagramDialog(repo, context, info, self,
                 ROOT / 'data/user_settings/station_diagram.json', reload_callback=reload_diagram)

@@ -14,7 +14,7 @@ import json
 from railscope.domain import (
     Corridor, DatasetSnapshot, InfrastructureLine, LineMembership, NetworkEdge, NetworkNode,
     Station, StationRoute, StationTrack, StationTrackEdge, OperationalPoint, StopTime, TrainRun, TrainService,
-    RouteIntent, RouteIntentStep, Platform,
+    RouteIntent, RouteIntentStep, Platform, Yard,
 )
 from railscope.identity import IdentityRegistry
 from railscope.integrity import ordered_path_nodes, path_refs, validate_repository
@@ -309,6 +309,14 @@ def _build_repository(graph, payload, registry, identity_db, overrides=None, nam
     for track in {t.id:t for t in named_by_edge.values()}.values():
         if track.station_id in repo.stations and all(r.edge_id in repo.edges for r in track.edge_refs):
             repo.station_tracks[track.id]=track
+    for value in (named or {}).values():
+        raw=value.get('station_yard')
+        if raw and raw.get('station_id') in repo.stations:
+            yard=decode(Yard,raw)
+            existing=repo.yards.get(yard.id)
+            if existing and existing!=yard:
+                raise ValueError('同一分场存在冲突的保存记录：'+yard.id)
+            repo.yards[yard.id]=yard
     for value in document.get("station_routes", []):
         source_id = value["id"]
         station_route_id = registry.resolve_alias("station_route", source_id, "SR", identity_db)

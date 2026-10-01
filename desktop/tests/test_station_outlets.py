@@ -57,7 +57,7 @@ def test_three_exit_directions_keep_actual_track_counts_and_matching_colors(coun
         for edge in label.attrib['data-port-edges'].split():
             assert paths[edge].attrib['stroke']==color
         assert float(label.attrib['x'])<float(label.attrib['data-port-x'])
-    assert {path.attrib['stroke-width'] for path in paths.values()}=={'5.50'}
+    assert {path.attrib['stroke-width'] for path in paths.values()}=={'3.00'}
     assert all('stroke-dasharray' not in path.attrib for path in paths.values())
     assert repo.edges==source
 
@@ -70,9 +70,9 @@ def test_ports_do_not_label_auxiliary_lines_or_invent_connections():
     svg=ET.fromstring(text)
     labels=[e for e in svg.iter() if 'data-line-id' in e.attrib]
     assert len(labels)==1  # Only clean main-line outlets carry labels.
-    assert any('甲干线' in ''.join(label.itertext()) for label in labels)
+    assert any(e.attrib.get('data-convergence-line')=='IL-0' and '甲干线' in ''.join(e.itertext()) for e in svg.iter())
     assert all('data-edge-id' in e.attrib for e in svg.iter() if e.tag.endswith('path'))
-    assert 'data-platform-id' in text and '走行线' not in text
+    assert 'data-platform-id' in text and not any('走行线' in ''.join(label.itertext()) for label in labels)
 
 
 def test_curve_exit_uses_terminal_direction_instead_of_left_right_column():

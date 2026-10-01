@@ -50,18 +50,19 @@ def test_reject_invalid_options(field, value):
         DiagramOptions(**{field: value})
 
 
-def test_fixed_frame_expands_source_coverage_only_along_platform_axis():
+def test_external_compactness_does_not_change_real_selection():
     repo,context = pair_repository()
     a = build_layout(repo,context,DiagramOptions(outside_compression=4))
     b = build_layout(repo,context,DiagramOptions(outside_compression=12))
     assert (a.width,a.height,a.geometry_scale) == (b.width,b.height,b.geometry_scale)
-    assert b.visible_source_interval[1]-b.visible_source_interval[0] > a.visible_source_interval[1]-a.visible_source_interval[0]
+    assert b.edges.keys() == a.edges.keys()
+    assert b.visible_source_interval == a.visible_source_interval
     for point in repo.edges['NE-0-0'].coordinates:
         assert a.project(point)[1] == pytest.approx(b.project(point)[1])
 
 
 @pytest.mark.parametrize('mapping', ['system','line'])
-def test_station_tracks_inherit_connected_main_color_including_manual_line_id(mapping):
+def test_station_tracks_require_explicit_line_membership_for_color(mapping):
     from railscope.domain import InfrastructureLine,NetworkEdge,StationTrack
     from railscope.integrity import path_refs
     repo,context = pair_repository()
@@ -76,9 +77,14 @@ def test_station_tracks_inherit_connected_main_color_including_manual_line_id(ma
     options = DiagramOptions(color_overrides={'IL-0':'#123456'}) if mapping=='system' else DiagramOptions(line_overrides={'IL-0':{'color':'#123456'}})
     svg = ET.fromstring(station_svg(repo,context,options=options))
     paths = {e.attrib['data-edge-id']:e for e in svg.iter() if 'data-edge-id' in e.attrib}
-    assert paths[key].attrib['stroke'] == paths[primary.id].attrib['stroke'] == '#123456'
-    assert float(paths[key].attrib['stroke-width']) < float(paths[primary.id].attrib['stroke-width'])
-    assert build_layout(repo,context,options).systems[key] == '甲干线'
+    assert paths[key].attrib['stroke'] == '#85919b'
+    assert paths[primary.id].attrib['stroke'] == '#123456'
+    assert paths[key].attrib['stroke-width'] == paths[primary.id].attrib['stroke-width']
+    assert build_layout(repo,context,options).systems[key] is None
+    repo.station_tracks[key] = replace(repo.station_tracks[key],infrastructure_line_id='IL-0')
+    svg = ET.fromstring(station_svg(repo,context,options=options))
+    paths = {e.attrib['data-edge-id']:e for e in svg.iter() if 'data-edge-id' in e.attrib}
+    assert paths[key].attrib['stroke'] == '#123456'
 
 
 def test_construction_is_optional_dashed_and_planned_is_excluded():
@@ -135,7 +141,7 @@ def test_only_main_outlets_have_labels_and_no_switch_or_leader():
     labels = [e for e in svg.iter() if 'data-line-id' in e.attrib]
     assert all(e.attrib['data-line-id'] != 'IL-1' for e in labels)
     assert all(e.attrib['data-end'] in ('left','right') for e in labels)
-    assert '某联络线' not in ''.join(svg.itertext())
+    assert not any(e.attrib.get('data-convergence-line')=='IL-1' for e in svg.iter())
 
 
 def test_shared_junction_coordinates_survive_bend_and_compression():
@@ -179,7 +185,7 @@ def test_dialog_preview_controls_and_png_pdf_output(qtbot,tmp_path):
     assert dialog.result() == QDialog.DialogCode.Accepted
 
 
-def test_outlets_align_only_in_drawing_and_retain_original_endpoints():
+def test_ports_are_direction_layout_anchors_without_changing_source():
     import json
     repo,context = pair_repository()
     for key,edge in list(repo.edges.items()):
@@ -194,12 +200,12 @@ def test_outlets_align_only_in_drawing_and_retain_original_endpoints():
         ports = [p for p in b.ports if p['side']==side]
         assert ports
         assert all(p['point'][0] == b.plot_bounds[index] for p in ports)
-    assert any(p['extended'] for p in b.ports)
+    assert all(not p['extended'] for p in b.ports)
     assert [p['original_points'] for p in b.ports] == [p['original_points'] for p in a.ports]
     assert repo == original
     svg = ET.fromstring(station_svg(repo,context))
     metadata = json.loads(svg.find('{http://www.w3.org/2000/svg}metadata').text)
-    assert any(p['extension_source']=='schematic_display_only' for p in metadata['ports'])
+    assert all(p['direction_source']=='source_geojson_circular_bearing' for p in metadata['ports'])
 
 
 def test_manual_port_text_visibility_and_extension_overrides():
@@ -216,7 +222,7 @@ def test_manual_port_text_visibility_and_extension_overrides():
     assert len(labels)==1 and labels[0].attrib['data-end']=='left'
     assert ''.join(e.text or '' for e in labels[0] if e.tag.endswith('text'))=='自定正线往测试城市'
     assert not any(e.attrib.get('data-line-id')=='IL-1' for e in svg.iter())
-    assert float(labels[0].attrib['x'])==pytest.approx(left['original_points'][0][0]-26,abs=.02)
+    assert float(labels[0].attrib['x'])==pytest.approx(left['point'][0]-24,abs=.02)
 
 
 def test_line_manual_color_role_and_hide_are_presentation_only():
@@ -252,13 +258,13 @@ def test_semi_automatic_editors_roundtrip(qtbot,tmp_path):
     dialog.line_table.cellWidget(row,6).setCurrentIndex(2)
     portrow = next(r for r in range(dialog.port_table.rowCount()) if dialog.port_table.item(r,0).data(256)=='IL-1:left')
     dialog.port_table.item(portrow,2).setText('用户线路\\n往用户城市')
-    dialog.port_table.cellWidget(portrow,3).setCurrentIndex(2)
+    assert dialog.port_table.item(portrow,3).text()=='源方向 → 图框'
     assert dialog.refresh_preview()
     options = dialog.options()
     assert options.line_overrides['IL-0']['color']=='#112233'
     assert options.line_overrides['IL-0']['label'] is False
     assert options.port_overrides['IL-1:left']['text']=='用户线路\n往用户城市'
-    assert options.port_overrides['IL-1:left']['extend'] is False
+    assert 'extend' not in options.port_overrides['IL-1:left']
     dialog.save_settings(options)
     reopened = StationDiagramDialog(repo,context,settings_path=settings)
     qtbot.addWidget(reopened)
