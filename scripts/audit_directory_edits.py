@@ -173,7 +173,9 @@ def national(ui, app, probe, base):
               for path in source.iterdir() if path.is_file() and path.suffix in ('.json', '.sqlite')}
     def content_hashes():
         hashes = {}
-        for name in ('rail.sqlite', 'rail_lines.sqlite', 'rail_catalog.sqlite'):
+        # The running desktop may write its rebuildable catalog projections.
+        # Geometry/topology are immutable; the catalog is backed up below.
+        for name in ('rail.sqlite', 'rail_lines.sqlite'):
             digest = hashlib.sha256()
             with (source / name).open('rb') as stream:
                 while block := stream.read(8*1024*1024):
@@ -206,7 +208,16 @@ def national(ui, app, probe, base):
         if seed.exists():
             shutil.copy2(seed, settings.with_name(name))
     raw_connect = sqlite3.connect
-    protected = {path.resolve() for path in directory.glob('*.sqlite') if path.name != 'rail_catalog.sqlite'}
+    protected = {path.resolve() for path in source.glob('*.sqlite')} | {
+        path.resolve() for path in directory.glob('*.sqlite') if path.name != 'rail_catalog.sqlite'}
+    def catalog_rows_hash():
+        digest = hashlib.sha256()
+        with closing(raw_connect((directory/'rail_catalog.sqlite').resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            for row in db.execute('SELECT id,data FROM catalog ORDER BY id'):
+                digest.update(json.dumps(row, ensure_ascii=False, separators=(',', ':')).encode())
+                digest.update(b'\n')
+        return digest.hexdigest()
+    catalog_before = catalog_rows_hash()
     class AuditConnection(sqlite3.Connection):
         def __init__(self, database, *args, **kwargs):
             super().__init__(database, *args, **kwargs)
@@ -343,9 +354,18 @@ def national(ui, app, probe, base):
         close_widget(widget)
         app.processEvents()
     after = {name: (source / name).stat() for name in stamps}
-    if any((after[name].st_size, after[name].st_mtime_ns) != value for name, value in stamps.items()):
+    changed_sources = [name for name, value in stamps.items()
+                       if (after[name].st_size, after[name].st_mtime_ns) != value]
+    if any(name != 'rail_catalog.sqlite' for name in changed_sources):
         raise RuntimeError('Source snapshot changed during audit; timings cannot be certified')
-    result['source_files_size_and_mtime_unchanged'] = True
+    result['source_files_size_and_mtime_unchanged'] = not changed_sources
+    result['external_mutable_projection_changes'] = changed_sources
+    result['geometry_topology_size_and_mtime_unchanged'] = True
+    catalog_after = catalog_rows_hash()
+    if catalog_before != catalog_after:
+        raise RuntimeError('Directory edit modified catalog source records in the isolated snapshot')
+    result['catalog_source_rows_sha256_before'] = catalog_before
+    result['catalog_source_rows_sha256_after'] = catalog_after
     print('verify source content hashes', flush=True)
     after_hashes = content_hashes()
     if original_hashes != after_hashes:
