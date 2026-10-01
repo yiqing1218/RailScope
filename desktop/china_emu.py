@@ -22,6 +22,7 @@ from railscope.domain import ReferenceProfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PATH = ROOT / "data/user_settings/china_emu/reference.json"
+SHARED_REFERENCE_PATH = ROOT / "data/catalog/china_emu/reference.json"
 BASE = "https://china-emu.cn/"
 SCHEMA = "railscope.reference-profiles.v1"
 LINE_FIELDS = {
@@ -89,7 +90,7 @@ def pairs(host, fields):
             for hidden in copy.select(".hidden"):
                 hidden.decompose()
             value = text(copy)
-            if value:
+            if value and value.casefold() not in {"--", "-", "*", "?", "？", "未知", "暂无", "n/a"}:
                 result[key] = value
     return result
 
@@ -106,10 +107,15 @@ def parse_profile(html, url, retrieved_at=None):
     url = source_url(url)
     soup = BeautifulSoup(html, "html.parser")
     title = soup.select_one("h2")
-    if not title or not text(title):
-        raise ValueError("资料页面缺少对象名称")
-    name, scopes = text(title), []
+    name = text(title)
     path = urlsplit(url).path
+    if not name and path.startswith("/Trains/Model/Detail-"):
+        page_title = text(soup.title)
+        if " - 动车组列车 - " in page_title:
+            name = page_title.split(" - 动车组列车 - ", 1)[0].strip()
+    if not name:
+        raise ValueError("资料页面缺少对象名称")
+    scopes = []
     if path == "/RailRoads/Line/":
         kind = "line"
         for heading in soup.select(".title-label"):
@@ -190,11 +196,11 @@ class Client:
         self.interval, self.lock, self.last = interval, threading.Lock(), 0.0
         self.timestamps = {}
 
-    def fetch(self, url):
+    def fetch(self, url, refresh=False):
         url = source_url(url)
         key = hashlib.sha256(url.encode()).hexdigest()
         path = self.cache / (key + ".json")
-        if path.exists() and time.time() - path.stat().st_mtime < 7 * 86400:
+        if not refresh and path.exists() and time.time() - path.stat().st_mtime < 7 * 86400:
             cached = json.loads(path.read_text(encoding="utf-8"))
             self.timestamps[url] = cached.get("retrieved_at", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat())
             return cached["html"]
@@ -273,7 +279,9 @@ def _load(path, stamp):
 
 
 def load_store(path=None):
-    path = Path(path or REFERENCE_PATH)
+    if path is None:
+        path = REFERENCE_PATH if REFERENCE_PATH.exists() else SHARED_REFERENCE_PATH
+    path = Path(path)
     stamp = (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
     return _load(str(path), stamp)
 
@@ -384,7 +392,7 @@ def import_references(destination=REFERENCE_PATH, station_names=None, progress=l
     if not profiles:
         raise ValueError("未取得有效资料；已有参考文件保留")
     # Refreshes preserve successful old pages when a later request fails.
-    old = load_store(destination).profiles
+    old = (load_store() if destination == REFERENCE_PATH and not destination.exists() else load_store(destination)).profiles
     merged = {p["id"]: p for p in old}
     merged.update({p["id"]: p for p in profiles})
     result = {"schema": SCHEMA, "retrieved_at": datetime.now(timezone.utc).isoformat(),

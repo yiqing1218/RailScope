@@ -167,6 +167,27 @@ def test_new_line_fields_round_trip_without_changing_track_classification():
     assert "track_type" not in values
 
 
+def test_vehicle_title_fallback_and_unknown_parameters_are_not_facts():
+    html = '<title>SYD01 - 动车组列车 - 中国动车组</title><h2></h2>'
+    html += para("编组", "2M8T") + para("列控系统", "*")
+    p = parse_profile(html, "https://china-emu.cn/Trains/Model/Detail-41000-107-S.html")
+    assert p["name"] == "SYD01"
+    assert p["attributes"]["formation"] == "2M8T"
+    assert "train_control_system" not in p["attributes"]
+
+
+def test_committed_snapshot_loads_in_a_new_workspace(tmp_path, monkeypatch):
+    import desktop.china_emu as module
+    shared = tmp_path / "shared.json"
+    local = tmp_path / "local.json"
+    monkeypatch.setattr(module, "SHARED_REFERENCE_PATH", shared)
+    monkeypatch.setattr(module, "REFERENCE_PATH", local)
+    atomic_json(shared, {"schema": SCHEMA, "profiles": [profile(name="提交快照")]})
+    assert module.load_store().profiles[0]["name"] == "提交快照"
+    atomic_json(local, {"schema": SCHEMA, "profiles": [profile(name="本地更新")]})
+    assert module.load_store().profiles[0]["name"] == "本地更新"
+
+
 def test_reference_browser_filters_and_shows_model_parameters(qtbot):
     from desktop.china_emu_ui import ReferenceDialog
     store = ReferenceStore([profile(attributes={"formation": "4M4T", "design_speed_kmh": "350 km/h"})])
