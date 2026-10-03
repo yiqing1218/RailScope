@@ -98,7 +98,11 @@ def metadata(repo, layout, options, info):
         "attribution": "数据 © OpenStreetMap contributors",
         "verification_status": "automatic_reference_not_dispatch_verified",
         "confidence": None,
-        "layout_algorithm": "source_shape_shared_transform_v2",
+        "layout_algorithm": layout.algorithm,
+        "drawing_groups": {k:{**g, 'edge_ids':sorted(g['edge_ids'])} for k,g in layout.groups.items()},
+        "group_baselines": layout.group_baselines,
+        "annotations": layout.annotations,
+        "schematic_extensions": layout.extensions,
         "boundary_source": layout.boundary_source,
         "axis_angle_degrees": math.degrees(layout.angle),
         "options": asdict(options),
@@ -174,6 +178,11 @@ def render_svg(
         )
         for k, d in layout.edges.items()
     }
+    if layout.groups:
+        for group in layout.groups.values():
+            for key in group['edge_ids']:
+                if key in layout.edges and layout.ownership[key].status!='unresolved':
+                    colors[key] = '#343d46' if options.color_scheme == 'mono' else group['color']
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">',
         "<metadata>"
@@ -250,13 +259,29 @@ def render_svg(
         out.append(
             f'<g data-crossing="unconnected" data-upper-edge="{escape(key)}" data-lower-edge="{escape(mark["lower_edge"])}"><path d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="white" stroke-width="{width + 5:.2f}"/><path d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="{colors[key]}" stroke-width="{width:.2f}"/></g>'
         )
+    for extension in layout.extensions:
+        key=extension['edge_id']
+        if key not in colors:
+            continue
+        a,b=extension['points']
+        out.append(f'<path data-schematic-extension="{escape(key)}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="{colors[key]}" stroke-width="{options.main_width:.2f}"/>')
     # Topology supplied these real degree-three-or-more nodes before rendering.
     for node in layout.switch_nodes:
         x, y = layout.nodes[node]
         out.append(
             f'<line data-switch-node="{escape(node)}" x1="{x - 3:.2f}" y1="{y - 6:.2f}" x2="{x + 3:.2f}" y2="{y + 6:.2f}" stroke="#25364a" stroke-width="1.2"/>'
         )
-    for lane in layout.lanes:
+    for label in layout.annotations:
+        if label['leader']:
+            a,b=label['leader']
+            out.append(f'<path data-label-leader="{escape(label["id"])}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="#a5afb9" stroke-width=".7"/>')
+        color=label['color']
+        if label['kind']=='main-line':
+            keys=[k for k in layout.edges if layout.ownership[k].line_id==label['id']]
+            if keys:color=colors[min(keys)]
+        text(label['text'],label['point'],label['font_size'],color,label['anchor'],
+             attrs=f'data-label-kind="{label["kind"]}" data-label-id="{escape(label["id"])}"')
+    for lane in layout.lanes if not layout.annotations and options.show_track_labels else ():
         if lane.track_number:
             e = min(lane.edge_ids)
             d = layout.edges[e]
@@ -302,12 +327,13 @@ def render_svg(
             side = p["side"]
             # Arrowheads are placed per existing track, never fake paired rails.
             for ax, ay in p["points"]:
-                if side in ("left", "right"):
-                    sign = -1 if side == "left" else 1
-                    triangle = f"{ax + sign * 10:.2f},{ay:.2f} {ax - sign * 5:.2f},{ay - 4:.2f} {ax - sign * 5:.2f},{ay + 4:.2f}"
-                else:
-                    sign = -1 if side == "top" else 1
-                    triangle = f"{ax:.2f},{ay + sign * 10:.2f} {ax - 4:.2f},{ay - sign * 5:.2f} {ax + 4:.2f},{ay - sign * 5:.2f}"
+                vx,vy=p['screen_vector']
+                extension=next((v for v in layout.extensions if math.dist(v['points'][-1],(ax,ay))<.1),None)
+                if extension:
+                    a,b=extension['points'];vx,vy=b[0]-a[0],b[1]-a[1]
+                length=math.hypot(vx,vy);vx,vy=vx/length,vy/length
+                triangle=' '.join(f'{x:.2f},{y:.2f}' for x,y in
+                    ((ax+vx*10,ay+vy*10),(ax-vx*5-vy*4,ay-vy*5+vx*4),(ax-vx*5+vy*4,ay-vy*5-vx*4)))
                 out.append(
                     f'<polygon data-port-arrow="{escape(p["key"])}" points="{triangle}" fill="{color}"/>'
                 )
@@ -328,6 +354,16 @@ def render_svg(
                 if side in ("left", "top")
                 else destination_text + " " + arrow
             )
+            if hasattr(layout,'label_placer'):
+                candidates=([(x,y)] if any(k in rule for k in ('dx','dy')) else
+                            [(x,y+i*options.label_size*1.4) for i in (0,1,-1,2,-2,3,-3,4,-4)])
+                placed=layout.label_placer.place(value,options.label_size*.8,candidates,anchor=anchor)
+                if placed:
+                    (x,y),rect=placed
+                    layout.annotations.append({'kind':'direction','id':p['key'],'text':value,
+                        'point':(x,y),'bounds':rect,'font_size':options.label_size*.8,'color':color})
+                else:
+                    raise ValueError('端口标签重叠或超出画布，请调整文字偏移、输出尺寸或字号')
             out.append(
                 f'<g data-line-id="{escape(p["line"].id)}" data-end="{side}" data-port-x="{px:.2f}" data-port-y="{py:.2f}" data-track-count="{len(p["points"])}" data-port-edges="{escape(" ".join(sorted(p["edge_ids"])))}" x="{x:.2f}" y="{y:.2f}" style="fill:{color}">'
             )
@@ -353,9 +389,9 @@ def render_svg(
             options.label_size * 0.8,
         )
     if options.show_legend:
-        entries = sorted(
-            {(layout.systems[k], colors[k]) for k in layout.edges if layout.systems[k]}
-        )
+        entries = sorted({(g['name'],g['color'] if options.color_scheme!='mono' else '#343d46')
+                          for g in layout.groups.values() if g['legend']} if layout.groups else
+                         {(layout.systems[k],colors[k]) for k in layout.edges if layout.systems[k]})
         if any(c == NEUTRAL for c in colors.values()):
             entries.append(("归属待核对", NEUTRAL))
         x, y = options.margin, h - options.margin - 35
@@ -374,6 +410,9 @@ def render_svg(
             text(name, (x + 50, y + fs * 0.3), fs, color, "start")
             x += needed
         out.append("</g>")
-    text("站场示意 · 保留站内相对形状，距离可压缩 · 自动参考", (w / 2, h - 14), 14, "#768390")
+    footer = ('站场示意 · P 实体台体图示号 / T 股道图示号 · 乘降面使用来源编号，缺失提示待核对 · 自动参考'
+              if layout.groups else '站场示意 · 保留站内相对形状，距离可压缩 · 自动参考')
+    text(footer, (w / 2, h - 14), 14, "#768390")
+    out[1] = '<metadata>'+escape(json.dumps(metadata(repo,layout,options,info),ensure_ascii=False))+'</metadata>'
     out.append("</svg>")
     return "\n".join(out)

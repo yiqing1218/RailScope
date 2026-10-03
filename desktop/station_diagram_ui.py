@@ -10,7 +10,8 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                               QFormLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSpinBox,
-                              QTabWidget, QTextEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QLineEdit)
+                              QTabWidget, QTextEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QLineEdit,
+                              QAbstractItemView, QInputDialog)
 
 try:
     from .station_diagram_layout import DiagramOptions, edge_role, build_layout, system_name
@@ -60,17 +61,17 @@ class StationDiagramDialog(QDialog):
         if self.settings_path and self.settings_path.exists():
             try:
                 values = json.loads(self.settings_path.read_text(encoding='utf-8'))
-                if values.get('layout_algorithm') != 'source_shape_shared_transform_v2':
-                    if values.get('station_compression') == 4:
-                        values['station_compression'] = 1
+                if values.get('layout_algorithm') != 'yard_relative_linear_outlets_v3':
+                    values['layout_mode']='yard_relative'
+                    values['remove_common_bend']=True
+                    if values.get('station_compression') in (1,4):values['station_compression']=2.5
+                if values.get('layout_algorithm') not in ('source_shape_shared_transform_v2','yard_relative_linear_outlets_v3'):
                     if values.get('platform_width') == 1.4:
                         values['platform_width'] = 1
                 # Discard retired controls from the interrupted first design.
                 values = {key:value for key,value in values.items() if key in asdict(defaults)}
                 if values.get('outside_compression',8) < 1:
                     values['outside_compression'] = 8
-                if 'line_overrides' not in values:
-                    values['remove_common_bend'] = False
                 if values.get('color_scheme') not in ('systems','mono'):
                     values['color_scheme'] = 'systems'
                 values['station_width'] = values['connector_width'] = values.get('main_width',3)
@@ -78,9 +79,12 @@ class StationDiagramDialog(QDialog):
             except (OSError, ValueError, TypeError):
                 self.settings_warning = '上次设置无效，已恢复默认设置。'
         self.line_rules = dict(defaults.line_overrides)
-        self.port_rules = {key:{k:v for k,v in rule.items() if k!='extend'} for key,rule in defaults.port_overrides.items()}
+        self.port_rules = dict(defaults.port_overrides)
+        self.yard_rules = dict(defaults.yard_overrides)
+        self.track_rules = dict(defaults.track_overrides)
+        self.platform_rules = dict(defaults.platform_overrides)
         main = QVBoxLayout(self)
-        hint = QLabel('以实际形状和相对比例生成独立站场示意图，所有对象使用共同坐标变换；拓扑校验连接，不重排站台和股道。站外距离可单独压缩。归属不明提示核对；分场与实际股道可在股道编辑中对应。')
+        hint = QLabel('分场各自消除共同弯曲、保留相对形状；站台方向水平，站内压短并展开间距。最后接轨点之外的正线拟合为直线走势并分开引出。分场、股道、台体、乘降面和延长线均可编辑。P / T 为图示序号，不替代官方编号；缺失面号不会按形状猜测。')
         hint.setWordWrap(True)
         main.addWidget(hint)
         row = QHBoxLayout()
@@ -144,20 +148,25 @@ class StationDiagramDialog(QDialog):
             self.controls[name] = control
 
         form = page('布局')
+        combo(form,'layout_mode','布局方式',[('分场相对弯曲（推荐）','yard_relative'),('源形状比例（兼容）','source_shape')])
+        check(form,'auto_rotate','按站台方向自动旋正')
+        check(form,'remove_common_bend','按分场消除共同弯曲')
+        check(form,'align_main_outlets','正线示意延长至图边缘')
         combo(form, 'orientation', '构图方向', [('横向', 'landscape'), ('纵向', 'portrait')])
         check(form, 'show_north', '真实北向指北针')
-        number(form, 'station_compression', '站内纵向压缩倍数（1 保留比例）', 1, 12, .25)
+        number(form, 'station_compression', '站台方向压缩倍数', 1, 12, .25)
         number(form, 'outside_compression', '站外纵向压缩倍数', 1, 30, .5)
         number(form, 'direction_radius_m', '站外方向参考半径 / m', 500, 10000, 250)
         number(form, 'platform_width', '站台符号宽度倍数', .5, 4, .1)
         number(form, 'margin', '全图留白（图面单位）', 10, 240, 5)
-        form.addRow(QLabel('默认保留站内相对比例；站内、站外纵向距离可独立压缩。所有对象共用坐标变换，不重排股道。方向参考半径只影响方向标注。'))
+        form.addRow(QLabel('相对弯曲按各分场处理，站内宽高统一规范化；咽喉仍保留真实连接。兼容模式保持原有几何比例。'))
 
         form = page('内容')
         for name, title in [('show_main', '正线'), ('show_station', '站线 / 到发线 / 辅助线'),
                             ('show_connectors', '联络线'), ('show_outer_main', '外围关联主线'),
                             ('show_outer_connectors', '外围联络线'), ('include_construction', '包含在建铁路（虚线）'),
                             ('show_platforms', '真实来源站台符号'), ('show_legend', '图例'),
+                            ('show_track_labels','全部股道编号 / 图示序号'),('show_platform_labels','实体站台及乘降站台面编号'),
                             ('show_title', '站名标题'), ('show_endpoints', '正线端口名称与通达城市')]:
             check(form, name, title)
         number(form, 'topology_depth', '向外追踪连接层数', 0, 64, 1, True)
@@ -167,8 +176,12 @@ class StationDiagramDialog(QDialog):
         def editor_page(title, headers):
             widget = QWidget()
             column = QVBoxLayout(widget)
-            note = QLabel('空白值沿用自动判断。仅修改图面；线路按稳定 RailScope ID 保存。' if title == '逐线编辑' else
-                          '仅列出当前图面可用的外端口。文字留空沿用线路名与去向；“不标”隐藏文字。“延长”只增加示意线，不代表真实铁路延伸。')
+            notes={'逐线编辑':'空白值沿用自动判断。仅修改图面；线路按稳定 RailScope ID 保存。',
+                   '边缘端口':'文字留空沿用线路去向；“不标”隐藏文字。“延长”只增加示意线，不代表真实铁路延伸。',
+                   '分场样式':'每个分场统一颜色。名称和颜色只用于图面，不改写基础设施归属。',
+                   '分场与股道':'按稳定股道 ID 调整图示分场和编号。空白沿用原归属；新分场可直接填写名称。图示编号不作为官方运营编号。',
+                   '站台编号':'实体台体与乘降站台面分开。空白使用来源编号；缺失编号明确提示。此页填写的编号只用于本张图，不写入运营数据。'}
+            note = QLabel(notes[title])
             note.setWordWrap(True)
             column.addWidget(note)
             search = QLineEdit()
@@ -189,6 +202,17 @@ class StationDiagramDialog(QDialog):
 
         self.line_table, line_reset = editor_page('逐线编辑', ['线路 / ID', '显示', '角色', '颜色归属系统', '颜色 #RRGGBB', '线宽', '端口标注'])
         self.port_table, port_reset = editor_page('边缘端口', ['线路端口', '标注', '自定义文字（用 \\n 换行）', '引出规则', '水平偏移', '垂直偏移'])
+        self.yard_table,yard_reset=editor_page('分场样式',['分场 / ID','图中名称','统一颜色 #RRGGBB'])
+        self.track_table,track_reset=editor_page('分场与股道',['股道 / ID','分场（空白为原归属）','图中编号 / 名称'])
+        self.platform_table,platform_reset=editor_page('站台编号',['来源站台 / ID','实体台体图中编号','乘降面图中编号（如 1;2）'])
+        platform_reset.clicked.connect(lambda:self.reset_editor('platform'))
+        self.track_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.track_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        batch=QPushButton('将选中股道设置为同一图示分场…')
+        self.track_table.parentWidget().layout().addWidget(batch)
+        batch.clicked.connect(self.assign_selected_yard)
+        yard_reset.clicked.connect(lambda:self.reset_editor('yard'))
+        track_reset.clicked.connect(lambda:self.reset_editor('track'))
         line_reset.clicked.connect(lambda: self.reset_editor('line'))
         port_reset.clicked.connect(lambda: self.reset_editor('port'))
 
@@ -232,7 +256,21 @@ class StationDiagramDialog(QDialog):
         self.read_editors()
         values['station_width'] = values['connector_width'] = values['main_width']
         return DiagramOptions(**values, color_overrides=colors,
-                              line_overrides=self.line_rules, port_overrides=self.port_rules)
+                              line_overrides=self.line_rules, port_overrides=self.port_rules,
+                              yard_overrides=self.yard_rules,track_overrides=self.track_rules,
+                              platform_overrides=self.platform_rules)
+
+    def assign_selected_yard(self):
+        rows=sorted({i.row() for i in self.track_table.selectedIndexes()})
+        if not rows:
+            self.status.setText('先在“分场与股道”中选中需要调整的股道，可按 Ctrl / Shift 多选。')
+            return
+        value,accepted=QInputDialog.getText(self,'图示分场','分场名称（空白恢复原归属）')
+        if accepted:
+            self.track_table.blockSignals(True)
+            for row in rows:self.track_table.item(row,1).setText(value.strip())
+            self.track_table.blockSignals(False)
+            self.refresh_preview()
 
     def editor_combo(self, choices, value):
         widget = QComboBox()
@@ -282,6 +320,8 @@ class StationDiagramDialog(QDialog):
             text = self.port_table.item(row,2).text()
             if text:
                 rule['text'] = text.replace('\\n','\n')
+            extend=self.port_table.cellWidget(row,3).currentData()
+            if extend is not None:rule['extend']=extend
             for col, name in ((4,'dx'),(5,'dy')):
                 text = self.port_table.item(row,col).text().strip()
                 if text:
@@ -290,8 +330,50 @@ class StationDiagramDialog(QDialog):
                 self.port_rules[key] = rule
             else:
                 self.port_rules.pop(key,None)
+        for row in range(self.yard_table.rowCount()):
+            key=self.yard_table.item(row,0).data(Qt.ItemDataRole.UserRole)
+            rule={name:self.yard_table.item(row,col).text().strip() for col,name in ((1,'name'),(2,'color'))
+                  if self.yard_table.item(row,col).text().strip()}
+            if rule:self.yard_rules[key]=rule
+            else:self.yard_rules.pop(key,None)
+        for row in range(self.track_table.rowCount()):
+            key=self.track_table.item(row,0).data(Qt.ItemDataRole.UserRole)
+            group=self.track_table.item(row,1).text().strip()
+            rule={}
+            if group:
+                ident=next((k for k,y in self.repo.yards.items() if y.name==group),None)
+                rule['group_id']=ident or 'diagram-yard:'+group
+            label=self.track_table.item(row,2).text().strip()
+            if label:rule['label']=label
+            if rule:self.track_rules[key]=rule
+            else:self.track_rules.pop(key,None)
+        for row in range(self.platform_table.rowCount()):
+            key=self.platform_table.item(row,0).data(Qt.ItemDataRole.UserRole)
+            rule={name:self.platform_table.item(row,col).text().strip() for col,name in ((1,'physical_number'),(2,'faces'))
+                  if self.platform_table.item(row,col).text().strip()}
+            if rule:self.platform_rules[key]=rule
+            else:self.platform_rules.pop(key,None)
 
     def sync_editors(self, layout):
+        physical={a['id']:a['text'] for a in layout.annotations if a['kind']=='physical-platform'}
+        faces={p.id:[a['text'] for a in layout.annotations if a['kind']=='platform-face' and a['id'].startswith(p.id+':')]
+               for p in layout.platforms}
+        for table,records,rules,fields in (
+            (self.yard_table,[(k,g['name']) for k,g in layout.groups.items()],self.yard_rules,('name','color')),
+            (self.track_table,[(t.id,t.name) for t in self.repo.station_tracks.values()],self.track_rules,('group_id','label')),
+            (self.platform_table,[(p.id,physical.get(p.id,p.id)+' · '+' / '.join(faces[p.id])) for p in layout.platforms],self.platform_rules,('physical_number','faces'))):
+            table.blockSignals(True)
+            present={table.item(row,0).data(Qt.ItemDataRole.UserRole) for row in range(table.rowCount())}
+            for key,name in records:
+                if key in present:continue
+                row=table.rowCount();table.insertRow(row)
+                table.setItem(row,0,self.readonly_item(name if table is self.platform_table else name+'\n'+key,key))
+                table.setRowHeight(row,50 if table is not self.platform_table else 32)
+                for col,field in enumerate(fields,1):
+                    value=rules.get(key,{}).get(field,'')
+                    if field=='group_id':value=self.repo.yards[value].name if value in self.repo.yards else value.removeprefix('diagram-yard:')
+                    table.setItem(row,col,QTableWidgetItem(value))
+            table.blockSignals(False);table.resizeColumnsToContents()
         counts = Counter(e.infrastructure_line_id for e in self.repo.edges.values())
         roles = {'main':'正线','station':'站线','connector':'联络 / 渡线','auxiliary':'辅助线'}
         choices = [('自动', 'auto')] + [(v,k) for k,v in roles.items()]
@@ -332,7 +414,7 @@ class StationDiagramDialog(QDialog):
             self.port_table.setItem(row,0,self.readonly_item(f'{system_name(port["line"])} · {side}',key))
             for col,name,titles in ((1,'visible',('标注','不标')),):
                 self.port_table.setCellWidget(row,col,self.editor_combo([('自动',None),(titles[0],True),(titles[1],False)],rule.get(name)))
-            self.port_table.setItem(row,3,self.readonly_item('源方向 → 图框',key))
+            self.port_table.setCellWidget(row,3,self.editor_combo([('自动',None),('延长',True),('不延长',False)],rule.get('extend')))
             for col,name in ((2,'text'),(4,'dx'),(5,'dy')):
                 self.port_table.setItem(row,col,QTableWidgetItem(str(rule.get(name,'')).replace('\n','\\n')))
             destination = port_destination({**port,'side':'right' if port['vector'][0]>=0 else 'left'},self.info,local)
@@ -349,8 +431,10 @@ class StationDiagramDialog(QDialog):
         self.filter_editor(self.port_table,self.port_table.search.text())
 
     def reset_editor(self, kind):
-        table = self.line_table if kind == 'line' else self.port_table
-        (self.line_rules if kind == 'line' else self.port_rules).clear()
+        table,rules={'line':(self.line_table,self.line_rules),'port':(self.port_table,self.port_rules),
+                     'yard':(self.yard_table,self.yard_rules),'track':(self.track_table,self.track_rules),
+                     'platform':(self.platform_table,self.platform_rules)}[kind]
+        rules.clear()
         table.setRowCount(0)
         self.refresh_preview()
 
@@ -387,5 +471,5 @@ class StationDiagramDialog(QDialog):
         if self.settings_path:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.settings_path.with_suffix('.tmp')
-            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'source_shape_shared_transform_v2'}, ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'yard_relative_linear_outlets_v3'}, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(self.settings_path)

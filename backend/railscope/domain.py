@@ -49,6 +49,8 @@ class InfrastructureLine:
     line_role: str = "unknown"
     snapshot_id: str | None = None
     provenance: dict = field(default_factory=dict)
+    start_terminal: str | None = None
+    end_terminal: str | None = None
 
 
 @dataclass(frozen=True)

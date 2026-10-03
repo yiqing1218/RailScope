@@ -370,6 +370,11 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
         'line_names':[line.name for line in repo.lines.values()]})
     if reference:
         integrate_station_yards(repo,reference,context)
+    try:
+        from .rail_line_terminals import integrate_terminals
+    except ImportError:
+        from rail_line_terminals import integrate_terminals
+    integrate_terminals(repo)
     return repo, rows, context
 
 
@@ -409,11 +414,12 @@ def schematic_station_info(directory, repo, rows, overrides):
             tags = next((edge.source_tags for edge in repo.edges.values()
                          if edge.infrastructure_line_id == line.id
                          and edge.source_tags.get('from') and edge.source_tags.get('to')), {})
-            start = attributes.get('start_terminal') or tags.get('from')
-            end = attributes.get('end_terminal') or tags.get('to')
+            start = attributes.get('start_terminal') or line.start_terminal or tags.get('from')
+            end = attributes.get('end_terminal') or line.end_terminal or tags.get('to')
             reference = nominal_terminals(line.name)
             evidence = ('workspace_railway_terminals' if attributes.get('start_terminal') or attributes.get('end_terminal')
-                        else 'osm_explicit_route_termini' if tags else reference[2] if reference else None)
+                        else line.provenance.get('terminal_reference',{}).get('source_url') or
+                        ('osm_explicit_route_termini' if tags else reference[2] if reference else None))
             if not start and reference:
                 start = reference[0][0]
             if not end and reference:
@@ -433,6 +439,7 @@ def schematic_station_info(directory, repo, rows, overrides):
             destinations[line.id] = {'left': left, 'right': right,
                 'terminals': [{'name':start, 'coordinates':a}, {'name':end, 'coordinates':b}],
                 'source': evidence,
+                'terminal_provenance': line.provenance.get('terminal_reference',{}),
                 'snapshot': str((Path(directory)/'rail_lines.sqlite').stat().st_mtime_ns),
                 'verification_status': 'nominal_route_reference', 'confidence': None}
     return {'summary': ' · '.join(summary), 'line_destinations': destinations}

@@ -119,6 +119,9 @@ def port_destination(port, station_info, local):
     record = station_info.get('line_destinations',{}).get(port['line'].id,{})
     terminals = record.get('terminals',[])
     located = [terminal for terminal in terminals if terminal.get('coordinates')]
+    far = [terminal for terminal in located if math.hypot(*local(terminal['coordinates'])) > 2500]
+    if len(far)==1 and len(located)==2:
+        return far[0]['name']
     if len(located) == 2:
         # Compare both terminal vectors at the station origin. A local curve
         # changes the drawing side, but must not turn a northern terminus into

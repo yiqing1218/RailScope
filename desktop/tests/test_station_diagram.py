@@ -137,7 +137,8 @@ def test_only_main_outlets_have_labels_and_no_switch_or_leader():
     repo,context = pair_repository()
     repo.lines['IL-1'] = replace(repo.lines['IL-1'],name='某联络线',line_role='connecting_line')
     svg = ET.fromstring(station_svg(repo,context))
-    assert not any('data-node-id' in e.attrib or 'data-label-leader' in e.attrib for e in svg.iter())
+    assert not any('data-node-id' in e.attrib for e in svg.iter())
+    # Collision-avoiding leaders are allowed for the new platform/track labels.
     assert not any(e.tag.endswith('circle') for e in svg.iter())
     labels = [e for e in svg.iter() if 'data-line-id' in e.attrib]
     assert all(e.attrib['data-line-id'] != 'IL-1' for e in labels)
@@ -239,14 +240,14 @@ def test_ports_are_direction_layout_anchors_without_changing_source():
         # Crop crossings lie on the frame; real graph leaves retain their
         # transformed position rather than being stretched to a new endpoint.
         assert all(p['point'][0] >= b.plot_bounds[index] for p in ports)
-        assert all(any(p['point'] in part or p['point'] in (b.nodes[repo.edges[k].from_node_id],b.nodes[repo.edges[k].to_node_id])
-                       for k in p['edge_ids'] for part in b.edges[k].parts) for p in ports)
-    assert all(not p['extended'] for p in b.ports)
+        assert all(p['point'][0] == b.plot_bounds[index] for p in ports)
+    assert all(p['extended'] for p in b.ports)
+    assert b.extensions and not a.extensions
     assert [p['original_points'] for p in b.ports] == [p['original_points'] for p in a.ports]
     assert repo == original
     svg = ET.fromstring(station_svg(repo,context))
     metadata = json.loads(svg.find('{http://www.w3.org/2000/svg}metadata').text)
-    assert all(p['direction_source']=='source_geometry_bearing_at_radius' for p in metadata['ports'])
+    assert all(p['direction_source']=='length_uniform_linear_fit' for p in metadata['ports'])
 
 
 def test_manual_port_text_visibility_and_extension_overrides():
@@ -263,7 +264,8 @@ def test_manual_port_text_visibility_and_extension_overrides():
     assert len(labels)==1 and labels[0].attrib['data-end']=='left'
     assert ''.join(e.text or '' for e in labels[0] if e.tag.endswith('text'))=='自定正线往测试城市'
     assert not any(e.attrib.get('data-line-id')=='IL-1' for e in svg.iter())
-    assert float(labels[0].attrib['x'])==pytest.approx(left['point'][0]-24,abs=.02)
+    edited=next(p for p in layout.ports if p['key']==left['key'])
+    assert float(labels[0].attrib['x'])==pytest.approx(edited['point'][0]-24,abs=.02)
 
 
 def test_line_manual_color_role_and_hide_are_presentation_only():
@@ -284,7 +286,7 @@ def test_smooth_baseline_rejects_short_median_step():
     reference = smooth_baseline(((0,0),(100,0),(100.025,3.38),(300,3.38),(600,4)))
     assert reference
     assert abs(baseline_value(reference,100.025)-baseline_value(reference,100)) < .01
-    assert not DiagramOptions().remove_common_bend
+    assert DiagramOptions().remove_common_bend
 
 
 def test_semi_automatic_editors_roundtrip(qtbot,tmp_path):
@@ -299,7 +301,7 @@ def test_semi_automatic_editors_roundtrip(qtbot,tmp_path):
     dialog.line_table.cellWidget(row,6).setCurrentIndex(2)
     portrow = next(r for r in range(dialog.port_table.rowCount()) if dialog.port_table.item(r,0).data(256)=='IL-1:left')
     dialog.port_table.item(portrow,2).setText('用户线路\\n往用户城市')
-    assert dialog.port_table.item(portrow,3).text()=='源方向 → 图框'
+    assert dialog.port_table.cellWidget(portrow,3).currentData() is None
     assert dialog.refresh_preview()
     options = dialog.options()
     assert options.line_overrides['IL-0']['color']=='#112233'

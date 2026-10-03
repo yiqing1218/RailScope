@@ -152,7 +152,7 @@ def test_unknown_yard_is_not_colored_by_nearest_connected_trunk():
 def test_source_spacing_ratios_and_shared_endpoints():
     repo, context, _, _ = fixture()
     old = deepcopy((repo, context))
-    layout = build_layout(repo, context)
+    layout = build_layout(repo, context, DiagramOptions(layout_mode='source_shape',station_compression=1,remove_common_bend=False))
     assert len(layout.lanes) == 3
     ys = sorted(lane.y for lane in layout.lanes)
     assert (ys[1]-ys[0])/(ys[2]-ys[1]) == pytest.approx(12/40, abs=1e-5)
@@ -171,7 +171,7 @@ def test_default_platform_lengths_widths_and_aspect_ratios_are_preserved():
         x0,x1=120-length/2,120+length/2
         context.append({'properties':{'boundary_kind':'platform','infrastructure_id':ident,'way_tags':{'railway':'platform'}},
             'geometry':{'type':'Polygon','coordinates':[[[x0,y],[x1,y],[x1,y+.00003],[x0,y+.00003],[x0,y]]]}})
-    options=DiagramOptions()
+    options=DiagramOptions(layout_mode='source_shape',station_compression=1,remove_common_bend=False)
     assert options.station_compression==options.platform_width==1
     layout=build_layout(repo,context,options)
     a,b=layout.platforms

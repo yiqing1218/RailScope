@@ -210,7 +210,7 @@ def test_station_svg_labels_official_track_without_inventing_external_ports():
         'line_destinations':{'IL-a':{'left':'乙站','right':'丙站'}}})
     assert '甲乙线' in text and 'data-port-arrow' not in text
     assert '客运站 · 站台：2 · 股道：6' not in text  # Side labels only; no extra explanations.
-    assert 'data-track-number="true"' in text and '>12</text>' in text
+    assert 'data-label-kind="track"' in text and '>12道</text>' in text
     from dataclasses import replace
     repo.lines['IL-a']=replace(repo.lines['IL-a'],name='第12道')
     assert '第12道' not in station_svg(repo)

@@ -70,8 +70,12 @@ def test_ports_do_not_label_auxiliary_lines_or_invent_connections():
     svg=ET.fromstring(text)
     labels=[e for e in svg.iter() if 'data-line-id' in e.attrib]
     assert len(labels)==1  # Only clean main-line outlets carry labels.
-    assert any(e.attrib.get('data-convergence-line')=='IL-0' and '甲干线' in ''.join(e.itertext()) for e in svg.iter())
-    assert all('data-edge-id' in e.attrib for e in svg.iter() if e.tag.endswith('path'))
+    assert any(e.attrib.get('data-label-kind')=='main-line' and e.attrib.get('data-label-id')=='IL-0'
+               and '甲干线' in ''.join(e.itertext()) for e in svg.iter())
+    parents={child:parent for parent in svg.iter() for child in parent}
+    assert all(any(k in e.attrib for k in ('data-edge-id','data-schematic-extension','data-label-leader'))
+               or parents[e].attrib.get('data-crossing')=='unconnected'
+               for e in svg.iter() if e.tag.endswith('path'))
     assert 'data-platform-id' in text and not any('走行线' in ''.join(label.itertext()) for label in labels)
 
 
@@ -90,13 +94,13 @@ def test_curve_exit_uses_terminal_direction_instead_of_left_right_column():
     assert port_destination(port,info,local)=='北京'
 
 
-def test_station_at_line_terminus_does_not_label_both_ends_with_other_city():
+def test_station_at_line_terminus_uses_other_terminus_despite_local_curve():
     repo,_=pair_repository()
     local,*_=station_projection(repo)
     port={'line':repo.lines['IL-0'],'side':'bottom','vector':(0,-1)}
     info={'line_destinations':{'IL-0':{'terminals':[
         {'name':'本城','coordinates':(120,30)}, {'name':'北城','coordinates':(120,40)}]}}}
-    assert port_destination(port,info,local)=='本城'
+    assert port_destination(port,info,local)=='北城'
     port['vector']=(0,1)
     assert port_destination(port,info,local)=='北城'
 

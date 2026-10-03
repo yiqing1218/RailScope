@@ -13,12 +13,13 @@ import math
 
 @dataclass(frozen=True)
 class DiagramOptions:
+    layout_mode: str = 'yard_relative'
     auto_rotate: bool = True
     orientation: str = 'landscape'
     show_north: bool = True
-    station_compression: float = 1.0
+    station_compression: float = 2.5
     outside_compression: float = 8.0
-    remove_common_bend: bool = False
+    remove_common_bend: bool = True
     include_construction: bool = False
     platform_width: float = 1.0
     margin: float = 50
@@ -43,6 +44,11 @@ class DiagramOptions:
     color_overrides: dict[str, str] = field(default_factory=dict)
     line_overrides: dict[str, dict] = field(default_factory=dict)
     port_overrides: dict[str, dict] = field(default_factory=dict)
+    yard_overrides: dict[str, dict] = field(default_factory=dict)
+    track_overrides: dict[str, dict] = field(default_factory=dict)
+    platform_overrides: dict[str, dict] = field(default_factory=dict)
+    show_track_labels: bool = True
+    show_platform_labels: bool = True
     align_main_outlets: bool = True
     width: int = 2400
     aspect_ratio: float = 1.85
@@ -66,6 +72,7 @@ class DiagramOptions:
         if not 1.1 <= self.aspect_ratio <= 3:
             raise ValueError('横纵比须为 1.1–3（纵向时取倒数）')
         for name, values in {
+            'layout_mode': ('yard_relative', 'source_shape'),
             'orientation': ('landscape', 'portrait'), 'output_format': ('svg', 'png', 'pdf'),
             'color_scheme': ('systems', 'mono'),
             'platform_fill': ('gray', 'tint', 'outline'),
@@ -85,6 +92,9 @@ class DiagramOptions:
             for key in ('dx','dy'):
                 if not math.isfinite(float(value.get(key,0))) or abs(float(value.get(key,0))) > 1000:
                     raise ValueError('标注位置偏移须在 -1000 到 1000 之间')
+        for value in self.yard_overrides.values():
+            if value.get('color') and not re.fullmatch(r'#[0-9a-fA-F]{6}', value['color']):
+                raise ValueError('分场颜色必须为 #RRGGBB')
 
     @property
     def canvas_size(self):
@@ -140,6 +150,11 @@ class DiagramLayout:
     boundary_source: str = ''
     crossings: list = field(default_factory=list)
     switch_nodes: list[str] = field(default_factory=list)
+    algorithm: str = 'source_shape_shared_transform_v2'
+    groups: dict = field(default_factory=dict)
+    annotations: list = field(default_factory=list)
+    group_baselines: dict = field(default_factory=dict)
+    extensions: list = field(default_factory=list)
 
 
 def edge_role(repo, edge, options=None):

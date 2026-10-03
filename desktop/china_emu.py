@@ -19,6 +19,10 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from railscope.domain import ReferenceProfile
+try:
+    from .rail_line_terminals import scope_terminals
+except ImportError:
+    from rail_line_terminals import scope_terminals
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PATH = ROOT / "data/user_settings/china_emu/reference.json"
@@ -130,6 +134,9 @@ def parse_profile(html, url, retrieved_at=None):
                            "aliases": [text(alias)] if text(alias) else [], "attributes": attrs,
                            "source_notes": text(header.select_one(".text-info"))})
         attributes = common_attributes(scopes)
+        endpoints=scope_terminals(scopes)
+        if endpoints:
+            attributes.update(start_terminal=endpoints[0],end_terminal=endpoints[1])
         if len(scopes) > 1:
             # A section's pricing distance is not a whole-line distance, even
             # when independent sections happen to have the same number.
@@ -241,7 +248,11 @@ class ReferenceStore:
             self.index.setdefault((profile["kind"], name_key(profile["name"], profile["kind"] == "station")), []).append(profile)
             if profile["kind"] == "line":
                 for scope in profile.get("scopes", []):
-                    scope_profile = {**profile, "attributes": scope["attributes"], "scopes": [scope]}
+                    scoped_attributes=dict(scope['attributes'])
+                    endpoints=scope_terminals([scope])
+                    if endpoints:
+                        scoped_attributes.update(start_terminal=endpoints[0],end_terminal=endpoints[1])
+                    scope_profile = {**profile, "attributes": scoped_attributes, "scopes": [scope]}
                     self.index.setdefault(("line", name_key(scope["name"])), []).append(scope_profile)
                     for alias in scope.get("aliases", []):
                         self.index.setdefault(("line", name_key(alias)), []).append(profile)
@@ -281,6 +292,14 @@ def _load(path, stamp):
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if payload.get("schema") != SCHEMA or not isinstance(payload.get("profiles"), list):
         raise ValueError("网站参考资料文件格式无效")
+    # Reparse explicit spans from older local snapshots as well as the shipped
+    # reference. A local snapshot must not hide newly supported source fields.
+    for profile in payload['profiles']:
+        if profile['kind']=='line':
+            endpoints=scope_terminals(profile.get('scopes',()))
+            if endpoints:
+                profile['attributes'].setdefault('start_terminal',endpoints[0])
+                profile['attributes'].setdefault('end_terminal',endpoints[1])
     return ReferenceStore(payload["profiles"])
 
 
