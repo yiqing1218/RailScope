@@ -186,6 +186,42 @@ def test_dialog_preview_controls_and_png_pdf_output(qtbot,tmp_path):
     assert dialog.result() == QDialog.DialogCode.Accepted
 
 
+def test_png_text_keeps_solid_glyphs_with_halo(qtbot, tmp_path):
+    from PySide6.QtGui import QImage
+    from desktop.station_diagram_render import write_diagram
+
+    repo, context = pair_repository()
+    options = DiagramOptions()
+    svg = station_svg(repo, context, options=options)
+    root = ET.fromstring(svg)
+    title = next(e for e in root.iter() if e.attrib.get('data-title') == 'true')
+    # A plain fill is the independent reference; Qt does not support SVG's
+    # paint-order, so white strokes over the text would erase its dark ink.
+    attrs = {key: title.attrib[key] for key in
+             ('x', 'y', 'font-size', 'font-weight', 'text-anchor')}
+    attrs.update(fill='#25364a', stroke='none', **{'font-family': 'Microsoft YaHei,Arial'})
+    reference = ET.Element('text', attrs)
+    reference.text = title.text
+    reference_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{root.attrib["width"]}" '
+        f'height="{root.attrib["height"]}"><rect width="100%" height="100%" fill="white"/>'
+        + ET.tostring(reference, encoding='unicode') + '</svg>'
+    )
+    write_diagram(tmp_path / 'actual.png', svg, options)
+    write_diagram(tmp_path / 'reference.png', reference_svg, options)
+    top = max(0, int(float(title.attrib['y']) - options.title_size * 1.5))
+    bottom = int(float(title.attrib['y']) + 2)
+
+    def dark_ink(path):
+        image = QImage(str(path))
+        return sum(image.pixelColor(x, y).lightness() < 110
+                   for y in range(top, bottom) for x in range(image.width()))
+
+    reference_ink = dark_ink(tmp_path / 'reference.png')
+    assert reference_ink > 100
+    assert dark_ink(tmp_path / 'actual.png') >= reference_ink * .97
+
+
 def test_ports_are_direction_layout_anchors_without_changing_source():
     import json
     repo,context = pair_repository()

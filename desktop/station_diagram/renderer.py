@@ -179,7 +179,7 @@ def render_svg(
         "<metadata>"
         + escape(json.dumps(metadata(repo, layout, options, info), ensure_ascii=False))
         + "</metadata>",
-        "<style>text{font-family:Microsoft YaHei,Arial;fill:#25364a}</style>",
+        "<style>text{font-family:Microsoft YaHei,Arial}</style>",
         '<rect width="100%" height="100%" fill="white"/>',
         f'<rect x="10" y="10" width="{w - 20}" height="{h - 20}" fill="none" stroke="#b9c3cd"/>',
     ]
@@ -187,8 +187,19 @@ def render_svg(
     def text(
         value, point, size=None, color="#25364a", anchor="middle", attrs="", weight=400
     ):
+        position = (
+            f'x="{point[0]:.2f}" y="{point[1]:.2f}" text-anchor="{anchor}" '
+            f'font-size="{size or options.label_size:.2f}" font-weight="{weight}"'
+        )
+        caption = escape(str(value))
+        # Qt SVG does not implement paint-order. Draw the halo first and the
+        # solid glyphs separately so SVG, PNG and PDF share readable text.
         out.append(
-            f'<text {attrs} x="{point[0]:.2f}" y="{point[1]:.2f}" text-anchor="{anchor}" font-size="{size or options.label_size:.2f}" font-weight="{weight}" style="fill:{color};stroke:white;stroke-width:2;paint-order:stroke fill">{escape(str(value))}</text>'
+            f'<g aria-hidden="true"><text {position} fill="white" stroke="white" '
+            f'stroke-width="2">{caption}</text></g>'
+        )
+        out.append(
+            f'<text {attrs} {position} fill="{color}" stroke="none">{caption}</text>'
         )
 
     if options.show_title:
