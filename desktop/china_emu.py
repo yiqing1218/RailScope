@@ -143,7 +143,13 @@ def parse_profile(html, url, retrieved_at=None):
                 label = text(heading)
                 if label != "站场规模":
                     host = heading.parent
-                    yards.append({"name": label, "lines": text(host.select_one(".font-small"))})
+                    try:
+                        from .reference_integration import structured_yard
+                    except ImportError:
+                        from reference_integration import structured_yard
+                    small = host.select_one(".font-small")
+                    yards.append(structured_yard({"name": label, "lines": text(small),
+                        "line_names": [text(a) for a in small.select('a[href]')] if small else []}))
             numbers = list(dict.fromkeys(text(e) for e in scale.select(
                 ".platform-l,.platform-r,.platform-lm,.platform-rm,.platform-cm") if text(e)))
             # Each scale belongs to its own preceding set of line links and date.
@@ -278,9 +284,25 @@ def _load(path, stamp):
     return ReferenceStore(payload["profiles"])
 
 
+@lru_cache(maxsize=4)
+def _combined(paths, stamps):
+    profiles = {p['id']:p for p in _load(paths[0],stamps[0]).profiles}
+    for p in _load(paths[1],stamps[1]).profiles:
+        shared = profiles.get(p['id'])
+        # The same original HTML can have richer parsed relationships after
+        # upgrading the shipped parser, without inventing a newer snapshot.
+        if shared and all(shared.get(k)==p.get(k) for k in ('snapshot_id','name','attributes')):
+            continue
+        profiles[p['id']] = p
+    return ReferenceStore(list(profiles.values()))
+
+
 def load_store(path=None):
     if path is None:
-        path = REFERENCE_PATH if REFERENCE_PATH.exists() else SHARED_REFERENCE_PATH
+        paths = tuple(map(str,(SHARED_REFERENCE_PATH,REFERENCE_PATH)))
+        stamps = tuple((p.stat().st_mtime_ns,p.stat().st_size) if p.exists() else None
+                       for p in (SHARED_REFERENCE_PATH,REFERENCE_PATH))
+        return _combined(paths,stamps)
     path = Path(path)
     stamp = (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
     return _load(str(path), stamp)

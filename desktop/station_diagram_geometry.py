@@ -1,4 +1,4 @@
-"""Legacy geometry helpers; build_layout delegates to engineering layout."""
+"""Shared geometric transforms; the shape-led pipeline owns diagram assembly."""
 from bisect import bisect_right
 from collections import defaultdict
 import math
@@ -126,7 +126,7 @@ def line_parts(value):
 
 
 def build_layout(repo, context=(), options=None):
-    """Compatibility entry; GIS warping is no longer an export algorithm."""
+    """Compatibility entry for the independent shape-led diagram pipeline."""
     try:
         from .station_diagram.pipeline import build_layout as build
     except ImportError:

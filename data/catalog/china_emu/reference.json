@@ -33750,11 +33750,20 @@
           "yards": [
             {
               "name": "郑渝场 [1~6站台]",
-              "lines": "郑渝高速铁路 成达万高速铁路"
+              "lines": "郑渝高速铁路 成达万高速铁路",
+              "line_names": [],
+              "yard_name": "郑渝场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "渝万场",
-              "lines": "渝万高速铁路 西渝高铁樊哙支线"
+              "lines": "渝万高速铁路 西渝高铁樊哙支线",
+              "line_names": [],
+              "yard_name": "渝万场"
             }
           ],
           "platform_numbers": [
@@ -33776,6 +33785,7 @@
             "郑渝高速铁路",
             "成万高速铁路"
           ],
+          "source_notes": "2016-11-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -34848,11 +34858,25 @@
           "yards": [
             {
               "name": "沪昆场 [1~2站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪苏湖场 [3~9站台]",
-              "lines": "沪苏湖高速铁路 沪杭城际铁路"
+              "lines": "沪苏湖高速铁路 沪杭城际铁路",
+              "line_names": [],
+              "yard_name": "沪苏湖场",
+              "number_range": [
+                3,
+                9
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -34877,6 +34901,7 @@
             "沪昆铁路",
             "沪苏湖高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -34965,11 +34990,25 @@
           "yards": [
             {
               "name": "高速场 [1~19站台]",
-              "lines": "京沪高速铁路 沪昆高速铁路"
+              "lines": "京沪高速铁路 沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "综合场 [20~30站台]",
-              "lines": "沪苏湖高速铁路 虹安线 虹七线"
+              "lines": "沪苏湖高速铁路 虹安线 虹七线",
+              "line_names": [],
+              "yard_name": "综合场",
+              "number_range": [
+                20,
+                30
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -35287,15 +35326,36 @@
           "yards": [
             {
               "name": "高速场 [1~5站台]",
-              "lines": "沪昆高速铁路 上饶西南联络线"
+              "lines": "沪昆高速铁路 上饶西南联络线",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [6~9站台]",
-              "lines": "沪昆铁路"
+              "lines": "沪昆铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "合福场 [11~14站台]",
-              "lines": "合福高速铁路 上饶东南联络线"
+              "lines": "合福高速铁路 上饶东南联络线",
+              "line_names": [],
+              "yard_name": "合福场",
+              "number_range": [
+                11,
+                14
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -35320,6 +35380,7 @@
             "上饶东南联络线",
             "上饶西南联络线"
           ],
+          "source_notes": "2006-04-16",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -36399,11 +36460,15 @@
           "yards": [
             {
               "name": "",
-              "lines": "京港高速铁路 莞塘广联络线"
+              "lines": "京港高速铁路 莞塘广联络线",
+              "line_names": [],
+              "yard_name": ""
             },
             {
               "name": "1&3号岔（推测命名）",
-              "lines": "京港高速铁路 莞塘深联络线"
+              "lines": "京港高速铁路 莞塘深联络线",
+              "line_names": [],
+              "yard_name": "1&3号岔（推测命名）"
             }
           ],
           "platform_numbers": [],
@@ -36412,6 +36477,7 @@
             "莞塘深联络线",
             "莞塘广联络线"
           ],
+          "source_notes": "2021-12-10",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -36503,19 +36569,27 @@
           "yards": [
             {
               "name": "莞惠场",
-              "lines": "广惠城际铁路"
+              "lines": "广惠城际铁路",
+              "line_names": [],
+              "yard_name": "莞惠场"
             },
             {
               "name": "穗深场",
-              "lines": "穗深城际铁路"
+              "lines": "穗深城际铁路",
+              "line_names": [],
+              "yard_name": "穗深场"
             },
             {
               "name": "L1&L2号岔",
-              "lines": "广惠城际铁路 东莞西联络线"
+              "lines": "广惠城际铁路 东莞西联络线",
+              "line_names": [],
+              "yard_name": "L1&L2号岔"
             },
             {
               "name": "L4&L6号岔",
-              "lines": "穗深城际铁路 东莞西联络线"
+              "lines": "穗深城际铁路 东莞西联络线",
+              "line_names": [],
+              "yard_name": "L4&L6号岔"
             }
           ],
           "platform_numbers": [
@@ -36533,6 +36607,7 @@
             "穗深城际铁路",
             "东莞西联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -38032,7 +38107,9 @@
           "yards": [
             {
               "name": "客运车场",
-              "lines": "胶济客运专线"
+              "lines": "胶济客运专线",
+              "line_names": [],
+              "yard_name": "客运车场"
             }
           ],
           "platform_numbers": [
@@ -38043,6 +38120,7 @@
           "lines": [
             "胶济客运专线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -38519,15 +38597,36 @@
           "yards": [
             {
               "name": "普速场 [1~5站台]",
-              "lines": "沪昆铁路 甬金铁路"
+              "lines": "沪昆铁路 甬金铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭长场 [6~13站台]",
-              "lines": "沪昆高速铁路 义乌联络线"
+              "lines": "沪昆高速铁路 义乌联络线",
+              "line_names": [],
+              "yard_name": "杭长场",
+              "number_range": [
+                6,
+                13
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭温场 [14~21站台]",
-              "lines": "杭温高速铁路 金甬联络线 金义高速铁路"
+              "lines": "杭温高速铁路 金甬联络线 金义高速铁路",
+              "line_names": [],
+              "yard_name": "杭温场",
+              "number_range": [
+                14,
+                21
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -38562,6 +38661,7 @@
             "义乌联络线",
             "金甬联络线"
           ],
+          "source_notes": "2006-06-16",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -39120,15 +39220,31 @@
           "yards": [
             {
               "name": "成贵场 [1~5站台]",
-              "lines": "成贵高速铁路"
+              "lines": "成贵高速铁路",
+              "line_names": [],
+              "yard_name": "成贵场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "峨眉场 [6~9站台]",
-              "lines": "峨眉山线"
+              "lines": "峨眉山线",
+              "line_names": [],
+              "yard_name": "峨眉场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "101&103号岔",
-              "lines": "成贵高速铁路 峨眉山线"
+              "lines": "成贵高速铁路 峨眉山线",
+              "line_names": [],
+              "yard_name": "101&103号岔"
             }
           ],
           "platform_numbers": [
@@ -39146,6 +39262,7 @@
             "成贵高速铁路",
             "峨眉山线"
           ],
+          "source_notes": "2014-12-20",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -42300,15 +42417,31 @@
           "yards": [
             {
               "name": "客专场 [1~11站台]",
-              "lines": "贵广高速铁路 南广铁路"
+              "lines": "贵广高速铁路 南广铁路",
+              "line_names": [],
+              "yard_name": "客专场",
+              "number_range": [
+                1,
+                11
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [12~19站台]",
-              "lines": "广肇城际铁路 广佛西环城际铁路"
+              "lines": "广肇城际铁路 广佛西环城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                12,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "东总岔",
-              "lines": "南广铁路 佛山西城南联络线"
+              "lines": "南广铁路 佛山西城南联络线",
+              "line_names": [],
+              "yard_name": "东总岔"
             }
           ],
           "platform_numbers": [
@@ -42339,6 +42472,7 @@
             "广佛西环城际铁路",
             "广肇城际铁路"
           ],
+          "source_notes": "2017-08-18",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -42548,11 +42682,20 @@
           "yards": [
             {
               "name": "京广场 [1~4站台]",
-              "lines": "京广高速铁路"
+              "lines": "京广高速铁路",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "雄忻场",
-              "lines": "雄忻高速铁路 石雄城际铁路"
+              "lines": "雄忻高速铁路 石雄城际铁路",
+              "line_names": [],
+              "yard_name": "雄忻场"
             }
           ],
           "platform_numbers": [
@@ -42572,6 +42715,7 @@
             "雄忻高速铁路",
             "石雄城际铁路"
           ],
+          "source_notes": "2012-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -43986,11 +44130,25 @@
           "yards": [
             {
               "name": "普速场 [1~11站台]",
-              "lines": "兰新铁路"
+              "lines": "兰新铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                11
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "高速场 [12~24站台]",
-              "lines": "徐兰高速铁路 兰新高速铁路 中川城际铁路"
+              "lines": "徐兰高速铁路 兰新高速铁路 中川城际铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                12,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -44025,6 +44183,7 @@
             "兰新铁路",
             "中川城际铁路"
           ],
+          "source_notes": "2014-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -44972,11 +45131,25 @@
           "yards": [
             {
               "name": "成渝场 [1~6站台]",
-              "lines": "成渝高速铁路 内江北联络线"
+              "lines": "成渝高速铁路 内江北联络线",
+              "line_names": [],
+              "yard_name": "成渝场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "绵泸场 [7~11站台]",
-              "lines": "绵泸高速铁路"
+              "lines": "绵泸高速铁路",
+              "line_names": [],
+              "yard_name": "绵泸场",
+              "number_range": [
+                7,
+                11
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -44997,6 +45170,7 @@
             "绵泸高速铁路",
             "内江北联络线"
           ],
+          "source_notes": "2015-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -46404,7 +46578,9 @@
           "yards": [
             {
               "name": "III场",
-              "lines": "京包高速铁路"
+              "lines": "京包高速铁路",
+              "line_names": [],
+              "yard_name": "III场"
             }
           ],
           "platform_numbers": [],
@@ -46412,6 +46588,7 @@
             "包西高速铁路",
             "京包高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -46468,11 +46645,25 @@
           "yards": [
             {
               "name": "I场 [1~6站台]",
-              "lines": "京包高速铁路 包银高速铁路"
+              "lines": "京包高速铁路 包银高速铁路",
+              "line_names": [],
+              "yard_name": "I场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "II场 [7~9站台]",
-              "lines": "包西铁路"
+              "lines": "包西铁路",
+              "line_names": [],
+              "yard_name": "II场",
+              "number_range": [
+                7,
+                9
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -46491,6 +46682,7 @@
             "包银高速铁路",
             "包西铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -46811,15 +47003,36 @@
           "yards": [
             {
               "name": "普速场 [1~5站台]",
-              "lines": "京沪铁路"
+              "lines": "京沪铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "高速场 [6~17站台]",
-              "lines": "京沪高速铁路"
+              "lines": "京沪高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                6,
+                17
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [18~24站台]",
-              "lines": "京津城际铁路"
+              "lines": "京津城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                18,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -46853,6 +47066,7 @@
             "京沪铁路",
             "京津城际铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -47280,11 +47494,25 @@
           "yards": [
             {
               "name": "普速场 [1~5站台]",
-              "lines": "京哈铁路"
+              "lines": "京哈铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "津秦场 [6~8站台]",
-              "lines": "津秦高速铁路"
+              "lines": "津秦高速铁路",
+              "line_names": [],
+              "yard_name": "津秦场",
+              "number_range": [
+                6,
+                8
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -47292,6 +47520,7 @@
             "津秦高速铁路",
             "京哈铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -48208,15 +48437,21 @@
           "yards": [
             {
               "name": "沪渝蓉场",
-              "lines": "沪渝蓉高速铁路"
+              "lines": "沪渝蓉高速铁路",
+              "line_names": [],
+              "yard_name": "沪渝蓉场"
             },
             {
               "name": "宁淮场",
-              "lines": "宁淮高速铁路 宁淮京沪联络线"
+              "lines": "宁淮高速铁路 宁淮京沪联络线",
+              "line_names": [],
+              "yard_name": "宁淮场"
             },
             {
               "name": "普速场",
-              "lines": "宁启铁路 京沪铁路"
+              "lines": "宁启铁路 京沪铁路",
+              "line_names": [],
+              "yard_name": "普速场"
             }
           ],
           "platform_numbers": [],
@@ -48228,6 +48463,7 @@
             "宁淮京沪联络线",
             "林场西联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -48268,15 +48504,36 @@
           "yards": [
             {
               "name": "京沪场 [1~10站台]",
-              "lines": "京沪高速铁路 宁杭南京南联络线"
+              "lines": "京沪高速铁路 宁杭南京南联络线",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                10
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "宁杭场 [11~22站台]",
-              "lines": "宁杭高速铁路 宁蓉铁路"
+              "lines": "宁杭高速铁路 宁蓉铁路",
+              "line_names": [],
+              "yard_name": "宁杭场",
+              "number_range": [
+                11,
+                22
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "宁安场 [23~28站台]",
-              "lines": "仙宁线 宁安城际铁路 沪宁沿江高速铁路"
+              "lines": "仙宁线 宁安城际铁路 沪宁沿江高速铁路",
+              "line_names": [],
+              "yard_name": "宁安场",
+              "number_range": [
+                23,
+                28
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -48318,6 +48575,7 @@
             "宁安城际铁路",
             "宁杭南京南联络线"
           ],
+          "source_notes": "2011-06-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -48374,11 +48632,25 @@
           "yards": [
             {
               "name": "普速场 [1~8站台]",
-              "lines": "京沪铁路 兴卫村联络线"
+              "lines": "京沪铁路 兴卫村联络线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [9~14站台]",
-              "lines": "沪宁城际铁路 宁淮高速铁路 宁宣高速铁路"
+              "lines": "沪宁城际铁路 宁淮高速铁路 宁宣高速铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                9,
+                14
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -48403,6 +48675,7 @@
             "宁淮高速铁路",
             "兴卫村联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -48527,11 +48800,15 @@
           "yards": [
             {
               "name": "兰渝场",
-              "lines": "兰渝铁路 强南联络线"
+              "lines": "兰渝铁路 强南联络线",
+              "line_names": [],
+              "yard_name": "兰渝场"
             },
             {
               "name": "成达万场",
-              "lines": "成达万高速铁路 巴南高速铁路"
+              "lines": "成达万高速铁路 巴南高速铁路",
+              "line_names": [],
+              "yard_name": "成达万场"
             }
           ],
           "platform_numbers": [],
@@ -48541,6 +48818,7 @@
             "巴南高速铁路",
             "强南联络线"
           ],
+          "source_notes": "2015-12-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -48876,15 +49154,36 @@
           "yards": [
             {
               "name": "南钦场 [1~6站台]",
-              "lines": "贵南高速铁路 邕北铁路"
+              "lines": "贵南高速铁路 邕北铁路",
+              "line_names": [],
+              "yard_name": "南钦场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "南广场 [7~15站台]",
-              "lines": "南广铁路 南钦联络线"
+              "lines": "南广铁路 南钦联络线",
+              "line_names": [],
+              "yard_name": "南广场",
+              "number_range": [
+                7,
+                15
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "柳南场 [16~24站台]",
-              "lines": "柳南高速铁路"
+              "lines": "柳南高速铁路",
+              "line_names": [],
+              "yard_name": "柳南场",
+              "number_range": [
+                16,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -48920,6 +49219,7 @@
             "南广铁路",
             "南钦联络线"
           ],
+          "source_notes": "2014-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -49476,11 +49776,25 @@
           "yards": [
             {
               "name": "城际场 [1~11站台]",
-              "lines": "昌九城际铁路 昌福铁路 南昌西联络线"
+              "lines": "昌九城际铁路 昌福铁路 南昌西联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                1,
+                11
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "高速场 [12~22站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                12,
+                22
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -49490,6 +49804,7 @@
             "昌福铁路",
             "南昌西联络线"
           ],
+          "source_notes": "2013-09-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -50950,11 +51265,25 @@
           "yards": [
             {
               "name": "杭深场 [1~10站台]",
-              "lines": "杭深铁路 厦禾联络线 杏厦线"
+              "lines": "杭深铁路 厦禾联络线 杏厦线",
+              "line_names": [],
+              "yard_name": "杭深场",
+              "number_range": [
+                1,
+                10
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "甬广场 [11~23站台]",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "甬广场",
+              "number_range": [
+                11,
+                23
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -50989,6 +51318,7 @@
             "厦禾联络线",
             "杏厦线"
           ],
+          "source_notes": "2010-04-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -52579,15 +52909,31 @@
           "yards": [
             {
               "name": "沪蓉场 [1~12站台]",
-              "lines": "宁蓉线"
+              "lines": "宁蓉线",
+              "line_names": [],
+              "yard_name": "沪蓉场",
+              "number_range": [
+                1,
+                12
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "合福场 [13~22站台]",
-              "lines": "合福高速铁路"
+              "lines": "合福高速铁路",
+              "line_names": [],
+              "yard_name": "合福场",
+              "number_range": [
+                13,
+                22
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场",
-              "lines": "合宁合武直通线"
+              "lines": "合宁合武直通线",
+              "line_names": [],
+              "yard_name": "城际场"
             }
           ],
           "platform_numbers": [],
@@ -52596,6 +52942,7 @@
             "宁蓉铁路",
             "沪渝蓉高速铁路"
           ],
+          "source_notes": "2014-11-12",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -52706,11 +53053,25 @@
           "yards": [
             {
               "name": "合福场 [1~2站台]",
-              "lines": "合福高速铁路"
+              "lines": "合福高速铁路",
+              "line_names": [],
+              "yard_name": "合福场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京港场 [3~14站台]",
-              "lines": "合新高速铁路 京港高速铁路 宁西铁路"
+              "lines": "合新高速铁路 京港高速铁路 宁西铁路",
+              "line_names": [],
+              "yard_name": "京港场",
+              "number_range": [
+                3,
+                14
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -52735,6 +53096,7 @@
             "合福高速铁路",
             "宁西铁路合肥段"
           ],
+          "source_notes": "2025-12-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -53768,11 +54130,20 @@
           "yards": [
             {
               "name": "郑阜场 [1~6站台]",
-              "lines": "郑阜高速铁路 姚周联络线"
+              "lines": "郑阜高速铁路 姚周联络线",
+              "line_names": [],
+              "yard_name": "郑阜场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "平漯周场",
-              "lines": "平漯周高速铁路"
+              "lines": "平漯周高速铁路",
+              "line_names": [],
+              "yard_name": "平漯周场"
             }
           ],
           "platform_numbers": [
@@ -53788,6 +54159,7 @@
             "平漯周高速铁路",
             "姚周联络线"
           ],
+          "source_notes": "2019-12-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -54443,11 +54815,25 @@
           "yards": [
             {
               "name": "高速场 [1~2站台]",
-              "lines": "徐兰高速铁路"
+              "lines": "徐兰高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [3~4站台]",
-              "lines": "陇海铁路 咸阳西联络线"
+              "lines": "陇海铁路 咸阳西联络线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                3,
+                4
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -54456,6 +54842,7 @@
             "陇海铁路西宝段",
             "咸阳西联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -54529,11 +54916,15 @@
           "yards": [
             {
               "name": "客专场",
-              "lines": "哈齐高速铁路"
+              "lines": "哈齐高速铁路",
+              "line_names": [],
+              "yard_name": "客专场"
             },
             {
               "name": "综合场",
-              "lines": "滨洲铁路 哈北联络线"
+              "lines": "滨洲铁路 哈北联络线",
+              "line_names": [],
+              "yard_name": "综合场"
             }
           ],
           "platform_numbers": [],
@@ -54542,6 +54933,7 @@
             "滨洲铁路哈尔滨段",
             "哈北联络线"
           ],
+          "source_notes": "2015-08-08",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -54641,11 +55033,25 @@
           "yards": [
             {
               "name": "东场 [1~12站台]",
-              "lines": "京哈高速铁路"
+              "lines": "京哈高速铁路",
+              "line_names": [],
+              "yard_name": "东场",
+              "number_range": [
+                1,
+                12
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "西场 [13~18站台]",
-              "lines": "京哈铁路 哈西高普联络线"
+              "lines": "京哈铁路 哈西高普联络线",
+              "line_names": [],
+              "yard_name": "西场",
+              "number_range": [
+                13,
+                18
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -54654,6 +55060,7 @@
             "京哈铁路",
             "哈西高普联络线"
           ],
+          "source_notes": "2012-12-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -55022,15 +55429,36 @@
           "yards": [
             {
               "name": "津秦场 [1~5站台]",
-              "lines": "津秦高速铁路"
+              "lines": "津秦高速铁路",
+              "line_names": [],
+              "yard_name": "津秦场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "津山场 [6~9站台]",
-              "lines": "津山铁路"
+              "lines": "津山铁路",
+              "line_names": [],
+              "yard_name": "津山场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京唐场 [10~12站台]",
-              "lines": "京唐城际铁路 唐曹客运直通线"
+              "lines": "京唐城际铁路 唐曹客运直通线",
+              "line_names": [],
+              "yard_name": "京唐场",
+              "number_range": [
+                10,
+                12
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -55051,6 +55479,7 @@
             "津秦高速铁路",
             "京唐城际铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -55204,15 +55633,36 @@
           "yards": [
             {
               "name": "徐兰场 [6~10站台]",
-              "lines": "徐兰高速铁路 秦商联络线"
+              "lines": "徐兰高速铁路 秦商联络线",
+              "line_names": [],
+              "yard_name": "徐兰场",
+              "number_range": [
+                6,
+                10
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [1~5站台]",
-              "lines": "陇海铁路"
+              "lines": "陇海铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京港场 [11~16站台]",
-              "lines": "京港高速铁路 郑阜联络线"
+              "lines": "京港高速铁路 郑阜联络线",
+              "line_names": [],
+              "yard_name": "京港场",
+              "number_range": [
+                11,
+                16
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -55223,6 +55673,7 @@
             "秦商联络线",
             "商丘京港联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -55474,15 +55925,26 @@
           "yards": [
             {
               "name": "沪昆场 [1~6站台]",
-              "lines": "沪昆高速铁路 沪甬联络线 苏杭联络线"
+              "lines": "沪昆高速铁路 沪甬联络线 苏杭联络线",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "通甬场",
-              "lines": "通甬高速铁路"
+              "lines": "通甬高速铁路",
+              "line_names": [],
+              "yard_name": "通甬场"
             },
             {
               "name": "沪杭场",
-              "lines": "沪杭高速铁路 沪杭城际铁路 沪杭高铁沪甬联络线"
+              "lines": "沪杭高速铁路 沪杭城际铁路 沪杭高铁沪甬联络线",
+              "line_names": [],
+              "yard_name": "沪杭场"
             }
           ],
           "platform_numbers": [],
@@ -55495,6 +55957,7 @@
             "沪杭高铁沪甬联络线",
             "苏杭联络线"
           ],
+          "source_notes": "2010-10-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -56084,13 +56547,16 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "长珲城际铁路"
+              "lines": "长珲城际铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
           "lines": [
             "长珲城际铁路"
           ],
+          "source_notes": "2015-09-20",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -56588,15 +57054,31 @@
           "yards": [
             {
               "name": "普速场（客运） [1~2站台]",
-              "lines": "津山铁路"
+              "lines": "津山铁路",
+              "line_names": [],
+              "yard_name": "普速场（客运）",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场（货运）",
-              "lines": "津山铁路"
+              "lines": "津山铁路",
+              "line_names": [],
+              "yard_name": "普速场（货运）"
             },
             {
               "name": "城际场 [3~4站台]",
-              "lines": "京津城际铁路 津潍津秦联络线"
+              "lines": "京津城际铁路 津潍津秦联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                3,
+                4
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -56609,6 +57091,7 @@
             "京津城际铁路",
             "津潍津秦联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -59393,19 +59876,47 @@
           "yards": [
             {
               "name": "城际场 [1~6站台]",
-              "lines": "南仓城际高速联络线"
+              "lines": "南仓城际高速联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "高速场 [7~18站台]",
-              "lines": "津秦高速铁路 京津联络线"
+              "lines": "津秦高速铁路 京津联络线",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                7,
+                18
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [19~20站台]",
-              "lines": "京沪铁路"
+              "lines": "京沪铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                19,
+                20
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "津保场 [21~24站台]",
-              "lines": "津霸高速铁路"
+              "lines": "津霸高速铁路",
+              "line_names": [],
+              "yard_name": "津保场",
+              "number_range": [
+                21,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -59441,6 +59952,7 @@
             "京津联络线",
             "南仓城际高速联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -59804,15 +60316,36 @@
           "yards": [
             {
               "name": "通沪场 [1~4站台]",
-              "lines": "沪苏通铁路 太浏联络线"
+              "lines": "沪苏通铁路 太浏联络线",
+              "line_names": [],
+              "yard_name": "通沪场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沿江场 [5~8站台]",
-              "lines": "沪宁沿江高铁 沪通铁路二期 太陆联络线 太黄联络线"
+              "lines": "沪宁沿江高铁 沪通铁路二期 太陆联络线 太黄联络线",
+              "line_names": [],
+              "yard_name": "沿江场",
+              "number_range": [
+                5,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪渝蓉场 [9~12站台]",
-              "lines": "沪渝蓉高速铁路 太岳联络线"
+              "lines": "沪渝蓉高速铁路 太岳联络线",
+              "line_names": [],
+              "yard_name": "沪渝蓉场",
+              "number_range": [
+                9,
+                12
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -59827,6 +60360,7 @@
             "太岳联络线",
             "太浏联络线"
           ],
+          "source_notes": "2020-07-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -59901,11 +60435,25 @@
           "yards": [
             {
               "name": "石太场 [1~9站台]",
-              "lines": "石太客运专线 太中铁路 郑太高速铁路"
+              "lines": "石太客运专线 太中铁路 郑太高速铁路",
+              "line_names": [],
+              "yard_name": "石太场",
+              "number_range": [
+                1,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "大西场 [10~18站台]",
-              "lines": "大西高速铁路"
+              "lines": "大西高速铁路",
+              "line_names": [],
+              "yard_name": "大西场",
+              "number_range": [
+                10,
+                18
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -59934,6 +60482,7 @@
             "石太高速铁路",
             "太中铁路"
           ],
+          "source_notes": "2014-07-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -62990,13 +63539,16 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "哈齐高速铁路"
+              "lines": "哈齐高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
           "lines": [
             "哈齐高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -67915,11 +68467,15 @@
           "yards": [
             {
               "name": "沪昆场",
-              "lines": "沪昆高速铁路 嵩明联络线"
+              "lines": "沪昆高速铁路 嵩明联络线",
+              "line_names": [],
+              "yard_name": "沪昆场"
             },
             {
               "name": "渝昆场",
-              "lines": "渝昆高速铁路"
+              "lines": "渝昆高速铁路",
+              "line_names": [],
+              "yard_name": "渝昆场"
             }
           ],
           "platform_numbers": [],
@@ -67928,6 +68484,7 @@
             "渝昆高速铁路",
             "嵩明联络线"
           ],
+          "source_notes": "2016-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -68008,11 +68565,25 @@
           "yards": [
             {
               "name": "合福场 [1~4站台]",
-              "lines": "合福高速铁路 巢湖东南联络线 巢湖东北联络线"
+              "lines": "合福高速铁路 巢湖东南联络线 巢湖东北联络线",
+              "line_names": [],
+              "yard_name": "合福场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "合杭场 [5~8站台]",
-              "lines": "合杭高速铁路 巢马城际铁路"
+              "lines": "合杭高速铁路 巢马城际铁路",
+              "line_names": [],
+              "yard_name": "合杭场",
+              "number_range": [
+                5,
+                8
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -68032,6 +68603,7 @@
             "巢湖东南联络线",
             "巢湖东北联络线"
           ],
+          "source_notes": "2015-06-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -68844,11 +69416,15 @@
           "yards": [
             {
               "name": "常益长场",
-              "lines": "宜常高速铁路 渝厦高速铁路"
+              "lines": "宜常高速铁路 渝厦高速铁路",
+              "line_names": [],
+              "yard_name": "常益长场"
             },
             {
               "name": "普速场",
-              "lines": "石长铁路 兴发村联络线"
+              "lines": "石长铁路 兴发村联络线",
+              "line_names": [],
+              "yard_name": "普速场"
             }
           ],
           "platform_numbers": [
@@ -68875,6 +69451,7 @@
             "石长铁路",
             "兴发村联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -69825,11 +70402,20 @@
           "yards": [
             {
               "name": "郑渝场 [1~5站台]",
-              "lines": "郑渝高速铁路 宝平联络线"
+              "lines": "郑渝高速铁路 宝平联络线",
+              "line_names": [],
+              "yard_name": "郑渝场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "平漯周场",
-              "lines": "平漯周高速铁路 焦平高速铁路"
+              "lines": "平漯周高速铁路 焦平高速铁路",
+              "line_names": [],
+              "yard_name": "平漯周场"
             }
           ],
           "platform_numbers": [],
@@ -69839,6 +70425,7 @@
             "平漯周高速铁路",
             "宝平联络线"
           ],
+          "source_notes": "2019-12-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -69911,11 +70498,25 @@
           "yards": [
             {
               "name": "西成场 [1~6站台]",
-              "lines": "西成高速铁路 西成兰渝联络线"
+              "lines": "西成高速铁路 西成兰渝联络线",
+              "line_names": [],
+              "yard_name": "西成场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "兰渝宝成场 [7~11站台]",
-              "lines": "兰渝铁路 宝成铁路"
+              "lines": "兰渝铁路 宝成铁路",
+              "line_names": [],
+              "yard_name": "兰渝宝成场",
+              "number_range": [
+                7,
+                11
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -69925,6 +70526,7 @@
             "兰渝铁路",
             "西成兰渝联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -70130,11 +70732,15 @@
           "yards": [
             {
               "name": "京广场",
-              "lines": "京广铁路"
+              "lines": "京广铁路",
+              "line_names": [],
+              "yard_name": "京广场"
             },
             {
               "name": "武广场",
-              "lines": "京广高速铁路 花广联络线"
+              "lines": "京广高速铁路 花广联络线",
+              "line_names": [],
+              "yard_name": "武广场"
             }
           ],
           "platform_numbers": [],
@@ -70199,11 +70805,15 @@
           "yards": [
             {
               "name": "京广场",
-              "lines": "京广铁路"
+              "lines": "京广铁路",
+              "line_names": [],
+              "yard_name": "京广场"
             },
             {
               "name": "武广场",
-              "lines": "京广高速铁路 花广联络线"
+              "lines": "京广高速铁路 花广联络线",
+              "line_names": [],
+              "yard_name": "武广场"
             }
           ],
           "platform_numbers": [],
@@ -70268,11 +70878,25 @@
           "yards": [
             {
               "name": "京广场 [1~19站台]",
-              "lines": "京广高速铁路 广深港高速铁路 南广铁路 广珠联络线 荔南联络线"
+              "lines": "京广高速铁路 广深港高速铁路 南广铁路 广珠联络线 荔南联络线",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                1,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "广珠场 [20~28站台]",
-              "lines": "广珠城际铁路 贵广高速铁路"
+              "lines": "广珠城际铁路 贵广高速铁路",
+              "line_names": [],
+              "yard_name": "广珠场",
+              "number_range": [
+                20,
+                28
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -70365,11 +70989,25 @@
           "yards": [
             {
               "name": "京广场 [1~19站台]",
-              "lines": "京广高速铁路 广深港高速铁路 南广铁路 广珠联络线 荔南联络线"
+              "lines": "京广高速铁路 广深港高速铁路 南广铁路 广珠联络线 荔南联络线",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                1,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "广珠场 [20~28站台]",
-              "lines": "广珠城际铁路 贵广高速铁路"
+              "lines": "广珠城际铁路 贵广高速铁路",
+              "line_names": [],
+              "yard_name": "广珠场",
+              "number_range": [
+                20,
+                28
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -70480,19 +71118,42 @@
           "yards": [
             {
               "name": "城际场 [1~2站台]",
-              "lines": "广深城际铁路"
+              "lines": "广深城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [3~8站台]",
-              "lines": "广深III、IV线"
+              "lines": "广深III、IV线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                3,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "201&205号岔",
-              "lines": "广深III、IV线 新塘联络线"
+              "lines": "广深III、IV线 新塘联络线",
+              "line_names": [],
+              "yard_name": "201&205号岔"
             },
             {
               "name": "甬广场 [9~13站台]",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "甬广场",
+              "number_range": [
+                9,
+                13
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -70563,19 +71224,42 @@
           "yards": [
             {
               "name": "城际场 [1~2站台]",
-              "lines": "广深城际铁路"
+              "lines": "广深城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [3~8站台]",
-              "lines": "广深III、IV线"
+              "lines": "广深III、IV线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                3,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "201&205号岔",
-              "lines": "广深III、IV线 新塘联络线"
+              "lines": "广深III、IV线 新塘联络线",
+              "line_names": [],
+              "yard_name": "201&205号岔"
             },
             {
               "name": "甬广场 [9~13站台]",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "甬广场",
+              "number_range": [
+                9,
+                13
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -70652,15 +71336,36 @@
           "yards": [
             {
               "name": "广湛场 [1~7站台]",
-              "lines": "江荔联络线"
+              "lines": "江荔联络线",
+              "line_names": [],
+              "yard_name": "广湛场",
+              "number_range": [
+                1,
+                7
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京广场 [8~19站台]",
-              "lines": "京广铁路 花广联络线"
+              "lines": "京广铁路 花广联络线",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                8,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [20~21站台]",
-              "lines": "广清城际铁路"
+              "lines": "广清城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                20,
+                21
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -70692,6 +71397,7 @@
             "京广铁路广州段",
             "江荔联络线"
           ],
+          "source_notes": "2023-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -71239,11 +71945,25 @@
           "yards": [
             {
               "name": "城际场 [1~2站台]",
-              "lines": "昌九城际铁路 庐山城际联络线"
+              "lines": "昌九城际铁路 庐山城际联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "客专场 [6~14站台]",
-              "lines": "武九高速铁路 京港高速铁路"
+              "lines": "武九高速铁路 京港高速铁路",
+              "line_names": [],
+              "yard_name": "客专场",
+              "number_range": [
+                6,
+                14
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -71270,6 +71990,7 @@
             "武九西南联络线",
             "庐山城际联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -72734,7 +73455,9 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
@@ -72742,6 +73465,7 @@
             "沪昆高速铁路",
             "沪昆铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -72974,11 +73698,25 @@
           "yards": [
             {
               "name": "张吉怀场 [1~6站台]",
-              "lines": "张吉怀高速铁路"
+              "lines": "张吉怀高速铁路",
+              "line_names": [],
+              "yard_name": "张吉怀场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "黔常场 [7~13站台]",
-              "lines": "渝厦高速铁路 张沙联络线"
+              "lines": "渝厦高速铁路 张沙联络线",
+              "line_names": [],
+              "yard_name": "黔常场",
+              "number_range": [
+                7,
+                13
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -72987,6 +73725,7 @@
             "张吉怀高速铁路",
             "张沙联络线"
           ],
+          "source_notes": "2019-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -73711,11 +74450,25 @@
           "yards": [
             {
               "name": "京沪场 [1~13站台]",
-              "lines": "京沪高速铁路 徐州东联络线 徐州联络线 徐连高速铁路"
+              "lines": "京沪高速铁路 徐州东联络线 徐州联络线 徐连高速铁路",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                13
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "徐兰场 [14~24站台]",
-              "lines": "徐兰高速铁路 徐盐高速铁路"
+              "lines": "徐兰高速铁路 徐盐高速铁路",
+              "line_names": [],
+              "yard_name": "徐兰场",
+              "number_range": [
+                14,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -73752,6 +74505,7 @@
             "徐州联络线",
             "徐州东联络线"
           ],
+          "source_notes": "2011-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -74162,11 +74916,25 @@
           "yards": [
             {
               "name": "京沪场 [1~5站台]",
-              "lines": "京沪高速铁路 德州东联络线"
+              "lines": "京沪高速铁路 德州东联络线",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "石济场 [6~9站台]",
-              "lines": "石济高速铁路"
+              "lines": "石济高速铁路",
+              "line_names": [],
+              "yard_name": "石济场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -74185,6 +74953,7 @@
             "石济高速铁路",
             "德州东联络线"
           ],
+          "source_notes": "2011-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -74563,11 +75332,25 @@
           "yards": [
             {
               "name": "沪昆场 [1~6站台]",
-              "lines": "沪昆高速铁路 龙怀联络线 怀化南联络线"
+              "lines": "沪昆高速铁路 龙怀联络线 怀化南联络线",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "怀衡场 [7~15站台]",
-              "lines": "怀衡铁路 张吉怀高速铁路"
+              "lines": "怀衡铁路 张吉怀高速铁路",
+              "line_names": [],
+              "yard_name": "怀衡场",
+              "number_range": [
+                7,
+                15
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -74579,6 +75362,7 @@
             "龙怀联络线",
             "怀化南联络线"
           ],
+          "source_notes": "2014-12-16",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -75589,11 +76373,25 @@
           "yards": [
             {
               "name": "达成场 [1~9站台]",
-              "lines": "宁蓉铁路 成宜高速铁路 成都东环线"
+              "lines": "宁蓉铁路 成宜高速铁路 成都东环线",
+              "line_names": [],
+              "yard_name": "达成场",
+              "number_range": [
+                1,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [10~26站台]",
-              "lines": "西成高速铁路 成贵高速铁路 成渝高速铁路"
+              "lines": "西成高速铁路 成贵高速铁路 成渝高速铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                10,
+                26
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -75632,6 +76430,7 @@
             "成渝高速铁路",
             "成都环线"
           ],
+          "source_notes": "2011-05-08",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -75672,19 +76471,42 @@
           "yards": [
             {
               "name": "成昆部分 [1~4站台]",
-              "lines": "成昆铁路"
+              "lines": "成昆铁路",
+              "line_names": [],
+              "yard_name": "成昆部分",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "成贵部分 [5~6站台]",
-              "lines": "成贵高速铁路 成贵成渝联络线"
+              "lines": "成贵高速铁路 成贵成渝联络线",
+              "line_names": [],
+              "yard_name": "成贵部分",
+              "number_range": [
+                5,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "环线部分 [7~9站台]",
-              "lines": "成都东环线 成都西环线"
+              "lines": "成都东环线 成都西环线",
+              "line_names": [],
+              "yard_name": "环线部分",
+              "number_range": [
+                7,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "36号岔",
-              "lines": "成昆铁路 成昆西环联络线"
+              "lines": "成昆铁路 成昆西环联络线",
+              "line_names": [],
+              "yard_name": "36号岔"
             }
           ],
           "platform_numbers": [
@@ -75705,6 +76527,7 @@
             "成昆西环联络线",
             "成贵成渝联络线"
           ],
+          "source_notes": "2014-12-20",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -76097,11 +76920,20 @@
           "yards": [
             {
               "name": "连镇场 [1~4站台]",
-              "lines": "连镇高速铁路"
+              "lines": "连镇高速铁路",
+              "line_names": [],
+              "yard_name": "连镇场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪渝蓉场",
-              "lines": "沪渝蓉高速铁路 扬州北东联络线"
+              "lines": "沪渝蓉高速铁路 扬州北东联络线",
+              "line_names": [],
+              "yard_name": "沪渝蓉场"
             }
           ],
           "platform_numbers": [],
@@ -76110,6 +76942,7 @@
             "连镇高速铁路",
             "扬州北东联络线"
           ],
+          "source_notes": "2020-12-11",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -79246,11 +80079,15 @@
           "yards": [
             {
               "name": "城际场",
-              "lines": "沪宁城际铁路"
+              "lines": "沪宁城际铁路",
+              "line_names": [],
+              "yard_name": "城际场"
             },
             {
               "name": "京沪场",
-              "lines": "京沪高速铁路"
+              "lines": "京沪高速铁路",
+              "line_names": [],
+              "yard_name": "京沪场"
             }
           ],
           "platform_numbers": [],
@@ -79258,6 +80095,7 @@
             "京沪高速铁路",
             "沪宁城际铁路"
           ],
+          "source_notes": "2010-07-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -79332,15 +80170,36 @@
           "yards": [
             {
               "name": "沪昆场 [1~8站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "昆玉场 [9~18站台]",
-              "lines": "渝昆高速铁路 中老昆万铁路"
+              "lines": "渝昆高速铁路 中老昆万铁路",
+              "line_names": [],
+              "yard_name": "昆玉场",
+              "number_range": [
+                9,
+                18
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "南昆场 [19~30站台]",
-              "lines": "南昆高速铁路 昆明南联络线"
+              "lines": "南昆高速铁路 昆明南联络线",
+              "line_names": [],
+              "yard_name": "南昆场",
+              "number_range": [
+                19,
+                30
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -79382,6 +80241,7 @@
             "渝昆高速铁路",
             "中老昆万铁路"
           ],
+          "source_notes": "2016-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -79511,13 +80371,16 @@
           "yards": [
             {
               "name": "客运车场",
-              "lines": "胶济客运专线"
+              "lines": "胶济客运专线",
+              "line_names": [],
+              "yard_name": "客运车场"
             }
           ],
           "platform_numbers": [],
           "lines": [
             "胶济客运专线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -80078,11 +80941,25 @@
           "yards": [
             {
               "name": "大西场 [1~2站台]",
-              "lines": "大西高速铁路"
+              "lines": "大西高速铁路",
+              "line_names": [],
+              "yard_name": "大西场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "太焦场 [4~5站台]",
-              "lines": "郑太高速铁路"
+              "lines": "郑太高速铁路",
+              "line_names": [],
+              "yard_name": "太焦场",
+              "number_range": [
+                4,
+                5
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -80105,7 +80982,9 @@
           "yards": [
             {
               "name": "[3站台]",
-              "lines": "太中铁路"
+              "lines": "太中铁路",
+              "line_names": [],
+              "yard_name": "[3站台]"
             }
           ],
           "platform_numbers": [],
@@ -80147,11 +81026,25 @@
           "yards": [
             {
               "name": "大西场 [1~2站台]",
-              "lines": "大西高速铁路"
+              "lines": "大西高速铁路",
+              "line_names": [],
+              "yard_name": "大西场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "太焦场 [4~5站台]",
-              "lines": "郑太高速铁路"
+              "lines": "郑太高速铁路",
+              "line_names": [],
+              "yard_name": "太焦场",
+              "number_range": [
+                4,
+                5
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -80174,7 +81067,9 @@
           "yards": [
             {
               "name": "[3站台]",
-              "lines": "太中铁路"
+              "lines": "太中铁路",
+              "line_names": [],
+              "yard_name": "[3站台]"
             }
           ],
           "platform_numbers": [],
@@ -80837,11 +81732,25 @@
           "yards": [
             {
               "name": "京沪场 [1~4站台]",
-              "lines": "京沪高速铁路 南夏宋联络线"
+              "lines": "京沪高速铁路 南夏宋联络线",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "鲁南场 [5~11站台]",
-              "lines": "济枣高速铁路 大王庄联络线"
+              "lines": "济枣高速铁路 大王庄联络线",
+              "line_names": [],
+              "yard_name": "鲁南场",
+              "number_range": [
+                5,
+                11
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -80863,6 +81772,7 @@
             "大王庄联络线",
             "南夏宋联络线"
           ],
+          "source_notes": "2011-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -81590,13 +82500,16 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "沈丹高速铁路"
+              "lines": "沈丹高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
           "lines": [
             "沈丹高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -82598,15 +83511,36 @@
           "yards": [
             {
               "name": "宁杭甬场 [1~13站台]",
-              "lines": "宁杭高速铁路 杭深线"
+              "lines": "宁杭高速铁路 杭深线",
+              "line_names": [],
+              "yard_name": "宁杭甬场",
+              "number_range": [
+                1,
+                13
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪杭长场 [14~25站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "沪杭长场",
+              "number_range": [
+                14,
+                25
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [26~28站台]",
-              "lines": "沪昆铁路 艮东联络线"
+              "lines": "沪昆铁路 艮东联络线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                26,
+                28
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -82645,6 +83579,7 @@
             "沪昆高速铁路",
             "沪昆铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -82701,15 +83636,36 @@
           "yards": [
             {
               "name": "杭长场 [1~3站台]",
-              "lines": "沪昆高速铁路 杭甬联络线 杭州南机场联络线"
+              "lines": "沪昆高速铁路 杭甬联络线 杭州南机场联络线",
+              "line_names": [],
+              "yard_name": "杭长场",
+              "number_range": [
+                1,
+                3
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭甬场 [4~7站台]",
-              "lines": "杭深铁路 杭昌高速铁路"
+              "lines": "杭深铁路 杭昌高速铁路",
+              "line_names": [],
+              "yard_name": "杭甬场",
+              "number_range": [
+                4,
+                7
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [8~12站台]",
-              "lines": "沪昆铁路 杭甬铁路"
+              "lines": "沪昆铁路 杭甬铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                8,
+                12
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -82735,6 +83691,7 @@
             "杭甬联络线",
             "杭州南机场联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -82816,11 +83773,20 @@
           "yards": [
             {
               "name": "合杭场 [1~11站台]",
-              "lines": "合杭高速铁路"
+              "lines": "合杭高速铁路",
+              "line_names": [],
+              "yard_name": "合杭场",
+              "number_range": [
+                1,
+                11
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪杭场",
-              "lines": "沪杭高速铁路 杭临黄高速铁路"
+              "lines": "沪杭高速铁路 杭临黄高速铁路",
+              "line_names": [],
+              "yard_name": "沪杭场"
             }
           ],
           "platform_numbers": [
@@ -82850,6 +83816,7 @@
             "沪杭高速铁路",
             "杭临黄高速铁路"
           ],
+          "source_notes": "2022-09-22",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -84973,11 +85940,15 @@
           "yards": [
             {
               "name": "沪昆场",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "沪昆场"
             },
             {
               "name": "沪杭场",
-              "lines": "沪杭高速铁路 杭台高速铁路"
+              "lines": "沪杭高速铁路 杭台高速铁路",
+              "line_names": [],
+              "yard_name": "沪杭场"
             }
           ],
           "platform_numbers": [],
@@ -84986,6 +85957,7 @@
             "沪杭高速铁路",
             "杭台高速铁路"
           ],
+          "source_notes": "2010-10-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -85543,11 +86515,25 @@
           "yards": [
             {
               "name": "高速场 [1~2站台]",
-              "lines": "京港高速铁路"
+              "lines": "京港高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [3~4站台]",
-              "lines": "京九铁路"
+              "lines": "京九铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                3,
+                4
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -85559,6 +86545,7 @@
           "lines": [
             "京港高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -87345,11 +88332,25 @@
           "yards": [
             {
               "name": "高速场 [1~15站台]",
-              "lines": "京广高速铁路 武汉站普客联络线"
+              "lines": "京广高速铁路 武汉站普客联络线",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                15
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [16~20站台]",
-              "lines": "滠武线"
+              "lines": "滠武线",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                16,
+                20
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -87379,6 +88380,7 @@
             "滠武线",
             "武汉站普客联络线"
           ],
+          "source_notes": "2009-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -88535,11 +89537,15 @@
           "yards": [
             {
               "name": "衡柳场",
-              "lines": "衡柳线"
+              "lines": "衡柳线",
+              "line_names": [],
+              "yard_name": "衡柳场"
             },
             {
               "name": "邵永场",
-              "lines": "邵永高速铁路 小观岭联络线"
+              "lines": "邵永高速铁路 小观岭联络线",
+              "line_names": [],
+              "yard_name": "邵永场"
             }
           ],
           "platform_numbers": [],
@@ -88549,6 +89555,7 @@
             "永广高速铁路",
             "小观岭联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -89381,15 +90388,31 @@
           "yards": [
             {
               "name": "汕汕场 [1~7站台]",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "汕汕场",
+              "number_range": [
+                1,
+                7
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [8~15站台]",
-              "lines": "梅汕高速铁路 广澳港铁路"
+              "lines": "梅汕高速铁路 广澳港铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                8,
+                15
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场",
-              "lines": "粤东城际铁路"
+              "lines": "粤东城际铁路",
+              "line_names": [],
+              "yard_name": "城际场"
             }
           ],
           "platform_numbers": [
@@ -89419,6 +90442,7 @@
             "梅汕高速铁路",
             "粤东城际铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -89458,15 +90482,31 @@
           "yards": [
             {
               "name": "杭深场 [1~5站台]",
-              "lines": "杭深铁路 汕尾西联络线"
+              "lines": "杭深铁路 汕尾西联络线",
+              "line_names": [],
+              "yard_name": "杭深场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "甬广场 [6~9站台]",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "甬广场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "202&204号岔",
-              "lines": "甬广高速铁路 汕尾西联络线"
+              "lines": "甬广高速铁路 汕尾西联络线",
+              "line_names": [],
+              "yard_name": "202&204号岔"
             }
           ],
           "platform_numbers": [],
@@ -89475,6 +90515,7 @@
             "甬广高速铁路",
             "汕尾西联络线"
           ],
+          "source_notes": "2013-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -89631,15 +90672,36 @@
           "yards": [
             {
               "name": "普速场 [1~3站台]",
-              "lines": "沪昆铁路"
+              "lines": "沪昆铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                3
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭长场 [4~5站台]",
-              "lines": "沪昆高速铁路 江山联络线"
+              "lines": "沪昆高速铁路 江山联络线",
+              "line_names": [],
+              "yard_name": "杭长场",
+              "number_range": [
+                4,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭衢场 [6~8站台]",
-              "lines": "杭衢高速铁路"
+              "lines": "杭衢高速铁路",
+              "line_names": [],
+              "yard_name": "杭衢场",
+              "number_range": [
+                6,
+                8
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -89658,6 +90720,7 @@
             "杭衢高速铁路",
             "江山联络线"
           ],
+          "source_notes": "2006-05-25",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -92498,11 +93561,20 @@
           "yards": [
             {
               "name": "郑西场 [1~6站台]",
-              "lines": "徐兰高速铁路 八洛联络线"
+              "lines": "徐兰高速铁路 八洛联络线",
+              "line_names": [],
+              "yard_name": "郑西场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "焦平场",
-              "lines": "焦平高速铁路"
+              "lines": "焦平高速铁路",
+              "line_names": [],
+              "yard_name": "焦平场"
             }
           ],
           "platform_numbers": [],
@@ -92511,6 +93583,7 @@
             "徐兰高速铁路",
             "八洛联络线"
           ],
+          "source_notes": "2010-02-06",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -92840,15 +93913,36 @@
           "yards": [
             {
               "name": "石济场 [1~5站台]",
-              "lines": "北辛店联络线 济南东石济场联络线"
+              "lines": "北辛店联络线 济南东石济场联络线",
+              "line_names": [],
+              "yard_name": "石济场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "济青场 [6~17站台]",
-              "lines": "济青高速铁路 石济高速铁路 黄东联络线 水坡村疏解线"
+              "lines": "济青高速铁路 石济高速铁路 黄东联络线 水坡村疏解线",
+              "line_names": [],
+              "yard_name": "济青场",
+              "number_range": [
+                6,
+                17
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [18~25站台]",
-              "lines": "济滨高速铁路 济莱高速铁路 黄东联络线"
+              "lines": "济滨高速铁路 济莱高速铁路 黄东联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                18,
+                25
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -92862,6 +93956,7 @@
             "黄东联络线",
             "水坡村疏解线"
           ],
+          "source_notes": "2018-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -94151,15 +95246,31 @@
           "yards": [
             {
               "name": "客运车场 [1~4站台]",
-              "lines": "胶济客运专线"
+              "lines": "胶济客运专线",
+              "line_names": [],
+              "yard_name": "客运车场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [5~6站台]",
-              "lines": "胶济铁路"
+              "lines": "胶济铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                5,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "市域场",
-              "lines": "博山铁路"
+              "lines": "博山铁路",
+              "line_names": [],
+              "yard_name": "市域场"
             }
           ],
           "platform_numbers": [
@@ -94174,6 +95285,7 @@
             "胶济客运专线",
             "博山铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -94633,15 +95745,21 @@
           "yards": [
             {
               "name": "杭深场",
-              "lines": "杭深铁路 坪山联络线"
+              "lines": "杭深铁路 坪山联络线",
+              "line_names": [],
+              "yard_name": "杭深场"
             },
             {
               "name": "深汕场",
-              "lines": "深汕高速铁路"
+              "lines": "深汕高速铁路",
+              "line_names": [],
+              "yard_name": "深汕场"
             },
             {
               "name": "城际场",
-              "lines": "深大城际铁路 大鹏支线"
+              "lines": "深大城际铁路 大鹏支线",
+              "line_names": [],
+              "yard_name": "城际场"
             }
           ],
           "platform_numbers": [],
@@ -94652,6 +95770,7 @@
             "大鹏支线",
             "坪山联络线"
           ],
+          "source_notes": "2013-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -94811,11 +95930,15 @@
           "yards": [
             {
               "name": "甬广场",
-              "lines": "甬广高速铁路 三角山联络线"
+              "lines": "甬广高速铁路 三角山联络线",
+              "line_names": [],
+              "yard_name": "甬广场"
             },
             {
               "name": "深汕场",
-              "lines": "深汕高速铁路"
+              "lines": "深汕高速铁路",
+              "line_names": [],
+              "yard_name": "深汕场"
             }
           ],
           "platform_numbers": [],
@@ -94824,6 +95947,7 @@
             "深汕高速铁路",
             "三角山联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -95426,11 +96550,25 @@
           "yards": [
             {
               "name": "杭深场 [1~2站台]",
-              "lines": "杭深铁路 温岭北联络线"
+              "lines": "杭深铁路 温岭北联络线",
+              "line_names": [],
+              "yard_name": "杭深场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭台场 [3~7站台]",
-              "lines": "杭台高速铁路 甬广高速铁路"
+              "lines": "杭台高速铁路 甬广高速铁路",
+              "line_names": [],
+              "yard_name": "杭台场",
+              "number_range": [
+                3,
+                7
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -95440,6 +96578,7 @@
             "杭台高速铁路",
             "温岭北联络线"
           ],
+          "source_notes": "2009-09-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -96622,11 +97761,20 @@
           "yards": [
             {
               "name": "京沪场 [1~4站台]",
-              "lines": "京沪高速铁路"
+              "lines": "京沪高速铁路",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪渝蓉场",
-              "lines": "沪渝蓉高速铁路"
+              "lines": "沪渝蓉高速铁路",
+              "line_names": [],
+              "yard_name": "沪渝蓉场"
             }
           ],
           "platform_numbers": [],
@@ -96634,6 +97782,7 @@
             "京沪高速铁路",
             "沪渝蓉高速铁路"
           ],
+          "source_notes": "2011-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -97046,11 +98195,15 @@
           "yards": [
             {
               "name": "津秦场",
-              "lines": "津秦高速铁路 津潍津秦联络线"
+              "lines": "津秦高速铁路 津潍津秦联络线",
+              "line_names": [],
+              "yard_name": "津秦场"
             },
             {
               "name": "京滨场",
-              "lines": "京滨城际铁路"
+              "lines": "京滨城际铁路",
+              "line_names": [],
+              "yard_name": "京滨场"
             }
           ],
           "platform_numbers": [],
@@ -97059,6 +98212,7 @@
             "京滨城际铁路",
             "津潍津秦联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -97195,11 +98349,20 @@
           "yards": [
             {
               "name": "京广场 [1~4站台]",
-              "lines": "京广高速铁路"
+              "lines": "京广高速铁路",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "平漯周场",
-              "lines": "平漯周高速铁路"
+              "lines": "平漯周高速铁路",
+              "line_names": [],
+              "yard_name": "平漯周场"
             }
           ],
           "platform_numbers": [],
@@ -97207,6 +98370,7 @@
             "京广高速铁路",
             "平漯周高速铁路"
           ],
+          "source_notes": "2012-09-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -97281,11 +98445,15 @@
           "yards": [
             {
               "name": "杭深场",
-              "lines": "杭深铁路 龙漳铁路 恒春联络线"
+              "lines": "杭深铁路 龙漳铁路 恒春联络线",
+              "line_names": [],
+              "yard_name": "杭深场"
             },
             {
               "name": "甬广场",
-              "lines": "甬广高速铁路"
+              "lines": "甬广高速铁路",
+              "line_names": [],
+              "yard_name": "甬广场"
             }
           ],
           "platform_numbers": [
@@ -97304,6 +98472,7 @@
             "龙漳铁路",
             "恒春联络线"
           ],
+          "source_notes": "2012-06-29",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -97470,11 +98639,20 @@
           "yards": [
             {
               "name": "济青场 [1~8站台]",
-              "lines": "济青高速铁路 潍荣高速铁路 津潍济青联络线 潍宿济青联络线"
+              "lines": "济青高速铁路 潍荣高速铁路 津潍济青联络线 潍宿济青联络线",
+              "line_names": [],
+              "yard_name": "济青场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "津潍场",
-              "lines": "津潍高速铁路 潍宿高速铁路"
+              "lines": "津潍高速铁路 潍宿高速铁路",
+              "line_names": [],
+              "yard_name": "津潍场"
             }
           ],
           "platform_numbers": [
@@ -97501,6 +98679,7 @@
             "津潍济青联络线",
             "潍宿济青联络线"
           ],
+          "source_notes": "2018-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -99864,7 +101043,9 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "兰新高速铁路"
+              "lines": "兰新高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
@@ -99872,6 +101053,7 @@
             "兰新高速铁路",
             "兰新铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -102574,7 +103756,9 @@
           "yards": [
             {
               "name": "云桂场",
-              "lines": "南昆高速铁路"
+              "lines": "南昆高速铁路",
+              "line_names": [],
+              "yard_name": "云桂场"
             }
           ],
           "platform_numbers": [],
@@ -102582,6 +103766,7 @@
             "南昆高速铁路",
             "南昆高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -103559,15 +104744,36 @@
           "yards": [
             {
               "name": "普速场 [1~7站台]",
-              "lines": "京广铁路"
+              "lines": "京广铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                7
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京广场 [8~17站台]",
-              "lines": "京广高速铁路 京广石太高速联络线"
+              "lines": "京广高速铁路 京广石太高速联络线",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                8,
+                17
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "太青场 [18~24站台]",
-              "lines": "石济高速铁路 石太高速铁路"
+              "lines": "石济高速铁路 石太高速铁路",
+              "line_names": [],
+              "yard_name": "太青场",
+              "number_range": [
+                18,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -103603,6 +104809,7 @@
             "京广铁路",
             "京广石太高速联络线"
           ],
+          "source_notes": "2012-12-21",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -105195,11 +106402,25 @@
           "yards": [
             {
               "name": "杭深场 [1~12站台]",
-              "lines": "杭深铁路 福平铁路"
+              "lines": "杭深铁路 福平铁路",
+              "line_names": [],
+              "yard_name": "杭深场",
+              "number_range": [
+                1,
+                12
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "甬广场 [13~26站台]",
-              "lines": "甬广高速铁路 福樟联络线 福樟疏解线"
+              "lines": "甬广高速铁路 福樟联络线 福樟疏解线",
+              "line_names": [],
+              "yard_name": "甬广场",
+              "number_range": [
+                13,
+                26
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -105237,6 +106458,7 @@
             "福樟联络线",
             "福樟疏解线"
           ],
+          "source_notes": "2010-04-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -105894,15 +107116,31 @@
           "yards": [
             {
               "name": "津秦场 [1~6站台]",
-              "lines": "津秦高速铁路"
+              "lines": "津秦高速铁路",
+              "line_names": [],
+              "yard_name": "津秦场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "京哈场 [7~11站台]",
-              "lines": "京哈铁路"
+              "lines": "京哈铁路",
+              "line_names": [],
+              "yard_name": "京哈场",
+              "number_range": [
+                7,
+                11
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "津山场",
-              "lines": "津山铁路"
+              "lines": "津山铁路",
+              "line_names": [],
+              "yard_name": "津山场"
             }
           ],
           "platform_numbers": [
@@ -105923,6 +107161,7 @@
             "津秦高速铁路",
             "京哈铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -107570,11 +108809,25 @@
           "yards": [
             {
               "name": "杭深场 [1~4站台]",
-              "lines": "杭深铁路 镜湖联络线"
+              "lines": "杭深铁路 镜湖联络线",
+              "line_names": [],
+              "yard_name": "杭深场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭台场 [5~8站台]",
-              "lines": "杭台高速铁路"
+              "lines": "杭台高速铁路",
+              "line_names": [],
+              "yard_name": "杭台场",
+              "number_range": [
+                5,
+                8
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -107583,6 +108836,7 @@
             "杭台高速铁路",
             "镜湖联络线"
           ],
+          "source_notes": "2013-07-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -107895,19 +109149,37 @@
           "yards": [
             {
               "name": "杭黄场 [1~5站台]",
-              "lines": "杭昌高速铁路 宣绩高速铁路 绩溪北联络线"
+              "lines": "杭昌高速铁路 宣绩高速铁路 绩溪北联络线",
+              "line_names": [],
+              "yard_name": "杭黄场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "合福场 [6~8站台]",
-              "lines": "合福高速铁路"
+              "lines": "合福高速铁路",
+              "line_names": [],
+              "yard_name": "合福场",
+              "number_range": [
+                6,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "直通场",
-              "lines": "杭临黄高速铁路"
+              "lines": "杭临黄高速铁路",
+              "line_names": [],
+              "yard_name": "直通场"
             },
             {
               "name": "202&204号岔",
-              "lines": "合福高速铁路 绩溪北联络线"
+              "lines": "合福高速铁路 绩溪北联络线",
+              "line_names": [],
+              "yard_name": "202&204号岔"
             }
           ],
           "platform_numbers": [
@@ -107927,6 +109199,7 @@
             "宣绩高速铁路",
             "绩溪北联络线"
           ],
+          "source_notes": "2015-06-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -108987,13 +110260,16 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "哈齐高速铁路"
+              "lines": "哈齐高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
           "lines": [
             "哈齐高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -109028,11 +110304,25 @@
           "yards": [
             {
               "name": "南广场 [1~5站台]",
-              "lines": "南广铁路 甫草联络线"
+              "lines": "南广铁路 甫草联络线",
+              "line_names": [],
+              "yard_name": "南广场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "贵广场 [6~9站台]",
-              "lines": "贵广高速铁路 肇高高速铁路"
+              "lines": "贵广高速铁路 肇高高速铁路",
+              "line_names": [],
+              "yard_name": "贵广场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -109098,11 +110388,25 @@
           "yards": [
             {
               "name": "南广场 [1~5站台]",
-              "lines": "南广铁路 甫草联络线"
+              "lines": "南广铁路 甫草联络线",
+              "line_names": [],
+              "yard_name": "南广场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "贵广场 [6~9站台]",
-              "lines": "贵广高速铁路 肇高高速铁路"
+              "lines": "贵广高速铁路 肇高高速铁路",
+              "line_names": [],
+              "yard_name": "贵广场",
+              "number_range": [
+                6,
+                9
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -110853,15 +112157,26 @@
           "yards": [
             {
               "name": "京沪场 [1~4站台]",
-              "lines": "京沪高速铁路"
+              "lines": "京沪高速铁路",
+              "line_names": [],
+              "yard_name": "京沪场",
+              "number_range": [
+                1,
+                4
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "通甬场",
-              "lines": "通甬高速铁路"
+              "lines": "通甬高速铁路",
+              "line_names": [],
+              "yard_name": "通甬场"
             },
             {
               "name": "城际场",
-              "lines": "如通苏湖城际铁路"
+              "lines": "如通苏湖城际铁路",
+              "line_names": [],
+              "yard_name": "城际场"
             }
           ],
           "platform_numbers": [],
@@ -110870,6 +112185,7 @@
             "京沪高速铁路",
             "如通苏湖城际铁路"
           ],
+          "source_notes": "2011-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -112547,11 +113863,20 @@
           "yards": [
             {
               "name": "沪昆场 [1~6站台]",
-              "lines": "沪昆高速铁路 渝长沪联络线"
+              "lines": "沪昆高速铁路 渝长沪联络线",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "长赣场",
-              "lines": "渝厦高速铁路"
+              "lines": "渝厦高速铁路",
+              "line_names": [],
+              "yard_name": "长赣场"
             }
           ],
           "platform_numbers": [],
@@ -112560,6 +113885,7 @@
             "渝厦高速铁路",
             "渝长沪联络线"
           ],
+          "source_notes": "2014-09-16",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -114467,11 +115793,25 @@
           "yards": [
             {
               "name": "普速场 [1~5站台]",
-              "lines": "沪昆铁路 衢九铁路 衢宁铁路"
+              "lines": "沪昆铁路 衢九铁路 衢宁铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭长场 [6~10站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "杭长场",
+              "number_range": [
+                6,
+                10
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -114491,6 +115831,7 @@
             "沪昆铁路",
             "衢九铁路"
           ],
+          "source_notes": "2006-05-29",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -114776,11 +116117,25 @@
           "yards": [
             {
               "name": "武西场 [1~6站台]",
-              "lines": "武西高速铁路 东津联络线"
+              "lines": "武西高速铁路 东津联络线",
+              "line_names": [],
+              "yard_name": "武西场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "郑渝场 [7~16站台]",
-              "lines": "郑渝高速铁路 襄荆高速铁路 前岗联络线"
+              "lines": "郑渝高速铁路 襄荆高速铁路 前岗联络线",
+              "line_names": [],
+              "yard_name": "郑渝场",
+              "number_range": [
+                7,
+                16
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -114791,6 +116146,7 @@
             "东津联络线",
             "前岗联络线"
           ],
+          "source_notes": "2019-11-29",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -115112,15 +116468,21 @@
           "yards": [
             {
               "name": "普速场",
-              "lines": "西康铁路"
+              "lines": "西康铁路",
+              "line_names": [],
+              "yard_name": "普速场"
             },
             {
               "name": "西渝场",
-              "lines": "包西高速铁路 西渝高速铁路"
+              "lines": "包西高速铁路 西渝高速铁路",
+              "line_names": [],
+              "yard_name": "西渝场"
             },
             {
               "name": "武西场",
-              "lines": "武西高速铁路"
+              "lines": "武西高速铁路",
+              "line_names": [],
+              "yard_name": "武西场"
             }
           ],
           "platform_numbers": [],
@@ -115129,6 +116491,7 @@
             "西渝高速铁路",
             "武西高速铁路"
           ],
+          "source_notes": "2026-06-30",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -115169,15 +116532,36 @@
           "yards": [
             {
               "name": "郑西场 [1~15站台]",
-              "lines": "徐兰高速铁路 西成徐兰疏解线"
+              "lines": "徐兰高速铁路 西成徐兰疏解线",
+              "line_names": [],
+              "yard_name": "郑西场",
+              "number_range": [
+                1,
+                15
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "大西场 [16~27站台]",
-              "lines": "大西高速铁路 西成高速铁路 徐兰大西疏解线 徐兰西成疏解线 草店村疏解线"
+              "lines": "大西高速铁路 西成高速铁路 徐兰大西疏解线 徐兰西成疏解线 草店村疏解线",
+              "line_names": [],
+              "yard_name": "大西场",
+              "number_range": [
+                16,
+                27
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "西银场 [28~34站台]",
-              "lines": "银西高速铁路 郭北联络线 西安北疏解1&2线"
+              "lines": "银西高速铁路 郭北联络线 西安北疏解1&2线",
+              "line_names": [],
+              "yard_name": "西银场",
+              "number_range": [
+                28,
+                34
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -115229,6 +116613,7 @@
             "西成徐兰疏解线",
             "草店村疏解线"
           ],
+          "source_notes": "2011-01-11",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -116652,15 +118037,36 @@
           "yards": [
             {
               "name": "成贵场 [1~6站台]",
-              "lines": "成贵贵阳北联络线"
+              "lines": "成贵贵阳北联络线",
+              "line_names": [],
+              "yard_name": "成贵场",
+              "number_range": [
+                1,
+                6
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "渝贵贵广场 [7~18站台]",
-              "lines": "渝贵铁路 贵开铁路"
+              "lines": "渝贵铁路 贵开铁路",
+              "line_names": [],
+              "yard_name": "渝贵贵广场",
+              "number_range": [
+                7,
+                18
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪昆场 [19~28站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                19,
+                28
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -116700,6 +118106,7 @@
             "贵开铁路",
             "成贵贵阳北联络线"
           ],
+          "source_notes": "2014-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -118323,11 +119730,25 @@
           "yards": [
             {
               "name": "普速场 [1~9站台]",
-              "lines": "陇海铁路 青盐铁路"
+              "lines": "陇海铁路 青盐铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                9
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "徐连场 [10~17站台]",
-              "lines": "徐连高速铁路 连云港联络线"
+              "lines": "徐连高速铁路 连云港联络线",
+              "line_names": [],
+              "yard_name": "徐连场",
+              "number_range": [
+                10,
+                17
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -118354,6 +119775,7 @@
             "徐连高速铁路",
             "连云港联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -118812,11 +120234,15 @@
           "yards": [
             {
               "name": "达成场",
-              "lines": "达成铁路 遂新联络线 遂宁南联络线"
+              "lines": "达成铁路 遂新联络线 遂宁南联络线",
+              "line_names": [],
+              "yard_name": "达成场"
             },
             {
               "name": "成万场",
-              "lines": "成万高速铁路 遂菖联络线"
+              "lines": "成万高速铁路 遂菖联络线",
+              "line_names": [],
+              "yard_name": "成万场"
             }
           ],
           "platform_numbers": [
@@ -118838,6 +120264,7 @@
             "遂宁南联络线",
             "遂菖联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -119795,15 +121222,36 @@
           "yards": [
             {
               "name": "京广场 [1~16站台]",
-              "lines": "京广高速铁路 郑州东南东联络线 郑州东北联络线 曹古寺联络线"
+              "lines": "京广高速铁路 郑州东南东联络线 郑州东北联络线 曹古寺联络线",
+              "line_names": [],
+              "yard_name": "京广场",
+              "number_range": [
+                1,
+                16
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [17~20站台]",
-              "lines": "郑开城际铁路 郑机城际铁路"
+              "lines": "郑开城际铁路 郑机城际铁路",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                17,
+                20
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "徐兰场 [21~32站台]",
-              "lines": "徐兰高速铁路 济郑高速铁路 郑渝高速铁路 马头岗联络线"
+              "lines": "徐兰高速铁路 济郑高速铁路 郑渝高速铁路 马头岗联络线",
+              "line_names": [],
+              "yard_name": "徐兰场",
+              "number_range": [
+                21,
+                32
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -119850,6 +121298,7 @@
             "马头岗联络线",
             "曹古寺联络线"
           ],
+          "source_notes": "2012-09-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -119931,15 +121380,36 @@
           "yards": [
             {
               "name": "郑万场 [1~8站台]",
-              "lines": "郑渝高速铁路"
+              "lines": "郑渝高速铁路",
+              "line_names": [],
+              "yard_name": "郑万场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "郑阜场 [9~17站台]",
-              "lines": "郑阜高速铁路"
+              "lines": "郑阜高速铁路",
+              "line_names": [],
+              "yard_name": "郑阜场",
+              "number_range": [
+                9,
+                17
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "城际场 [18~30站台]",
-              "lines": "郑机城际铁路 郑州南郑阜联络线"
+              "lines": "郑机城际铁路 郑州南郑阜联络线",
+              "line_names": [],
+              "yard_name": "城际场",
+              "number_range": [
+                18,
+                30
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -119980,6 +121450,7 @@
             "郑机城际铁路",
             "郑州南郑阜联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -120094,11 +121565,25 @@
           "yards": [
             {
               "name": "高速场 [1~2站台]",
-              "lines": "京港高速铁路"
+              "lines": "京港高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "普速场 [3~4站台]",
-              "lines": "京九铁路"
+              "lines": "京九铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                3,
+                4
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -120110,6 +121595,7 @@
           "lines": [
             "京港高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -120984,15 +122470,21 @@
           "yards": [
             {
               "name": "渝厦场",
-              "lines": "渝厦高速铁路"
+              "lines": "渝厦高速铁路",
+              "line_names": [],
+              "yard_name": "渝厦场"
             },
             {
               "name": "渝万场",
-              "lines": "渝万高速铁路"
+              "lines": "渝万高速铁路",
+              "line_names": [],
+              "yard_name": "渝万场"
             },
             {
               "name": "普速场",
-              "lines": "重庆东环铁路 东光联络线"
+              "lines": "重庆东环铁路 东光联络线",
+              "line_names": [],
+              "yard_name": "普速场"
             }
           ],
           "platform_numbers": [],
@@ -121002,6 +122494,7 @@
             "重庆东环铁路",
             "东光联络线"
           ],
+          "source_notes": "2025-06-27",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -121042,15 +122535,36 @@
           "yards": [
             {
               "name": "渝利场 [1~8站台]",
-              "lines": "宁蓉铁路"
+              "lines": "宁蓉铁路",
+              "line_names": [],
+              "yard_name": "渝利场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "渝万场 [9~19站台]",
-              "lines": "沪渝蓉高速铁路 郑渝高速铁路"
+              "lines": "沪渝蓉高速铁路 郑渝高速铁路",
+              "line_names": [],
+              "yard_name": "渝万场",
+              "number_range": [
+                9,
+                19
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "渝怀场 [20~26站台]",
-              "lines": "渝怀铁路"
+              "lines": "渝怀铁路",
+              "line_names": [],
+              "yard_name": "渝怀场",
+              "number_range": [
+                20,
+                26
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -121087,6 +122601,7 @@
             "郑渝高速铁路",
             "渝怀铁路重庆段"
           ],
+          "source_notes": "2006-10-22",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -121186,11 +122701,15 @@
           "yards": [
             {
               "name": "渝贵场",
-              "lines": "渝贵铁路 成渝高速渝贵联络线"
+              "lines": "渝贵铁路 成渝高速渝贵联络线",
+              "line_names": [],
+              "yard_name": "渝贵场"
             },
             {
               "name": "渝昆场",
-              "lines": "渝昆高速铁路 井西线"
+              "lines": "渝昆高速铁路 井西线",
+              "line_names": [],
+              "yard_name": "渝昆场"
             }
           ],
           "platform_numbers": [
@@ -121230,6 +122749,7 @@
             "渝贵铁路",
             "成渝高速渝贵联络线"
           ],
+          "source_notes": "2018-01-25",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -121449,11 +122969,25 @@
           "yards": [
             {
               "name": "普速场 [1~5站台]",
-              "lines": "沪昆铁路 金建高速铁路"
+              "lines": "沪昆铁路 金建高速铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                5
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "杭长场 [6~10站台]",
-              "lines": "沪昆高速铁路"
+              "lines": "沪昆高速铁路",
+              "line_names": [],
+              "yard_name": "杭长场",
+              "number_range": [
+                6,
+                10
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -122239,7 +123773,9 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "邕北铁路"
+              "lines": "邕北铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
@@ -122247,6 +123783,7 @@
             "邕北铁路",
             "钦东联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -122358,11 +123895,25 @@
           "yards": [
             {
               "name": "普速场 [1~2站台]",
-              "lines": "绥佳铁路"
+              "lines": "绥佳铁路",
+              "line_names": [],
+              "yard_name": "普速场",
+              "number_range": [
+                1,
+                2
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "高速场 [3~4站台]",
-              "lines": "哈伊高速铁路"
+              "lines": "哈伊高速铁路",
+              "line_names": [],
+              "yard_name": "高速场",
+              "number_range": [
+                3,
+                4
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -122374,6 +123925,7 @@
           "lines": [
             "哈伊高速铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -122913,11 +124465,15 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "包银高速铁路 银西高速铁路"
+              "lines": "包银高速铁路 银西高速铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             },
             {
               "name": "普速场",
-              "lines": "包兰铁路"
+              "lines": "包兰铁路",
+              "line_names": [],
+              "yard_name": "普速场"
             }
           ],
           "platform_numbers": [
@@ -122942,6 +124498,7 @@
             "银兰高速铁路",
             "包兰铁路"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -123882,15 +125439,26 @@
           "yards": [
             {
               "name": "渝利场 [1~3站台]",
-              "lines": "宁蓉铁路"
+              "lines": "宁蓉铁路",
+              "line_names": [],
+              "yard_name": "渝利场",
+              "number_range": [
+                1,
+                3
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "渝万场",
-              "lines": "郑渝高速铁路 陈家坡联络线"
+              "lines": "郑渝高速铁路 陈家坡联络线",
+              "line_names": [],
+              "yard_name": "渝万场"
             },
             {
               "name": "沪渝蓉场",
-              "lines": "沪渝蓉高速铁路"
+              "lines": "沪渝蓉高速铁路",
+              "line_names": [],
+              "yard_name": "沪渝蓉场"
             }
           ],
           "platform_numbers": [],
@@ -123900,6 +125468,7 @@
             "郑渝高速铁路",
             "陈家坡联络线"
           ],
+          "source_notes": "2013-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -124299,11 +125868,25 @@
           "yards": [
             {
               "name": "武广场 [1~13站台]",
-              "lines": "京广高速铁路 长沙东南联络线 长沙西北联络线 云贵厦武广场联络线"
+              "lines": "京广高速铁路 长沙东南联络线 长沙西北联络线 云贵厦武广场联络线",
+              "line_names": [],
+              "yard_name": "武广场",
+              "number_range": [
+                1,
+                13
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "沪昆场 [14~24站台]",
-              "lines": "沪昆高速铁路 云贵厦联络线"
+              "lines": "沪昆高速铁路 云贵厦联络线",
+              "line_names": [],
+              "yard_name": "沪昆场",
+              "number_range": [
+                14,
+                24
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [],
@@ -124315,6 +125898,7 @@
             "云贵厦联络线",
             "云贵厦武广场联络线"
           ],
+          "source_notes": "2009-12-26",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -124408,11 +125992,15 @@
           "yards": [
             {
               "name": "城际场",
-              "lines": "长株城际铁路 乌山联络线 长黄联络线"
+              "lines": "长株城际铁路 乌山联络线 长黄联络线",
+              "line_names": [],
+              "yard_name": "城际场"
             },
             {
               "name": "常益长场",
-              "lines": "渝厦高速铁路"
+              "lines": "渝厦高速铁路",
+              "line_names": [],
+              "yard_name": "常益长场"
             }
           ],
           "platform_numbers": [],
@@ -124422,6 +126010,7 @@
             "长株城际铁路",
             "长黄联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -125360,11 +126949,25 @@
           "yards": [
             {
               "name": "京港场 [1~8站台]",
-              "lines": "京港高速铁路 阜黄高速铁路"
+              "lines": "京港高速铁路 阜黄高速铁路",
+              "line_names": [],
+              "yard_name": "京港场",
+              "number_range": [
+                1,
+                8
+              ],
+              "number_kind": "platform_face"
             },
             {
               "name": "郑阜场 [9~18站台]",
-              "lines": "郑阜高速铁路 淮阜高速铁路 代郢联络线 阜黄郑阜联络线"
+              "lines": "郑阜高速铁路 淮阜高速铁路 代郢联络线 阜黄郑阜联络线",
+              "line_names": [],
+              "yard_name": "郑阜场",
+              "number_range": [
+                9,
+                18
+              ],
+              "number_kind": "platform_face"
             }
           ],
           "platform_numbers": [
@@ -125395,6 +126998,7 @@
             "阜黄郑阜联络线",
             "代郢联络线"
           ],
+          "source_notes": "2019-12-01",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -125447,7 +127051,9 @@
           "yards": [
             {
               "name": "高速场",
-              "lines": "钦防铁路 防东铁路"
+              "lines": "钦防铁路 防东铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [],
@@ -125455,6 +127061,7 @@
             "钦防铁路",
             "防东铁路"
           ],
+          "source_notes": "2013-12-28",
           "diagram_status": "source_generated_reference"
         }
       ],
@@ -126469,11 +128076,15 @@
           "yards": [
             {
               "name": "普速场",
-              "lines": "兰新铁路 陈福联络线"
+              "lines": "兰新铁路 陈福联络线",
+              "line_names": [],
+              "yard_name": "普速场"
             },
             {
               "name": "高速场",
-              "lines": "中川铁路"
+              "lines": "中川铁路",
+              "line_names": [],
+              "yard_name": "高速场"
             }
           ],
           "platform_numbers": [
@@ -126488,6 +128099,7 @@
             "中川城际铁路",
             "陈福联络线"
           ],
+          "source_notes": "",
           "diagram_status": "source_generated_reference"
         }
       ],

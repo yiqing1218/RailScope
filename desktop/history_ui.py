@@ -39,6 +39,8 @@ class HistoryController:
             for key in keys
             if key.startswith(("object:", "station:", "node:", "switch:"))
         }
+        if mode == 'rail' and direct:
+            self.import_station_reference(props, direct)
         candidates = [
             r
             for r in self.records.values()
@@ -71,6 +73,44 @@ class HistoryController:
             if len(candidates) == 1
             else None
         )
+
+    def import_station_reference(self, props, aliases):
+        profile = props.get('external_reference')
+        if not profile:
+            try:
+                from .china_emu import station_reference
+            except ImportError:
+                from china_emu import station_reference
+            profile = station_reference(props,props)
+        if not profile or profile.get('kind') != 'station':
+            return
+        try:
+            from .reference_integration import reference_lifecycle
+        except ImportError:
+            from reference_integration import reference_lifecycle
+        from display_names import object_key
+        existing = [r for r in self.records.values() if r.mode=='rail' and set(r.source_aliases).intersection(aliases)]
+        if len(existing)>1:
+            return
+        if existing and existing[0].source != 'china-emu.cn':
+            return
+        ident = existing[0].id if existing else IdentityRegistry(self.store.path).resolve_alias(
+            'infrastructure_history', 'rail/'+(object_key(props) or min(aliases)), 'INF')
+        value = reference_lifecycle(profile,ident,aliases,props.get('name') or profile['name'])
+        existing_date = props.get('station_overview', {}).get('commissioning_date')
+        if existing_date and len(existing_date)==10:
+            try:
+                date.fromisoformat(existing_date)
+                value = replace(value,opened=existing_date,provenance={**value.provenance,
+                    'opened':{'source':'existing_station_overview', 'value':existing_date},
+                    'conflicts':props.get('reference_conflicts', {})})
+            except ValueError:
+                pass
+        if self.store.seed_reference('lifecycles',value):
+            self.records = self.store.collection('lifecycles')
+            # Publish directly to avoid re-entering the details refresh.
+            self.desk.map.call('setInfrastructureHistory', self.session.day,
+                [asdict(effective_lifecycle(self.records,k)) for k in self.records])
 
     def publish(self):
         records = [
@@ -213,6 +253,8 @@ class HistoryController:
                         }
                     )
                 )
+            if mode=='rail' and not is_line:
+                self.import_station_reference(props, keys)
             existing = next(
                 (
                     v
@@ -327,6 +369,7 @@ class HistoryController:
                             for key, edit in fields.items()
                         },
                         parent_id=parent.currentData(),
+                        source='manual', verification_status='user_defined', confidence=None,
                     )
                     self.store.put("lifecycles", edited)
                     self.records = self.store.collection("lifecycles")

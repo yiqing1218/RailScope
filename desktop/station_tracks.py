@@ -335,6 +335,7 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
                 'evidence': number, 'verification_status': saved.get('verification_status', 'osm_explicit')}
         track_name = track_name.replace('（参考）', '').replace('(参考)', '').strip()
         entity = StationTrack(raw.get('id') or ident, station_id, track_name or semantic_track_name(full_name, role), number or None,
+            platform_number=raw.get('platform_number'),
             length_m=refs[-1].end_distance_m, is_virtual=False, edge_refs=refs,
             track_role=raw.get('track_role', role), railway_class=raw.get('railway_class') or shared_attribute('railway_class', 'unknown'),
             infrastructure_line_id=raw.get('infrastructure_line_id') if 'infrastructure_line_id' in raw else shared_attribute('infrastructure_line_id'),
@@ -359,6 +360,16 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
         context.extend(f for f in station_assets(db,source) if f not in context)
     context = [f for f in context if not f['properties'].get('associated_station_ids')
                or source_node in set(map(str, f['properties'].get('associated_station_ids', [])))]
+    try:
+        from .china_emu import station_reference
+        from .reference_integration import integrate_station_yards
+    except ImportError:
+        from china_emu import station_reference
+        from reference_integration import integrate_station_yards
+    reference = station_reference({'name':full_name}, {**station, 'name':full_name,
+        'line_names':[line.name for line in repo.lines.values()]})
+    if reference:
+        integrate_station_yards(repo,reference,context)
     return repo, rows, context
 
 

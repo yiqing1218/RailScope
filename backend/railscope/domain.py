@@ -504,6 +504,7 @@ class InfrastructureLifecycle:
     confidence: float | None = None
     source_aliases: tuple[str, ...] = ()
     display_name: str = ""
+    provenance: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

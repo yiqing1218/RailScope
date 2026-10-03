@@ -56,7 +56,8 @@ def test_external_compactness_does_not_change_real_selection():
     b = build_layout(repo,context,DiagramOptions(outside_compression=12))
     assert (a.width,a.height,a.geometry_scale) == (b.width,b.height,b.geometry_scale)
     assert b.edges.keys() == a.edges.keys()
-    assert b.visible_source_interval == a.visible_source_interval
+    assert b.visible_source_interval[0] < a.visible_source_interval[0]
+    assert b.visible_source_interval[1] > a.visible_source_interval[1]
     for point in repo.edges['NE-0-0'].coordinates:
         assert a.project(point)[1] == pytest.approx(b.project(point)[1])
 
@@ -199,13 +200,17 @@ def test_ports_are_direction_layout_anchors_without_changing_source():
     for side,index in (('left',0),):
         ports = [p for p in b.ports if p['side']==side]
         assert ports
-        assert all(p['point'][0] == b.plot_bounds[index] for p in ports)
+        # Crop crossings lie on the frame; real graph leaves retain their
+        # transformed position rather than being stretched to a new endpoint.
+        assert all(p['point'][0] >= b.plot_bounds[index] for p in ports)
+        assert all(any(p['point'] in part or p['point'] in (b.nodes[repo.edges[k].from_node_id],b.nodes[repo.edges[k].to_node_id])
+                       for k in p['edge_ids'] for part in b.edges[k].parts) for p in ports)
     assert all(not p['extended'] for p in b.ports)
     assert [p['original_points'] for p in b.ports] == [p['original_points'] for p in a.ports]
     assert repo == original
     svg = ET.fromstring(station_svg(repo,context))
     metadata = json.loads(svg.find('{http://www.w3.org/2000/svg}metadata').text)
-    assert all(p['direction_source']=='source_geojson_circular_bearing' for p in metadata['ports'])
+    assert all(p['direction_source']=='source_geometry_bearing_at_radius' for p in metadata['ports'])
 
 
 def test_manual_port_text_visibility_and_extension_overrides():

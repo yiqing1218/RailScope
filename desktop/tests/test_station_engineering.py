@@ -149,18 +149,37 @@ def test_unknown_yard_is_not_colored_by_nearest_connected_trunk():
     assert warnings
 
 
-def test_horizontal_core_uniform_spacing_and_shared_endpoints():
+def test_source_spacing_ratios_and_shared_endpoints():
     repo, context, _, _ = fixture()
     old = deepcopy((repo, context))
     layout = build_layout(repo, context)
     assert len(layout.lanes) == 3
     ys = sorted(lane.y for lane in layout.lanes)
-    assert ys[1] - ys[0] == pytest.approx(ys[2] - ys[1])
+    assert (ys[1]-ys[0])/(ys[2]-ys[1]) == pytest.approx(12/40, abs=1e-5)
     for key, d in layout.edges.items():
         e = repo.edges[key]
         assert d.points[0] == layout.nodes[e.from_node_id]
         assert d.points[-1] == layout.nodes[e.to_node_id]
     assert (repo, context) == old
+
+
+def test_default_platform_lengths_widths_and_aspect_ratios_are_preserved():
+    from desktop.station_schematic import station_projection
+    repo,_,_,_=fixture()
+    context=[]
+    for ident,length,y in [('way/1',.002,30.00004),('way/2',.004,30.00020)]:
+        x0,x1=120-length/2,120+length/2
+        context.append({'properties':{'boundary_kind':'platform','infrastructure_id':ident,'way_tags':{'railway':'platform'}},
+            'geometry':{'type':'Polygon','coordinates':[[[x0,y],[x1,y],[x1,y+.00003],[x0,y+.00003],[x0,y]]]}})
+    options=DiagramOptions()
+    assert options.station_compression==options.platform_width==1
+    layout=build_layout(repo,context,options)
+    a,b=layout.platforms
+    assert b.length/a.length==pytest.approx(2)
+    assert b.width/a.width==pytest.approx(1,abs=1e-5)
+    local,*_=station_projection(repo)
+    p0,p1,p2=map(local,context[0]['geometry']['coordinates'][0][:3])
+    assert a.length/a.width==pytest.approx((p1[0]-p0[0])/(p2[1]-p1[1]))
 
 
 @pytest.mark.parametrize(
@@ -213,7 +232,7 @@ def test_final_direction_can_reverse_station_lane_order():
             edge, coordinates=(edge.coordinates[0], (node.lon, 30 + y))
         )
     layout = build_layout(repo, context)
-    ports = {p["line"].id: p for p in layout.ports if p["side"] == "right"}
+    ports = {p["line"].id: p for p in layout.ports if {'NE-r1','NE-r2'} & p['edge_ids']}
     assert ports["IL-c"]["point"][1] < ports["IL-h"]["point"][1]
     lanes = {l.system: l.y for l in layout.lanes}
     assert lanes["测试高速铁路"] < lanes["测试普速铁路"]

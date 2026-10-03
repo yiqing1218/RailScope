@@ -98,7 +98,7 @@ def metadata(repo, layout, options, info):
         "attribution": "数据 © OpenStreetMap contributors",
         "verification_status": "automatic_reference_not_dispatch_verified",
         "confidence": None,
-        "layout_algorithm": "engineering_topology_lanes_v1",
+        "layout_algorithm": "source_shape_shared_transform_v2",
         "boundary_source": layout.boundary_source,
         "axis_angle_degrees": math.degrees(layout.angle),
         "options": asdict(options),
@@ -188,7 +188,7 @@ def render_svg(
         value, point, size=None, color="#25364a", anchor="middle", attrs="", weight=400
     ):
         out.append(
-            f'<text {attrs} x="{point[0]:.2f}" y="{point[1]:.2f}" text-anchor="{anchor}" font-size="{size or options.label_size:.2f}" font-weight="{weight}" style="fill:{color}">{escape(str(value))}</text>'
+            f'<text {attrs} x="{point[0]:.2f}" y="{point[1]:.2f}" text-anchor="{anchor}" font-size="{size or options.label_size:.2f}" font-weight="{weight}" style="fill:{color};stroke:white;stroke-width:2;paint-order:stroke fill">{escape(str(value))}</text>'
         )
 
     if options.show_title:
@@ -249,11 +249,14 @@ def render_svg(
         if lane.track_number:
             e = min(lane.edge_ids)
             d = layout.edges[e]
-            mid = tuple((d.points[0][i] + d.points[-1][i]) / 2 for i in (0, 1))
+            mid = lane.label_point or tuple((d.points[0][i] + d.points[-1][i]) / 2 for i in (0, 1))
+            spacing = min((math.dist(other.label_point,mid) for other in layout.lanes
+                           if other is not lane and other.track_number and other.label_point),default=options.label_size)
+            font_size = min(options.label_size*.65,max(7,spacing*.72))
             text(
                 lane.track_number,
                 (mid[0], mid[1] - 7),
-                options.label_size * 0.65,
+                font_size,
                 colors[e],
                 attrs='data-track-number="true"',
             )
@@ -299,6 +302,7 @@ def render_svg(
                 )
             x = px - 16 if side == "left" else px + 16 if side == "right" else px
             y = py - 18 if side != "bottom" else py + 32
+            x,y = p.get('label_point', (x,y))
             anchor = (
                 "end" if side == "left" else "start" if side == "right" else "middle"
             )
@@ -359,6 +363,6 @@ def render_svg(
             text(name, (x + 50, y + fs * 0.3), fs, color, "start")
             x += needed
         out.append("</g>")
-    text("工程示意 · 非比例 · 自动参考，未核验调度进路", (w / 2, h - 14), 14, "#768390")
+    text("站场示意 · 保留站内相对形状，距离可压缩 · 自动参考", (w / 2, h - 14), 14, "#768390")
     out.append("</svg>")
     return "\n".join(out)

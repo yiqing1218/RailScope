@@ -107,7 +107,6 @@ from railscope.services.topology import validate_topology
 from railscope.services.stations import StationRegistry
 from catalog_metadata import (
     CatalogOverrides,
-    station_type,
     STATION_TYPES,
     STATION_OVERVIEW_FIELDS,
     station_overview,
@@ -1555,7 +1554,15 @@ class Desk(QMainWindow):
             selected = self.selected_station_tracks()
             if selected is None: return
             repo, rows, context = selected
-            dialog = StationTrackDialog(repo, self)
+            from china_emu import station_reference
+            selected_props = self.selected_data.get('properties', {})
+            reference = selected_props.get('external_reference')
+            if not reference or reference.get('kind') != 'station':
+                reference = station_reference({'name':next(iter(repo.stations.values())).name},
+                    {'name':next(iter(repo.stations.values())).name,
+                     'line_names':[line.name for line in repo.lines.values()],
+                     'province':selected_props.get('province'), 'city':selected_props.get('city')})
+            dialog = StationTrackDialog(repo, self, reference=reference, context=context)
             props = self.selected_data.get('properties', {})
             chosen = props.get('station_track_id') or next((key for key, track in repo.station_tracks.items()
                 if props.get('section_id') in track.source_member_ids), None)
@@ -3561,8 +3568,10 @@ class Desk(QMainWindow):
                          province=folder[0] if folder else "", city=folder[1] if len(folder) > 1 else "",
                          folder_path=list(folder), line_ids=record.get("line_ids", []),
                          line_names=record.get("line_names", []))
-            props["station_overview"] = station_overview(
-                {**record.get("properties", {}), **props}, record, station_custom)
+            overview_props = {**record.get("properties", {}), **props}
+            props["station_overview"] = station_overview(overview_props, record, station_custom)
+            props.update({key:overview_props[key] for key in
+                          ('external_reference','reference_conflicts','reference_provenance') if key in overview_props})
             props['station_type_provenance'] = record.get('station_type_provenance', {})
         feature["properties"] = props
         self.selected_data = feature

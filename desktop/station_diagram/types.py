@@ -34,6 +34,7 @@ class Lane:
     yard_name: str | None = None
     system: str | None = None
     track_number: str | None = None
+    label_point: tuple[float, float] | None = None
 
 
 @dataclass

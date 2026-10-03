@@ -177,4 +177,8 @@ def classify(repo, keys, options):
         warnings.append(
             f"{pending_yards} 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。"
         )
+    referenced = sum(any(t.provenance.get('yard', {}).get('verification_status')=='external_reference_unverified'
+                         for t in tracks[k]) for k in keys)
+    if referenced:
+        warnings.append(f'{referenced} 条轨道的分场由网站编号与真实站台编号、相邻股道匹配，属于未核验参考；可在股道编辑中确认。')
     return result, warnings

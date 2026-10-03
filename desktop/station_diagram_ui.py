@@ -60,6 +60,11 @@ class StationDiagramDialog(QDialog):
         if self.settings_path and self.settings_path.exists():
             try:
                 values = json.loads(self.settings_path.read_text(encoding='utf-8'))
+                if values.get('layout_algorithm') != 'source_shape_shared_transform_v2':
+                    if values.get('station_compression') == 4:
+                        values['station_compression'] = 1
+                    if values.get('platform_width') == 1.4:
+                        values['platform_width'] = 1
                 # Discard retired controls from the interrupted first design.
                 values = {key:value for key,value in values.items() if key in asdict(defaults)}
                 if values.get('outside_compression',8) < 1:
@@ -75,7 +80,7 @@ class StationDiagramDialog(QDialog):
         self.line_rules = dict(defaults.line_overrides)
         self.port_rules = {key:{k:v for k,v in rule.items() if k!='extend'} for key,rule in defaults.port_overrides.items()}
         main = QVBoxLayout(self)
-        hint = QLabel('按真实连接生成独立工程站场示意图。站台区等距排列，咽喉规则化，站外按真实方向引出。归属不明使用灰色；可先在股道编辑中整理分场与业务线路。')
+        hint = QLabel('以实际形状和相对比例生成独立站场示意图，所有对象使用共同坐标变换；拓扑校验连接，不重排站台和股道。站外距离可单独压缩。归属不明提示核对；分场与实际股道可在股道编辑中对应。')
         hint.setWordWrap(True)
         main.addWidget(hint)
         row = QHBoxLayout()
@@ -141,12 +146,12 @@ class StationDiagramDialog(QDialog):
         form = page('布局')
         combo(form, 'orientation', '构图方向', [('横向', 'landscape'), ('纵向', 'portrait')])
         check(form, 'show_north', '真实北向指北针')
-        number(form, 'station_compression', '站台区紧凑度', 1, 12, .25)
-        number(form, 'outside_compression', '站外连接紧凑度', 1, 30, .5)
+        number(form, 'station_compression', '站内纵向压缩倍数（1 保留比例）', 1, 12, .25)
+        number(form, 'outside_compression', '站外纵向压缩倍数', 1, 30, .5)
         number(form, 'direction_radius_m', '站外方向参考半径 / m', 500, 10000, 250)
         number(form, 'platform_width', '站台符号宽度倍数', .5, 4, .1)
         number(form, 'margin', '全图留白（图面单位）', 10, 240, 5)
-        form.addRow(QLabel('图面不按实际长度比例。核心股道保持统一间距，咽喉保留真实节点次序；站外方向和端口顺序参考原始几何。'))
+        form.addRow(QLabel('默认保留站内相对比例；站内、站外纵向距离可独立压缩。所有对象共用坐标变换，不重排股道。方向参考半径只影响方向标注。'))
 
         form = page('内容')
         for name, title in [('show_main', '正线'), ('show_station', '站线 / 到发线 / 辅助线'),
@@ -382,5 +387,5 @@ class StationDiagramDialog(QDialog):
         if self.settings_path:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.settings_path.with_suffix('.tmp')
-            temp.write_text(json.dumps(asdict(options), ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'source_shape_shared_transform_v2'}, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(self.settings_path)

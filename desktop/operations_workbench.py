@@ -88,6 +88,7 @@ class Workbench:
         self.store = WorkspaceObjects(workspace_path)
         self.dialogs = []
         self.vehicle_tree = None
+        self.vehicle_catalog = None
 
     def repo(self):
         repo = self.desk.rail_operations.domain_repo
@@ -103,6 +104,18 @@ class Workbench:
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
         if index == 2:
+            try:
+                from .china_emu_ui import ReferencePanel
+            except ImportError:
+                from china_emu_ui import ReferencePanel
+            tabs = QTabWidget()
+            layout.addWidget(tabs)
+            catalog = ReferencePanel(body, vehicle_only=True, create_vehicle=lambda p: self.edit_vehicle(template=p))
+            self.vehicle_catalog, self.vehicle_tabs = catalog, tabs
+            tabs.addTab(catalog, f"车型资料（{catalog.objects.rowCount()}）")
+            units = QWidget()
+            tabs.addTab(units, "具体车辆 / 担当")
+            layout = QVBoxLayout(units)
             self.vehicle_tree = QTreeWidget()
             self.vehicle_tree.setHeaderLabels(["车辆 / 线路"])
             self.vehicle_tree.itemDoubleClicked.connect(
@@ -237,6 +250,9 @@ class Workbench:
     def refresh_vehicles(self):
         if not self.vehicle_tree:
             return
+        if self.vehicle_catalog:
+            self.vehicle_catalog.refresh_profiles()
+            self.vehicle_tabs.setTabText(0,f"车型资料（{sum(p['kind']=='vehicle' for p in self.vehicle_catalog.profiles)}）")
         self.vehicle_tree.clear()
         groups = {}
         repo = getattr(self.desk.rail_operations, "domain_repo", None)
@@ -263,10 +279,16 @@ class Workbench:
             groups[key].addChild(item)
         self.vehicle_tree.expandToDepth(1)
 
-    def edit_vehicle(self, ident=None):
+    def edit_vehicle(self, ident=None, template=None):
         value = self.store.collection("vehicles").get(ident) or Vehicle(
             new_id("VEH"), ""
         )
+        if template:
+            try:
+                from .reference_integration import vehicle_from_profile
+            except ImportError:
+                from reference_integration import vehicle_from_profile
+            value = vehicle_from_profile(value, template)
         dialog = QDialog(self.desk)
         dialog.setWindowTitle("车辆档案")
         dialog.resize(500, 620)
@@ -601,7 +623,6 @@ class Workbench:
         form = QFormLayout()
         first, last = QComboBox(), QComboBox()
         for r in corridor.edge_refs:
-            edge = repo.edges[r.edge_id]
             label = f"{r.sequence} · {r.edge_id} · {r.start_distance_m / 1000:.3f}—{r.end_distance_m / 1000:.3f} km"
             first.addItem(label, r.sequence - 1)
             last.addItem(label, r.sequence - 1)
@@ -782,7 +803,6 @@ class Workbench:
 
     def refresh_details(self, rows):
         views = self.desk.detail_views
-        props = self.desk.selected_data.get("properties", {})
         views["地图"].set_rows(
             [
                 (key, value)
@@ -865,6 +885,11 @@ class Workbench:
                 ),
                 ("查看日期", self.session.day),
                 ("有效状态", lifecycle_state(value, self.session.day)),
+                *(("开通记录 · " + event.get('scope','车站'),
+                   event['date'] + ' · ' + '、'.join(event.get('lines', [])))
+                  for event in (value.provenance.get('events', []) if value else [])),
+                *(((("资料来源", value.provenance.get('source_url','')),
+                   ("核验状态", value.verification_status))) if value and value.provenance else ()),
             ]
         )
 

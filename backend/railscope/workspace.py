@@ -141,6 +141,24 @@ class WorkspaceObjects:
                        (kind, value.id, json.dumps(asdict(value), ensure_ascii=False, sort_keys=True)))
             db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
 
+    def seed_reference(self, kind, value):
+        """Refresh an external source row beneath any complete manual override."""
+        if kind != 'lifecycles' or not isinstance(value, d.InfrastructureLifecycle):
+            raise ValueError('Only reference lifecycles are supported')
+        from .services.history import validate_lifecycle
+        validate_lifecycle(value)
+        raw = json.dumps(asdict(value), ensure_ascii=False, sort_keys=True)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            old = db.execute('SELECT data FROM workspace_source WHERE kind=? AND id=?', (kind,value.id)).fetchone()
+            if old and json.loads(old[0]).get('source') != value.source:
+                return False
+            if old and old[0] == raw:
+                return False
+            db.execute('INSERT OR REPLACE INTO workspace_source VALUES(?,?,?)', (kind,value.id,raw))
+            db.execute("UPDATE workspace_meta SET value=value+1 WHERE key='revision'")
+        return True
+
 
 class SQLiteWorkspace:
     def __init__(self,path):

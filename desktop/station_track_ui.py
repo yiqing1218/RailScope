@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QMessageBox,
     QComboBox,
+    QTabWidget, QWidget,
 )
 
 try:
@@ -28,9 +29,10 @@ except ImportError:
 
 
 class StationTrackDialog(QDialog):
-    def __init__(self, repo, parent=None):
+    def __init__(self, repo, parent=None, reference=None, context=()):
         super().__init__(parent)
         self.repo = repo
+        self.context = context
 
         def order(key):
             number = repo.station_tracks[key].track_number or ""
@@ -50,7 +52,7 @@ class StationTrackDialog(QDialog):
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索股道名称、编号或稳定 ID")
         layout.addWidget(self.search)
-        self.table = QTableWidget(len(self.keys), 9)
+        self.table = QTableWidget(len(self.keys), 10)
         self.table.setHorizontalHeaderLabels(
             [
                 "名称",
@@ -62,6 +64,7 @@ class StationTrackDialog(QDialog):
                 "铁路体系",
                 "业务线路归属",
                 "分场类型",
+                "站台面编号（参考）",
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(
@@ -70,7 +73,13 @@ class StationTrackDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(
             4, QHeaderView.ResizeMode.ResizeToContents
         )
-        layout.addWidget(self.table)
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
+        actual = QWidget()
+        QVBoxLayout(actual).addWidget(self.table)
+        tabs.addTab(actual, "实际股道与分场")
+        if reference:
+            tabs.addTab(self.reference_panel(reference), "网站分场对应")
         self.fill()
         self.search.textChanged.connect(self.filter)
         bar = QHBoxLayout()
@@ -86,6 +95,76 @@ class StationTrackDialog(QDialog):
         buttons.rejected.connect(self.reject)
         bar.addWidget(buttons)
         layout.addLayout(bar)
+
+    def reference_panel(self, profile):
+        try:
+            from .reference_integration import yard_bindings, apply_yard_binding
+        except ImportError:
+            from reference_integration import yard_bindings, apply_yard_binding
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        note = QLabel('来源：' + profile['source_url'] + '\n网站“站台”指站台面。下面按已有正式股道号提出同号候选，需确认对应关系；未编号股道可手工选择。保存后引用实际稳定股道 ID。')
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        bindings = yard_bindings(self.repo, profile, self.context)
+        table = QTableWidget(len(bindings), 6)
+        table.setHorizontalHeaderLabels(['确认', '分场 / 范围', '来源编号', '适用线路', '实际股道', '对应状态'])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        statuses = {'platform_face_track_reference':'同号且与真实站台相邻（参考）',
+                    'reference_number_match':'同号候选，待确认', 'ambiguous_track_number':'正式股道号重复',
+                    'ambiguous_source_scope':'多个来源范围冲突', 'missing_track_number':'缺少同号股道',
+                    'conflicting_railway_class':'来源分场与实际铁路体系冲突',
+                    'missing_number_range':'来源未标注范围'}
+        for row, binding in enumerate(bindings):
+            check = QTableWidgetItem()
+            check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            check.setCheckState(Qt.CheckState.Unchecked)
+            table.setItem(row,0,check)
+            yard = binding['yard']
+            for column, value in [(1,yard['name']), (2,('站台面 ' if yard.get('number_kind')=='platform_face' else '股道 ')+str(binding['number'] or '未知')),
+                                  (3,yard.get('lines','')), (5,statuses[binding['status']])]:
+                item = QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(row,column,item)
+            tracks = QComboBox()
+            tracks.addItem('选择实际股道…', None)
+            for key in self.keys:
+                t = self.repo.station_tracks[key]
+                tracks.addItem((t.track_number+'道 · ' if t.track_number else '')+t.name+' · '+key[-8:], key)
+            tracks.setCurrentIndex(max(0,tracks.findData(binding['track_id'])))
+            table.setCellWidget(row,4,tracks)
+        layout.addWidget(table)
+        select = QPushButton('勾选无冲突的同号候选（仍需确认）')
+        select.clicked.connect(lambda: [table.item(row,0).setCheckState(Qt.CheckState.Checked)
+            for row,binding in enumerate(bindings) if binding['status']=='reference_number_match'
+            and not self.repo.station_tracks[binding['track_id']].yard_id])
+        layout.addWidget(select)
+        apply = QPushButton('确认勾选的对应关系并填入分场')
+        layout.addWidget(apply)
+
+        def commit():
+            selected = []
+            for row, binding in enumerate(bindings):
+                if table.item(row,0).checkState()==Qt.CheckState.Checked:
+                    key = table.cellWidget(row,4).currentData()
+                    if not key:
+                        QMessageBox.warning(self,'对应未应用','请为勾选的来源编号选择实际股道')
+                        return
+                    selected.append((binding,key))
+            if len({key for _,key in selected})!=len(selected):
+                QMessageBox.warning(self,'对应未应用','同一实际股道不能同时对应多条来源记录')
+                return
+            try:
+                self.collect()
+                for binding,key in selected:
+                    apply_yard_binding(self.repo,profile,binding,key,confirmed=True)
+                self.fill()
+                self.filter(self.search.text())
+            except ValueError as error:
+                QMessageBox.warning(self,'对应未应用',str(error))
+        apply.clicked.connect(commit)
+        self.reference_table = table
+        return panel
 
     def fill(self):
         for row, key in enumerate(self.keys):
@@ -157,6 +236,10 @@ class StationTrackDialog(QDialog):
                 max(0, types.findData(yard.yard_type if yard else "unknown"))
             )
             self.table.setCellWidget(row, 8, types)
+            face = QTableWidgetItem(t.platform_number or '')
+            face.setFlags(face.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            face.setToolTip('站台面编号；参考对应不等于实体站台序号。来源与核验状态保存在股道记录中。')
+            self.table.setItem(row,9,face)
 
     def collect(self):
         updates = {}

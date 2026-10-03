@@ -1,8 +1,8 @@
 """Read-only diagram layout over the shared RailScope repository.
 
 Coordinates here are drawing units, never infrastructure or operational IDs.
-The independent station_diagram package owns engineering layout; shared nodes
-remain actual connections. Legacy option names survive workspace migration.
+The independent station_diagram package preserves shape with a common transform;
+shared nodes remain actual connections. Legacy option names survive migration.
 """
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ class DiagramOptions:
     auto_rotate: bool = True
     orientation: str = 'landscape'
     show_north: bool = True
-    station_compression: float = 4.0
+    station_compression: float = 1.0
     outside_compression: float = 8.0
     remove_common_bend: bool = False
     include_construction: bool = False
-    platform_width: float = 1.4
+    platform_width: float = 1.0
     margin: float = 50
     topology_depth: int = 8
     show_main: bool = True
