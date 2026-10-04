@@ -26,7 +26,7 @@ def test_parallel_outlets_preserve_screen_order_and_station_spacing():
     assert far_gap == pytest.approx(near_gap, rel=0.02)
 
 
-def test_main_pair_common_bend_control_changes_the_drawn_shape():
+def test_platform_rails_stay_straight_with_common_bend_control_off_or_on():
     repo, context = yard_repo()
     for key in ("NE-0-0-yard", "NE-0-1-yard"):
         edge = repo.edges[key]
@@ -47,7 +47,8 @@ def test_main_pair_common_bend_control_changes_the_drawn_shape():
         chord = LineString([points[0], points[-1]])
         return LineString(points).hausdorff_distance(chord)
 
-    assert bend(straight) < bend(source) * 0.3
+    assert bend(straight) < 0.01
+    assert bend(source) < 0.01
 
 
 def test_selected_yard_does_not_export_other_platform_tracks():

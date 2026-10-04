@@ -22,7 +22,19 @@ def cubic(a, b, start_outward=None, end_outward=None):
         c1 = tuple(a[i] - start_outward[i] * lead for i in (0, 1))
     if end_outward:
         c2 = tuple(b[i] - end_outward[i] * lead for i in (0, 1))
+    # A port tangent may point against the chord. Never let that create an
+    # artificial return loop or overshoot between two real connection nodes.
+    c1 = tuple(max(min(a[i], b[i]), min(max(a[i], b[i]), c1[i])) for i in (0, 1))
+    c2 = tuple(max(min(a[i], b[i]), min(max(a[i], b[i]), c2[i])) for i in (0, 1))
+    c1, c2 = tuple(zip(*(sorted((c1[i], c2[i]), reverse=b[i] < a[i]) for i in (0, 1))))
     return (a, c1, c2, b)
+
+
+def axial_cubic(a, b, axis):
+    """Use the station axis as the straight tangent in either page orientation."""
+    if axis == 0:
+        return cubic(a, b)
+    return tuple((p[1], p[0]) for p in cubic((a[1], a[0]), (b[1], b[0])))
 
 
 def point(curve, t):
@@ -70,11 +82,26 @@ def path(curves, orient=lambda p: p):
     return " ".join(out)
 
 
-def connection_curves(repo, graph, keys, ownership, interior, ports=()):
+def connection_curves(
+    repo,
+    graph,
+    keys,
+    ownership,
+    interior,
+    ports=(),
+    preserve_ownership=True,
+    chain_signature=None,
+):
     result = {}
 
     def signature(k):
-        return (ownership[k].line_id, ownership[k].yard_id, repo.edges[k].track_role)
+        if chain_signature:
+            return chain_signature(k)
+        return (
+            (ownership[k].line_id, ownership[k].yard_id, repo.edges[k].track_role)
+            if preserve_ownership
+            else None
+        )
 
     vectors = {"left": (-1, 0), "right": (1, 0), "top": (0, -1), "bottom": (0, 1)}
     port_vectors = {node: vectors[p["side"]] for p in ports for node in p["nodes"]}
@@ -87,6 +114,8 @@ def connection_curves(repo, graph, keys, ownership, interior, ports=()):
         end = graph.endpoints[last][1 if last_forward else 0]
         a, b = interior.nodes[start], interior.nodes[end]
         if start == end or math.dist(a, b) < 0.01:
+            if not preserve_ownership:
+                continue
             # A source loop is drawn as a loop, never collapsed to a zero path.
             for key, fwd in legs:
                 n0, n1 = graph.endpoints[key]
@@ -110,7 +139,20 @@ def connection_curves(repo, graph, keys, ownership, interior, ports=()):
 
 
 def arrange_yard_connections(
-    repo, graph, raw, edges, nodes, ownership, core, frame, ports, extensions
+    repo,
+    graph,
+    raw,
+    edges,
+    nodes,
+    ownership,
+    core,
+    frame,
+    ports,
+    extensions,
+    platform_rails=(),
+    core_frame=None,
+    portrait=False,
+    reference_keys=(),
 ):
     """Standardize post-platform connections after all yard anchors are placed."""
     try:
@@ -119,31 +161,112 @@ def arrange_yard_connections(
         from station_diagram_geometry import line_parts
     from .shape_paths import rounded_path
 
-    station_keys = {
-        r.edge_id for t in repo.station_tracks.values() for r in t.edge_refs
-    }
+    def is_branch(key):
+        return edges[key].role == "connector" or repo.edges[key].track_role in (
+            "connecting_line",
+            "crossover",
+            "crossover_track",
+        )
+
     candidates = set()
     for k, d in edges.items():
-        if k in station_keys or d.role not in ("main", "connector"):
+        if k in reference_keys:
             continue
         if not (
             max(p[0] for p in raw[k]) < core[0] or min(p[0] for p in raw[k]) > core[1]
         ):
             continue
         a, b = d.points[0], d.points[-1]
-        # Exterior first-order fits already have the desired form.
-        if all(
-            abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) < 0.01
-            for p in d.points
-        ):
+        if math.dist(a, b) < 0.01:
             continue
         candidates.add(k)
     curves = connection_curves(
-        repo, graph, candidates, ownership, SimpleNamespace(nodes=nodes), ports
+        repo,
+        graph,
+        candidates,
+        ownership,
+        SimpleNamespace(nodes=nodes),
+        ports,
+        preserve_ownership=False,
+        chain_signature=is_branch,
     )
+    platform_paths = {}
+    if core_frame is not None:
+        axis = 1 if portrait else 0
+        cross = 1 - axis
+        band = (core_frame[axis], core_frame[axis + 2])
+        rail_keys = {k for k in edges if not is_branch(k) and k not in reference_keys}
+        for legs in chains(graph, rail_keys):
+            if not any(k in platform_rails for k, _ in legs):
+                continue
+            first, fwd = legs[0]
+            last, last_fwd = legs[-1]
+            start = graph.endpoints[first][0 if fwd else 1]
+            end = graph.endpoints[last][1 if last_fwd else 0]
+            a, b = nodes[start], nodes[end]
+            if start == end or abs(b[axis] - a[axis]) < 1:
+                continue
+            central = [
+                p
+                for k, _ in legs
+                for p in edges[k].points
+                if band[0] - 0.01 <= p[axis] <= band[1] + 0.01
+            ]
+            if not central:
+                continue
+            level = sum(p[cross] for p in central) / len(central)
+            forward = b[axis] > a[axis]
+            limits = sorted((a[axis], b[axis]))
+            anchors = [a]
+            for value in sorted(band, reverse=not forward):
+                if limits[0] < value < limits[1]:
+                    anchors.append((level, value) if portrait else (value, level))
+            anchors.append(b)
+            if len(anchors) == 2 and (limits[1] < band[0] or limits[0] > band[1]):
+                continue
+            segments = [axial_cubic(p, q, axis) for p, q in zip(anchors, anchors[1:])]
+
+            def evaluate(value):
+                segment = next(
+                    (
+                        s
+                        for s in segments
+                        if min(s[0][axis], s[-1][axis]) - 0.01
+                        <= value
+                        <= max(s[0][axis], s[-1][axis]) + 0.01
+                    ),
+                    None,
+                )
+                if segment is None:
+                    return a if abs(value - a[axis]) < abs(value - b[axis]) else b
+                # Invert the monotone axial cubic, keeping every source node's
+                # ordering along the rail, including edge provenance splits.
+                low, high = 0.0, 1.0
+                for _ in range(30):
+                    t = (low + high) / 2
+                    if (point(segment, t)[axis] < value) == forward:
+                        low = t
+                    else:
+                        high = t
+                return point(segment, (low + high) / 2)
+
+            for k, _ in legs:
+                old = edges[k].points
+                aa, bb = graph.endpoints[k]
+                x0, x1 = old[0][axis], old[-1][axis]
+                samples = [x0 + (x1 - x0) * i / 24 for i in range(25)]
+                samples += [v for v in band if min(x0, x1) < v < max(x0, x1)]
+                pts = tuple(evaluate(v) for v in sorted(set(samples), reverse=x1 < x0))
+                if aa not in (start, end):
+                    nodes[aa] = pts[0]
+                if bb not in (start, end):
+                    nodes[bb] = pts[-1]
+                platform_paths[k] = pts
     for k, d in list(edges.items()):
         e = repo.edges[k]
-        if k in curves:
+        if k in platform_paths:
+            pts = (nodes[e.from_node_id], *platform_paths[k][1:-1], nodes[e.to_node_id])
+        elif k in curves:
             pts = (
                 nodes[e.from_node_id],
                 *(point(curves[k][0], i / 24) for i in range(1, 24)),
@@ -153,7 +276,20 @@ def arrange_yard_connections(
             pts = (nodes[e.from_node_id], *d.points[1:-1], nodes[e.to_node_id])
         parts = tuple(line_parts(LineString(pts).intersection(frame)))
         edges[k] = replace(
-            d, points=pts, parts=parts, path=" ".join(rounded_path(p, 8) for p in parts)
+            d,
+            points=pts,
+            parts=parts,
+            path=" ".join(
+                rounded_path(
+                    p,
+                    8,
+                    (core_frame[1 if portrait else 0], core_frame[3 if portrait else 2])
+                    if core_frame
+                    else None,
+                    1 if portrait else 0,
+                )
+                for p in parts
+            ),
         )
     # Extension attachments are real node positions in this drawing, too.
     for ext in extensions:
@@ -163,3 +299,4 @@ def arrange_yard_connections(
             (e.from_node_id, e.to_node_id), key=lambda n: math.dist(nodes[n], old)
         )
         ext["points"] = (nodes[node], end)
+    return sorted(set(curves) | set(reference_keys))

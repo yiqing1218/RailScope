@@ -27,6 +27,8 @@ from .label_layout import annotate
 from .yard_selection import platform_membership, select_yards
 from .yard_reference import yard_baseline, central_reference_paths
 from .connection_layout import arrange_yard_connections
+from .track_layout import straighten_platform_tracks
+from .reference_layout import smooth_main_references
 
 try:
     from ..station_diagram_layout import DiagramOptions
@@ -118,12 +120,21 @@ def build_layout(repo, context=(), options=None):
             max(p[0] for k in reference_keys for p in raw[k]),
         )
     )
+    if not body:
+        # A display band near the source station point, not a claimed physical
+        # platform/site boundary. Approach tracks must not become the core just
+        # because the import lacks platform outlines.
+        center = min(core_hi, max(core_lo, 0.0))
+        core_lo, core_hi = max(core_lo, center - 250), min(core_hi, center + 250)
+        if core_hi - core_lo < 80:
+            core_lo, core_hi = center - 40, center + 40
     roles = {k: edge_role(repo, repo.edges[k], options) for k in raw}
     (lo, hi), line_intervals = functional_interval(
         repo, raw, graph, selected.inner & raw.keys(), body, roles, ownership
     )
     mid = (core_lo + core_hi) / 2
     baselines = {}
+    main_references = []
     track_by_id = {track.id: track for track in repo.station_tracks.values()}
     for ident, group in groups.items():
         seed_keys = {
@@ -145,6 +156,7 @@ def build_layout(repo, context=(), options=None):
                 repo, raw, graph, seed_paths, central_keys, (core_lo, core_hi), (lo, hi)
             )
             group["reference_edges"] = sorted(reference_keys_group)
+            main_references.append(paths)
             for k in reference_keys_group:
                 if not edge_groups.get(k):
                     edge_groups[k] = {ident}
@@ -160,11 +172,15 @@ def build_layout(repo, context=(), options=None):
         ]
         paths = [p for p in paths if len(p) >= 2]
         baseline = (
-            yard_baseline(paths, seed_paths, (core_lo, core_hi), bounds)
-            if main_keys and options.remove_common_bend
-            else smooth_baseline(common_baseline(paths, bounds))
-            if options.remove_common_bend and paths
-            else ()
+            ()
+            if ident == "unassigned"
+            else (
+                yard_baseline(paths, seed_paths, (core_lo, core_hi), bounds)
+                if main_keys and options.remove_common_bend
+                else smooth_baseline(common_baseline(paths, bounds))
+                if options.remove_common_bend and paths
+                else ()
+            )
         )
         baselines[ident] = baseline
 
@@ -190,12 +206,17 @@ def build_layout(repo, context=(), options=None):
         )
         for n, p in node_source.items()
     }
-    core = [
-        adjusted(p, edge_groups.get(k, ()))
-        for k in tracks
-        for p in raw[k]
-        if core_lo <= p[0] <= core_hi
-    ]
+    drawing_raw, node_adjusted, platform_rails = straighten_platform_tracks(
+        graph,
+        {
+            k: tuple(adjusted(p, edge_groups.get(k, ())) for p in points)
+            for k, points in raw.items()
+        },
+        node_adjusted,
+        tracks | {k for k in raw if roles[k] == "main"},
+        (core_lo, core_hi),
+    )
+    core = [p for k in tracks for p in drawing_raw[k] if core_lo <= p[0] <= core_hi]
     core += [
         adjusted(rotate(p), platform_groups.get(ident, ()))
         for ident, _, points in platforms
@@ -253,6 +274,10 @@ def build_layout(repo, context=(), options=None):
 
     cy0, cy1 = compact_cross(y0), compact_cross(y1)
     sy = cross_room * 0.76 / max(cy1 - cy0, 20)
+    if gaps:
+        # A four-track selected yard must not acquire hundreds of pixels of
+        # track/platform width just because it is stretched to fill the page.
+        sy = min(sy, cross_room * 0.04 / median(gaps))
     cx, cy, my = (left + right) / 2, (top + bottom) / 2, (cy0 + cy1) / 2
     throat_span = max(250, (core_hi - core_lo) * 0.65)
     throat_room = axis_room * 0.29
@@ -300,9 +325,7 @@ def build_layout(repo, context=(), options=None):
         {lo, hi, core_lo, core_hi} | {p[0] for b in baselines.values() for p in b}
     )
     for k, path in raw.items():
-        screen = [
-            page(adjusted(p, edge_groups.get(k, ()))) for p in densify(path, knots)
-        ]
+        screen = [page(p) for p in densify(drawing_raw[k], knots)]
         e = repo.edges[k]
         screen[0], screen[-1] = nodes[e.from_node_id], nodes[e.to_node_id]
         parts = tuple(line_parts(LineString(screen).intersection(frame)))
@@ -397,8 +420,27 @@ def build_layout(repo, context=(), options=None):
         knots,
         (core_lo, core_hi, y0, y1),
         line_spacing,
+        drawing_raw,
     )
-    arrange_yard_connections(
+    core_a, core_b = page((core_lo, y0)), page((core_hi, y1))
+    core_bounds = (
+        min(core_a[0], core_b[0]),
+        min(core_a[1], core_b[1]),
+        max(core_a[0], core_b[0]),
+        max(core_a[1], core_b[1]),
+    )
+    smoothed_references = smooth_main_references(
+        graph,
+        raw,
+        edges,
+        nodes,
+        main_references,
+        (core_lo, core_hi),
+        (lo, hi),
+        portrait,
+        core_bounds,
+    )
+    regular_connections = arrange_yard_connections(
         repo,
         graph,
         raw,
@@ -409,6 +451,10 @@ def build_layout(repo, context=(), options=None):
         frame,
         ports,
         extensions,
+        platform_rails,
+        core_bounds,
+        portrait,
+        smoothed_references,
     )
     # Prune only invisible drawing fragments; never alter the source repository.
     edges = {k: d for k, d in edges.items() if d.parts}
@@ -475,11 +521,13 @@ def build_layout(repo, context=(), options=None):
             for n, ks in graph.adjacency.items()
             if len(ks) >= 3 and frame.covers(Point(nodes[n]))
         ],
-        algorithm="yard_centered_parallel_outlets_v4",
+        algorithm="straight_platform_smooth_throats_v5",
         groups=groups,
         group_baselines=baselines,
         extensions=extensions,
     )
+    layout.platform_rail_ids = sorted(platform_rails.keys() & edges.keys())
+    layout.regular_connection_ids = sorted(set(regular_connections) & edges.keys())
     annotate(repo, context, layout, platform_groups, options)
     if options.selected_yards:
         layout.warnings.append(

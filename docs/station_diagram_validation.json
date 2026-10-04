@@ -1,5 +1,5 @@
 {
-  "algorithm": "yard_centered_parallel_outlets_v4",
+  "algorithm": "straight_platform_smooth_throats_v5",
   "stations": [
     {
       "station": "上海虹桥",
@@ -12,28 +12,68 @@
         "common-bend-off": {
           "annotation_count": 115,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 81,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 292
+          }
         },
         "common-bend-on": {
           "annotation_count": 115,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 120,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 292
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 115,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 120,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 292
+          }
         },
         "outside-12": {
           "annotation_count": 115,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 119,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 292
+          }
         },
         "construction": {
           "annotation_count": 117,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 122,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 312
+          }
+        },
+        "portrait": {
+          "annotation_count": 115,
+          "checked_exit_pairs": 8,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 96,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 289
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 120,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 292
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -50,7 +90,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -64,28 +106,68 @@
         "common-bend-off": {
           "annotation_count": 36,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 55,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 173
+          }
         },
         "common-bend-on": {
           "annotation_count": 36,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 60,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 174
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 36,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 60,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 174
+          }
         },
         "outside-12": {
           "annotation_count": 36,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 60,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 174
+          }
         },
         "construction": {
           "annotation_count": 36,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 56,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 213
+          }
+        },
+        "portrait": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 6,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 50,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 173
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 60,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 174
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -103,13 +185,15 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
       "station": "南京南",
       "loaded_edges": 606,
-      "drawn_edges": 325,
+      "drawn_edges": 328,
       "source_platform_bodies": 1,
       "annotation_count": 15,
       "checked_exit_pairs": 7,
@@ -117,28 +201,68 @@
         "common-bend-off": {
           "annotation_count": 15,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 287
+          }
         },
         "common-bend-on": {
           "annotation_count": 15,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 287
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 15,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 287
+          }
         },
         "outside-12": {
           "annotation_count": 15,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 290
+          }
         },
         "construction": {
           "annotation_count": 15,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 287
+          }
+        },
+        "portrait": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 7,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 32,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 274
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 32,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 287
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -155,7 +279,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -169,28 +295,68 @@
         "common-bend-off": {
           "annotation_count": 45,
           "checked_exit_pairs": 3,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 65,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 182
+          }
         },
         "common-bend-on": {
           "annotation_count": 45,
           "checked_exit_pairs": 3,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 47,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 182
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 45,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 47,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 182
+          }
         },
         "outside-12": {
           "annotation_count": 45,
           "checked_exit_pairs": 3,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 47,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 182
+          }
         },
         "construction": {
           "annotation_count": 45,
           "checked_exit_pairs": 3,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 47,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 182
+          }
+        },
+        "portrait": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 3,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 68,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 179
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 47,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 182
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -204,7 +370,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -218,28 +386,68 @@
         "common-bend-off": {
           "annotation_count": 46,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 109,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 444
+          }
         },
         "common-bend-on": {
           "annotation_count": 46,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 109,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 444
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 46,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 109,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 443
+          }
         },
         "outside-12": {
           "annotation_count": 46,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 109,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 444
+          }
         },
         "construction": {
           "annotation_count": 46,
           "checked_exit_pairs": 8,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 109,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 444
+          }
+        },
+        "portrait": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 8,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 105,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 438
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 109,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 444
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -255,13 +463,15 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
       "station": "商丘",
       "loaded_edges": 295,
-      "drawn_edges": 243,
+      "drawn_edges": 242,
       "source_platform_bodies": 9,
       "annotation_count": 28,
       "checked_exit_pairs": 5,
@@ -269,28 +479,68 @@
         "common-bend-off": {
           "annotation_count": 28,
           "checked_exit_pairs": 5,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 40,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 205
+          }
         },
         "common-bend-on": {
           "annotation_count": 28,
           "checked_exit_pairs": 5,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 55,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 205
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 28,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 55,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 205
+          }
         },
         "outside-12": {
           "annotation_count": 28,
           "checked_exit_pairs": 5,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 55,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 204
+          }
         },
         "construction": {
           "annotation_count": 28,
           "checked_exit_pairs": 5,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 55,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 205
+          }
+        },
+        "portrait": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 5,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 48,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 203
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 55,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 205
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -307,7 +557,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -321,28 +573,68 @@
         "common-bend-off": {
           "annotation_count": 40,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 68,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 245
+          }
         },
         "common-bend-on": {
           "annotation_count": 40,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 66,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 247
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 40,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 66,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 247
+          }
         },
         "outside-12": {
           "annotation_count": 40,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 66,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 245
+          }
         },
         "construction": {
           "annotation_count": 41,
           "checked_exit_pairs": 6,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 66,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 256
+          }
+        },
+        "portrait": {
+          "annotation_count": 40,
+          "checked_exit_pairs": 6,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 71,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 239
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 66,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 247
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -359,7 +651,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -373,28 +667,68 @@
         "common-bend-off": {
           "annotation_count": 14,
           "checked_exit_pairs": 2,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 16,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 100
+          }
         },
         "common-bend-on": {
           "annotation_count": 14,
           "checked_exit_pairs": 2,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 15,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 100
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 14,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 15,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 100
+          }
         },
         "outside-12": {
           "annotation_count": 14,
           "checked_exit_pairs": 2,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 15,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 100
+          }
         },
         "construction": {
           "annotation_count": 20,
           "checked_exit_pairs": 2,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 15,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 113
+          }
+        },
+        "portrait": {
+          "annotation_count": 14,
+          "checked_exit_pairs": 2,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 98
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 15,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 100
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -411,7 +745,9 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
@@ -425,28 +761,68 @@
         "common-bend-off": {
           "annotation_count": 45,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 323
+          }
         },
         "common-bend-on": {
           "annotation_count": 45,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 323
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 45,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 323
+          }
         },
         "outside-12": {
           "annotation_count": 45,
           "checked_exit_pairs": 7,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 355
+          }
         },
         "construction": {
           "annotation_count": 46,
-          "checked_exit_pairs": 6,
-          "checked": true
+          "checked_exit_pairs": 7,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 329
+          }
+        },
+        "portrait": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 7,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 25,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 311
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 25,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 323
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -463,13 +839,15 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     },
     {
       "station": "长沙西",
       "loaded_edges": 131,
-      "drawn_edges": 60,
+      "drawn_edges": 48,
       "source_platform_bodies": 0,
       "annotation_count": 2,
       "checked_exit_pairs": 1,
@@ -477,28 +855,68 @@
         "common-bend-off": {
           "annotation_count": 2,
           "checked_exit_pairs": 1,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 44
+          }
         },
         "common-bend-on": {
           "annotation_count": 2,
           "checked_exit_pairs": 1,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 44
+          }
         },
         "outlet-extension-off": {
           "annotation_count": 2,
           "checked_exit_pairs": 0,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 44
+          }
         },
         "outside-12": {
           "annotation_count": 2,
           "checked_exit_pairs": 1,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 46
+          }
         },
         "construction": {
           "annotation_count": 4,
           "checked_exit_pairs": 2,
-          "checked": true
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 73
+          }
+        },
+        "portrait": {
+          "annotation_count": 2,
+          "checked_exit_pairs": 1,
+          "checked": true,
+          "geometry": {
+            "straight_platform_pieces": 4,
+            "max_platform_deviation_px": 0.0,
+            "monotone_connection_pieces": 45
+          }
         }
+      },
+      "geometry": {
+        "straight_platform_pieces": 4,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 44
       },
       "warnings": [
         "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
@@ -516,46 +934,108 @@
         "exit_extensions_do_not_cross": true,
         "source_numbering_only": true,
         "svg_png_pdf": true,
-        "pdf_single_page_correct_ratio": true
+        "pdf_single_page_correct_ratio": true,
+        "platform_rails_straight": true,
+        "no_added_axial_return_loops": true
       }
     }
   ],
   "limits": "源对象连接检查不等于已核验联锁进路；图示台体计数不等于官方站场规模。",
-  "selected_exports": [
+  "supplemental_cases": [
     {
-      "file": "虹桥-市域相关股道.svg",
-      "yards": [
-        "line:IL-526dafc027134dd2a1888a03ef487d2e",
-        "line:IL-a642903eba3945ed8a7ac00a35d041c5",
-        "line:IL-c9dfe45389944f748f6cd5fdaa44ff53"
-      ],
-      "drawn_edges": 71,
-      "annotation_count": 18,
-      "checked_exit_pairs": 3,
-      "svg_png_pdf_checked": true
-    },
-    {
-      "file": "虹桥-综合场.svg",
-      "yards": [
-        "Y-d15f04e3d17f52bd8c9bdb8a03104154"
-      ],
+      "name": "虹桥-综合场",
+      "source_unchanged": true,
+      "real_shared_nodes": true,
       "drawn_edges": 160,
-      "annotation_count": 39,
-      "checked_exit_pairs": 3,
-      "svg_png_pdf_checked": true
+      "geometry": {
+        "straight_platform_pieces": 16,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 147
+      },
+      "exit_pairs": 3
     },
     {
-      "file": "虹桥-高速场.svg",
-      "yards": [
-        "Y-ab7673cea6fa558792d0e921a7385878"
-      ],
+      "name": "虹桥-高速场",
+      "source_unchanged": true,
+      "real_shared_nodes": true,
       "drawn_edges": 161,
-      "annotation_count": 60,
-      "checked_exit_pairs": 3,
-      "svg_png_pdf_checked": true
+      "geometry": {
+        "straight_platform_pieces": 41,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 131
+      },
+      "exit_pairs": 3
+    },
+    {
+      "name": "虹桥-市域相关股道",
+      "source_unchanged": true,
+      "real_shared_nodes": true,
+      "drawn_edges": 73,
+      "geometry": {
+        "straight_platform_pieces": 24,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 67
+      },
+      "exit_pairs": 3
+    },
+    {
+      "name": "郑州东-人工分场示例",
+      "source_unchanged": true,
+      "real_shared_nodes": true,
+      "drawn_edges": 504,
+      "geometry": {
+        "straight_platform_pieces": 103,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 444
+      },
+      "exit_pairs": 8
+    },
+    {
+      "name": "郑州东-仅人工分场示例",
+      "source_unchanged": true,
+      "real_shared_nodes": true,
+      "drawn_edges": 97,
+      "geometry": {
+        "straight_platform_pieces": 17,
+        "max_platform_deviation_px": 0.0,
+        "monotone_connection_pieces": 87
+      },
+      "exit_pairs": 2
     }
   ],
-  "test_validation": {
-    "desktop_and_backend_passed": 391
+  "manual_assignment": {
+    "preview_click": true,
+    "assigned_stable_track_ids": [
+      "TRK-0b3b0a6616454c8c8fb8e58a583768f1",
+      "TRK-25ea8cf9ba5b4eb0864432c999755306",
+      "TRK-37530fe306184eab9d23af6837eaff30",
+      "TRK-3c17bd6a49824c22b81d05c307d005a2",
+      "TRK-3f0ad928ec4b45df98ba31f665792b6b",
+      "TRK-3f835972e75344fa92e69529aa1b3444",
+      "TRK-51e8ccceae2343e89a8942686096db15",
+      "TRK-712ac1e2ec124be8acc9e4800b47d693",
+      "TRK-950e7c89f33248efa225bdff8a3f72d1",
+      "TRK-a65f87e5de6b4084b6a262f78610e9d2",
+      "TRK-bf1253610c8544a28cbcab6f919604bd",
+      "TRK-cca5674a9bdc4788b6fff00a181e233d",
+      "TRK-d497aac7749d46249e9303a4253f0f99",
+      "TRK-db1373de9a8a4b979ad550e1ab5c4b1e",
+      "TRK-dd9c0b85171c4fa3af230041f7f39773",
+      "TRK-e36c394ea8e242c08514bce871dd2d65",
+      "TRK-f3cbbe6970ed4568a3d1d8a814d13b67",
+      "TRK-f3f28b33c8244d15a70c94f7a67ff7d6"
+    ],
+    "yard_selector_live_update": true,
+    "saved_settings_roundtrip": true,
+    "source_unchanged": true,
+    "scope": "diagram_only_example_not_official_yard"
+  },
+  "verification": {
+    "svg_configs_per_station": 7,
+    "new_svgs_checked": 70,
+    "default_png_pdf_stations": 10,
+    "visual_review_stations": 10,
+    "workspace_full_suite": 403,
+    "focused_final_yard_tests": 40
   }
 }

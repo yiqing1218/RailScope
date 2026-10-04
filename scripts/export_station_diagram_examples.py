@@ -106,8 +106,8 @@ def main():
             painter = QPainter(comparison)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setFont(QFont('Microsoft YaHei', 18))
-            painter.drawText(35, 40, name+'站：整站共用相对弯曲基准')
-            painter.drawText(915, 40, '新版分场独立相对弯曲 / 站外直线')
+            painter.drawText(35, 40, name+'站：源形状比例（兼容）')
+            painter.drawText(915, 40, '新版站台直线 / 规则咽喉 / 站外直线')
             painter.setPen(QColor('#dce2e8'))
             painter.drawLine(890, 60, 890, 875)
             fit(QSvgRenderer(before.encode('utf-8')), painter, QRectF(20, 65, 850, 810))
@@ -123,7 +123,8 @@ def main():
                                   ('common-bend-on',replace(options,remove_common_bend=True)),
                                   ('outlet-extension-off',replace(options,align_main_outlets=False)),
                                   ('outside-12',replace(options,outside_compression=12)),
-                                  ('construction',replace(options,include_construction=True))]:
+                                  ('construction',replace(options,include_construction=True)),
+                                  ('portrait',replace(options,orientation='portrait'))]:
                 variant = build_layout(repo,context,config)
                 assert all(d.points[0] == variant.nodes[repo.edges[k].from_node_id]
                            and d.points[-1] == variant.nodes[repo.edges[k].to_node_id]
@@ -131,7 +132,8 @@ def main():
                 variants[label] = {'drawn_edges': len(variant.edges), 'visible_source_interval':variant.visible_source_interval,
                                    'canvas': [variant.width,variant.height]}
                 write_diagram(args.output/(stem+'-'+label+'.svg'),station_svg(repo,context,station_info=info,options=config),config)
-            assert all(v['canvas'] == list(options.canvas_size) for v in variants.values())
+            assert all(v['canvas'] == list(options.canvas_size) for label,v in variants.items() if label!='portrait')
+            assert variants['portrait']['canvas'] == list(reversed(options.canvas_size))
             assert variants['outside-12']['visible_source_interval'][1]-variants['outside-12']['visible_source_interval'][0] > layout.visible_source_interval[1]-layout.visible_source_interval[0]
             assert original_digest == source_digest()
             manifest['examples'].append({'station_name': name, 'station_id': next(iter(repo.stations)),

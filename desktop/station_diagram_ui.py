@@ -5,9 +5,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QTimer, Qt
+from PySide6.QtCore import QByteArray, QTimer, Qt, Signal, QPointF
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QImage, QPainter, QPen, QColor, QPolygonF
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                               QFormLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSpinBox,
                               QTabWidget, QTextEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QLineEdit,
@@ -23,6 +23,8 @@ except ImportError:
 
 class DiagramPreview(QSvgWidget):
     """Use the export renderer in a raster preview, preserving page proportions."""
+    track_clicked = Signal(object, object)
+
     def load(self, data):
         super().load(data)
         size = self.renderer().defaultSize().scaled(2400,2400,Qt.AspectRatioMode.KeepAspectRatio)
@@ -43,7 +45,23 @@ class DiagramPreview(QSvgWidget):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawImage(x,y,self.page.scaled(target,Qt.AspectRatioMode.KeepAspectRatio,
                                                   Qt.TransformationMode.SmoothTransformation))
+            if getattr(self,'selected_parts',None):
+                size = self.renderer().defaultSize()
+                painter.setPen(QPen(QColor('#ed9a22'), 4))
+                for part in self.selected_parts:
+                    painter.drawPolyline(QPolygonF([QPointF(x+p[0]*target.width()/size.width(),
+                                                             y+p[1]*target.height()/size.height()) for p in part]))
         painter.end()
+
+    def mousePressEvent(self, event):
+        if not hasattr(self,'page') or event.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+        target = self.page.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        x,y = (self.width()-target.width())/2,(self.height()-target.height())/2
+        size = self.renderer().defaultSize()
+        point = ((event.position().x()-x)*size.width()/target.width(),
+                 (event.position().y()-y)*size.height()/target.height())
+        self.track_clicked.emit(point, event.modifiers())
 
 
 class StationDiagramDialog(QDialog):
@@ -61,11 +79,11 @@ class StationDiagramDialog(QDialog):
         if self.settings_path and self.settings_path.exists():
             try:
                 values = json.loads(self.settings_path.read_text(encoding='utf-8'))
-                if values.get('layout_algorithm') not in ('yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4'):
+                if values.get('layout_algorithm') not in ('yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4','straight_platform_smooth_throats_v5'):
                     values['layout_mode']='yard_relative'
                     values['remove_common_bend']=True
                     if values.get('station_compression') in (1,4):values['station_compression']=2.5
-                if values.get('layout_algorithm') not in ('source_shape_shared_transform_v2','yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4'):
+                if values.get('layout_algorithm') not in ('source_shape_shared_transform_v2','yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4','straight_platform_smooth_throats_v5'):
                     if values.get('platform_width') == 1.4:
                         values['platform_width'] = 1
                 # Discard retired controls from the interrupted first design.
@@ -149,7 +167,7 @@ class StationDiagramDialog(QDialog):
             self.controls[name] = control
 
         form = page('布局')
-        combo(form,'layout_mode','布局方式',[('分场相对弯曲（推荐）','yard_relative'),('源形状比例（兼容）','source_shape')])
+        combo(form,'layout_mode','布局方式',[('站台直线 / 分场规则咽喉（推荐）','yard_relative'),('源形状比例（兼容）','source_shape')])
         self.yard_selector = QComboBox()
         self.yard_selector.addItem('全部分场', '[]')
         self.yard_selector.currentIndexChanged.connect(self.choose_yard)
@@ -164,7 +182,7 @@ class StationDiagramDialog(QDialog):
         number(form, 'direction_radius_m', '站外方向参考半径 / m', 500, 10000, 250)
         number(form, 'platform_width', '站台符号宽度倍数', .5, 4, .1)
         number(form, 'margin', '全图留白（图面单位）', 10, 240, 5)
-        form.addRow(QLabel('相对弯曲按各分场处理，站内宽高统一规范化；咽喉仍保留真实连接。兼容模式保持原有几何比例。'))
+        form.addRow(QLabel('站台线始终画直；各分场消除共同弯曲，咽喉用平滑模板连接真实节点。兼容模式保持原有几何比例。'))
 
         form = page('内容')
         for name, title in [('show_main', '正线'), ('show_station', '站线 / 到发线 / 辅助线'),
@@ -213,6 +231,28 @@ class StationDiagramDialog(QDialog):
         platform_reset.clicked.connect(lambda:self.reset_editor('platform'))
         self.track_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.track_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.track_table.itemSelectionChanged.connect(self.highlight_tracks)
+        self.preview.track_clicked.connect(self.select_preview_track)
+        assignment = QFormLayout()
+        self.yard_track_numbers = QLineEdit()
+        self.yard_track_numbers.setPlaceholderText('例如 1-4、7；也可填写已有图中编号')
+        self.yard_assignment_name = QLineEdit()
+        self.yard_assignment_name.setPlaceholderText('已有或新分场名称；空白恢复原归属')
+        assignment.addRow('股道号范围', self.yard_track_numbers)
+        assignment.addRow('指定图示分场', self.yard_assignment_name)
+        self.track_table.search.setPlaceholderText('搜索道号、股道名称或 RailScope ID')
+        self.track_table.parentWidget().layout().insertLayout(1, assignment)
+        numbered_batch = QPushButton('按道号批量指定分场并预览')
+        self.track_table.parentWidget().layout().insertWidget(2, numbered_batch)
+        numbered_batch.clicked.connect(self.apply_yard_assignment)
+        self.selected_track_count = QLabel('也可点击预览中的站台线，按 Ctrl 多选；橙色表示已选股道。')
+        self.selected_track_count.setWordWrap(True)
+        self.track_table.parentWidget().layout().insertWidget(3, self.selected_track_count)
+        selection_batch = QPushButton('将已选股道指定为上方分场并预览')
+        selection_batch.clicked.connect(lambda: self.set_yard_rows(
+            sorted({i.row() for i in self.track_table.selectedIndexes()}),
+            self.yard_assignment_name.text()))
+        self.track_table.parentWidget().layout().insertWidget(4, selection_batch)
         batch=QPushButton('将选中股道设置为同一图示分场…')
         self.track_table.parentWidget().layout().addWidget(batch)
         batch.clicked.connect(self.assign_selected_yard)
@@ -276,10 +316,83 @@ class StationDiagramDialog(QDialog):
             return
         value,accepted=QInputDialog.getText(self,'图示分场','分场名称（空白恢复原归属）')
         if accepted:
-            self.track_table.blockSignals(True)
-            for row in rows:self.track_table.item(row,1).setText(value.strip())
-            self.track_table.blockSignals(False)
-            self.refresh_preview()
+            self.set_yard_rows(rows, value)
+
+    def set_yard_rows(self, rows, value):
+        if not rows:
+            self.status.setText('先点击预览站台线或在下表多选股道。')
+            return
+        self.timer.stop()
+        self.track_table.blockSignals(True)
+        for row in rows:
+            self.track_table.item(row,1).setText(value.strip())
+        self.track_table.blockSignals(False)
+        self.refresh_preview()
+
+    def apply_yard_assignment(self):
+        try:
+            try:
+                from .station_diagram.manual_yards import numbered_tracks
+            except ImportError:
+                from station_diagram.manual_yards import numbered_tracks
+            self.read_editors()
+            ids = numbered_tracks(self.repo, self.track_rules, self.yard_track_numbers.text())
+            rows = [row for row in range(self.track_table.rowCount())
+                    if self.track_table.item(row,0).data(Qt.ItemDataRole.UserRole) in ids]
+            self.set_yard_rows(rows, self.yard_assignment_name.text())
+        except ValueError as error:
+            self.status.setText(str(error))
+
+    def highlight_tracks(self):
+        if not hasattr(self,'current_layout'):
+            return
+        ids = {self.track_table.item(i.row(),0).data(Qt.ItemDataRole.UserRole)
+               for i in self.track_table.selectedIndexes()}
+        keys = {ref.edge_id for ident in ids for ref in self.repo.station_tracks[ident].edge_refs}
+        self.preview.selected_parts = [part for k in keys & self.current_layout.edges.keys()
+                                       for part in self.current_layout.edges[k].parts]
+        self.selected_track_count.setText(f'已选 {len(ids)} 个来源股道对象；橙色表示选择，Ctrl 点击可增减。')
+        self.preview.update()
+
+    def select_preview_track(self, point, modifiers):
+        if not hasattr(self,'current_layout'):
+            return
+        from shapely.geometry import LineString, Point, box
+        try:
+            from .station_diagram.topology import build_graph, chains
+        except ImportError:
+            from station_diagram.topology import build_graph, chains
+        layout = self.current_layout
+        axis = 1 if self.options().orientation == 'portrait' else 0
+        if not layout.core_bounds[axis] <= point[axis] <= layout.core_bounds[axis+2]:
+            return
+        hit = Point(point)
+        band = box(*layout.core_bounds)
+        distances = [(LineString(part).intersection(band).distance(hit), key)
+                     for key in layout.platform_rail_ids for part in layout.edges[key].parts
+                     if not LineString(part).intersection(band).is_empty]
+        if not distances or min(distances)[0] > 12:
+            return
+        key = min(distances)[1]
+        graph = build_graph(self.repo,set(layout.edges))
+        keys = next(({k for k,_ in legs} for legs in chains(graph,set(layout.platform_rail_ids))
+                     if any(k==key for k,_ in legs)),{key})
+        ids = {t.id for t in self.repo.station_tracks.values() if any(r.edge_id in keys for r in t.edge_refs)}
+        rows = [row for row in range(self.track_table.rowCount())
+                if self.track_table.item(row,0).data(Qt.ItemDataRole.UserRole) in ids]
+        toggle = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+        selected = {i.row() for i in self.track_table.selectedIndexes()} if toggle else set()
+        selected = selected - set(rows) if toggle and set(rows) <= selected else selected | set(rows)
+        self.track_table.blockSignals(True)
+        self.track_table.clearSelection()
+        from PySide6.QtCore import QItemSelectionModel
+        for row in selected:
+            self.track_table.selectionModel().select(self.track_table.model().index(row,0),
+                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        self.track_table.blockSignals(False)
+        if rows:
+            self.track_table.scrollToItem(self.track_table.item(rows[0],0))
+        self.highlight_tracks()
 
     def editor_combo(self, choices, value):
         widget = QComboBox()
@@ -369,7 +482,8 @@ class StationDiagramDialog(QDialog):
                for p in layout.platforms}
         for table,records,rules,fields in (
             (self.yard_table,[(k,g['name']) for k,g in layout.groups.items()],self.yard_rules,('name','color')),
-            (self.track_table,[(t.id,t.name) for t in self.repo.station_tracks.values()],self.track_rules,('group_id','label')),
+            (self.track_table,[(t.id,('道号 '+t.track_number+' · ' if t.track_number else '道号待核对 · ')+t.name)
+                               for t in self.repo.station_tracks.values()],self.track_rules,('group_id','label')),
             (self.platform_table,[(p.id,physical.get(p.id,p.id)+' · '+' / '.join(faces[p.id])) for p in layout.platforms],self.platform_rules,('physical_number','faces'))):
             table.blockSignals(True)
             present={table.item(row,0).data(Qt.ItemDataRole.UserRole) for row in range(table.rowCount())}
@@ -455,29 +569,35 @@ class StationDiagramDialog(QDialog):
                 self.repo, self.context, self.info = self.reload_callback(options.topology_depth)
                 self.loaded_depth = options.topology_depth
             ensure_export_font()
+            full = build_layout(self.repo,self.context,replace(options,selected_yards=()))
+            if any(key not in full.groups for key in self.selected_yards):
+                self.selected_yards = ()
+                options = replace(options, selected_yards=())
+            self.yard_selector.blockSignals(True)
+            self.yard_selector.clear()
+            self.yard_selector.addItem('全部分场', '[]')
+            for key, group in sorted(full.groups.items(), key=lambda p: -p[1]['center']):
+                self.yard_selector.addItem(group['name'], json.dumps([key],ensure_ascii=False))
+            suburban = tuple(k for k,g in full.groups.items()
+                              if any(v in g['name'] for v in ('嘉闵','示范区','机场联络')))
+            if suburban:
+                self.yard_selector.addItem('市域铁路相关股道（来源分场待核对）', json.dumps(suburban,ensure_ascii=False))
+            self.yard_selector.setCurrentIndex(max(0,self.yard_selector.findData(json.dumps(self.selected_yards,ensure_ascii=False))))
+            self.yard_selector.blockSignals(False)
+            layout = build_layout(self.repo,self.context,options) if self.selected_yards else full
             svg = station_svg(self.repo, self.context, station_info=self.info, options=options)
             self.preview.load(QByteArray(svg.encode('utf-8')))
-            layout = build_layout(self.repo,self.context,options)
-            if self.yard_selector.count() == 1:
-                full = build_layout(self.repo,self.context,replace(options,selected_yards=())) if self.selected_yards else layout
-                self.yard_selector.blockSignals(True)
-                for key, group in sorted(full.groups.items(), key=lambda p: -p[1]['center']):
-                    self.yard_selector.addItem(group['name'], json.dumps([key],ensure_ascii=False))
-                suburban = tuple(k for k,g in full.groups.items()
-                                  if any(v in g['name'] for v in ('嘉闵','示范区','机场联络')))
-                if suburban:
-                    self.yard_selector.addItem('市域铁路相关股道（来源分场待核对）', json.dumps(suburban,ensure_ascii=False))
-                self.yard_selector.setCurrentIndex(max(0,self.yard_selector.findData(json.dumps(self.selected_yards,ensure_ascii=False))))
-                self.yard_selector.blockSignals(False)
+            self.current_layout = layout
             try:
                 from .station_diagram.renderer import destination_warnings
             except ImportError:
                 from station_diagram.renderer import destination_warnings
             layout.warnings.extend(destination_warnings(self.repo,layout,self.info,options))
-            self.sync_editors(layout)
+            self.sync_editors(full)
+            self.highlight_tracks()
             self.warning_details.setPlainText('\n'.join(layout.warnings) or '已检查真实轨道连接与明确归属。')
             width, height = options.canvas_size
-            self.status.setText(self.settings_warning + f'预览：{width} × {height}，{options.dpi} DPI；{len(layout.edges)} 条真实轨道，{len(layout.lanes)} 根核心股道，{len(layout.warnings)} 项核对提示。')
+            self.status.setText(self.settings_warning + f'预览：{width} × {height}，{options.dpi} DPI；{len(layout.edges)} 条真实轨道段，{len(layout.lanes)} 个股道来源对象，{len(layout.warnings)} 项核对提示。')
             return True
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             self.status.setText(str(error))
@@ -491,5 +611,5 @@ class StationDiagramDialog(QDialog):
         if self.settings_path:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.settings_path.with_suffix('.tmp')
-            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'yard_centered_parallel_outlets_v4'}, ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'straight_platform_smooth_throats_v5'}, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(self.settings_path)

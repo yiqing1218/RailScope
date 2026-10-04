@@ -112,6 +112,7 @@ def arrange_outlets(
     knots,
     source_core,
     line_spacing=None,
+    drawing_paths=None,
 ):
     lo, hi = interval
     grouped = defaultdict(dict)
@@ -343,7 +344,11 @@ def arrange_outlets(
     for k, edge in list(edges.items()):
         pts = []
         cuts = [v[0] for (key, _), v in mapped.items() if key == k]
-        for p in densify(raw[k], sorted(set(knots) | set(cuts))):
+        samples = densify(raw[k], sorted(set(knots) | set(cuts)))
+        drawing = densify(drawing_paths[k], sorted(set(knots) | set(cuts))) if drawing_paths else (
+            adjusted(p, edge_groups.get(k, ())) for p in samples
+        )
+        for p, drawn in zip(samples, drawing):
             transform = next(
                 (
                     value[1]
@@ -353,7 +358,7 @@ def arrange_outlets(
                 None,
             )
             pts.append(
-                transform(p) if transform else page(adjusted(p, edge_groups.get(k, ())))
+                transform(p) if transform else page(drawn)
             )
         source = repo.edges[k]
         pts[0], pts[-1] = nodes[source.from_node_id], nodes[source.to_node_id]

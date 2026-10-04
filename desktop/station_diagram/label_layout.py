@@ -251,12 +251,22 @@ def annotate(repo, context, layout, platform_groups, options):
             )
             if v
         }
-        track_count = sum(lane.id in group["track_ids"] for lane in layout.lanes)
+        source_track_count = sum(lane.id in group["track_ids"] for lane in layout.lanes)
+        track_count = source_track_count
+        if layout.algorithm == "straight_platform_smooth_throats_v5":
+            from .track_layout import core_rail_count
+
+            track_count = core_rail_count(
+                layout, group["edge_ids"], options.orientation == "portrait"
+            )
         group["display_scale"] = {
             "physical_bodies": len(bodies),
             "known_faces": len(faces),
             "tracks": track_count,
-            "source": "drawn_source_objects",
+            "source_track_objects": source_track_count,
+            "source": "drawn_core_cross_section"
+            if layout.platform_rail_ids
+            else "drawn_source_objects",
             "verification_status": "diagram_count_not_official_station_scale",
         }
         scale = f"图示 {len(bodies)} 台体 / {track_count} 股道"

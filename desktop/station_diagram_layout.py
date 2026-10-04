@@ -156,6 +156,8 @@ class DiagramLayout:
     annotations: list = field(default_factory=list)
     group_baselines: dict = field(default_factory=dict)
     extensions: list = field(default_factory=list)
+    platform_rail_ids: list[str] = field(default_factory=list)
+    regular_connection_ids: list[str] = field(default_factory=list)
 
 
 def edge_role(repo, edge, options=None):

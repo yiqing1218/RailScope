@@ -2,11 +2,14 @@
 import math
 
 
-def rounded_path(points, radius=3):
+def rounded_path(points, radius=3, protected_interval=None, axis=0):
     def xy(p):
         return f'{p[0]:.4f},{p[1]:.4f}'
     result = ['M '+xy(points[0])]
     for a,b,c in zip(points,points[1:],points[2:]):
+        if protected_interval and protected_interval[0]-.01 <= b[axis] <= protected_interval[1]+.01:
+            result.append('L '+xy(b))
+            continue
         ab,bc = math.dist(a,b),math.dist(b,c)
         if min(ab,bc)<1e-8:
             result.append('L '+xy(b))

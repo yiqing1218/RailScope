@@ -24,7 +24,7 @@ def yard_repo():
                 repo.station_tracks[key] = replace(
                     t,
                     yard_id=ident,
-                    track_number=str(index * 2 + (1 if "-0-" in key else 2)),
+                    track_number=str(index * 2 + int(key.split("-")[2]) + 1),
                 )
     return repo, context
 

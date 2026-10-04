@@ -106,6 +106,9 @@ def metadata(repo, layout, options, info):
             for k, g in layout.groups.items()
         },
         "group_baselines": layout.group_baselines,
+        "core_bounds": layout.core_bounds,
+        "platform_rail_ids": layout.platform_rail_ids,
+        "regular_connection_ids": layout.regular_connection_ids,
         "annotations": layout.annotations,
         "schematic_extensions": layout.extensions,
         "boundary_source": layout.boundary_source,
@@ -186,9 +189,17 @@ def render_svg(
         for k, d in layout.edges.items()
     }
     if layout.groups:
+        manual_keys = {
+            ref.edge_id
+            for t in repo.station_tracks.values()
+            if options.track_overrides.get(t.id, {}).get("group_id")
+            for ref in t.edge_refs
+        }
         for group in layout.groups.values():
             for key in group["edge_ids"]:
-                if key in layout.edges and layout.ownership[key].status != "unresolved":
+                if key in layout.edges and (
+                    layout.ownership[key].status != "unresolved" or key in manual_keys
+                ):
                     colors[key] = (
                         "#343d46" if options.color_scheme == "mono" else group["color"]
                     )
