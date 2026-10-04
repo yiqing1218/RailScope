@@ -165,7 +165,7 @@ def classify(repo, keys, options):
     warnings = []
     if unknown:
         warnings.append(
-            f"{len(unknown)} 条轨道归属未明确，使用中性灰色；未沿接轨关系猜测颜色。"
+            f"{len(unknown)} 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。"
         )
     if conflicts:
         warnings.append(

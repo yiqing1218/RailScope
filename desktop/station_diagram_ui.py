@@ -1,5 +1,5 @@
 """Dedicated station-diagram export controls with a real rendered preview."""
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from collections import Counter
 import json
 import sqlite3
@@ -61,11 +61,11 @@ class StationDiagramDialog(QDialog):
         if self.settings_path and self.settings_path.exists():
             try:
                 values = json.loads(self.settings_path.read_text(encoding='utf-8'))
-                if values.get('layout_algorithm') != 'yard_relative_linear_outlets_v3':
+                if values.get('layout_algorithm') not in ('yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4'):
                     values['layout_mode']='yard_relative'
                     values['remove_common_bend']=True
                     if values.get('station_compression') in (1,4):values['station_compression']=2.5
-                if values.get('layout_algorithm') not in ('source_shape_shared_transform_v2','yard_relative_linear_outlets_v3'):
+                if values.get('layout_algorithm') not in ('source_shape_shared_transform_v2','yard_relative_linear_outlets_v3','yard_centered_parallel_outlets_v4'):
                     if values.get('platform_width') == 1.4:
                         values['platform_width'] = 1
                 # Discard retired controls from the interrupted first design.
@@ -83,8 +83,9 @@ class StationDiagramDialog(QDialog):
         self.yard_rules = dict(defaults.yard_overrides)
         self.track_rules = dict(defaults.track_overrides)
         self.platform_rules = dict(defaults.platform_overrides)
+        self.selected_yards = tuple(defaults.selected_yards)
         main = QVBoxLayout(self)
-        hint = QLabel('分场各自消除共同弯曲、保留相对形状；站台方向水平，站内压短并展开间距。最后接轨点之外的正线拟合为直线走势并分开引出。分场、股道、台体、乘降面和延长线均可编辑。P / T 为图示序号，不替代官方编号；缺失面号不会按形状猜测。')
+        hint = QLabel('先分别展开各场的水平正线和咽喉，再绘制场间联络与站外去向。可选全站、单场或市域相关股道组合；台体与乘降面分开标注，股道只使用来源编号或手工图中编号。')
         hint.setWordWrap(True)
         main.addWidget(hint)
         row = QHBoxLayout()
@@ -149,6 +150,10 @@ class StationDiagramDialog(QDialog):
 
         form = page('布局')
         combo(form,'layout_mode','布局方式',[('分场相对弯曲（推荐）','yard_relative'),('源形状比例（兼容）','source_shape')])
+        self.yard_selector = QComboBox()
+        self.yard_selector.addItem('全部分场', '[]')
+        self.yard_selector.currentIndexChanged.connect(self.choose_yard)
+        form.addRow('导出分场', self.yard_selector)
         check(form,'auto_rotate','按站台方向自动旋正')
         check(form,'remove_common_bend','按分场消除共同弯曲')
         check(form,'align_main_outlets','正线示意延长至图边缘')
@@ -166,12 +171,12 @@ class StationDiagramDialog(QDialog):
                             ('show_connectors', '联络线'), ('show_outer_main', '外围关联主线'),
                             ('show_outer_connectors', '外围联络线'), ('include_construction', '包含在建铁路（虚线）'),
                             ('show_platforms', '真实来源站台符号'), ('show_legend', '图例'),
-                            ('show_track_labels','全部股道编号 / 图示序号'),('show_platform_labels','实体站台及乘降站台面编号'),
+                            ('show_track_labels','来源股道编号 / 手工图中编号'),('show_platform_labels','实体站台及乘降站台面编号'),
                             ('show_title', '站名标题'), ('show_endpoints', '正线端口名称与通达城市')]:
             check(form, name, title)
         number(form, 'topology_depth', '向外追踪连接层数', 0, 64, 1, True)
         form.addRow(QLabel('外围跟随真实连接的主线和联络线，不按附近几何凑线路。更高层数可扩大数据范围；超出画布的线路只绘制到边界。'))
-        form.addRow(QLabel('收束处标线路名，边缘端口标去向；道岔符号只绘制在真实共用节点上。'))
+        form.addRow(QLabel('收束处标线路名，边缘端口标去向；连接点保留真实拓扑，交叉线连续绘制。'))
 
         def editor_page(title, headers):
             widget = QWidget()
@@ -258,7 +263,11 @@ class StationDiagramDialog(QDialog):
         return DiagramOptions(**values, color_overrides=colors,
                               line_overrides=self.line_rules, port_overrides=self.port_rules,
                               yard_overrides=self.yard_rules,track_overrides=self.track_rules,
-                              platform_overrides=self.platform_rules)
+                              platform_overrides=self.platform_rules,selected_yards=self.selected_yards)
+
+    def choose_yard(self):
+        self.selected_yards = tuple(json.loads(self.yard_selector.currentData() or '[]'))
+        self.timer.start()
 
     def assign_selected_yard(self):
         rows=sorted({i.row() for i in self.track_table.selectedIndexes()})
@@ -449,6 +458,17 @@ class StationDiagramDialog(QDialog):
             svg = station_svg(self.repo, self.context, station_info=self.info, options=options)
             self.preview.load(QByteArray(svg.encode('utf-8')))
             layout = build_layout(self.repo,self.context,options)
+            if self.yard_selector.count() == 1:
+                full = build_layout(self.repo,self.context,replace(options,selected_yards=())) if self.selected_yards else layout
+                self.yard_selector.blockSignals(True)
+                for key, group in sorted(full.groups.items(), key=lambda p: -p[1]['center']):
+                    self.yard_selector.addItem(group['name'], json.dumps([key],ensure_ascii=False))
+                suburban = tuple(k for k,g in full.groups.items()
+                                  if any(v in g['name'] for v in ('嘉闵','示范区','机场联络')))
+                if suburban:
+                    self.yard_selector.addItem('市域铁路相关股道（来源分场待核对）', json.dumps(suburban,ensure_ascii=False))
+                self.yard_selector.setCurrentIndex(max(0,self.yard_selector.findData(json.dumps(self.selected_yards,ensure_ascii=False))))
+                self.yard_selector.blockSignals(False)
             try:
                 from .station_diagram.renderer import destination_warnings
             except ImportError:
@@ -471,5 +491,5 @@ class StationDiagramDialog(QDialog):
         if self.settings_path:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.settings_path.with_suffix('.tmp')
-            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'yard_relative_linear_outlets_v3'}, ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.write_text(json.dumps({**asdict(options), 'layout_algorithm':'yard_centered_parallel_outlets_v4'}, ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(self.settings_path)

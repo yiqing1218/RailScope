@@ -63,6 +63,30 @@ def group_tracks(repo, raw, options):
     for key, own in ownership.items():
         if not edge_groups[key] and own.line_id and len(by_line[own.line_id]) == 1:
             edge_groups[key] = set(by_line[own.line_id])
+    # Inherit drawing groups through physical station-track continuations only.
+    # Equal-distance competing yards remain ambiguous; this is not a domain edit.
+    from .helpers import edge_role
+    from .topology import build_graph
+
+    graph = build_graph(repo, set(raw), validate=False)
+    frontier = {k for k in raw if edge_groups[k]}
+    remaining = {
+        k
+        for k in raw
+        if not edge_groups[k]
+        and edge_role(repo, repo.edges[k], options)
+        in ("station", "auxiliary", "connector")
+    }
+    while frontier and remaining:
+        proposed = defaultdict(set)
+        for key in frontier:
+            for node in graph.endpoints[key]:
+                for nxt in set(graph.adjacency[node]) & remaining:
+                    proposed[nxt].update(edge_groups[key])
+        for key, values in proposed.items():
+            edge_groups[key] = values
+        frontier = set(proposed)
+        remaining -= frontier
     for ident, group in groups.items():
         values = [p[1] for key in group["edge_ids"] for p in raw[key]]
         group["center"] = median(values)
@@ -88,4 +112,15 @@ def group_tracks(repo, raw, options):
         if len(values) == 1:
             group = groups[next(iter(values))]
             group["edge_ids"].add(key)
+    for group in groups.values():
+        inherited = [
+            k
+            for k in group["edge_ids"]
+            if not ownership[k].system and not ownership[k].yard_id
+        ]
+        group["drawing_inheritance"] = {
+            "edge_ids": sorted(inherited),
+            "source": "connected_station_track_reference",
+            "verification_status": "diagram_only_not_business_assignment",
+        }
     return groups, dict(edge_groups), ownership, warnings

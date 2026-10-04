@@ -45,6 +45,7 @@ class DiagramOptions:
     line_overrides: dict[str, dict] = field(default_factory=dict)
     port_overrides: dict[str, dict] = field(default_factory=dict)
     yard_overrides: dict[str, dict] = field(default_factory=dict)
+    selected_yards: tuple[str, ...] = ()
     track_overrides: dict[str, dict] = field(default_factory=dict)
     platform_overrides: dict[str, dict] = field(default_factory=dict)
     show_track_labels: bool = True

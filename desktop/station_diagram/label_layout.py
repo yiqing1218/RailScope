@@ -116,8 +116,8 @@ def annotate(repo, context, layout, platform_groups, options):
         else:
             missing.append(ident)
 
-    # Number physical source objects in stable spatial order; P is explicitly
-    # a drawing index, never a passenger boarding face or official track number.
+    # Number physical source objects in stable spatial order; this is a drawing
+    # index, never a passenger boarding face or official track number.
     props = {
         ident: f.get("properties", {})
         for f in context
@@ -136,26 +136,26 @@ def annotate(repo, context, layout, platform_groups, options):
             values = [
                 v
                 for v in re.split(
-                    r"[;/,\s]+", str(rule.get("faces") or tags.get("ref") or "")
+                    r"[;/,&\s]+", str(rule.get("faces") or tags.get("ref") or "")
                 )
                 if v
             ]
             physical = rule.get("physical_number") or property_.get(
                 "physical_platform_number"
             )
-            value = f"台体 {physical}" if physical else f"P{index:02d}"
+            value = f"台体 {physical}" if physical else f"台体 {index}"
             point = (
                 (p.x, p.y - p.length * 0.32 + 5)
                 if options.orientation == "portrait"
                 else (p.x - p.length * 0.32, p.y + 5)
             )
-            add("physical-platform", p.id, value, point, options.label_size * 0.6)
+            add("physical-platform", p.id, value, point, options.label_size * 0.42)
             # Polygon shape cannot establish the number of boarding faces.
             count = max(1, len(values))
             unknown_faces += not bool(values)
             for n in range(count):
                 face = "站台 " + values[n] if values else "面号待核对"
-                # One row inside each body, with separate cells for P and faces.
+                # One row inside each body, with separate cells for body and faces.
                 # Source ref order is not assumed to establish a physical side.
                 offset = p.length * (
                     0.08 + 0.24 * n / max(count - 1, 1) if count > 1 else 0.32
@@ -170,7 +170,7 @@ def annotate(repo, context, layout, platform_groups, options):
                     p.id + ":" + str(n),
                     face,
                     point,
-                    options.label_size * 0.5,
+                    options.label_size * 0.4,
                 )
     lane_order = sorted(
         layout.lanes, key=lambda lane: (lane.source_y, lane.id), reverse=True
@@ -178,6 +178,10 @@ def annotate(repo, context, layout, platform_groups, options):
     track_by_id = {track.id: track for track in repo.station_tracks.values()}
     if options.show_track_labels:
         for index, lane in enumerate(lane_order, 1):
+            if not lane.track_number and not options.track_overrides.get(
+                lane.id, {}
+            ).get("label"):
+                continue
             track = track_by_id[lane.id]
             longest = max(
                 (
@@ -192,14 +196,10 @@ def annotate(repo, context, layout, platform_groups, options):
                 for f in (0.32, 0.68, 0.18, 0.82, 0.5, 0.08, 0.92)
             ]
             point = points[0]
-            value = (
-                (str(lane.track_number) + "道")
-                if lane.track_number
-                else f"T{index:03d}"
-            )
+            value = (str(lane.track_number) + "道") if lane.track_number else ""
             if options.track_overrides.get(lane.id, {}).get("label"):
                 value = options.track_overrides[lane.id]["label"]
-            size = options.label_size * 0.6
+            size = options.label_size * 0.42
             candidates = [(p[0], p[1] - 5) for p in points]
             identities = [
                 g for g in layout.groups.values() if lane.id in g["track_ids"]
@@ -233,13 +233,42 @@ def annotate(repo, context, layout, platform_groups, options):
             and layout.core_bounds[1] <= p[1] <= layout.core_bounds[3]
         ] or samples
         x, y = median(p[0] for p in core_samples), median(p[1] for p in core_samples)
+        bodies = [
+            p for p in layout.platforms if group["id"] in platform_groups.get(p.id, ())
+        ]
+        faces = {
+            v
+            for p in bodies
+            for v in re.split(
+                r"[;/,&\s]+",
+                str(
+                    options.platform_overrides.get(p.id, {}).get("faces")
+                    or props.get(p.id, {})
+                    .get("way_tags", props.get(p.id, {}))
+                    .get("ref")
+                    or ""
+                ),
+            )
+            if v
+        }
+        track_count = sum(lane.id in group["track_ids"] for lane in layout.lanes)
+        group["display_scale"] = {
+            "physical_bodies": len(bodies),
+            "known_faces": len(faces),
+            "tracks": track_count,
+            "source": "drawn_source_objects",
+            "verification_status": "diagram_count_not_official_station_scale",
+        }
+        scale = f"图示 {len(bodies)} 台体 / {track_count} 股道"
+        if faces:
+            scale += f" / {len(faces)} 站台面"
         # Yard names have reserved candidates alongside their whole core group.
         add(
             "yard",
             group["id"],
-            group["name"],
+            group["name"] + "\n" + scale,
             (layout.core_bounds[2] + 28, y),
-            options.label_size * 0.85,
+            options.label_size * 0.6,
             group["color"],
             [(x, y - options.label_size * 2), (x, y + options.label_size * 2)],
         )
@@ -295,7 +324,7 @@ def annotate(repo, context, layout, platform_groups, options):
         )
     if any(not lane.track_number for lane in layout.lanes):
         layout.warnings.append(
-            "T 为图示股道序号；P 为实体站台图示序号，均不写入运营数据。"
+            "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。"
         )
     if unknown_faces:
         layout.warnings.append(

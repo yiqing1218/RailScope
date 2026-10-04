@@ -1,7 +1,7 @@
 """Boundary first; outside selection follows stable endpoint connectivity."""
 
 from collections import deque
-from shapely.geometry import LineString, shape
+from shapely.geometry import LineString, shape, box
 from shapely.ops import unary_union
 from .topology import build_graph
 from .types import Extraction
@@ -61,6 +61,15 @@ def extract(repo, context, options):
     if not inner:
         raise ValueError("没有可导出的站内真实轨道")
     graph = build_graph(repo, set(repo.edges), validate=False)
+    # StationTrack paths often stop at the first switch. Short siding fragments
+    # beyond that switch are still the throat, rather than external main lines.
+    points = [p for k in inner for p in repo.edges[k].coordinates]
+    throat_window = box(
+        min(p[0] for p in points) - 0.002,
+        min(p[1] for p in points) - 0.002,
+        max(p[0] for p in points) + 0.002,
+        max(p[1] for p in points) + 0.002,
+    )
 
     def allowed(key):
         status = repo.edges[key].construction_status
@@ -84,9 +93,14 @@ def extract(repo, context, options):
             for nxt in graph.adjacency[node]:
                 if nxt in distances or not allowed(nxt):
                     continue
-                if nxt not in inner and edge_role(
-                    repo, repo.edges[nxt], options
-                ) not in ("main", "connector"):
+                if (
+                    nxt not in inner
+                    and edge_role(repo, repo.edges[nxt], options)
+                    not in ("main", "connector")
+                    and not throat_window.intersects(
+                        LineString(repo.edges[nxt].coordinates)
+                    )
+                ):
                     continue
                 distances[nxt] = distances[key] + 1
                 queue.append(nxt)

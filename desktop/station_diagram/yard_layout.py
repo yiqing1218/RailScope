@@ -24,6 +24,9 @@ from .shape_paths import rounded_path
 from .types import Lane
 from .outlet_layout import arrange_outlets
 from .label_layout import annotate
+from .yard_selection import platform_membership, select_yards
+from .yard_reference import yard_baseline, central_reference_paths
+from .connection_layout import arrange_yard_connections
 
 try:
     from ..station_diagram_layout import DiagramOptions
@@ -33,6 +36,7 @@ try:
         baseline_value,
         densify,
         line_parts,
+        reference_paths,
     )
 except ImportError:
     from station_diagram_layout import DiagramOptions
@@ -42,6 +46,7 @@ except ImportError:
         baseline_value,
         densify,
         line_parts,
+        reference_paths,
     )
 
 
@@ -80,6 +85,30 @@ def build_layout(repo, context=(), options=None):
         for k in sorted(selected.selected)
     }
     groups, edge_groups, ownership, warnings = group_tracks(repo, raw, options)
+    platform_groups = platform_membership(platforms, rotate, raw, edge_groups, tracks)
+    if options.selected_yards:
+        platform_axis = [
+            rotate(p)[0] for _, _, points in platforms for p in points
+        ] or [p[0] for k in tracks for p in raw[k]]
+        retained = select_yards(
+            repo,
+            raw,
+            groups,
+            options.selected_yards,
+            options,
+            (min(platform_axis), max(platform_axis)),
+        )
+        raw = {k: p for k, p in raw.items() if k in retained}
+        tracks &= retained
+        reference_keys = tracks or selected.inner & retained
+        groups = {g: v for g, v in groups.items() if g in options.selected_yards}
+        edge_groups = {
+            k: values & groups.keys()
+            for k, values in edge_groups.items()
+            if k in retained
+        }
+        platforms = [p for p in platforms if platform_groups[p[0]] & groups.keys()]
+        graph = build_graph(repo, retained)
     body = [rotate(p) for _, _, points in platforms for p in points]
     core_lo, core_hi = (
         (min(p[0] for p in body), max(p[0] for p in body))
@@ -91,7 +120,7 @@ def build_layout(repo, context=(), options=None):
     )
     roles = {k: edge_role(repo, repo.edges[k], options) for k in raw}
     (lo, hi), line_intervals = functional_interval(
-        repo, raw, graph, selected.inner, body, roles, ownership
+        repo, raw, graph, selected.inner & raw.keys(), body, roles, ownership
     )
     mid = (core_lo + core_hi) / 2
     baselines = {}
@@ -100,17 +129,40 @@ def build_layout(repo, context=(), options=None):
         seed_keys = {
             r.edge_id for tid in group["track_ids"] for r in track_by_id[tid].edge_refs
         } & raw.keys()
+        main_keys = {k for k in seed_keys if roles[k] == "main"}
+        central_keys = {
+            ref.edge_id
+            for tid in group["track_ids"]
+            if any(r.edge_id in main_keys for r in track_by_id[tid].edge_refs)
+            for ref in track_by_id[tid].edge_refs
+        } & raw.keys()
+        # The yard's own central main-track pair establishes its horizontal
+        # reference through both throats, independently of other yards.
+        seed_paths = reference_paths(repo, central_keys or seed_keys, raw)
+        paths = seed_paths
+        if main_keys:
+            paths, reference_keys_group = central_reference_paths(
+                repo, raw, graph, seed_paths, central_keys, (core_lo, core_hi), (lo, hi)
+            )
+            group["reference_edges"] = sorted(reference_keys_group)
+            for k in reference_keys_group:
+                if not edge_groups.get(k):
+                    edge_groups[k] = {ident}
+                    group["edge_ids"].add(k)
+        bounds = (lo, hi) if main_keys else (core_lo, core_hi)
         paths = [
             tuple(
                 p
-                for p in densify(raw[k], sorted((core_lo, core_hi)))
-                if core_lo <= p[0] <= core_hi
+                for p in densify(path, sorted(bounds))
+                if bounds[0] <= p[0] <= bounds[1]
             )
-            for k in seed_keys
+            for path in paths
         ]
         paths = [p for p in paths if len(p) >= 2]
         baseline = (
-            smooth_baseline(common_baseline(paths, (core_lo, core_hi)))
+            yard_baseline(paths, seed_paths, (core_lo, core_hi), bounds)
+            if main_keys and options.remove_common_bend
+            else smooth_baseline(common_baseline(paths, bounds))
             if options.remove_common_bend and paths
             else ()
         )
@@ -144,7 +196,11 @@ def build_layout(repo, context=(), options=None):
         for p in raw[k]
         if core_lo <= p[0] <= core_hi
     ]
-    core += body
+    core += [
+        adjusted(rotate(p), platform_groups.get(ident, ()))
+        for ident, _, points in platforms
+        for p in points
+    ]
     if not core:
         core = [p for k in selected.inner & raw.keys() for p in raw[k]]
     y0, y1 = min(p[1] for p in core), max(p[1] for p in core)
@@ -162,7 +218,7 @@ def build_layout(repo, context=(), options=None):
     cross_room = right - left if portrait else bottom - top
     # Independent axis scales are intentional diagram composition. Each yard
     # retains its relative offsets; no equal-lane topology layout is used.
-    sx = axis_room * 0.35 * 2.5 / max(core_hi - core_lo, 80)
+    sx = axis_room * 0.28 * 2.5 / max(core_hi - core_lo, 80)
     # Compact empty gaps between yards without equalizing actual track spacing.
     # This monotone mapping retains transverse order and each local bend.
     levels = []
@@ -198,12 +254,8 @@ def build_layout(repo, context=(), options=None):
     cy0, cy1 = compact_cross(y0), compact_cross(y1)
     sy = cross_room * 0.76 / max(cy1 - cy0, 20)
     cx, cy, my = (left + right) / 2, (top + bottom) / 2, (cy0 + cy1) / 2
-    left_throat = max(
-        options.station_compression, (core_lo - lo) * sx / (axis_room * 0.19)
-    )
-    right_throat = max(
-        options.station_compression, (hi - core_hi) * sx / (axis_room * 0.19)
-    )
+    throat_span = max(250, (core_hi - core_lo) * 0.65)
+    throat_room = axis_room * 0.29
 
     def axial(x):
         if x < lo:
@@ -211,13 +263,19 @@ def build_layout(repo, context=(), options=None):
         if x > hi:
             return axial(hi) + (x - hi) / options.outside_compression
         if x < core_lo:
-            return (core_lo - mid) / options.station_compression + (
-                x - core_lo
-            ) / left_throat
+            distance = core_lo - x
+            return (
+                core_lo - mid
+            ) / options.station_compression - throat_room / sx * distance / (
+                distance + throat_span
+            )
         if x > core_hi:
-            return (core_hi - mid) / options.station_compression + (
-                x - core_hi
-            ) / right_throat
+            distance = x - core_hi
+            return (
+                core_hi - mid
+            ) / options.station_compression + throat_room / sx * distance / (
+                distance + throat_span
+            )
         return (x - mid) / options.station_compression
 
     def page(p):
@@ -259,22 +317,9 @@ def build_layout(repo, context=(), options=None):
             " ".join(rounded_path(part) for part in parts),
         )
     symbols = []
-    platform_groups = {}
     for ident, kind, points in platforms:
         source = [rotate(p) for p in points]
-        geometry = LineString(source)
-        candidates = sorted(
-            (geometry.distance(LineString(raw[k])), g)
-            for k, values in edge_groups.items()
-            for g in values
-            if k in tracks
-        )
-        identities = {
-            g
-            for distance, g in candidates
-            if candidates and distance <= candidates[0][0] + 2
-        }
-        platform_groups[ident] = identities
+        identities = platform_groups[ident] & groups.keys()
         transformed = [page(adjusted(p, identities)) for p in source]
         rectangle = MultiPoint(transformed).minimum_rotated_rectangle
         corners = (
@@ -304,6 +349,36 @@ def build_layout(repo, context=(), options=None):
                 90 if portrait else 0,
             )
         )
+    line_spacing = {}
+    for group in groups.values():
+        central_ids = [
+            tid
+            for tid in group["track_ids"]
+            if any(
+                ref.edge_id in tracks and roles[ref.edge_id] == "main"
+                for ref in track_by_id[tid].edge_refs
+            )
+        ]
+        levels_group = sorted(
+            {
+                round(
+                    page(adjusted(p, edge_groups.get(k, ())))[0 if portrait else 1], 4
+                )
+                for tid in central_ids
+                for ref in track_by_id[tid].edge_refs
+                if (k := ref.edge_id) in raw
+                for p in densify(raw[k], [mid])
+                if abs(p[0] - mid) < 1e-5
+            }
+        )
+        gaps_group = [
+            b - a for a, b in zip(levels_group, levels_group[1:]) if b - a > 1
+        ]
+        if gaps_group:
+            spacing = median(gaps_group)
+            for k in group["edge_ids"] & raw.keys():
+                if ownership[k].line_id:
+                    line_spacing[ownership[k].line_id] = spacing
     ports, extensions = arrange_outlets(
         repo,
         raw,
@@ -321,6 +396,19 @@ def build_layout(repo, context=(), options=None):
         line_intervals,
         knots,
         (core_lo, core_hi, y0, y1),
+        line_spacing,
+    )
+    arrange_yard_connections(
+        repo,
+        graph,
+        raw,
+        edges,
+        nodes,
+        ownership,
+        (core_lo, core_hi),
+        frame,
+        ports,
+        extensions,
     )
     # Prune only invisible drawing fragments; never alter the source repository.
     edges = {k: d for k, d in edges.items() if d.parts}
@@ -387,10 +475,18 @@ def build_layout(repo, context=(), options=None):
             for n, ks in graph.adjacency.items()
             if len(ks) >= 3 and frame.covers(Point(nodes[n]))
         ],
-        algorithm="yard_relative_linear_outlets_v3",
+        algorithm="yard_centered_parallel_outlets_v4",
         groups=groups,
         group_baselines=baselines,
         extensions=extensions,
     )
     annotate(repo, context, layout, platform_groups, options)
+    if options.selected_yards:
+        layout.warnings.append(
+            "仅显示所选分场的站台区域；相连外围轨道保留，其他分场的站台区连接在本图中截断。"
+        )
+    if not symbols:
+        layout.warnings.append(
+            "来源缺少当前范围的站台轮廓；本图仅显示已加载股道，不表示站台资料齐全。"
+        )
     return layout

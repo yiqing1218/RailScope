@@ -86,7 +86,9 @@ def edge_color(
             return color
     if cls in CLASS_COLORS:
         return CLASS_COLORS[cls]
-    names = sorted({l.name for l in repo.lines.values() if business_line(l)} | {system})
+    names = sorted(
+        {line.name for line in repo.lines.values() if business_line(line)} | {system}
+    )
     return PALETTE[names.index(system) % len(PALETTE)]
 
 
@@ -99,7 +101,10 @@ def metadata(repo, layout, options, info):
         "verification_status": "automatic_reference_not_dispatch_verified",
         "confidence": None,
         "layout_algorithm": layout.algorithm,
-        "drawing_groups": {k:{**g, 'edge_ids':sorted(g['edge_ids'])} for k,g in layout.groups.items()},
+        "drawing_groups": {
+            k: {**g, "edge_ids": sorted(g["edge_ids"])}
+            for k, g in layout.groups.items()
+        },
         "group_baselines": layout.group_baselines,
         "annotations": layout.annotations,
         "schematic_extensions": layout.extensions,
@@ -123,7 +128,9 @@ def metadata(repo, layout, options, info):
             }
             for key, d in layout.edges.items()
         },
-        "lanes": [asdict(l) | {"edge_ids": sorted(l.edge_ids)} for l in layout.lanes],
+        "lanes": [
+            asdict(lane) | {"edge_ids": sorted(lane.edge_ids)} for lane in layout.lanes
+        ],
         "ports": [
             {
                 k: p[k]
@@ -180,9 +187,11 @@ def render_svg(
     }
     if layout.groups:
         for group in layout.groups.values():
-            for key in group['edge_ids']:
-                if key in layout.edges and layout.ownership[key].status!='unresolved':
-                    colors[key] = '#343d46' if options.color_scheme == 'mono' else group['color']
+            for key in group["edge_ids"]:
+                if key in layout.edges and layout.ownership[key].status != "unresolved":
+                    colors[key] = (
+                        "#343d46" if options.color_scheme == "mono" else group["color"]
+                    )
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">',
         "<metadata>"
@@ -196,6 +205,22 @@ def render_svg(
     def text(
         value, point, size=None, color="#25364a", anchor="middle", attrs="", weight=400
     ):
+        chunks = str(value).splitlines()
+        if len(chunks) > 1:
+            # Qt SVG ignores several tspan positioning attributes. Separate
+            # text objects give SVG, PNG and PDF the same actual line breaks.
+            out.append(f"<g {attrs}>")
+            for i, chunk in enumerate(chunks):
+                text(
+                    chunk,
+                    (point[0], point[1] + i * (size or options.label_size) * 1.4),
+                    size,
+                    color,
+                    anchor,
+                    weight=weight,
+                )
+            out.append("</g>")
+            return
         position = (
             f'x="{point[0]:.2f}" y="{point[1]:.2f}" text-anchor="{anchor}" '
             f'font-size="{size or options.label_size:.2f}" font-weight="{weight}"'
@@ -244,51 +269,55 @@ def render_svg(
         out.append(
             f'<path data-edge-id="{escape(key)}" data-role="{d.role}" data-zone="{d.zone}" data-from-node="{escape(e.from_node_id)}" data-to-node="{escape(e.to_node_id)}" d="{d.path}" fill="none" stroke="{colors[key]}" stroke-width="{width:.2f}" stroke-linecap="round" stroke-linejoin="round"{dash}/>'
         )
-    for mark in layout.crossings:
-        key = mark["upper_edge"]
-        x, y = mark["point"]
-        dx, dy = mark["tangent"]
-        a = (x - dx * 7, y - dy * 7)
-        b = (x + dx * 7, y + dy * 7)
-        width = (
-            options.line_overrides.get(repo.edges[key].infrastructure_line_id, {}).get(
-                "width"
-            )
-            or options.main_width
-        )
-        out.append(
-            f'<g data-crossing="unconnected" data-upper-edge="{escape(key)}" data-lower-edge="{escape(mark["lower_edge"])}"><path d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="white" stroke-width="{width + 5:.2f}"/><path d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="{colors[key]}" stroke-width="{width:.2f}"/></g>'
-        )
+    # Independent geometry crossings remain continuous solid railway strokes.
+    # Connectivity is retained in metadata rather than implied by gap symbols.
     for extension in layout.extensions:
-        key=extension['edge_id']
+        key = extension["edge_id"]
         if key not in colors:
             continue
-        a,b=extension['points']
-        out.append(f'<path data-schematic-extension="{escape(key)}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="{colors[key]}" stroke-width="{options.main_width:.2f}"/>')
-    # Topology supplied these real degree-three-or-more nodes before rendering.
-    for node in layout.switch_nodes:
-        x, y = layout.nodes[node]
+        a, b = extension["points"]
         out.append(
-            f'<line data-switch-node="{escape(node)}" x1="{x - 3:.2f}" y1="{y - 6:.2f}" x2="{x + 3:.2f}" y2="{y + 6:.2f}" stroke="#25364a" stroke-width="1.2"/>'
+            f'<path data-schematic-extension="{escape(key)}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="{colors[key]}" stroke-width="{options.main_width:.2f}"/>'
         )
     for label in layout.annotations:
-        if label['leader']:
-            a,b=label['leader']
-            out.append(f'<path data-label-leader="{escape(label["id"])}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="#a5afb9" stroke-width=".7"/>')
-        color=label['color']
-        if label['kind']=='main-line':
-            keys=[k for k in layout.edges if layout.ownership[k].line_id==label['id']]
-            if keys:color=colors[min(keys)]
-        text(label['text'],label['point'],label['font_size'],color,label['anchor'],
-             attrs=f'data-label-kind="{label["kind"]}" data-label-id="{escape(label["id"])}"')
-    for lane in layout.lanes if not layout.annotations and options.show_track_labels else ():
+        if label["leader"]:
+            a, b = label["leader"]
+            out.append(
+                f'<path data-label-leader="{escape(label["id"])}" d="M {a[0]:.2f},{a[1]:.2f} L {b[0]:.2f},{b[1]:.2f}" fill="none" stroke="#a5afb9" stroke-width=".7"/>'
+            )
+        color = label["color"]
+        if label["kind"] == "main-line":
+            keys = [
+                k for k in layout.edges if layout.ownership[k].line_id == label["id"]
+            ]
+            if keys:
+                color = colors[min(keys)]
+        text(
+            label["text"],
+            label["point"],
+            label["font_size"],
+            color,
+            label["anchor"],
+            attrs=f'data-label-kind="{label["kind"]}" data-label-id="{escape(label["id"])}"',
+        )
+    for lane in (
+        layout.lanes if not layout.annotations and options.show_track_labels else ()
+    ):
         if lane.track_number:
             e = min(lane.edge_ids)
             d = layout.edges[e]
-            mid = lane.label_point or tuple((d.points[0][i] + d.points[-1][i]) / 2 for i in (0, 1))
-            spacing = min((math.dist(other.label_point,mid) for other in layout.lanes
-                           if other is not lane and other.track_number and other.label_point),default=options.label_size)
-            font_size = min(options.label_size*.65,max(7,spacing*.72))
+            mid = lane.label_point or tuple(
+                (d.points[0][i] + d.points[-1][i]) / 2 for i in (0, 1)
+            )
+            spacing = min(
+                (
+                    math.dist(other.label_point, mid)
+                    for other in layout.lanes
+                    if other is not lane and other.track_number and other.label_point
+                ),
+                default=options.label_size,
+            )
+            font_size = min(options.label_size * 0.65, max(7, spacing * 0.72))
             text(
                 lane.track_number,
                 (mid[0], mid[1] - 7),
@@ -327,19 +356,34 @@ def render_svg(
             side = p["side"]
             # Arrowheads are placed per existing track, never fake paired rails.
             for ax, ay in p["points"]:
-                vx,vy=p['screen_vector']
-                extension=next((v for v in layout.extensions if math.dist(v['points'][-1],(ax,ay))<.1),None)
+                vx, vy = p["screen_vector"]
+                extension = next(
+                    (
+                        v
+                        for v in layout.extensions
+                        if math.dist(v["points"][-1], (ax, ay)) < 0.1
+                    ),
+                    None,
+                )
                 if extension:
-                    a,b=extension['points'];vx,vy=b[0]-a[0],b[1]-a[1]
-                length=math.hypot(vx,vy);vx,vy=vx/length,vy/length
-                triangle=' '.join(f'{x:.2f},{y:.2f}' for x,y in
-                    ((ax+vx*10,ay+vy*10),(ax-vx*5-vy*4,ay-vy*5+vx*4),(ax-vx*5+vy*4,ay-vy*5-vx*4)))
+                    a, b = extension["points"]
+                    vx, vy = b[0] - a[0], b[1] - a[1]
+                length = math.hypot(vx, vy)
+                vx, vy = vx / length, vy / length
+                triangle = " ".join(
+                    f"{x:.2f},{y:.2f}"
+                    for x, y in (
+                        (ax + vx * 10, ay + vy * 10),
+                        (ax - vx * 5 - vy * 4, ay - vy * 5 + vx * 4),
+                        (ax - vx * 5 + vy * 4, ay - vy * 5 - vx * 4),
+                    )
+                )
                 out.append(
                     f'<polygon data-port-arrow="{escape(p["key"])}" points="{triangle}" fill="{color}"/>'
                 )
             x = px - 16 if side == "left" else px + 16 if side == "right" else px
             y = py - 18 if side != "bottom" else py + 32
-            x,y = p.get('label_point', (x,y))
+            x, y = p.get("label_point", (x, y))
             anchor = (
                 "end" if side == "left" else "start" if side == "right" else "middle"
             )
@@ -354,16 +398,61 @@ def render_svg(
                 if side in ("left", "top")
                 else destination_text + " " + arrow
             )
-            if hasattr(layout,'label_placer'):
-                candidates=([(x,y)] if any(k in rule for k in ('dx','dy')) else
-                            [(x,y+i*options.label_size*1.4) for i in (0,1,-1,2,-2,3,-3,4,-4)])
-                placed=layout.label_placer.place(value,options.label_size*.8,candidates,anchor=anchor)
+            if hasattr(layout, "label_placer"):
+                candidates = (
+                    [(x, y)]
+                    if any(k in rule for k in ("dx", "dy"))
+                    else [
+                        (x, y + i * options.label_size * 1.4)
+                        for i in (0, 1, -1, 2, -2, 3, -3, 4, -4)
+                    ]
+                )
+                placed = layout.label_placer.place(
+                    value, options.label_size * 0.8, candidates, anchor=anchor
+                )
+                if not placed and not any(k in rule for k in ("dx", "dy")):
+                    # Dense real-data exits can meet at a corner. Search the
+                    # adjacent border band before failing an automatic export.
+                    left, top, right, bottom = layout.label_placer.bounds
+                    if side in ("left", "right"):
+                        band = [
+                            (x + dx, yy)
+                            for yy in range(math.ceil(top + 30), int(bottom), 30)
+                            for dx in (0, -90 if side == "right" else 90)
+                        ]
+                    else:
+                        band = [
+                            (xx, y + dy)
+                            for xx in range(int(left + 180), int(right - 180), 60)
+                            for dy in (0, 40, -40, 80, -80)
+                        ]
+                    band.sort(key=lambda q: math.dist(q, (x, y)))
+                    placed = layout.label_placer.place(
+                        value, options.label_size * 0.8, band, anchor=anchor
+                    )
+                    if placed:
+                        a = (px, py)
+                        z = placed[0]
+                        out.append(
+                            f'<path data-label-leader="{escape(p["key"])}" d="M {a[0]:.2f},{a[1]:.2f} L {z[0]:.2f},{z[1]:.2f}" fill="none" stroke="#a5afb9" stroke-width=".7"/>'
+                        )
                 if placed:
-                    (x,y),rect=placed
-                    layout.annotations.append({'kind':'direction','id':p['key'],'text':value,
-                        'point':(x,y),'bounds':rect,'font_size':options.label_size*.8,'color':color})
+                    (x, y), rect = placed
+                    layout.annotations.append(
+                        {
+                            "kind": "direction",
+                            "id": p["key"],
+                            "text": value,
+                            "point": (x, y),
+                            "bounds": rect,
+                            "font_size": options.label_size * 0.8,
+                            "color": color,
+                        }
+                    )
                 else:
-                    raise ValueError('端口标签重叠或超出画布，请调整文字偏移、输出尺寸或字号')
+                    raise ValueError(
+                        "端口标签重叠或超出画布，请调整文字偏移、输出尺寸或字号"
+                    )
             out.append(
                 f'<g data-line-id="{escape(p["line"].id)}" data-end="{side}" data-port-x="{px:.2f}" data-port-y="{py:.2f}" data-track-count="{len(p["points"])}" data-port-edges="{escape(" ".join(sorted(p["edge_ids"])))}" x="{x:.2f}" y="{y:.2f}" style="fill:{color}">'
             )
@@ -389,9 +478,19 @@ def render_svg(
             options.label_size * 0.8,
         )
     if options.show_legend:
-        entries = sorted({(g['name'],g['color'] if options.color_scheme!='mono' else '#343d46')
-                          for g in layout.groups.values() if g['legend']} if layout.groups else
-                         {(layout.systems[k],colors[k]) for k in layout.edges if layout.systems[k]})
+        entries = sorted(
+            {
+                (g["name"], g["color"] if options.color_scheme != "mono" else "#343d46")
+                for g in layout.groups.values()
+                if g["legend"]
+            }
+            if layout.groups
+            else {
+                (layout.systems[k], colors[k])
+                for k in layout.edges
+                if layout.systems[k]
+            }
+        )
         if any(c == NEUTRAL for c in colors.values()):
             entries.append(("归属待核对", NEUTRAL))
         x, y = options.margin, h - options.margin - 35
@@ -410,9 +509,16 @@ def render_svg(
             text(name, (x + 50, y + fs * 0.3), fs, color, "start")
             x += needed
         out.append("</g>")
-    footer = ('站场示意 · P 实体台体图示号 / T 股道图示号 · 乘降面使用来源编号，缺失提示待核对 · 自动参考'
-              if layout.groups else '站场示意 · 保留站内相对形状，距离可压缩 · 自动参考')
+    footer = (
+        "站场示意 · 台体序号仅用于本图 · 股道与乘降面使用来源编号 · 自动参考"
+        if layout.groups
+        else "站场示意 · 保留站内相对形状，距离可压缩 · 自动参考"
+    )
     text(footer, (w / 2, h - 14), 14, "#768390")
-    out[1] = '<metadata>'+escape(json.dumps(metadata(repo,layout,options,info),ensure_ascii=False))+'</metadata>'
+    out[1] = (
+        "<metadata>"
+        + escape(json.dumps(metadata(repo, layout, options, info), ensure_ascii=False))
+        + "</metadata>"
+    )
     out.append("</svg>")
     return "\n".join(out)

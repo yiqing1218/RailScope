@@ -84,7 +84,7 @@ def test_display_ids_are_not_written_as_official_platform_numbers():
     repo, context = yard_repo()
     before = deepcopy(repo.station_tracks)
     layout = build_layout(repo, context)
-    assert any(p["text"].startswith("P") for p in layout.annotations)
+    assert any(p["text"].startswith("台体 ") for p in layout.annotations)
     assert repo.station_tracks == before
     assert all(t.platform_number is None for t in repo.station_tracks.values())
 
@@ -222,7 +222,7 @@ def test_source_platform_faces_are_distinct_from_physical_body_id():
     }
     assert [
         a["text"] for a in layout.annotations if a["kind"] == "physical-platform"
-    ] == ["P01"]
+    ] == ["台体 1"]
 
 
 def test_connected_target_mainline_survives_outside_station_selection():

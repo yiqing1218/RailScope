@@ -1,4 +1,4 @@
-"""Reproduce five real-data before/after exports without editing the dataset."""
+"""Reproduce real-data station exports without editing the dataset."""
 from __future__ import annotations
 
 import argparse
@@ -44,6 +44,7 @@ def main():
     parser.add_argument('--cache', type=Path, default=ROOT/'data/logs/station_diagram_benchmark')
     parser.add_argument('--stations', nargs='+', default=['济南西','郑州东','商丘','南京南','重庆东'])
     parser.add_argument('--overrides',type=Path,default=ROOT/'data/catalog/rail_catalog_overrides.json')
+    parser.add_argument('--source-only', action='store_true', help='只读取并缓存源数据供布局反复核检')
     args = parser.parse_args()
     directory = args.dataset
     if directory is None:
@@ -87,6 +88,9 @@ def main():
                     {'name': name, 'station_source_id': row[0]}, overrides, approach_depth=options.topology_depth)
                 info = schematic_station_info(directory, repo, rows, overrides)
                 cache_path.write_text(json.dumps({'fingerprint': fingerprint,'repo':asdict(repo),'context':context,'info':info},ensure_ascii=False),encoding='utf-8')
+            if args.source_only:
+                print(name, 'cached', len(repo.edges), flush=True)
+                continue
             def source_digest():
                 return hashlib.sha256(json.dumps([asdict(repo),context],sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()
             original_digest = source_digest()
@@ -121,6 +125,9 @@ def main():
                                   ('outside-12',replace(options,outside_compression=12)),
                                   ('construction',replace(options,include_construction=True))]:
                 variant = build_layout(repo,context,config)
+                assert all(d.points[0] == variant.nodes[repo.edges[k].from_node_id]
+                           and d.points[-1] == variant.nodes[repo.edges[k].to_node_id]
+                           for k,d in variant.edges.items()), (name,label)
                 variants[label] = {'drawn_edges': len(variant.edges), 'visible_source_interval':variant.visible_source_interval,
                                    'canvas': [variant.width,variant.height]}
                 write_diagram(args.output/(stem+'-'+label+'.svg'),station_svg(repo,context,station_info=info,options=config),config)
@@ -133,6 +140,7 @@ def main():
                 'warnings': layout.warnings, 'options': asdict(options), 'variants':variants,
                 'visible_source_interval':layout.visible_source_interval,
                 'checks': {'shared_junctions':True,'source_unchanged':True,'variant_canvas_fixed':True,
+                           'variant_shared_junctions':True,
                            'outside_compression_expands_source_interval':True}})
             print(name, 'loaded', len(repo.edges), 'drawn', len(layout.edges), 'platforms', len(layout.platforms), flush=True)
     (args.output/'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')

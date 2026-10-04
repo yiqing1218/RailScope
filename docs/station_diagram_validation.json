@@ -1,0 +1,561 @@
+{
+  "algorithm": "yard_centered_parallel_outlets_v4",
+  "stations": [
+    {
+      "station": "上海虹桥",
+      "loaded_edges": 479,
+      "drawn_edges": 354,
+      "source_platform_bodies": 21,
+      "annotation_count": 115,
+      "checked_exit_pairs": 8,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 115,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 115,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 115,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 115,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 117,
+          "checked_exit_pairs": 7,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "138 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "16 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "45 条轨道的分场由网站编号与真实站台编号、相邻股道匹配，属于未核验参考；可在股道编辑中确认。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "5 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "义乌",
+      "loaded_edges": 272,
+      "drawn_edges": 203,
+      "source_platform_bodies": 11,
+      "annotation_count": 36,
+      "checked_exit_pairs": 6,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 36,
+          "checked_exit_pairs": 8,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "5 条非运营站内轨道未纳入本图；在建轨道可按内容设置显示。",
+        "52 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "72 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "11 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。",
+        "5 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "南京南",
+      "loaded_edges": 606,
+      "drawn_edges": 325,
+      "source_platform_bodies": 1,
+      "annotation_count": 15,
+      "checked_exit_pairs": 7,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 15,
+          "checked_exit_pairs": 7,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "313 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "264 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "1 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。",
+        "3 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "济南西",
+      "loaded_edges": 249,
+      "drawn_edges": 217,
+      "source_platform_bodies": 8,
+      "annotation_count": 45,
+      "checked_exit_pairs": 3,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 3,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 3,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 3,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 3,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "104 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "85 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "郑州东",
+      "loaded_edges": 543,
+      "drawn_edges": 504,
+      "source_platform_bodies": 16,
+      "annotation_count": 46,
+      "checked_exit_pairs": 8,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 8,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 8,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "262 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "247 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "16 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "商丘",
+      "loaded_edges": 295,
+      "drawn_edges": 243,
+      "source_platform_bodies": 9,
+      "annotation_count": 28,
+      "checked_exit_pairs": 5,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 5,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 5,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 5,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 28,
+          "checked_exit_pairs": 5,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "106 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "59 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "9 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。",
+        "2 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "重庆东",
+      "loaded_edges": 328,
+      "drawn_edges": 281,
+      "source_platform_bodies": 15,
+      "annotation_count": 40,
+      "checked_exit_pairs": 6,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 40,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 40,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 40,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 40,
+          "checked_exit_pairs": 6,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 41,
+          "checked_exit_pairs": 6,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "144 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "85 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "15 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。",
+        "2 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "洛阳龙门",
+      "loaded_edges": 1434,
+      "drawn_edges": 132,
+      "source_platform_bodies": 3,
+      "annotation_count": 14,
+      "checked_exit_pairs": 2,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 14,
+          "checked_exit_pairs": 2,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 14,
+          "checked_exit_pairs": 2,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 14,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 14,
+          "checked_exit_pairs": 2,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 20,
+          "checked_exit_pairs": 2,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "2 条非运营站内轨道未纳入本图；在建轨道可按内容设置显示。",
+        "79 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "11 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "2 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "佛山西",
+      "loaded_edges": 525,
+      "drawn_edges": 392,
+      "source_platform_bodies": 14,
+      "annotation_count": 45,
+      "checked_exit_pairs": 7,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 45,
+          "checked_exit_pairs": 7,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 46,
+          "checked_exit_pairs": 6,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "261 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "247 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "8 个实体台体缺少来源站台面编号；未推定面数。可在“站台编号”中填写本图编号。",
+        "7 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    },
+    {
+      "station": "长沙西",
+      "loaded_edges": 131,
+      "drawn_edges": 60,
+      "source_platform_bodies": 0,
+      "annotation_count": 2,
+      "checked_exit_pairs": 1,
+      "variant_checks": {
+        "common-bend-off": {
+          "annotation_count": 2,
+          "checked_exit_pairs": 1,
+          "checked": true
+        },
+        "common-bend-on": {
+          "annotation_count": 2,
+          "checked_exit_pairs": 1,
+          "checked": true
+        },
+        "outlet-extension-off": {
+          "annotation_count": 2,
+          "checked_exit_pairs": 0,
+          "checked": true
+        },
+        "outside-12": {
+          "annotation_count": 2,
+          "checked_exit_pairs": 1,
+          "checked": true
+        },
+        "construction": {
+          "annotation_count": 4,
+          "checked_exit_pairs": 2,
+          "checked": true
+        }
+      },
+      "warnings": [
+        "缺少完整真实站区边界：使用已关联股道与真实站台选取参考范围。",
+        "2 条非运营站内轨道未纳入本图；在建轨道可按内容设置显示。",
+        "23 条轨道缺少明确业务归属；无唯一图示分场参考的轨道使用中性灰色。图示颜色不补写业务归属。",
+        "18 条站内轨道尚未明确分场归属；可在“股道名称与编号”中填写分场和业务线路。",
+        "缺少来源股道编号的轨道保留图形，不编造 T 序号；台体序号仅用于本图。",
+        "来源缺少当前范围的站台轮廓；本图仅显示已加载股道，不表示站台资料齐全。",
+        "1 组端口缺少已确定的线路去向，标为“去向待核对”，可在边缘端口设置中填写。"
+      ],
+      "checks": {
+        "real_shared_nodes": true,
+        "source_unchanged": true,
+        "label_boxes_clear": true,
+        "exit_extensions_do_not_cross": true,
+        "source_numbering_only": true,
+        "svg_png_pdf": true,
+        "pdf_single_page_correct_ratio": true
+      }
+    }
+  ],
+  "limits": "源对象连接检查不等于已核验联锁进路；图示台体计数不等于官方站场规模。",
+  "selected_exports": [
+    {
+      "file": "虹桥-市域相关股道.svg",
+      "yards": [
+        "line:IL-526dafc027134dd2a1888a03ef487d2e",
+        "line:IL-a642903eba3945ed8a7ac00a35d041c5",
+        "line:IL-c9dfe45389944f748f6cd5fdaa44ff53"
+      ],
+      "drawn_edges": 71,
+      "annotation_count": 18,
+      "checked_exit_pairs": 3,
+      "svg_png_pdf_checked": true
+    },
+    {
+      "file": "虹桥-综合场.svg",
+      "yards": [
+        "Y-d15f04e3d17f52bd8c9bdb8a03104154"
+      ],
+      "drawn_edges": 160,
+      "annotation_count": 39,
+      "checked_exit_pairs": 3,
+      "svg_png_pdf_checked": true
+    },
+    {
+      "file": "虹桥-高速场.svg",
+      "yards": [
+        "Y-ab7673cea6fa558792d0e921a7385878"
+      ],
+      "drawn_edges": 161,
+      "annotation_count": 60,
+      "checked_exit_pairs": 3,
+      "svg_png_pdf_checked": true
+    }
+  ],
+  "test_validation": {
+    "desktop_and_backend_passed": 391
+  }
+}

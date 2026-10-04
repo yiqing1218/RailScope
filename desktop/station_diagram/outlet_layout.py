@@ -111,6 +111,7 @@ def arrange_outlets(
     line_intervals,
     knots,
     source_core,
+    line_spacing=None,
 ):
     lo, hi = interval
     grouped = defaultdict(dict)
@@ -173,6 +174,8 @@ def arrange_outlets(
             direction[0] * sa + direction[1] * ca,
         )
         key = line_id + ":" + side
+        if any(p["key"] == key for p in ports):
+            key += ":positive" if sign > 0 else ":negative"
         ports.append(
             {
                 "key": key,
@@ -229,16 +232,38 @@ def arrange_outlets(
         direction, source_anchor = port["source_direction"], port["source_anchor"]
         start, end = port["start"], port["point"]
         bundles = list(components(repo, port["paths"]))
-        bundles.sort(
-            key=lambda ks: median(
-                p[1] for k in ks for part in port["paths"][k] for p in part
-            )
+        border_index = 1 if port["side"] in ("left", "right") else 0
+
+        def bundle_anchor(keys):
+            points = [p for k in keys for part in port["paths"][k] for p in part]
+            anchor = min(points, key=lambda p: abs(p[0] - source_anchor[0]))
+            return anchor, page(adjusted(anchor, edge_groups.get(min(keys), ())))
+
+        bundles.sort(key=lambda ks: bundle_anchor(ks)[1][border_index])
+        near_center = sum(bundle_anchor(ks)[1][border_index] for ks in bundles) / len(
+            bundles
         )
         for number, keys in enumerate(bundles):
             source_points = [p for k in keys for part in port["paths"][k] for p in part]
-            anchor = min(source_points, key=lambda p: abs(p[0] - source_anchor[0]))
-            near = page(adjusted(anchor, edge_groups.get(min(keys), ())))
-            final_offset = (number - (len(bundles) - 1) / 2) * 7
+            anchor, near = bundle_anchor(keys)
+            # Preserve physical screen order and the yard's drawn pair spacing.
+            # Source north-up y is reversed on the page; sorting raw y inverted
+            # every outbound pair and produced artificial scissors crossings.
+            spacing = (line_spacing or {}).get(port["line"].id)
+            if (
+                not spacing
+                and len(bundles) > 1
+                and all(
+                    abs(bundle_anchor(ks)[1][border_index] - near_center) < 1
+                    for ks in bundles
+                )
+            ):
+                spacing = median((line_spacing or {}).values()) if line_spacing else 16
+            final_offset = (
+                (number - (len(bundles) - 1) / 2) * spacing
+                if spacing
+                else near[border_index] - near_center
+            )
             qmax = max(
                 sum((p[i] - anchor[i]) * direction[i] for i in (0, 1))
                 for p in source_points
@@ -345,6 +370,10 @@ def arrange_outlets(
     station_keys = {
         r.edge_id for track in repo.station_tracks.values() for r in track.edge_refs
     }
+    full_degree = defaultdict(int)
+    for e in repo.edges.values():
+        for n in (e.from_node_id, e.to_node_id):
+            full_degree[n] += 1
     x0, x1, y0, y1 = source_core
     for k, d in list(edges.items()):
         e = repo.edges[k]
@@ -360,9 +389,14 @@ def arrange_outlets(
             continue
         for node, index in ((e.from_node_id, 0), (e.to_node_id, -1)):
             p = raw[k][index]
-            if len(graph.adjacency[node]) != 1 or (
-                x0 <= p[0] <= x1 and y0 <= p[1] <= y1
+            other = raw[k][-1 if index == 0 else 0]
+            if (
+                len(graph.adjacency[node]) != 1
+                or (x0 <= p[0] <= x1 and y0 <= p[1] <= y1)
+                or (full_degree[node] > 1 and math.hypot(*p) <= math.hypot(*other))
             ):
+                # An inward-facing cut caused by selection/depth is not an
+                # outgoing railway. Never extrapolate it across the whole yard.
                 continue
             anchor = d.points[-1 if index == 0 else 0]
             if not frame.contains(Point(anchor)):
@@ -429,7 +463,18 @@ def arrange_outlets(
             extended = options.port_overrides.get(key, {}).get(
                 "extend", options.align_main_outlets
             )
-            matching_port = next((v for v in ports if v["key"] == key), None)
+            matching_port = next(
+                (
+                    v
+                    for v in ports
+                    if v["line"].id == line.id
+                    and v["side"] == side
+                    and sum(a * b for a, b in zip(v["vector"], vector)) > 0.9
+                ),
+                None,
+            )
+            if not matching_port and any(v["key"] == key for v in ports):
+                key += ":" + node
             if matching_port:
                 matching_port["edge_ids"].add(k)
                 matching_port["points"].append(border if extended else end)
@@ -460,5 +505,76 @@ def arrange_outlets(
                 )
             if extended:
                 extensions.append({"edge_id": k, "points": (end, border)})
+    # The terminal fallback and axial cut may discover the two members of a
+    # physical pair in different passes. Reconcile their final free segments
+    # together, preserving order and the central main-track spacing.
+    for port in ports:
+        paired = [
+            v
+            for v in extensions
+            if v["edge_id"] in port["edge_ids"]
+            and any(math.dist(v["points"][-1], p) < 0.01 for p in port["points"])
+        ]
+        if len(paired) < 2:
+            continue
+        index = 1 if port["side"] in ("left", "right") else 0
+        paired.sort(key=lambda v: (v["points"][0][index], v["edge_id"]))
+        spacing = (line_spacing or {}).get(port["line"].id)
+        if not spacing:
+            values = sorted(v["points"][0][index] for v in paired)
+            gaps = [b - a for a, b in zip(values, values[1:]) if b - a > 1]
+            spacing = median(gaps) if gaps else 16
+        center = tuple(
+            sum(v["points"][-1][i] for v in paired) / len(paired) for i in (0, 1)
+        )
+        actual_center = tuple(
+            sum(v["points"][0][i] for v in paired) / len(paired) for i in (0, 1)
+        )
+        points, originals = [], []
+        for number, ext in enumerate(paired):
+            shift = (number - (len(paired) - 1) / 2) * spacing
+            border, actual = list(center), list(actual_center)
+            border[index] += shift
+            actual[index] += shift
+            k = ext["edge_id"]
+            e = repo.edges[k]
+            drawing = edges[k]
+            old = ext["points"][0]
+            start = math.dist(drawing.points[0], old) < math.dist(
+                drawing.points[-1], old
+            )
+            node = e.from_node_id if start else e.to_node_id
+            nodes[node] = tuple(actual)
+            pts = (
+                (tuple(actual), drawing.points[-1])
+                if start
+                else (drawing.points[0], tuple(actual))
+            )
+            parts = tuple(line_parts(LineString(pts).intersection(frame)))
+            edges[k] = replace(
+                drawing,
+                points=pts,
+                parts=parts,
+                path=" ".join(rounded_path(p) for p in parts),
+            )
+            ext["points"] = (tuple(actual), tuple(border))
+            points.append(tuple(border))
+            originals.append(tuple(actual))
+        port["point"] = center
+        port["points"] = points
+        port["original_points"] = originals
+    # Reconcile shared endpoints after terminal positions have been arranged.
+    for k, d in list(edges.items()):
+        e = repo.edges[k]
+        pts = list(d.points)
+        pts[0] = nodes[e.from_node_id]
+        pts[-1] = nodes[e.to_node_id]
+        parts = tuple(line_parts(LineString(pts).intersection(frame)))
+        edges[k] = replace(
+            d,
+            points=tuple(pts),
+            parts=parts,
+            path=" ".join(rounded_path(p) for p in parts),
+        )
     # Returned separately: schematic extensions are not NetworkEdges.
     return ports, extensions

@@ -1,15 +1,23 @@
 """One cubic per same-ownership degree-two chain, split without losing edges."""
 
 import math
+from dataclasses import replace
+from types import SimpleNamespace
+from shapely.geometry import LineString
 from .topology import chains
 
 
 def cubic(a, b, start_outward=None, end_outward=None):
     dx, dy = b[0] - a[0], b[1] - a[1]
-    lead = max(30, min(180, math.hypot(dx, dy) * 0.42))
+    lead = min(180, abs(dx) * 0.45)
     sign = 1 if dx >= 0 else -1
     c1 = (a[0] + sign * lead, a[1])
     c2 = (b[0] - sign * lead, b[1])
+    if abs(dx) < 0.01:
+        lead = min(180, abs(dy) * 0.42)
+        sign_y = 1 if dy >= 0 else -1
+        c1 = (a[0], a[1] + sign_y * lead)
+        c2 = (b[0], b[1] - sign_y * lead)
     if start_outward:
         c1 = tuple(a[i] - start_outward[i] * lead for i in (0, 1))
     if end_outward:
@@ -64,11 +72,10 @@ def path(curves, orient=lambda p: p):
 
 def connection_curves(repo, graph, keys, ownership, interior, ports=()):
     result = {}
-    signature = lambda k: (
-        ownership[k].line_id,
-        ownership[k].yard_id,
-        repo.edges[k].track_role,
-    )
+
+    def signature(k):
+        return (ownership[k].line_id, ownership[k].yard_id, repo.edges[k].track_role)
+
     vectors = {"left": (-1, 0), "right": (1, 0), "top": (0, -1), "bottom": (0, 1)}
     port_vectors = {node: vectors[p["side"]] for p in ports for node in p["nodes"]}
     for legs in chains(graph, keys, signature):
@@ -100,3 +107,59 @@ def connection_curves(repo, graph, keys, ownership, interior, ports=()):
             result[key] = (oriented,)
             travelled += weight
     return result
+
+
+def arrange_yard_connections(
+    repo, graph, raw, edges, nodes, ownership, core, frame, ports, extensions
+):
+    """Standardize post-platform connections after all yard anchors are placed."""
+    try:
+        from ..station_diagram_geometry import line_parts
+    except ImportError:
+        from station_diagram_geometry import line_parts
+    from .shape_paths import rounded_path
+
+    station_keys = {
+        r.edge_id for t in repo.station_tracks.values() for r in t.edge_refs
+    }
+    candidates = set()
+    for k, d in edges.items():
+        if k in station_keys or d.role not in ("main", "connector"):
+            continue
+        if not (
+            max(p[0] for p in raw[k]) < core[0] or min(p[0] for p in raw[k]) > core[1]
+        ):
+            continue
+        a, b = d.points[0], d.points[-1]
+        # Exterior first-order fits already have the desired form.
+        if all(
+            abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) < 0.01
+            for p in d.points
+        ):
+            continue
+        candidates.add(k)
+    curves = connection_curves(
+        repo, graph, candidates, ownership, SimpleNamespace(nodes=nodes), ports
+    )
+    for k, d in list(edges.items()):
+        e = repo.edges[k]
+        if k in curves:
+            pts = (
+                nodes[e.from_node_id],
+                *(point(curves[k][0], i / 24) for i in range(1, 24)),
+                nodes[e.to_node_id],
+            )
+        else:
+            pts = (nodes[e.from_node_id], *d.points[1:-1], nodes[e.to_node_id])
+        parts = tuple(line_parts(LineString(pts).intersection(frame)))
+        edges[k] = replace(
+            d, points=pts, parts=parts, path=" ".join(rounded_path(p, 8) for p in parts)
+        )
+    # Extension attachments are real node positions in this drawing, too.
+    for ext in extensions:
+        e = repo.edges[ext["edge_id"]]
+        old, end = ext["points"]
+        node = min(
+            (e.from_node_id, e.to_node_id), key=lambda n: math.dist(nodes[n], old)
+        )
+        ext["points"] = (nodes[node], end)
