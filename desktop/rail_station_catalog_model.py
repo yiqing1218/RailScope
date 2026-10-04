@@ -488,7 +488,7 @@ class StationCatalogModel(SqliteDirectoryModel):
     def _search_clause(self):
         if not self.search:
             return ""
-        return " AND id IN (SELECT id FROM rail_station_matches)"
+        return " AND id IN (SELECT id FROM directory_matches)"
 
     def _search_args(self):
         return ()
@@ -497,22 +497,11 @@ class StationCatalogModel(SqliteDirectoryModel):
         query = query.strip().casefold()
         if query == self.search:
             return
-        if query:
-            with self._connect() as db:
-                db.execute("CREATE TABLE IF NOT EXISTS rail_station_matches (id TEXT PRIMARY KEY)")
-                db.execute("DELETE FROM rail_station_matches")
-                db.execute(
-                    "WITH RECURSIVE matches(id,parent_id) AS ("
-                    "SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility','segment','facility_track') "
-                    "AND searchable LIKE ? ESCAPE '\\' "
-                    "UNION ALL SELECT parent.id,parent.parent_id FROM rail_station_nodes parent "
-                    "JOIN matches child ON parent.id=child.parent_id WHERE child.parent_id<>''"
-                    ") INSERT OR IGNORE INTO rail_station_matches SELECT id FROM matches",
-                    ("%" + query.replace("\\", "\\\\").replace("%", "\\%")
-                     .replace("_", "\\_") + "%",),
-                )
-                db.commit()
         super().set_search(query)
+
+    def _search_seed(self):
+        return ("SELECT id,parent_id FROM rail_station_nodes WHERE kind IN ('station','facility','segment','facility_track') "
+                "AND searchable LIKE ? ESCAPE '\\'", (self._literal_search(),))
 
     def refresh_labels(self, keys):
         if self.search:
@@ -590,24 +579,13 @@ class StationCatalogModel(SqliteDirectoryModel):
         for key in keys:
             self._folder_totals.pop(key, None)
         if self.search:
-            with self._connect() as db, db:
-                depths = {}
+            self._filter_revision += 1
+            with self._connect() as db:
                 for key in list(keys):
                     chain = [row[0] for row in db.execute('WITH RECURSIVE a(id,parent_id) AS ('
                         'SELECT id,parent_id FROM rail_station_nodes WHERE id=? UNION ALL '
                         'SELECT n.id,n.parent_id FROM rail_station_nodes n JOIN a ON n.id=a.parent_id) SELECT id FROM a', (key,))]
                     keys.update(chain)
-                    for position, ident in enumerate(chain):
-                        depths[ident] = max(depths.get(ident, 0), len(chain)-position)
-                db.executemany('DELETE FROM rail_station_matches WHERE id=?', ((key,) for key in keys))
-                for key in sorted(keys, key=lambda value: depths.get(value, 0), reverse=True):
-                    row = db.execute('SELECT kind,searchable FROM rail_station_nodes WHERE id=?', (key,)).fetchone()
-                    if row is None:
-                        continue
-                    direct = row[0] != 'folder' and self.search in row[1]
-                    child = db.execute('SELECT 1 FROM rail_station_nodes n JOIN rail_station_matches m ON m.id=n.id WHERE n.parent_id=? LIMIT 1', (key,)).fetchone()
-                    if direct or child:
-                        db.execute('INSERT OR IGNORE INTO rail_station_matches VALUES(?)', (key,))
         super().refresh_affected(keys)
 
     def ids_below(self, key):

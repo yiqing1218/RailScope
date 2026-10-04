@@ -348,7 +348,7 @@ def map_station_svg(repo, context=(), width=2400, station_info=None):
     return '\n'.join(out)
 
 
-def station_svg(repo, context=(), width=2400, station_info=None, options=None):
+def station_svg(repo, context=(), width=2400, station_info=None, options=None, *, layout=None):
     """Public export API now builds a topology-based, partitioned diagram."""
     try:
         from .station_diagram_layout import DiagramOptions
@@ -356,4 +356,4 @@ def station_svg(repo, context=(), width=2400, station_info=None, options=None):
     except ImportError:
         from station_diagram_layout import DiagramOptions
         from station_diagram_render import render_svg
-    return render_svg(repo, context, options or DiagramOptions(width=width), station_info)
+    return render_svg(repo, context, options or DiagramOptions(width=width), station_info, layout=layout)

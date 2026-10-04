@@ -487,23 +487,20 @@ class RailDirectoryModel(SqliteDirectoryModel):
                 else bool(self.root.children) or self._count_children(self.root.key) > 0)
 
     def _search_clause(self):
-        if self.reveal_target:
-            return (" AND (id=? OR (kind='folder' AND EXISTS(SELECT 1 FROM rail_directory_nodes d WHERE d.id=? "
-                    "AND (d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)))))")
-        if not self.search:
-            return ""
-        if self._has_member_search:
-            return (" AND (label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM rail_directory_member_search s WHERE s.node_id=rail_directory_nodes.id AND s.searchable LIKE ? ESCAPE '\\') OR (kind='folder' AND EXISTS(SELECT 1 FROM rail_directory_nodes d WHERE d.kind='object' AND (d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)) AND (d.label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM rail_directory_member_search s WHERE s.node_id=d.id AND s.searchable LIKE ? ESCAPE '\\')))))")
-        return (" AND ((label||' '||searchable) LIKE ? ESCAPE '\\' OR (kind='folder' AND EXISTS(SELECT 1 FROM rail_directory_nodes d "
-                "WHERE d.kind='object' AND (d.id=rail_directory_nodes.id OR "
-                "d.path=rail_directory_nodes.path OR substr(d.path,1,length(rail_directory_nodes.path)-1)=substr(rail_directory_nodes.path,1,length(rail_directory_nodes.path)-1)) "
-                "AND d.searchable LIKE ? ESCAPE '\\')))")
+        return ' AND id IN (SELECT id FROM directory_matches)' if self.search or self.reveal_target else ''
 
     def _search_args(self):
-        if self.reveal_target:
-            return (self.reveal_target, self.reveal_target)
-        value = self.search.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return (f"%{value}%",) * (4 if self._has_member_search else 2) if self.search else ()
+        return ()
+
+    def _search_seed(self):
+        term = self._literal_search().casefold()
+        if self._has_member_search:
+            return ("SELECT id,parent_id FROM rail_directory_nodes WHERE view=? AND label LIKE ? ESCAPE '\\' UNION "
+                    "SELECT n.id,n.parent_id FROM rail_directory_member_search s NOT INDEXED JOIN rail_directory_nodes n "
+                    "ON n.id=s.node_id WHERE n.view=? AND s.searchable LIKE ? ESCAPE '\\'",
+                    (self.view, term, self.view, term))
+        return ("SELECT id,parent_id FROM rail_directory_nodes WHERE view=? AND (label||' '||searchable) LIKE ? ESCAPE '\\'",
+                (self.view, term))
 
     def ids_below(self, key):
         with self._connect() as db:

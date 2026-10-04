@@ -7,14 +7,18 @@ per-row QWidget is created. SQLite remains the source for unloaded children.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from contextlib import closing
+from contextlib import contextmanager
 import json
-import sqlite3
 
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal, QSignalBlocker, QItemSelectionModel
 
 
 PAGE_SIZE = 128
+
+try:
+    from .sqlite_read_sessions import ReadSessions
+except ImportError:
+    from sqlite_read_sessions import ReadSessions
 
 
 @dataclass(eq=False)
@@ -42,9 +46,42 @@ class SqliteDirectoryModel(QAbstractItemModel):
         self.visible_ids = set()
         self.visible_counts = {}
         self.search = ""
+        self._filter_revision = 0
+        self._sessions = ReadSessions(db_path, scratch_tables=(
+            'visible_aliases', 'selected_track_groups', 'selected', 'selected_station_nodes'))
 
+    @contextmanager
     def _connect(self):
-        return closing(sqlite3.connect(self.db_path))
+        with self._sessions.connect() as db:
+            self._prepare_filter(db)
+            yield db
+
+    def _search_seed(self):
+        return (f"SELECT id,parent_id FROM {self.table} WHERE label LIKE ? ESCAPE '\\'",
+                (self._literal_search(),))
+
+    def _literal_search(self):
+        return '%' + self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+
+    def _prepare_filter(self, db):
+        target = getattr(self, 'reveal_target', None)
+        if not self.search and not target:
+            return
+        signature = json.dumps((self.search, target, self._filter_revision), ensure_ascii=False)
+        db.execute('CREATE TEMP TABLE IF NOT EXISTS directory_filter(signature TEXT)')
+        if db.execute('SELECT signature FROM directory_filter').fetchone() == (signature,):
+            return
+        db.execute('CREATE TEMP TABLE IF NOT EXISTS directory_matches(id TEXT PRIMARY KEY)')
+        db.execute('DELETE FROM directory_matches')
+        seed, args = self._search_seed() if not target else (
+            f'SELECT id,parent_id FROM {self.table} WHERE id=?', (target,))
+        # Scan matching labels once, then walk indexed parent links. Do not
+        # run a country-wide descendant scan for every painted folder.
+        db.execute('WITH RECURSIVE matches(id,parent_id) AS (' + seed + ' UNION '
+            f'SELECT p.id,p.parent_id FROM {self.table} p JOIN matches c ON p.id=c.parent_id '
+            "WHERE c.parent_id<>'') INSERT OR IGNORE INTO directory_matches SELECT id FROM matches", args)
+        db.execute('DELETE FROM directory_filter')
+        db.execute('INSERT INTO directory_filter VALUES(?)', (signature,))
 
     def _node(self, index):
         return index.internalPointer() if index.isValid() else self.root
@@ -83,17 +120,10 @@ class SqliteDirectoryModel(QAbstractItemModel):
     def _search_clause(self):
         if not self.search:
             return ""
-        # Directory paths are materialised in the cache. A matching descendant
-        # keeps every ancestor visible without creating its Qt item.
-        return (f" AND (label LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM {self.table} d "
-                f"WHERE (d.path={self.table}.path OR substr(d.path,1,length({self.table}.path))="
-                f"substr({self.table}.path,1,length({self.table}.path)-1)||',') "
-                "AND d.kind='object' AND d.label LIKE ? ESCAPE '\\'))")
+        return ' AND id IN (SELECT id FROM directory_matches)'
 
     def _search_args(self):
-        literal = self.search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        value = f"%{literal}%"
-        return (value, value) if self.search else ()
+        return ()
 
     def canFetchMore(self, parent=QModelIndex()):
         node = self._node(parent)
@@ -205,6 +235,7 @@ class SqliteDirectoryModel(QAbstractItemModel):
         loaded branches then let the existing paged query find the new results.
         """
         if self.search:
+            self._filter_revision += 1
             affected = set(keys)
             with self._connect() as db:
                 for key in keys:

@@ -41,8 +41,11 @@ def benchmark(project, repetitions=5):
         library = DiskRailLineLibrary(source, metadata=metadata)
         initialization = (perf_counter() - start) * 1000
         with closing(sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True)) as db:
-            stations = [r[0] for r in db.execute(
-                'SELECT source_id FROM station_directory ORDER BY source_id LIMIT 10')]
+            names = ('上海虹桥站', '郑州东站', '义乌站', '北京南站', '南京南站',
+                     '杭州东站', '广州南站', '深圳北站', '武汉站', '合肥南站')
+            station_rows = db.execute('SELECT source_id,name FROM station_directory WHERE name IN ('
+                + ','.join('?' for _ in names) + ') ORDER BY name,source_id', names).fetchall()
+            stations = [r[0] for r in station_rows]
             key = db.execute('SELECT id FROM lines ORDER BY id LIMIT 1').fetchone()[0]
         timings = {}
         result_sizes = {}
@@ -64,6 +67,7 @@ def benchmark(project, repetitions=5):
         assert stamps == [(p.stat().st_size, p.stat().st_mtime_ns) for p in files]
         return {'read_only': True, 'source_unchanged': True,
                 'station_samples': len(stations), 'effective_overrides': len(metadata),
+                'station_names': sorted({r[1] for r in station_rows}),
                 'workspace_members': len(library.workspace.targets),
                 'initialization_ms': round(initialization, 3), 'timings_ms': timings,
                 'result_sizes': result_sizes, 'result_hashes': result_hashes, 'counters': counters}

@@ -1,6 +1,7 @@
 """Draw only; topology, membership and placement are already resolved."""
 
 from dataclasses import asdict
+from copy import copy
 from html import escape
 import json
 import math
@@ -162,7 +163,7 @@ def metadata(repo, layout, options, info):
 
 
 def render_svg(
-    repo, context=(), options=None, station_info=None, template="professional"
+    repo, context=(), options=None, station_info=None, template="professional", *, layout=None
 ):
     if options is None:
         try:
@@ -171,8 +172,12 @@ def render_svg(
             from station_diagram_layout import DiagramOptions
         options = DiagramOptions()
     info = station_info or {}
-    layout = build_layout(repo, context, options)
-    layout.warnings.extend(destination_warnings(repo, layout, info, options))
+    layout = copy(layout) if layout is not None else build_layout(repo, context, options)
+    layout.annotations = list(layout.annotations)
+    if hasattr(layout, 'label_placer'):
+        layout.label_placer = copy(layout.label_placer)
+        layout.label_placer.boxes = list(layout.label_placer.boxes)
+    layout.warnings = list(dict.fromkeys([*layout.warnings, *destination_warnings(repo, layout, info, options)]))
     station = next(iter(repo.stations.values()))
     w, h = layout.width, layout.height
     styles = info.get("rail_styles")

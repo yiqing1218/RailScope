@@ -112,3 +112,29 @@ def test_read_sessions_cleanup_after_exception_and_observe_writes(tmp_path):
         assert not db.execute("SELECT name FROM sqlite_temp_master WHERE name='selected_nodes'").fetchall()
         assert db.execute('SELECT source_name FROM lines').fetchone()[0] == '新名称'
     pool.close_current_thread()
+
+
+def test_catalog_readers_are_thread_confined_and_invalidate_cached_records(tmp_path):
+    import json
+    from desktop.rail_catalog_index import RailCatalogIndex
+    index = tmp_path / 'catalog.sqlite'
+    with closing(sqlite3.connect(index)) as db, db:
+        db.execute('CREATE TABLE catalog(id TEXT PRIMARY KEY,data TEXT)')
+        db.execute('INSERT INTO catalog VALUES(?,?)', ('RL-1', json.dumps({'name': '旧名'})))
+    catalog = RailCatalogIndex(index)
+    assert catalog['RL-1']['name'] == '旧名'
+    barrier = Barrier(2)
+    def worker():
+        with catalog._connect() as db:
+            barrier.wait(timeout=5)
+            value = catalog['RL-1']
+            connection = db
+        catalog.close()
+        return value, connection
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        a, b = list(executor.map(lambda _: worker(), range(2)))
+    assert a[0] == b[0] and a[1] is not b[1]
+    with closing(sqlite3.connect(index)) as db, db:
+        db.execute('UPDATE catalog SET data=?', (json.dumps({'name': '新名'}),))
+    assert catalog['RL-1']['name'] == '新名'
+    catalog.close()

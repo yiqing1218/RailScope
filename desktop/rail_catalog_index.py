@@ -9,13 +9,16 @@ import re
 from pathlib import Path
 import sqlite3
 from uuid import uuid4
+from threading import local
 
 try:
-    from .artifact_manifest import manifest, install_manifest, read_manifest
+    from .artifact_manifest import manifest, install_manifest
     from .provinces import VERSION
+    from .sqlite_read_sessions import ReadSessions
 except ImportError:
-    from artifact_manifest import manifest, install_manifest, read_manifest
+    from artifact_manifest import manifest, install_manifest
     from provinces import VERSION
+    from sqlite_read_sessions import ReadSessions
 
 
 SCHEMA = 1
@@ -180,20 +183,24 @@ class RailCatalogIndex(Mapping):
     def __init__(self, path, cache_size=512):
         self.path = Path(path)
         self.cache_size = cache_size
-        self.cache = OrderedDict()
-        self._db = None
-        self._uri = self.path.resolve().as_uri() + "?mode=ro"
+        self._cache_state = local()
+        self._sessions = ReadSessions(self.path)
+
+    @property
+    def cache(self):
+        state = self._cache_state
+        signature = self._sessions.fingerprint()
+        if getattr(state, 'signature', None) != signature:
+            state.signature, state.values = signature, OrderedDict()
+        return state.values
 
     def _connect(self):
-        if self._db is None:
-            self._db = sqlite3.connect(self._uri, uri=True, check_same_thread=False)
-            self._db.execute("PRAGMA cache_size=-4096")
-        return self._db
+        return self._sessions.connect()
 
     def close(self):
-        if self._db is not None:
-            self._db.close()
-            self._db = None
+        if hasattr(self, '_sessions'):
+            self._sessions.close_current_thread()
+            self.cache.clear()
 
     def ensure_way_lookup(self):
         """Index legacy map way IDs once instead of scanning every catalog row."""
@@ -209,8 +216,9 @@ class RailCatalogIndex(Mapping):
 
     def groups_for_way(self, way_id):
         self.ensure_way_lookup()
-        return [row[0] for row in self._connect().execute(
-            "SELECT catalog_id FROM rail_catalog_way_ids WHERE way_id=?", (str(way_id),))]
+        with self._connect() as db:
+            return [row[0] for row in db.execute(
+                "SELECT catalog_id FROM rail_catalog_way_ids WHERE way_id=?", (str(way_id),))]
 
     def __del__(self):
         self.close()

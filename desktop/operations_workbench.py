@@ -1126,8 +1126,8 @@ class StationRuntime(QDialog):
                 )
                 self.station_repo = station_repo
                 options = DiagramOptions(width=1400, label_size=18, title_size=28)
-                self.base_svg = render_svg(station_repo, context, options)
                 self.plan_layout = build_layout(station_repo, context, options)
+                self.base_svg = render_svg(station_repo, context, options, layout=self.plan_layout)
         except (ValueError, KeyError, OSError, sqlite3.Error) as error:
             layout.addWidget(QLabel("站场拓扑 / 真实站台未齐备：" + str(error)))
         self.status = QLabel()

@@ -585,14 +585,14 @@ class StationDiagramDialog(QDialog):
             self.yard_selector.setCurrentIndex(max(0,self.yard_selector.findData(json.dumps(self.selected_yards,ensure_ascii=False))))
             self.yard_selector.blockSignals(False)
             layout = build_layout(self.repo,self.context,options) if self.selected_yards else full
-            svg = station_svg(self.repo, self.context, station_info=self.info, options=options)
+            svg = station_svg(self.repo, self.context, station_info=self.info, options=options, layout=layout)
             self.preview.load(QByteArray(svg.encode('utf-8')))
             self.current_layout = layout
             try:
                 from .station_diagram.renderer import destination_warnings
             except ImportError:
                 from station_diagram.renderer import destination_warnings
-            layout.warnings.extend(destination_warnings(self.repo,layout,self.info,options))
+            layout.warnings = list(dict.fromkeys([*layout.warnings, *destination_warnings(self.repo,layout,self.info,options)]))
             self.sync_editors(full)
             self.highlight_tracks()
             self.warning_details.setPlainText('\n'.join(layout.warnings) or '已检查真实轨道连接与明确归属。')

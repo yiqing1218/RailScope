@@ -43,6 +43,19 @@ def test_content_style_and_metadata():
     assert all(key not in text for key in ('data-platform-id', 'data-legend', 'data-north-angle', 'data-line-id', 'data-title'))
 
 
+def test_render_reuses_layout_without_rebuilding_or_accumulating_warnings(monkeypatch):
+    import desktop.station_diagram.renderer as renderer
+    repo, context = pair_repository()
+    options = DiagramOptions()
+    layout = build_layout(repo, context, options)
+    before = deepcopy(layout.warnings)
+    original = station_svg(repo, context, options=options)
+    monkeypatch.setattr(renderer, 'build_layout', lambda *args: pytest.fail('duplicate station layout'))
+    for _ in range(3):
+        assert station_svg(repo, context, options=options, layout=layout) == original
+        assert layout.warnings == before
+
+
 @pytest.mark.parametrize('field,value', [('station_compression', 0), ('dpi', 0), ('width', -1),
                                        ('topology_depth', -1), ('orientation', 'bad')])
 def test_reject_invalid_options(field, value):
