@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QLabel,
 )
 
 try:
@@ -21,11 +22,12 @@ except ImportError:
 class StationConnectionSelector(QWidget):
     """Searchable multi-selection of business lines for one endpoint."""
 
-    def __init__(self, library, endpoint, parent=None):
+    def __init__(self, library, endpoint, parent=None, *, async_load=False):
         super().__init__(parent)
         self.library = library
         self.endpoint = endpoint
         self._names = {}
+        self._original_ids = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
@@ -36,7 +38,7 @@ class StationConnectionSelector(QWidget):
         )
         search_row = QHBoxLayout()
         self.search = SearchChoice(
-            self._search_lines, "搜索线路名称或 RL 稳定编号"
+            self._search_lines, "搜索线路名称或 RL 稳定编号", async_query=async_load
         )
         search_row.addWidget(self.search, 1)
         add = QPushButton("添加")
@@ -57,9 +59,29 @@ class StationConnectionSelector(QWidget):
         remove = QPushButton("移除所选线路")
         remove.clicked.connect(self.remove_selected_lines)
         layout.addWidget(remove)
-        for line in library.connected_lines(endpoint):
+        self._controls = (self.search, add, remove)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        if async_load:
+            for control in self._controls:
+                control.setEnabled(False)
+            self.status.setText('正在读取接轨关系；名称和备注可继续编辑。')
+            self.search._queue().submit(self, 'connections',
+                lambda: library.connected_lines(endpoint), self._loaded, self._load_failed)
+        else:
+            self._loaded(library.connected_lines(endpoint))
+
+    def _loaded(self, lines):
+        for line in lines:
             self._append(line["id"], line["name"])
         self._original_ids = self.line_ids()
+        for control in self._controls:
+            control.setEnabled(True)
+        self.status.clear()
+
+    def _load_failed(self, error):
+        self.status.setText('接轨关系未载入：' + str(error) + '。本次保存将保留原接轨关系。')
 
     def _search_lines(self, query):
         return [
@@ -99,6 +121,8 @@ class StationConnectionSelector(QWidget):
         ]
 
     def connections(self):
+        if self._original_ids is None:
+            return None
         selected = self.line_ids()
         if selected == self._original_ids:
             return None  # Name/notes edits must not verify or replace anchors.

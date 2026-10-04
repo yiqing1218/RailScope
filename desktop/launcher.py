@@ -3349,7 +3349,7 @@ class Desk(QMainWindow):
             apply_rail_presentation({'features': [selected]}, self.config.get('railLinePresentation', {}), live)
             self.display_feature(selected)
         if any(NAME_FIELDS & delta.keys() for delta in changes.values()) and getattr(operations, 'rail_payload', None):
-            operations.refresh_station_names()
+            operations.refresh_station_names({key for key, delta in changes.items() if NAME_FIELDS & delta.keys()})
 
     def refresh_directory_overrides(self, change=None):
         """A directory move has no effect on topology, labels or simulation."""
@@ -3893,7 +3893,7 @@ class Desk(QMainWindow):
                         return db.execute('SELECT source_id,name FROM station_directory WHERE name LIKE ? ORDER BY name LIMIT 150',
                                           ('%' + query.strip() + '%',)).fetchall()
 
-                station_track_selector = RelationshipSelector(find_station, initial, '搜索车站名称')
+                station_track_selector = RelationshipSelector(find_station, initial, '搜索车站名称', async_query=True)
                 station_track_selector.layout().insertWidget(0, text_label(
                     '选择一个车站，人工建立股道与车站的工作区关联；原始 OSM 数据不修改。', wrap=True))
                 dialog.tabs.addTab(station_track_selector, '关联车站')
@@ -3908,26 +3908,33 @@ class Desk(QMainWindow):
                     nonlocal loaded
                     if loaded or index not in relation_tabs:
                         return
-                    from background_work import prepare_with_progress
-                    try:
-                        relationships = prepare_with_progress(dialog, '读取线路关联',
-                            lambda report: line_relationships(library, line_ids))
+                    from background_queries import query_queue
+                    loaded = True
+                    for host in (station_host, line_host):
+                        host.layout().itemAt(0).widget().setText('正在读取关联信息；其他属性可继续编辑。')
+                    def ready(relationships):
                         station_selector = RelationshipSelector(
                             lambda query: [(key, library.endpoint_label(key)) for key, _ in library.search_endpoints(query, limit=150) if str(key).startswith('station:')],
-                            zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称')
+                            zip(relationships['station_ids'], relationships['station_names']), '搜索车站名称', async_query=True)
                         line_selector = RelationshipSelector(
                             lambda query: [(row['id'], row['name']) for row in library.search_lines(query, limit=150) if row['id'] not in line_ids],
-                            zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称')
+                            zip(relationships['connected_line_ids'], relationships['connected_line_names']), '搜索相接线路名称', async_query=True)
                         for host, selector in ((station_host, station_selector), (line_host, line_selector)):
                             host.layout().takeAt(0).widget().deleteLater()
                             host.layout().addWidget(selector)
                         line_host.layout().insertWidget(0, text_label('人工关联说明保存在工作区；通道仍按真实轨道连通性校验。', wrap=True))
                         dialog.relationship_validator = lambda: relationship_changes(library, line_ids, relationships,
                             station_selector.values(), line_selector.values())
-                        loaded = True
-                    except (ValueError, OSError, sqlite3.Error) as error:
-                        QMessageBox.warning(dialog, '关联信息未载入', str(error))
+                    def failed(error):
+                        nonlocal loaded
+                        loaded = False
+                        for host in (station_host, line_host):
+                            host.layout().itemAt(0).widget().setText('关联信息未载入：' + str(error) + '；重新打开此页可重试。')
+                    query_queue().submit(dialog, 'relationships',
+                        lambda: line_relationships(library, line_ids), ready, failed)
                 dialog.tabs.currentChanged.connect(load_relationships)
+                from background_queries import query_queue
+                dialog.finished.connect(lambda: query_queue().cancel(id(dialog), 'relationships'))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -4033,19 +4040,16 @@ class Desk(QMainWindow):
                         line_id = self.rail_catalog_widget.catalog[key].get('line_id')
                         if line_id:
                             line_semantics_changes[line_id] = {'rail_semantics': changed['rail_semantics']}
-                if relationship_updates:
-                    for key, values in changes.items():
-                        relationship_updates.setdefault(key, {}).update(values)
-                    self.rail_catalog_widget._save_local_overrides({**relationship_updates, **line_semantics_changes,
-                                                                    **object_changes})
-                    self.rail_catalog_widget.metadata_changed.emit()
-                    self.rail_catalog_widget._refresh_station_items({key.removeprefix('station:') for key in relationship_updates if key.startswith('station:')})
-                    self.rail_catalog_widget.populate()
-                    self.rail_catalog_widget.send_visibility(False)
-                elif changed or station_track_sources or object_changes:
-                    if line_semantics_changes:
-                        self.rail_catalog_widget._save_local_overrides(line_semantics_changes)
-                    self.rail_catalog_widget.save_overrides(changes, object_changes)
+                if relationship_updates or changed or station_track_sources or object_changes:
+                    # One command owns all related entities: either every field
+                    # persists or none does, with one undo record and typed event.
+                    combined = {}
+                    for entries in (relationship_updates, changes, line_semantics_changes, object_changes):
+                        for key, delta in entries.items():
+                            combined.setdefault(key, {}).update(delta)
+                    catalog_changes = {key: delta for key, delta in combined.items() if key in self.rail_catalog_widget.catalog}
+                    related_changes = {key: delta for key, delta in combined.items() if key not in self.rail_catalog_widget.catalog}
+                    self.rail_catalog_widget.save_overrides(catalog_changes, related_changes)
                 if "display_name" in changed and not facility_edit:
                     line_names = {
                         self.rail_catalog_widget.catalog[key].get("line_id"): value[
@@ -4163,7 +4167,9 @@ class Desk(QMainWindow):
             station_kind.setCurrentText(record["station_type"])
             form.addRow("车站类型", station_kind)
             connection_selector = StationConnectionSelector(
-                self.rail_operations.line_library(), "station:" + record["id"])
+                self.rail_operations.line_library(), "station:" + record["id"], dialog, async_load=True)
+            from background_queries import query_queue
+            dialog.finished.connect(lambda: query_queue().cancel(id(connection_selector)))
             form.addRow("经过线路（接轨关系）", connection_selector)
             overview = station_overview(props, record, custom)
             for key, label in STATION_OVERVIEW_FIELDS:
@@ -4259,7 +4265,11 @@ class Desk(QMainWindow):
                 connection_selector = StationConnectionSelector(
                     self.rail_operations.line_library(),
                     "station:" + record["id"],
+                    dialog,
+                    async_load=True,
                 )
+                from background_queries import query_queue
+                dialog.finished.connect(lambda: query_queue().cancel(id(connection_selector)))
                 form.addRow("经过线路（接轨关系）", connection_selector)
                 overview = station_overview(props, record, custom)
                 for key, label in STATION_OVERVIEW_FIELDS:

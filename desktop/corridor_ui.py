@@ -39,9 +39,10 @@ class SearchChoice(QComboBox):
 
     selection_committed = Signal()
 
-    def __init__(self, search, placeholder, value=None, label=""):
+    def __init__(self, search, placeholder, value=None, label="", *, async_query=False):
         super().__init__()
         self.search = search
+        self.async_query = async_query
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.setMinimumWidth(0)
@@ -63,6 +64,8 @@ class SearchChoice(QComboBox):
         self._search_timer.timeout.connect(self.find_results)
         self.lineEdit().textEdited.connect(self.text_edited)
         self.currentIndexChanged.connect(self.selection_committed)
+        if self.async_query:
+            self.currentIndexChanged.connect(lambda index: self._queue().cancel(id(self), 'search') if index >= 0 else None)
         self.activated.connect(lambda: self.reveal_name())
         if value is not None:
             self.addItem(label, value)
@@ -83,6 +86,8 @@ class SearchChoice(QComboBox):
         self.setEditText(text)
         self.blockSignals(False)
         self._choices_dirty = True
+        if self.async_query:
+            self._queue().cancel(id(self), 'search')
         self._search_timer.start(220)
         if had_selection:
             self.selection_committed.emit()
@@ -93,6 +98,8 @@ class SearchChoice(QComboBox):
 
     def select_result(self, text):
         self._search_timer.stop()
+        if self.async_query:
+            self._queue().cancel(id(self), 'search')
         index = self.findText(text)
         if index >= 0:
             unchanged = index == self.currentIndex()
@@ -103,19 +110,50 @@ class SearchChoice(QComboBox):
 
     def find_results(self):
         query = self.currentText().strip()
+        if self.async_query:
+            self._request_choices(query)
+            return
         try:
             choices = self.search(query)
         except (ValueError, sqlite3.Error):
             choices = []
+        self._apply_choices(choices, query)
+
+    def _apply_choices(self, choices, query, preserve=None):
         self.blockSignals(True)
         self.clear()
         for key, label in choices:
             self.add_choice(key, label if isinstance(key, str) else f"{label} · {key}")
-        self.setCurrentIndex(-1)
-        self.setEditText(query)
+        value, label = preserve if preserve else (None, query)
+        index = self.findData(value) if value is not None else -1
+        if value is not None and index < 0:
+            self.addItem(label, value)
+            index = self.count() - 1
+        self.setCurrentIndex(index)
+        self.setEditText(label)
+        self._choices_dirty = False
         self.blockSignals(False)
         if self.lineEdit().hasFocus():
             self.completer().complete()
+
+    @staticmethod
+    def _queue():
+        try:
+            from .background_queries import query_queue
+        except ImportError:
+            from background_queries import query_queue
+        return query_queue()
+
+    def _request_choices(self, query, preserve=None):
+        search = self.search
+        self.setToolTip('正在读取候选对象…')
+        def apply(choices):
+            self._apply_choices(choices, query, preserve)
+            self.reveal_name()
+        def fail(error):
+            self._choices_dirty = True
+            self.setToolTip('候选对象未载入：' + str(error))
+        self._queue().submit(self, 'search', lambda: list(search(query)), apply, fail)
 
     def showPopup(self):
         self.load_choices()
@@ -125,6 +163,9 @@ class SearchChoice(QComboBox):
         if self.count() and not getattr(self, "_choices_dirty", False):
             return
         value, label = self.currentData(), self.currentText()
+        if self.async_query:
+            self._request_choices('', (value, label))
+            return
         self.blockSignals(True)
         try:
             self.clear()

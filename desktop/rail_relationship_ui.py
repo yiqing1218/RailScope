@@ -10,12 +10,12 @@ except ImportError:
 
 
 class RelationshipSelector(QWidget):
-    def __init__(self, search, items, placeholder, parent=None):
+    def __init__(self, search, items, placeholder, parent=None, *, async_query=False):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         row = QHBoxLayout()
-        self.search = SearchChoice(search, placeholder)
+        self.search = SearchChoice(search, placeholder, async_query=async_query)
         row.addWidget(self.search,1)
         add = QPushButton('添加')
         add.clicked.connect(self.add_selected)

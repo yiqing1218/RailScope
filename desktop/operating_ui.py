@@ -532,6 +532,13 @@ class OperationsEditor(QFrame):
         if not hasattr(self, "vehicle_tree") or not isValid(self.vehicle_tree):
             return
         tree = self.vehicle_tree
+        signature = (id(self.plan), self.plan.system,
+                     tuple((t['id'], t['line_id']) for t in self.plan.trains),
+                     tuple((k, v['name']) for k, v in self.plan.lines.items()) if self.plan.system != 'rail' else (),
+                     frozenset(self.hidden_trains))
+        if getattr(self, '_vehicle_tree_signature', None) == signature and getattr(self, '_vehicle_tree_owner', None) is tree:
+            return
+        self._vehicle_tree_signature, self._vehicle_tree_owner = signature, tree
         expanded = {
             tree.topLevelItem(i).text(0)
             for i in range(tree.topLevelItemCount())

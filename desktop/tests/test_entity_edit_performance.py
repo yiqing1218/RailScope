@@ -96,6 +96,39 @@ def test_failed_incremental_transaction_keeps_state_and_history(tmp_path, monkey
     assert read_overrides(store.path) == before
 
 
+def test_related_line_station_semantics_save_as_one_undoable_command(qtbot, tmp_path):
+    widget = catalog(qtbot, tmp_path)
+    record = {'id': 'way/11', 'name': '甲站', 'station_type': '客运站',
+              'line_ids': [], 'line_names': [], 'province': '', 'city': ''}
+    widget.station_record_by_id['way/11'] = record
+    events = []
+    widget.topology_changed.connect(lambda delta: events.append(delta))
+    links = [{'line_id': 'RL-1', 'anchor_node': 'NN-1', 'anchor_policy': 'fixed'}]
+    widget.save_overrides({'RL-1': {'display_name': '新线名'}},
+        {'station:way/11': {'connected_lines': links}, 'IL-1': {'connected_line_ids': ['IL-2']}})
+    assert len(widget.workspace.undo_stack) == 1 and len(events) == 1
+    assert record['line_ids'] == ['RL-1']
+    assert read_overrides(widget.workspace.path)['station:way/11']['connected_lines'] == links
+    widget.undo_catalog()
+    assert widget.display_name('RL-1') == '源线路'
+    assert 'station:way/11' not in widget.local_overrides and 'IL-1' not in widget.local_overrides
+    widget.redo_catalog()
+    assert widget.display_name('RL-1') == '新线名'
+    assert widget.local_overrides['station:way/11']['connected_lines'] == links
+
+
+def test_failed_related_edit_changes_no_owner_or_views(qtbot, tmp_path, monkeypatch):
+    widget = catalog(qtbot, tmp_path)
+    before = dict(widget.overrides)
+    events = []
+    widget.topology_changed.connect(events.append)
+    monkeypatch.setattr(widget.workspace, '_write_entries', lambda *a: (_ for _ in ()).throw(OSError('disk full')))
+    with pytest.raises(OSError, match='disk full'):
+        widget.save_overrides({'RL-1': {'display_name': '新线名'}},
+                             {'station:node/1': {'connected_lines': [{'line_id': 'RL-1'}]}})
+    assert widget.overrides == before and not widget.workspace.undo_stack and not events
+
+
 def test_tombstone_does_not_resurrect_an_exchange_seed(tmp_path):
     seed = tmp_path / 'exchange.json'
     seed.write_text(json.dumps({'RL-1': {'display_name': '种子'}}), encoding='utf-8')

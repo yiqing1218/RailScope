@@ -748,7 +748,7 @@ def test_map_and_directory_station_open_same_full_editor(qtbot, monkeypatch):
             return QDialog.DialogCode.Rejected
 
     class ConnectionStub(QWidget):
-        def __init__(self, *args):
+        def __init__(self, *args, **kwargs):
             super().__init__()
 
     class Host(QMainWindow):

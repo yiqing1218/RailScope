@@ -469,6 +469,7 @@ def test_station_view_follows_plan_edits_and_shared_clock(tmp_path):
 
     class Editor(QObject):
         updated = Signal()
+        station_labels_changed = Signal(object)
 
     desk = QMainWindow()
     desk.rail_operations = Editor(desk)

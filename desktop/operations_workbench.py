@@ -1145,6 +1145,7 @@ class StationRuntime(QDialog):
         )
         workbench.session.calendar_changed.connect(self.calendar_changed)
         workbench.desk.rail_operations.updated.connect(self.plan_changed)
+        workbench.desk.rail_operations.station_labels_changed.connect(self.labels_changed)
         self.refresh()
         self.update_time()
         self.table.cellDoubleClicked.connect(self.jump_row)
@@ -1171,6 +1172,16 @@ class StationRuntime(QDialog):
             self.repo.stations[self.station_id].name + " · 时刻表 / 站场 / 占用"
         )
         self.calendar_changed()
+
+    def labels_changed(self, names):
+        editor = self.workbench.desk.rail_operations
+        source_ids = editor.domain_bindings.get('station_sources', {})
+        if self.station_id not in {source_ids.get(key.removeprefix('station:')) for key in names}:
+            return
+        latest = editor.domain_repo.stations.get(self.station_id)
+        if latest:
+            self.repo.stations[self.station_id] = latest
+            self.setWindowTitle(latest.name + ' · 时刻表 / 站场 / 占用')
 
     def calendar_changed(self):
         self.day.setText(self.workbench.session.day)

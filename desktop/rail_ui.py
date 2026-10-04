@@ -83,6 +83,7 @@ class RailMap:
 
 class RailEditor(OperationsEditor):
     names_changed = Signal()
+    station_labels_changed = Signal(object)
 
     def __init__(self, map_view, directory, path, catalog_metadata_path=None):
         self.directory = Path(directory).resolve()
@@ -450,34 +451,40 @@ class RailEditor(OperationsEditor):
 
         QTimer.singleShot(0, self.updated.emit)
 
-    def refresh_station_names(self):
+    def refresh_station_names(self, changed=None):
+        if changed is not None and not any(str(key).startswith('station:') for key in changed):
+            return
         library = self.line_library(interactive=False)
         if not hasattr(library, 'station_directory') or not getattr(self, 'rail_payload', None):
             return
-        refresh_plan_names(self.rail_payload, library)
-        for p in self.graph['points']:
-            props = p['properties']
-            source = props.get('source_station_node', props.get('osm_node_id'))
-            if 'node/' + str(source) in library.station_directory:
-                props['name'] = library.endpoint_label('station:node/' + str(source))
-        for train in self.rail_payload['trains']:
-            profile = self.plan.lines.get('rail/' + train['id'], {})
-            for stop, station in zip(train['stops'], profile.get('stations', [])):
-                extensions = stop.get('extensions', {})
-                position = extensions.get(STOP_POSITION_KEY, {})
-                key = position.get('station_id') or extensions.get('railscope.org/stop-name', {}).get('station_key')
-                if not key:
-                    props = self.shared_station_features.get(stop['node_id'], {}).get('properties', {})
-                    key = 'station:node/' + str(props.get('source_station_node', props.get('osm_node_id')))
-                if str(key).removeprefix('station:') in library.station_directory:
-                    name = library.endpoint_label(key)
-                    station['name'] = name
-                    if position:
-                        position['station_name'] = name
-                    matched = extensions.get('railscope.org/stop-name')
-                    if matched:
-                        matched['display_name'] = name
-        self.refresh_table()
+        try:
+            from .plan_labels import PlanLabels
+        except ImportError:
+            from plan_labels import PlanLabels
+        signature = id(self.rail_payload), id(self.graph), id(self.plan)
+        if getattr(self, '_label_signature', None) != signature:
+            self._plan_labels = PlanLabels(self.rail_payload, self.graph, self.plan, self.shared_station_features)
+            self._label_signature = signature
+        names = self._plan_labels.refresh(library, set(changed) if changed is not None else None,
+            getattr(self, 'domain_repo', None), getattr(self, 'domain_bindings', None))
+        if not names:
+            return
+        for index in range(self.line_combo.count()):
+            profile = self.plan.lines.get(self.line_combo.itemData(index), {})
+            if profile.get('corridor_id') in self._plan_labels.changed_titles:
+                self.line_combo.setItemText(index, profile['name'])
+        self.table.blockSignals(True)
+        try:
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 3)
+                if item:
+                    reference = item.data(Qt.ItemDataRole.UserRole)
+                    key = self._plan_labels.stops.get(tuple(reference)) if reference else None
+                    if key in names:
+                        item.setText(names[key])
+        finally:
+            self.table.blockSignals(False)
+        self.station_labels_changed.emit(names)
 
     def push_corridors(self):
         self.refresh_station_names()
@@ -1377,7 +1384,6 @@ class RailEditor(OperationsEditor):
                        for key, name in names.items() for member in library.workspace.members(key)
                        if member in editor.catalog}
             editor.save_overrides(changes)
-            self.updated.emit()
             return
         path = Path(self.path).parent / "rail_line_names.json"
         path.parent.mkdir(parents=True, exist_ok=True)

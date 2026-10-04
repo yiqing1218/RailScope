@@ -3083,7 +3083,9 @@ class RailCatalog(QWidget):
                     values[field] = value
             if values:
                 effective[key] = values
-        object_changes = object_changes or {}
+        object_changes = {key: delta for key, values in (object_changes or {}).items()
+                          if (delta := {field: value for field, value in values.items()
+                                        if self.overrides.get(key, {}).get(field) != value})}
         if not effective and not object_changes:
             return
 
@@ -3119,6 +3121,11 @@ class RailCatalog(QWidget):
                            for change in effective.values())
         old_facilities = self.station_track_keys() if reclassifying else None
         self._save_local_overrides({**effective, **object_changes})
+        related_stations = {key.removeprefix('station:') for key in object_changes if key.startswith('station:')}
+        if related_stations:
+            self._refresh_station_items(related_stations)
+            if hasattr(self, 'station_model'):
+                self.station_model.refresh_labels({'station:' + key for key in related_stations})
         if not effective and object_changes:
             if any({'station_id','station_source','station_assignment','rail_semantics','line_kind'} & set(change)
                    for change in object_changes.values()):

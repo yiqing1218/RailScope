@@ -103,7 +103,7 @@ def test_map_and_directory_facility_open_same_editor(qtbot, monkeypatch, kind):
                            {label.text() for label in self.findChildren(QLabel)}))
             return QDialog.DialogCode.Rejected
     class Connections(QWidget):
-        def __init__(self, *args):
+        def __init__(self, *args, **kwargs):
             super().__init__()
     class Host(QMainWindow):
         _rail_station_record_for_feature = launcher.Desk._rail_station_record_for_feature
