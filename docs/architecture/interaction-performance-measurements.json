@@ -1,0 +1,481 @@
+{
+  "schema": "railscope.interaction-performance.v1",
+  "baseline_commit": "b35615c",
+  "implementation_commit": "98e7102",
+  "query": {
+    "before": {
+      "read_only": true,
+      "source_unchanged": true,
+      "station_samples": 10,
+      "effective_overrides": 243506,
+      "station_names": [
+        "上海虹桥站",
+        "义乌站",
+        "北京南站",
+        "南京南站",
+        "合肥南站",
+        "广州南站",
+        "杭州东站",
+        "武汉站",
+        "深圳北站",
+        "郑州东站"
+      ],
+      "workspace_members": 109,
+      "initialization_ms": 327.406,
+      "timings_ms": {
+        "indexed_line_lookup": [
+          3.934,
+          1.751,
+          1.642,
+          1.632,
+          1.647
+        ],
+        "station_connections": [
+          867.807,
+          61.229,
+          59.598,
+          61.672,
+          58.076
+        ],
+        "line_search": [
+          254.648,
+          301.913,
+          291.016,
+          274.325,
+          338.018
+        ]
+      },
+      "result_sizes": {
+        "indexed_line_lookup": 17,
+        "station_connections": 10,
+        "line_search": 16
+      },
+      "result_hashes": {
+        "indexed_line_lookup": "d4105ba4c1b76a3d82af564002593a0119a14dec0cae042a3f3362f0b6cad1b5",
+        "station_connections": "d3ea4ad390fd072931525936b78f53e547549ecafe96efe0fa182155ec912493",
+        "line_search": "35f250157f2ac174b208dce2439ac80c1e6a72dc0a007d1d207d13cdd34f0c2c"
+      },
+      "counters": {
+        "membership_installs": 497,
+        "membership_install_ms": 645.4355999667314
+      }
+    },
+    "after": {
+      "read_only": true,
+      "source_unchanged": true,
+      "station_samples": 10,
+      "effective_overrides": 243506,
+      "station_names": [
+        "上海虹桥站",
+        "义乌站",
+        "北京南站",
+        "南京南站",
+        "合肥南站",
+        "广州南站",
+        "杭州东站",
+        "武汉站",
+        "深圳北站",
+        "郑州东站"
+      ],
+      "workspace_members": 109,
+      "initialization_ms": 303.306,
+      "timings_ms": {
+        "indexed_line_lookup": [
+          2.049,
+          0.093,
+          0.06,
+          0.053,
+          0.049
+        ],
+        "station_connections": [
+          75.531,
+          19.688,
+          16.26,
+          18.375,
+          16.474
+        ],
+        "line_search": [
+          247.295,
+          46.875,
+          49.179,
+          46.462,
+          46.435
+        ]
+      },
+      "result_sizes": {
+        "indexed_line_lookup": 17,
+        "station_connections": 10,
+        "line_search": 16
+      },
+      "result_hashes": {
+        "indexed_line_lookup": "d4105ba4c1b76a3d82af564002593a0119a14dec0cae042a3f3362f0b6cad1b5",
+        "station_connections": "d3ea4ad390fd072931525936b78f53e547549ecafe96efe0fa182155ec912493",
+        "line_search": "35f250157f2ac174b208dce2439ac80c1e6a72dc0a007d1d207d13cdd34f0c2c"
+      },
+      "counters": {
+        "membership_installs": 1,
+        "membership_install_ms": 1.455100005841814
+      }
+    }
+  },
+  "directory": {
+    "before": {
+      "directory_timings_ms": {
+        "": [
+          0.217,
+          0.171,
+          0.156,
+          0.133,
+          0.126
+        ],
+        "京沪": [
+          566.793,
+          111.569,
+          112.046,
+          113.526,
+          111.701
+        ],
+        "虹桥": [
+          158.92,
+          163.494,
+          158.379,
+          155.011,
+          158.421
+        ]
+      },
+      "directory_root_counts": {
+        "": 8,
+        "京沪": 4,
+        "虹桥": 1
+      },
+      "semantic_sample_hash": "f044480fd4c20ae97f4b608504657110d4517d813bb2f62e85510a03b82ec4d0",
+      "source_unchanged": true
+    },
+    "after": {
+      "directory_timings_ms": {
+        "": [
+          0.131,
+          0.055,
+          0.036,
+          0.032,
+          0.03
+        ],
+        "京沪": [
+          33.404,
+          0.143,
+          0.059,
+          0.043,
+          0.038
+        ],
+        "虹桥": [
+          30.291,
+          0.112,
+          0.049,
+          0.04,
+          0.037
+        ]
+      },
+      "directory_root_counts": {
+        "": 8,
+        "京沪": 4,
+        "虹桥": 1
+      },
+      "semantic_sample_hash": "f044480fd4c20ae97f4b608504657110d4517d813bb2f62e85510a03b82ec4d0",
+      "source_unchanged": true
+    }
+  },
+  "ownership": {
+    "before": {
+      "stations": 13162,
+      "owners": 32803,
+      "elapsed_ms": 58878.078,
+      "hash": "84b8565ff6efd555adb295b41b92f8d8e285118337b971635eb955cdf1e2c972"
+    },
+    "after": {
+      "stations": 13162,
+      "owners": 32803,
+      "elapsed_ms": 15396.36,
+      "hash": "84b8565ff6efd555adb295b41b92f8d8e285118337b971635eb955cdf1e2c972"
+    },
+    "full_semantic_sample_hash": "f044480fd4c20ae97f4b608504657110d4517d813bb2f62e85510a03b82ec4d0"
+  },
+  "editor": {
+    "earlier_iteration_timings_ms": {
+      "sync_station_catalog": [
+        55843.607
+      ],
+      "update_catalog_directory": [
+        282.267
+      ],
+      "_update_paged_directory": [
+        697.374
+      ],
+      "populate": [
+        58178.215
+      ],
+      "catalog_initialization": [
+        60370.846
+      ],
+      "line_library": [
+        3992.006,
+        1.195,
+        1.248,
+        2.762,
+        1.121
+      ],
+      "rail_station_records": [
+        152.65,
+        258.525,
+        118.581
+      ],
+      "station_lookup": [
+        152.7,
+        258.563,
+        118.638
+      ],
+      "connection_selector.__init__": [
+        13.732,
+        1.82,
+        3.474
+      ],
+      "connection_selector.connections": [
+        0.002,
+        0.001,
+        0.002
+      ],
+      "_write_entries": [
+        11.332,
+        10.909,
+        15.131,
+        12.327,
+        10.617,
+        11.32,
+        10.819,
+        10.606,
+        10.766,
+        10.566
+      ],
+      "_save_local_overrides": [
+        12.896,
+        12.523,
+        16.288,
+        14.05,
+        12.196,
+        13.035,
+        12.267,
+        12.494,
+        12.125,
+        12.225
+      ],
+      "_refresh_station_items": [
+        0.025,
+        0.027,
+        0.023,
+        0.022,
+        0.024
+      ],
+      "update_station_label": [
+        9.642,
+        9.79,
+        10.635
+      ],
+      "save_station_override": [
+        27.039,
+        24.291,
+        29.386,
+        12.956,
+        149.445
+      ],
+      "editor_save_click": [
+        27.413,
+        24.365,
+        29.492,
+        0.127
+      ],
+      "open_edit_save_total": [
+        74.149,
+        34.52,
+        46.889
+      ],
+      "save_overrides": [
+        23.397,
+        32.524,
+        20.806,
+        15.359,
+        29.68
+      ],
+      "line_remarks_save": [
+        23.432
+      ],
+      "update_directory_labels": [
+        12.911,
+        10.617
+      ],
+      "line_rename_save": [
+        32.54
+      ],
+      "line_color_save": [
+        20.819
+      ],
+      "line_width_save": [
+        15.367
+      ],
+      "line_open_edit_save_total": [
+        62.776
+      ],
+      "station_remarks_save": [
+        12.964
+      ],
+      "station_type_save": [
+        149.462
+      ]
+    },
+    "final_timings_ms": {
+      "sync_station_catalog": [
+        42373.978
+      ],
+      "update_catalog_directory": [
+        149.953
+      ],
+      "_update_paged_directory": [
+        278.485
+      ],
+      "populate": [
+        44372.345
+      ],
+      "catalog_initialization": [
+        46909.788
+      ],
+      "line_library": [
+        834.325,
+        1.757,
+        1.41,
+        0.876,
+        1.581
+      ],
+      "rail_station_records": [
+        4.715,
+        1.844,
+        1.755
+      ],
+      "station_lookup": [
+        4.771,
+        1.867,
+        1.775
+      ],
+      "connection_selector.__init__": [
+        11.32,
+        2.15,
+        1.77
+      ],
+      "connection_selector.connections": [
+        0.005,
+        0.001,
+        0.001
+      ],
+      "_write_entries": [
+        11.897,
+        10.88,
+        11.058,
+        11.204,
+        10.461,
+        11.321,
+        11.181,
+        12.009,
+        11.886,
+        12.987
+      ],
+      "_save_local_overrides": [
+        13.914,
+        12.161,
+        12.337,
+        12.668,
+        11.801,
+        12.872,
+        12.572,
+        13.645,
+        14.863,
+        15.929
+      ],
+      "_refresh_station_items": [
+        0.026,
+        0.021,
+        0.021,
+        0.062,
+        0.055
+      ],
+      "update_station_label": [
+        10.416,
+        10.415,
+        10.574
+      ],
+      "save_station_override": [
+        27.631,
+        24.863,
+        25.693,
+        17.263,
+        202.12
+      ],
+      "editor_save_click": [
+        30.013,
+        24.94,
+        25.774,
+        0.077
+      ],
+      "open_edit_save_total": [
+        77.285,
+        34.631,
+        35.232
+      ],
+      "save_overrides": [
+        15.299,
+        27.909,
+        17.925,
+        17.124,
+        32.974
+      ],
+      "line_remarks_save": [
+        15.312
+      ],
+      "update_directory_labels": [
+        11.608,
+        11.988
+      ],
+      "line_rename_save": [
+        27.918
+      ],
+      "line_color_save": [
+        17.94
+      ],
+      "line_width_save": [
+        17.14
+      ],
+      "line_open_edit_save_total": [
+        72.806
+      ],
+      "station_remarks_save": [
+        17.288
+      ],
+      "station_type_save": [
+        202.152
+      ]
+    },
+    "source_unchanged": true,
+    "persisted_labels": 3,
+    "errors": [],
+    "exceptions": [],
+    "pbf_accesses": [],
+    "boundary": "Production Qt slots / SQLite; MapStub excludes browser paint and full active TrainRun load."
+  },
+  "validation": {
+    "latest_workspace_full_suite_passed": 463,
+    "new_workspace_adapter_focused_tests_passed": 23,
+    "main_full_suite": {
+      "passed": 465,
+      "elapsed_seconds": 59.1,
+      "checkout": "D:/RailScope",
+      "code_commit": "98e7102"
+    }
+  },
+  "measurement_note": "Repeated local measurements; hot query medians exclude first run. cProfile single runs also include filesystem cache effects; MapStub excludes browser painting and full active TrainRun workload."
+}
