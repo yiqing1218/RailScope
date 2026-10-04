@@ -189,6 +189,19 @@ class CatalogWorkspace:
         except sqlite3.Error as error:
             raise OSError(f'工作区增量保存失败：{error}') from error
 
+    def cached_values(self):
+        """Reuse loaded owner values only while the authoritative revision agrees.
+
+        Query adapters must treat this mapping as read-only. An external writer
+        or replaced workspace forces the ordinary validated disk load.
+        """
+        database = edit_database(self.path)
+        if self.load_failed or not database.exists():
+            return None
+        if layered.identity(database) != self.identity or layered.revisions(database) != self.revisions:
+            return None
+        return self.values
+
     def _commit(self, entries):
         if self.load_failed:
             raise ValueError('工作区未成功载入；请先修复文件并重新载入，原文件保留')

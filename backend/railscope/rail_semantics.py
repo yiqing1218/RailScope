@@ -5,7 +5,7 @@ Names, neighbouring geometry and display categories cannot establish facts.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from copy import deepcopy
 import math
 
@@ -44,6 +44,12 @@ class Classification:
     confidence: float | None = None
     source: str | None = None
     snapshot_id: str | None = None
+
+
+def _claim_record(claim):
+    """Detach evidence without dataclasses.asdict recursively copying scalars."""
+    return {key: value if type(value) in (str, int, float, bool, type(None)) else deepcopy(value)
+            for key, value in vars(claim).items()}
 
 
 def _tags(raw):
@@ -130,7 +136,7 @@ def legacy_semantics(track_type: str) -> dict:
     # the label in evidence, but never turn it into a professional fact.
     result = {"railway_class": railway_class, "line_role": "unknown", "track_role": "unknown"}
     result["provenance"] = {
-        key: asdict(Classification(value, "Legacy track_type=" + str(track_type),
+        key: _claim_record(Classification(value, "Legacy track_type=" + str(track_type),
                                    "inferred" if value != "unknown" else "unverified",
                                    0.3 if value != "unknown" else None, "legacy_migration", None))
         for key, value in result.items()
@@ -138,8 +144,12 @@ def legacy_semantics(track_type: str) -> dict:
     return result
 
 
-def edge_semantics(edge: dict) -> dict:
-    """Return only canonical semantic constructor fields; never mutate input."""
+def edge_semantics(edge: dict, *, include_provenance=True) -> dict:
+    """Read canonical facts, optionally projecting values for read-only filters.
+
+    Both modes use the same validation and classifiers. Persisted/domain DTOs
+    retain detached provenance by default; value projections never mutate it.
+    """
     validate_semantic_fields(edge)
     has_source_tags = any(isinstance(edge.get(k), dict) for k in ("way_tags", "source_tags", "tags")) or any(k in edge for k in ("railway", "usage", "service", "highspeed"))
     source = edge.get("source_id") or edge.get("source") or ("OpenStreetMap" if has_source_tags else "saved_canonical")
@@ -151,9 +161,9 @@ def edge_semantics(edge: dict) -> dict:
     stored_provenance = edge.get("provenance") or {}
     if not isinstance(stored_provenance, dict) or any(not isinstance(v, dict) for v in stored_provenance.values()):
         raise ValueError('Invalid provenance: expected per-attribute dictionaries')
-    provenance = deepcopy(stored_provenance)
+    provenance = deepcopy(stored_provenance) if include_provenance else dict(stored_provenance)
     result = {}
-    old = legacy_semantics(edge.get("track_type") or edge.get("railway_type") or "")
+    old = None
     for key, classifier in classifiers.items():
         claim = classifier(tags, source=source, snapshot_id=snapshot_id)
         if key in edge and edge[key] in enums[key]:
@@ -163,24 +173,30 @@ def edge_semantics(edge: dict) -> dict:
             if isinstance(stored, dict):
                 if "value" in stored and stored["value"] != edge[key]:
                     raise ValueError(f'Conflicting {key} value and provenance')
-                provenance[key] = dict(stored)
         # Only decode a label when no raw tags remain. Raw evidence wins over
         # historical name-derived guesses, even if that evidence says unknown.
-        elif claim.value == "unknown" and key in old and not any(isinstance(edge.get(k), dict) for k in ("way_tags", "source_tags", "tags")) and tags is edge and not any(k in edge for k in ("railway", "usage", "service", "highspeed")):
+        elif claim.value == "unknown" and key != "construction_status" and not has_source_tags:
+            if old is None:
+                old = legacy_semantics(edge.get("track_type") or edge.get("railway_type") or "")
             claim = Classification(**old["provenance"][key])
         elif key == "construction_status" and claim.value == "unknown" and type(edge.get("construction")) is bool:
             claim = Classification("construction" if edge["construction"] else "operating",
                                    "Legacy DTO construction Boolean", "inferred", 0.5, "legacy_migration", snapshot_id)
         result[key] = claim.value
-        provenance.setdefault(key, asdict(claim))
+        if key not in provenance:
+            provenance[key] = _claim_record(claim) if include_provenance else {
+                'verification_status': claim.verification_status, 'confidence': claim.confidence}
     facility = classify_facility_context(edge, source=source, snapshot_id=snapshot_id)
     for key, value in facility.value.items():
         result[key] = value
         stored = stored_provenance.get(key)
-        provenance[key] = dict(stored) if isinstance(stored, dict) else {**asdict(facility), "value": value}
+        if not isinstance(stored, dict):
+            provenance[key] = {**_claim_record(facility), "value": value} if include_provenance else {
+                'verification_status': facility.verification_status, 'confidence': facility.confidence}
     result["verification_status"] = edge.get("verification_status") or (
         "osm_explicit" if any(p.get("verification_status") == "osm_explicit" for p in provenance.values()) else "unverified")
     known_confidences = [p.get("confidence") for p in provenance.values() if p.get("confidence") is not None]
     result["confidence"] = edge.get("confidence", min(known_confidences) if known_confidences else None)
-    result["provenance"] = provenance
+    if include_provenance:
+        result["provenance"] = provenance
     return result

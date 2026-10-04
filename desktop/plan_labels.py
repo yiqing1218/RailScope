@@ -26,6 +26,8 @@ class PlanLabels:
         self.profiles = defaultdict(list)
         self._known_sources = {}
         self._directory = None
+        self._repository = None
+        self._station_points = defaultdict(list)
         shared_features = shared_features or {}
         for route in payload.get('routes', []):
             for position in route.get('extensions', {}).get(POSITION_KEY, []):
@@ -59,6 +61,13 @@ class PlanLabels:
                         self.references[key].append((matched, 'display_name'))
 
     def refresh(self, library, changed=None, repository=None, bindings=None):
+        if repository is not self._repository:
+            self._repository = repository
+            self._station_points.clear()
+            if repository is not None:
+                for point in repository.operational_points.values():
+                    if point.point_type == 'station' and point.station_id:
+                        self._station_points[point.station_id].append(point.id)
         if self._directory is not library.station_directory:
             self._directory = library.station_directory
             self._known_sources.clear()
@@ -85,6 +94,11 @@ class PlanLabels:
                 ident = (bindings or {}).get('station_sources', {}).get(source)
                 station = repository.stations.get(ident)
                 if station and station.name != name:
+                    for point_id in self._station_points.get(ident, ()):
+                        point = repository.operational_points[point_id]
+                        # Preserve independently named operational boundaries.
+                        if point.name == station.name:
+                            repository.operational_points[point_id] = replace(point, name=name)
                     repository.stations[ident] = replace(station, name=name)
                     actual = True
             if actual:

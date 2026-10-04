@@ -3,7 +3,6 @@
 No topology, identity or geometry is inferred here. Directory placement and
 legacy style settings are deliberately excluded from semantic overrides.
 """
-from copy import deepcopy
 import math
 from railscope.rail_semantics import edge_semantics, RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES, OPERATIONAL_STATUSES
 
@@ -11,8 +10,8 @@ SEMANTIC_FIELDS = ('railway_class', 'line_role', 'track_role', 'facility_id',
                    'yard_id', 'zone_id', 'construction_status')
 
 
-def semantic_record(value, override=None):
-    result = edge_semantics(value)
+def semantic_record(value, override=None, *, include_provenance=True):
+    result = edge_semantics(value, include_provenance=include_provenance)
     tags = value.get('way_tags', value.get('source_tags', {}))
     legacy_facility = value.get('track_type') in {
         '高速铁路站场股道', '普速铁路站场股道', '货运站场股道', '站场股道（类型待核对）',
@@ -35,7 +34,6 @@ def semantic_record(value, override=None):
     confidence = custom.get('confidence')
     if confidence is not None and (type(confidence) not in (int,float) or not math.isfinite(confidence) or not 0 <= confidence <= 1):
         raise ValueError('置信度必须位于 0–1')
-    result['provenance'] = deepcopy(result.get('provenance', {}))
     # Decode old presentation labels into the SAME canonical fields. Keep the
     # migration evidence explicit; directory placement never determines a fact.
     legacy_type = str((override or {}).get('track_type') or value.get('track_type') or '')
@@ -55,21 +53,23 @@ def semantic_record(value, override=None):
     for key, hint in hints.items():
         if hint != 'unknown' and key not in custom:
             result[key] = hint
-            result['provenance'][key] = {'value': hint, 'source': 'legacy_migration',
-                'snapshot_id': value.get('snapshot_id') or value.get('source_version'),
-                'evidence': '旧线路属性/来源名称: ' + legacy_type + ' / ' + name,
-                'verification_status': 'inferred', 'confidence': .3}
+            if include_provenance:
+                result['provenance'][key] = {'value': hint, 'source': 'legacy_migration',
+                    'snapshot_id': value.get('snapshot_id') or value.get('source_version'),
+                    'evidence': '旧线路属性/来源名称: ' + legacy_type + ' / ' + name,
+                    'verification_status': 'inferred', 'confidence': .3}
     for key in SEMANTIC_FIELDS:
         if key not in custom:
             continue
         result[key] = custom[key]
-        result['provenance'][key] = {
-            'value': custom[key], 'source': 'workspace_override',
-            'snapshot_id': custom.get('snapshot_id'),
-            'evidence': custom.get('evidence', '用户工作区核验'),
-            'verification_status': custom.get('verification_status', 'user_verified'),
-            'confidence': custom.get('confidence'),
-        }
+        if include_provenance:
+            result['provenance'][key] = {
+                'value': custom[key], 'source': 'workspace_override',
+                'snapshot_id': custom.get('snapshot_id'),
+                'evidence': custom.get('evidence', '用户工作区核验'),
+                'verification_status': custom.get('verification_status', 'user_verified'),
+                'confidence': custom.get('confidence'),
+            }
     if result['track_role'] == 'main_track':
         result['facility_only'] = False
     elif custom.get('track_role') not in (None, 'unknown'):
@@ -103,7 +103,7 @@ def aggregate_semantics(values):
 
 
 def is_business_line(value):
-    facts = semantic_record(value)
+    facts = semantic_record(value, include_provenance=False)
     role = facts['track_role']
     if role not in ('main_track', 'unknown'):
         return False

@@ -9,6 +9,7 @@ from contextlib import contextmanager, closing
 import json
 import sqlite3
 from uuid import uuid4
+from threading import local
 
 try:
     from .artifact_manifest import manifest, install_manifest, read_manifest
@@ -16,7 +17,7 @@ try:
     from .rail_categories import track_type
     from .geometry import distance_m
     from .rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
-    from .rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
+    from .rail_station_directory import build_station_directory, load_directory as load_directory, display_name, compatible_area, nearby_tracks
     from .rail_station_directory import StationDirectoryIndex
     from .sqlite_read_sessions import ReadSessions
     from .rail_query_index import QueryOverrides
@@ -28,7 +29,7 @@ except ImportError:
     from rail_categories import track_type
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
-    from rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
+    from rail_station_directory import build_station_directory, load_directory as load_directory, display_name, compatible_area, nearby_tracks
     from rail_station_directory import StationDirectoryIndex
     from sqlite_read_sessions import ReadSessions
     from rail_query_index import QueryOverrides
@@ -488,14 +489,11 @@ class DiskRailLineLibrary:
         self._station_groups = {}
         self._station_group_labels = {}
         self._parallel_anchors = {}
-        self._reachable_cache = OrderedDict()
-        self._connection_cache = OrderedDict()
-        self._reference_cache = OrderedDict()
+        self._query_cache_state = local()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
             self._has_station_directory = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone())
             self._has_semantics = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='edge_semantics'").fetchone())
-            self._semantic_cache = OrderedDict()
             self._node_display_names = {}
             for key, value in self.metadata.items():
                 if not value.get('display_name'):
@@ -516,11 +514,37 @@ class DiskRailLineLibrary:
         self.nodes = _DirectoryMapping(self, "nodes")
         self.edges = _DirectoryMapping(self, "edges")
 
+    def _query_cache(self, name):
+        # A background reader cannot race with another reader's LRU eviction.
+        # A save or replaced source invalidates every thread on its next read.
+        state = self._query_cache_state
+        signature = self.metadata.revision, self._sessions.fingerprint()
+        if getattr(state, 'signature', None) != signature:
+            state.signature, state.caches = signature, {}
+        return state.caches.setdefault(name, OrderedDict())
+
+    @property
+    def _semantic_cache(self):
+        return self._query_cache('semantics')
+
+    @property
+    def _connection_cache(self):
+        return self._query_cache('connections')
+
+    @property
+    def _reference_cache(self):
+        return self._query_cache('references')
+
+    @property
+    def _reachable_cache(self):
+        return self._query_cache('reachable')
+
     def line_semantics(self, ident):
         """Bounded, lazy semantic projection of effective shared memberships."""
-        if ident in self._semantic_cache:
-            self._semantic_cache.move_to_end(ident)
-            return dict(self._semantic_cache[ident])
+        cache = self._semantic_cache
+        if ident in cache:
+            cache.move_to_end(ident)
+            return dict(cache[ident])
         with self.connect() as db:
             if self._has_semantics:
                 facts = rail_semantic_index.line_record(db, self.workspace.members(ident))
@@ -528,9 +552,9 @@ class DiskRailLineLibrary:
                 row = db.execute('SELECT track_type FROM lines WHERE id=?', (ident,)).fetchone()
                 facts = semantic_record({'track_type': row[0] if row else ''})
         result = {**facts, **semantic_record(facts, self.metadata.get(ident))}
-        self._semantic_cache[ident] = result
-        if len(self._semantic_cache) > 512:
-            self._semantic_cache.popitem(last=False)
+        cache[ident] = result
+        if len(cache) > 512:
+            cache.popitem(last=False)
         return dict(result)
 
     def edge_semantics(self, ids):
@@ -827,9 +851,10 @@ class DiskRailLineLibrary:
         once per station. Bound primary-key lookups avoid that query plan.
         """
         key = tuple(sorted(set(nodes), key=str))
-        if key in self._connection_cache:
-            self._connection_cache.move_to_end(key)
-            return self._connection_cache[key]
+        cache = self._connection_cache
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
         ids = set()
         for start in range(0, len(key), 800):
             part = key[start:start + 800]
@@ -838,9 +863,9 @@ class DiskRailLineLibrary:
         rows = [db.execute("SELECT id,source_name,edge_count,track_type FROM lines WHERE id=?", (ident,)).fetchone()
                 for ident in sorted(ids)]
         rows = sorted((row for row in rows if row), key=lambda row: (row[1].startswith('未命名轨道'), row[1], row[0]))
-        self._connection_cache[key] = rows
-        if len(self._connection_cache) > 512:
-            self._connection_cache.popitem(last=False)
+        cache[key] = rows
+        if len(cache) > 512:
+            cache.popitem(last=False)
         return rows
 
     def endpoint_nodes(self, endpoint):
@@ -1138,9 +1163,10 @@ class DiskRailLineLibrary:
                         reference=False, next_line=None):
         """Named/control endpoints reachable on one selected physical line."""
         key = (from_node, line_id, query, limit, physical, reference, next_line)
-        if key in self._reachable_cache:
-            self._reachable_cache.move_to_end(key)
-            return list(self._reachable_cache[key])
+        cache = self._reachable_cache
+        if key in cache:
+            cache.move_to_end(key)
+            return list(cache[key])
         if line_id not in self.lines:
             return []
         line_id = self.workspace.canonical(line_id)
@@ -1180,17 +1206,18 @@ class DiskRailLineLibrary:
                                                    self.endpoint_candidates(item[0], [line_id])))
         ]
         result = result[:limit]
-        self._reachable_cache[key] = result
-        if len(self._reachable_cache) > 32:
-            self._reachable_cache.popitem(last=False)
+        cache[key] = result
+        if len(cache) > 32:
+            cache.popitem(last=False)
         return list(result)
 
     def reference_library(self, line_id):
         """Small cached working graph; does not change source line membership."""
         line_id = self.workspace.canonical(line_id)
-        if line_id in self._reference_cache:
-            self._reference_cache.move_to_end(line_id)
-            return self._reference_cache[line_id]
+        cache = self._reference_cache
+        if line_id in cache:
+            cache.move_to_end(line_id)
+            return cache[line_id]
         try:
             from .rail_reference import line_connectors
         except ImportError:
@@ -1205,9 +1232,9 @@ class DiskRailLineLibrary:
             graph.control_nodes.update(selected.control_nodes)
             graph.split_nodes = selected.split_nodes
             selected = graph
-        self._reference_cache[line_id] = selected
-        if len(self._reference_cache) > 8:
-            self._reference_cache.popitem(last=False)
+        cache[line_id] = selected
+        if len(cache) > 8:
+            cache.popitem(last=False)
         return selected
 
     def reference_candidates(self, endpoint, line_id):
@@ -1342,12 +1369,15 @@ class DiskRailLineLibrary:
                 for a,b in db.execute(
                     f"SELECT a,b FROM main.edges WHERE line_id IN ({','.join('?' for _ in members)}) AND construction=0 AND direction!='closed'", members):
                     if a in graph and b in graph:
-                        graph[a].add(b); graph[b].add(a)
+                        graph[a].add(b)
+                        graph[b].add(a)
                 while nearby:
-                    todo = [next(iter(nearby))]; component = set(todo)
+                    todo = [next(iter(nearby))]
+                    component = set(todo)
                     while todo:
                         for other in graph[todo.pop()] - component:
-                            component.add(other); todo.append(other)
+                            component.add(other)
+                            todo.append(other)
                     nearby -= component
                     node = min(component, key=lambda n: (gaps[n], str(n)))
                     result[node] = gaps[node]

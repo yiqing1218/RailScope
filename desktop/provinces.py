@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sqlite3
 from uuid import uuid4
+from functools import lru_cache
+from threading import RLock
 
 try:
     from .artifact_manifest import manifest
@@ -145,6 +147,22 @@ class ProvinceIndex:
         names = {self.locate(point) for point in samples}
         inside = names - {"省界外 / 待核对"}
         return sorted(inside or names)
+
+
+_index_lock = RLock()
+
+
+@lru_cache(maxsize=2)
+def _cached_province_index(path, size, modified):
+    return ProvinceIndex(json.loads(Path(path).read_text(encoding='utf-8')))
+
+
+def province_index(path=None):
+    """Shared read-only boundary index; custom ProvinceIndex(data) stays independent."""
+    path = Path(path or Path(__file__).parent / 'assets/china-provinces.geojson').resolve()
+    stat = path.stat()
+    with _index_lock:
+        return _cached_province_index(str(path), stat.st_size, stat.st_mtime_ns)
 
 
 def add_track(catalog, feature, index):

@@ -173,3 +173,34 @@ def test_vehicle_source_updates_are_throttled_and_per_train_style_is_embedded(tm
     assert (props["display_style"], props["display_size"], props["display_color"]) == ("ring", 22, "#123456")
     editor.timer.stop()
     editor.close()
+
+
+def test_switching_lines_reuses_visibility_controls_but_plan_changes_rebuild(tmp_path):
+    from copy import deepcopy
+    app = QApplication.instance() or QApplication([])
+    assert app
+    first = {'id': 'sh-1', 'ref': '1', 'relation_id': 1, 'name': '1号线',
+        'color': '#c82732', 'variants': [],
+        'path': {'coordinates': [[121, 31], [121.01, 31]], 'length_m': 1000, 'cumulative': [0, 1000]},
+        'stations': [{'id': 'a', 'name': 'A', 'distance_m': 0}, {'id': 'b', 'name': 'B', 'distance_m': 1000}]}
+    second = {**deepcopy(first), 'id': 'sh-2', 'ref': '2', 'relation_id': 2, 'name': '2号线'}
+    plan = Plan([first, second])
+    plan.add_train('sh-1', 'T1', 25200)
+    plan.add_train('sh-2', 'T2', 25200)
+    editor = OperationsEditor(plan, MapStub(), [first, second], tmp_path / 'plan.json')
+    sidebar = editor.sidebar()
+    tree = editor.vehicle_tree
+    parent = tree.topLevelItem(1)
+    control = tree.itemWidget(parent.child(0), 1)
+    for index in range(20):
+        editor.line_combo.setCurrentIndex(index % 2)
+        assert tree.itemWidget(tree.topLevelItem(1).child(0), 1) is control
+    plan.add_train('sh-1', 'T3', 26000)
+    editor.refresh_vehicle_tree()
+    assert tree.topLevelItem(1).childCount() == 2
+    editor.set_trains_visible({'T1'}, False)
+    editor.refresh_vehicle_tree()
+    assert not tree.itemWidget(tree.topLevelItem(1).child(0), 1).isChecked()
+    editor.timer.stop()
+    editor.close()
+    sidebar.close()

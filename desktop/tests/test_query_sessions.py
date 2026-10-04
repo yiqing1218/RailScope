@@ -138,3 +138,41 @@ def test_catalog_readers_are_thread_confined_and_invalidate_cached_records(tmp_p
         db.execute('UPDATE catalog SET data=?', (json.dumps({'name': '新名'}),))
     assert catalog['RL-1']['name'] == '新名'
     catalog.close()
+
+
+def test_line_cache_is_thread_confined_and_save_invalidates_workers(tmp_path):
+    library = DiskRailLineLibrary(install(tmp_path, [edge('a', 1, 2)]))
+    key = next(iter(library.lines))
+    library.line_semantics(key)
+    main_cache = library._semantic_cache
+    barrier = Barrier(2)
+    def worker():
+        old = library.line_semantics(key)['track_role']
+        cache = library._semantic_cache
+        barrier.wait(timeout=5)
+        barrier.wait(timeout=5)
+        new = library.line_semantics(key)['track_role']
+        assert library._semantic_cache is not cache
+        return old, new, cache
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(worker)
+        barrier.wait(timeout=5)
+        library.metadata[key] = {'rail_semantics': {'track_role': 'maintenance_track'}}
+        barrier.wait(timeout=5)
+        old, new, worker_cache = pending.result(timeout=5)
+    assert old != new and new == 'maintenance_track'
+    assert worker_cache is not main_cache
+    assert library.line_semantics(key)['track_role'] == 'maintenance_track'
+
+
+def test_signal_box_lookup_uses_sparse_station_keys_after_save_and_undo(monkeypatch):
+    from desktop.rail_query_index import QueryOverrides
+    from desktop.catalog_metadata import custom_signal_box_records
+    overrides = QueryOverrides({'RL-1': {'display_name': '普通线路'}})
+    monkeypatch.setattr(overrides, 'items', lambda: pytest.fail('scanned every railway override'))
+    assert custom_signal_box_records(overrides, []) == []
+    overrides['station:signalbox/manual'] = {'display_name': '人工线路所',
+        'coordinates': [121, 31], 'member_switch_ids': ['SW-a', 'SW-b']}
+    assert custom_signal_box_records(overrides, [])[0]['name'] == '人工线路所'
+    overrides.pop('station:signalbox/manual')
+    assert custom_signal_box_records(overrides, []) == []

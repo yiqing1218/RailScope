@@ -1,7 +1,7 @@
 from copy import deepcopy
 from types import SimpleNamespace
 
-from railscope.domain import Station
+from railscope.domain import Station, OperationalPoint
 from railscope.repository import RailRepository
 from desktop.plan_labels import PlanLabels, POSITION_KEY, STOP_KEY
 
@@ -29,6 +29,8 @@ def test_labels_touch_only_changed_station_and_preserve_path_ids_and_times():
     repo = RailRepository()
     station = Station('ST-1', '旧1', 120, 30, 'NN-1')
     repo.stations['ST-1'] = station
+    repo.operational_points['OP-1'] = OperationalPoint('OP-1', '旧1', 'station', 'ST-1', ('NN-1',))
+    repo.operational_points['OP-custom'] = OperationalPoint('OP-custom', '人工名称', 'station', 'ST-1', ('NN-2',))
     labels = PlanLabels(payload, graph, plan)
     changed = labels.refresh(library, {'station:node/1'}, repo, {'station_sources': {'node/1': 'ST-1'}})
     assert calls == ['station:node/1'] and changed == {'station:node/1': '新站名'}
@@ -36,6 +38,8 @@ def test_labels_touch_only_changed_station_and_preserve_path_ids_and_times():
     assert graph['points'][1]['properties']['name'] == '新站名'
     assert plan.lines['rail/G1']['stations'][1]['name'] == '新站名'
     assert repo.stations['ST-1'].name == '新站名' and station.name == '旧1'
+    assert repo.operational_points['OP-1'].name == '新站名'
+    assert repo.operational_points['OP-custom'].name == '人工名称'
     # Normalise only known presentation fields; every remaining ID and time
     # must match exactly, including all 9,999 unaffected stops.
     payload['routes'][0]['name'] = before['routes'][0]['name']

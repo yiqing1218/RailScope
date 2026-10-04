@@ -11,12 +11,12 @@ from pathlib import Path
 import sqlite3
 
 try:
-    from .provinces import ProvinceIndex
+    from .provinces import province_index
     from .catalog_workspace import validate_overrides
     from .persistence import write_json_atomic
     from .rail_station_types import STATION_TYPES, STATION_KINDS, station_type
 except ImportError:
-    from provinces import ProvinceIndex
+    from provinces import province_index
     from catalog_workspace import validate_overrides
     from persistence import write_json_atomic
     from rail_station_types import STATION_TYPES, STATION_KINDS, station_type
@@ -261,9 +261,11 @@ def _distance_m(a, b):
 
 def custom_signal_box_records(overrides, regions):
     """Materialise user-created signal boxes from the workspace override layer."""
-    index = ProvinceIndex()
+    index = province_index()
     result = []
-    for key, custom in (overrides or {}).items():
+    entries = (((key, overrides.get(key, {})) for key in overrides.station_snapshot()[2])
+               if hasattr(overrides, 'station_snapshot') else (overrides or {}).items())
+    for key, custom in entries:
         if not key.startswith("station:signalbox/"):
             continue
         coordinates = custom.get("coordinates")
@@ -379,7 +381,7 @@ def rail_switch_owner(directory, osm_node_id, regions, overrides=None):
             "SELECT l.id,l.source_name FROM line_nodes n JOIN lines l ON l.id=n.line_id "
             "WHERE n.node_id=? ORDER BY l.source_name,l.id", (topology_node[0],)
         ).fetchall()
-    index = ProvinceIndex()
+    index = province_index()
     if owner is not None:
         owner_id, name, point, kind = owner
         province = index.locate(point)
@@ -526,7 +528,7 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 line_names.update(db.execute(
                     f"SELECT id,source_name FROM lines WHERE id IN ({marks})", batch
                 ))
-    index = ProvinceIndex()
+    index = province_index()
     result = []
     for feature in features:
         props = feature["properties"]

@@ -936,9 +936,12 @@ class RailEditor(OperationsEditor):
             if names_path.exists()
             else {}
         )
-        metadata = (
-            read_overrides(metadata_path)
-        )
+        metadata = None
+        loaded = getattr(getattr(self, 'catalog_editor', None), 'workspace', None)
+        if hasattr(loaded, 'cached_values') and Path(loaded.path).resolve() == Path(metadata_path).resolve():
+            metadata = loaded.cached_values()
+        if metadata is None:
+            metadata = read_overrides(metadata_path)
         shared_metadata = (json.loads(shared_metadata_path.read_text(encoding="utf-8"))
                            if shared_metadata_path.exists() else {})
         metadata = {key: {**shared_metadata.get(key, {}), **metadata.get(key, {})}

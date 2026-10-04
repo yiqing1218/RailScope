@@ -1,6 +1,7 @@
 """Small presentation indexes over effective overrides, without GIS copies."""
 
 from functools import wraps
+from copy import deepcopy
 from threading import RLock
 
 
@@ -34,6 +35,14 @@ class QueryOverrides(EffectiveOverrides):
             if value.get('assembly_id'):
                 self._assembly_members.setdefault(value['assembly_id'], set()).add(key)
             self._index_station(key, value)
+
+    @synchronized
+    def __deepcopy__(self, memo):
+        # Compatibility snapshots copy owner values, never a lock or query cache.
+        copied = type(self).__new__(type(self))
+        memo[id(self)] = copied
+        copied.__init__(deepcopy(dict(self), memo))
+        return copied
 
     def _index_station(self, key, value):
         value = value if isinstance(value, dict) else {}

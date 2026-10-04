@@ -98,3 +98,18 @@ def test_async_picker_preserves_selection_and_discards_old_text(qtbot):
     qtbot.waitUntil(lambda: widget.count() == 1 and widget.itemData(0) == 'new')
     widget._search_timer.stop()
     assert widget.currentData() is None and widget.currentText() == 'new'
+
+
+def test_hidden_picker_stops_debounce_and_restarts_latest_text_on_reopen(qtbot):
+    calls = []
+    widget = SearchChoice(lambda q: calls.append(q) or [(q, q)], '搜索', async_query=True)
+    qtbot.addWidget(widget)
+    widget.show()
+    widget.text_edited('latest')
+    widget.hide()
+    assert not widget._search_timer.isActive()
+    qtbot.wait(250)
+    assert calls == []
+    widget.show()
+    qtbot.waitUntil(lambda: calls == ['latest'])
+    qtbot.waitUntil(lambda: widget.itemData(0) == 'latest')

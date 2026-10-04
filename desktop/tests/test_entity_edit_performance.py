@@ -4,7 +4,6 @@ from types import SimpleNamespace
 import pytest
 
 from desktop.catalog_workspace import CatalogWorkspace, read_overrides
-from desktop.rail_catalog_ui import RailCatalog
 from desktop.tests.test_catalog_workspace import catalog
 
 
@@ -24,6 +23,57 @@ def test_single_edit_does_not_rewrite_large_legacy_seed(tmp_path):
     assert read_overrides(path)['RL-3']['remarks'] == '原值'
     store.redo()
     assert read_overrides(path)['RL-3']['remarks'] == '新值'
+
+
+def test_query_snapshot_detects_external_edits_and_workspace_replacement(tmp_path):
+    path = tmp_path / 'workspace.json'
+    path.write_text('{"RL-1":{"remarks":"原值"}}', encoding='utf-8')
+    store = CatalogWorkspace(path)
+    store.load()
+    assert store.cached_values() is store.values
+    store.update({'RL-1': {'remarks': '本窗口编辑'}})
+    assert store.cached_values()['RL-1']['remarks'] == '本窗口编辑'
+    other = CatalogWorkspace(path)
+    other.load()
+    other.update({'RL-1': {'remarks': '另一窗口编辑'}})
+    assert store.cached_values() is None
+    store.load()
+    assert store.cached_values()['RL-1']['remarks'] == '另一窗口编辑'
+    replacement = CatalogWorkspace(tmp_path / 'replacement.json')
+    replacement.load()
+    from contextlib import closing
+    import sqlite3
+    from desktop.catalog_workspace import edit_database
+    with closing(sqlite3.connect(edit_database(replacement.path))) as src, closing(sqlite3.connect(edit_database(path))) as dst:
+        src.backup(dst)
+    assert store.cached_values() is None
+
+
+def test_first_line_library_uses_loaded_workspace_and_reload_after_external_edit(tmp_path, monkeypatch):
+    from desktop.rail_ui import RailEditor
+    import desktop.rail_ui as ui
+    import desktop.rail_line_store as line_store
+    from desktop.tests.test_query_sessions import install, edge
+    install(tmp_path, [edge('a', 1, 2)])
+    monkeypatch.setattr(line_store, 'index_ready', lambda *args: True)
+    path = tmp_path / 'settings.json'
+    store = CatalogWorkspace(path)
+    store.load()
+    owner = SimpleNamespace(directory=tmp_path, path=tmp_path / 'plan.json',
+        catalog_metadata_path=path, catalog_editor=SimpleNamespace(workspace=store),
+        graph={'edges': [], 'points': []})
+    reads = []
+    original = ui.read_overrides
+    monkeypatch.setattr(ui, 'read_overrides', lambda p: reads.append(p) or original(p))
+    first = RailEditor.line_library(owner)
+    assert not reads and first.lines
+    other = CatalogWorkspace(path)
+    other.load()
+    key = next(iter(first.lines))
+    other.update({key: {'rail_semantics': {'track_role': 'maintenance_track'}}})
+    second = RailEditor.line_library(owner)
+    assert reads == [path] and second is not first
+    assert second.line_semantics(key)['track_role'] == 'maintenance_track'
 
 
 def test_station_without_legacy_tree_item_updates_authoritative_record(qtbot, tmp_path):

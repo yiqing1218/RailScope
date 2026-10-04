@@ -92,6 +92,17 @@ class SearchChoice(QComboBox):
         if had_selection:
             self.selection_committed.emit()
 
+    def hideEvent(self, event):
+        self._search_timer.stop()
+        if self.async_query:
+            self._queue().cancel(id(self), 'search')
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, '_choices_dirty', False) and self.currentData() is None:
+            self._search_timer.start(220)
+
     def add_choice(self, key, label):
         self.addItem(label.split(' · 接轨：', 1)[0], key)
         self.setItemData(self.count() - 1, label, Qt.ItemDataRole.ToolTipRole)

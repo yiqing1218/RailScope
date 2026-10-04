@@ -19,7 +19,6 @@ from time import perf_counter
 from types import SimpleNamespace
 import gc
 import sqlite3
-import faulthandler
 from contextlib import closing
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,9 +26,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'desktop'), str(ROOT / 'backend')]
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 
-def run(output, count=1, source_ref=None, capture_directory=None, project=None):
+def run(output, count=1, source_ref=None, capture_directory=None, project=None, scratch_root=None):
     project = Path(project or ROOT)
-    faulthandler.dump_traceback_later(60, repeat=True)
     if source_ref:
         baseline = ROOT / 'data/processed/edit-benchmark/baseline-code'
         baseline.mkdir(parents=True, exist_ok=True)
@@ -58,6 +56,11 @@ def run(output, count=1, source_ref=None, capture_directory=None, project=None):
     source = active_rail_directory(project)
     source_files = list(source.glob('*.sqlite'))
     source_stamps = [(p.stat().st_size, p.stat().st_mtime_ns) for p in source_files]
+    scratch_root = Path(scratch_root or ROOT / 'data/processed/edit-benchmark').resolve()
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    required = int(sum(p.stat().st_size for p in source_files) * 1.3) + 512 * 1024 * 1024
+    if shutil.disk_usage(scratch_root).free < required:
+        raise OSError(f'隔离测试需要至少 {required / 1024**3:.1f} GB 可用空间；尚未复制数据库')
     print('Backing up isolated national databases…', flush=True)
     timings = defaultdict(list)
     errors = []
@@ -104,9 +107,7 @@ def run(output, count=1, source_ref=None, capture_directory=None, project=None):
             with measured(_name):
                 return _fn(*args, **kwargs)
         setattr(rail_connection_ui.StationConnectionSelector, name, invoke)
-    scratch = ROOT / 'data/processed/edit-benchmark'
-    scratch.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='run-', dir=scratch, ignore_cleanup_errors=True) as temporary:
+    with tempfile.TemporaryDirectory(prefix='run-', dir=scratch_root, ignore_cleanup_errors=True) as temporary:
         target = Path(temporary)
         for path in source.iterdir():
             if path.suffix == '.sqlite':
@@ -235,17 +236,26 @@ def run(output, count=1, source_ref=None, capture_directory=None, project=None):
             'line_entity_id': line_id, 'source_ref': source_ref or 'working-tree',
             'map_commands': [call[0] for call in map_view.calls],
             'boundary': 'Production Qt slots / SQLite; MapStub excludes browser paint and full active TrainRun load.'}
+        assert result['source_unchanged'], 'Benchmark changed its source dataset'
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps(result, ensure_ascii=False, indent=2))
         from background_queries import query_queue
         assert query_queue().pool.waitForDone(30000), 'Editor background queries did not settle'
         app.processEvents()
+        # Close read leases before TemporaryDirectory removes the copies.
+        # A hidden Qt model can still own an open SQLite handle on Windows.
+        for model_name in ('line_model', 'facility_model', 'station_model'):
+            model = getattr(widget, model_name, None)
+            if model is not None and hasattr(model, '_sessions'):
+                model._sessions.close_current_thread()
+        library = getattr(operations, '_line_library', None)
+        if library is not None and hasattr(library, '_sessions'):
+            library._sessions.close_current_thread()
         widget.catalog.close()
         widget.close()
         host.close()
         gc.collect()
-    faulthandler.cancel_dump_traceback_later()
     return result
 
 
@@ -256,5 +266,6 @@ if __name__ == '__main__':
     parser.add_argument('--source-ref', help='Benchmark archived source without changing the checkout')
     parser.add_argument('--capture-directory', help='Grab the actual Qt editor widgets before saving')
     parser.add_argument('--project', type=Path, help='Explicit source project, copied read-only')
+    parser.add_argument('--scratch-root', type=Path, help='Isolated copy directory on a disk with enough free space')
     args = parser.parse_args()
-    run(args.output, args.count, args.source_ref, args.capture_directory, args.project)
+    run(args.output, args.count, args.source_ref, args.capture_directory, args.project, args.scratch_root)

@@ -57,7 +57,7 @@ def connected_access_tracks(db,index_path,owners,overrides,station_ids):
                 name=tags.get('name') or tags.get('full_name') or ''
                 if not any(word in name for word in ('动车','动走','车辆段','机务段','检修','出入段','客整','整备')):
                     continue
-                if semantic_record(edge)['track_role']=='main_track':
+                if semantic_record(edge, include_provenance=False)['track_role']=='main_track':
                     continue
                 x,y=edge['coordinates'][0 if a==node else -1]
                 feature_row=next(((ident,raw) for ident,raw in db.execute(
@@ -69,7 +69,7 @@ def connected_access_tracks(db,index_path,owners,overrides,station_ids):
                 feature_id,raw=feature_row;track=json.loads(raw)['properties']
                 object_key='object:network_edge_id:'+str(key)
                 edit={**overrides.get(track.get('catalog_group_id'),{}),**overrides.get(object_key,{})}
-                facts=semantic_record(track,edit)
+                facts=semantic_record(track,edit, include_provenance=False)
                 if facts['track_role']=='main_track':
                     continue
                 explicit=next((edit.get(field) for field in ('station_id','station_source') if edit.get(field) in station_ids),
@@ -139,7 +139,7 @@ def facility_track_owners(directory, stations, overrides):
                     continue
                 key = 'object:network_edge_id:'+str(edge_id)
                 edit = {**overrides.get(track.get('catalog_group_id'),{}),**overrides.get(key,{})}
-                facts = semantic_record(track,edit)
+                facts = semantic_record(track,edit, include_provenance=False)
                 if facts['track_role']=='main_track':
                     continue
                 explicit = next((edit.get(field) for field in ('station_id','station_source') if edit.get(field) in station_ids),

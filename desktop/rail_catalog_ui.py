@@ -613,11 +613,11 @@ class RailCatalog(QWidget):
 
     def _merge_catalog_overrides(self):
         try:
-            from .rail_line_workspace import EffectiveOverrides
+            from .rail_query_index import QueryOverrides
         except ImportError:
-            from rail_line_workspace import EffectiveOverrides
+            from rail_query_index import QueryOverrides
         keys = sorted(self.shared_overrides.keys() | self.local_overrides.keys())
-        self.overrides = EffectiveOverrides({
+        self.overrides = QueryOverrides({
             key: {**self.shared_overrides.get(key, {}), **self.local_overrides.get(key, {})}
             for key in keys
         })
