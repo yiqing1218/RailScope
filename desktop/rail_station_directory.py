@@ -6,6 +6,8 @@ IdentityRegistry/Repository adapters.
 """
 
 from contextlib import closing
+from collections import OrderedDict
+from collections.abc import Mapping
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -137,18 +139,60 @@ def nearby_tracks(source, db, coordinate, radius=800, line_ids=None):
     return sorted(result, key=lambda p: (p['gap_m'], p['edge_id']))
 
 
+def directory_record(name, raw):
+    feature = json.loads(raw)
+    original = feature.get('properties', {}).get('name') or ''
+    if original and name == original + '站' and display_name(original) == original:
+        name = original
+    return {'name': name, 'feature': feature}
+
+
+class StationDirectoryIndex(Mapping):
+    """Decode only selected stations; full legacy batch API remains separate."""
+    def __init__(self, sessions):
+        self.sessions = sessions
+        # Cache is per thread, just like the SQLite leases it uses.
+        from threading import local
+        self._local = local()
+
+    def __getitem__(self, key):
+        state = self._local
+        signature = self.sessions.fingerprint()
+        if getattr(state, 'signature', None) != signature:
+            state.signature, state.cache = signature, OrderedDict()
+        if key in state.cache:
+            state.cache.move_to_end(key)
+            return state.cache[key]
+        with self.sessions.connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone():
+                raise KeyError(key)
+            row = db.execute('SELECT name,data FROM station_directory WHERE source_id=?', (key,)).fetchone()
+        if row is None:
+            raise KeyError(key)
+        value = directory_record(*row)
+        state.cache[key] = value
+        if len(state.cache) > 256:
+            state.cache.popitem(last=False)
+        return value
+
+    def __iter__(self):
+        with self.sessions.connect() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone():
+                yield from (row[0] for row in db.execute('SELECT source_id FROM station_directory'))
+
+    def __len__(self):
+        with self.sessions.connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone():
+                return 0
+            return db.execute('SELECT count(*) FROM station_directory').fetchone()[0]
+
+
 def read_directory(db):
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone():
         return {}
     result={}
     for key,name,raw in db.execute('SELECT source_id,name,data FROM station_directory'):
-        feature=json.loads(raw)
-        original=feature.get('properties',{}).get('name') or ''
-        # Older display adapters appended 站 to depot bases/workshops. Repair
-        # only that generated suffix, retaining all real names and overrides.
-        if original and name==original+'站' and display_name(original)==original:
-            name=original
-        result[key]={'name':name,'feature':feature}
+        result[key]=directory_record(name, raw)
     return result
 
 

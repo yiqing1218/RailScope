@@ -17,6 +17,9 @@ try:
     from .geometry import distance_m
     from .rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
     from .rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
+    from .rail_station_directory import StationDirectoryIndex
+    from .sqlite_read_sessions import ReadSessions
+    from .rail_query_index import QueryOverrides
     from . import rail_semantic_index
     from .rail_semantics import semantic_record, is_business_line
 except ImportError:
@@ -26,6 +29,9 @@ except ImportError:
     from geometry import distance_m
     from rail_line_workspace import LineWorkspace, grouping_key, build_groups, membership_targets
     from rail_station_directory import build_station_directory, load_directory, display_name, compatible_area, nearby_tracks
+    from rail_station_directory import StationDirectoryIndex
+    from sqlite_read_sessions import ReadSessions
+    from rail_query_index import QueryOverrides
     import rail_semantic_index
     from rail_semantics import semantic_record, is_business_line
 
@@ -473,12 +479,8 @@ class _DirectoryMapping(Mapping):
 
 class DiskRailLineLibrary:
     def __init__(self, path, names=None, metadata=None):
-        try:
-            from .rail_line_workspace import EffectiveOverrides
-        except ImportError:
-            from rail_line_workspace import EffectiveOverrides
         self.path, self.names = Path(path), dict(names or {})
-        self.metadata = EffectiveOverrides({
+        self.metadata = QueryOverrides({
             key: value
             for key, value in dict(metadata or {}).items()
             if isinstance(value, dict)
@@ -491,7 +493,6 @@ class DiskRailLineLibrary:
         self._reference_cache = OrderedDict()
         with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             self.workspace = LineWorkspace(db, self.metadata)
-            self.station_directory = load_directory(self.path)
             self._has_station_directory = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='station_directory'").fetchone())
             self._has_semantics = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='edge_semantics'").fetchone())
             self._semantic_cache = OrderedDict()
@@ -507,6 +508,10 @@ class DiskRailLineLibrary:
                         row = db.execute('SELECT node_id FROM node_aliases WHERE source_id=?', (ident,)).fetchone()
                         self._node_display_names[row[0] if row else ident] = value['display_name']
                         break
+        self._sessions = ReadSessions(self.path, lambda db: self.workspace.install(db),
+            scratch_tables=('reference_nodes', 'reachable_nodes', 'selected_edges',
+                            'selected_nodes', 'transfer_nodes'))
+        self.station_directory = StationDirectoryIndex(self._sessions)
         self.lines = _DirectoryMapping(self, "lines")
         self.nodes = _DirectoryMapping(self, "nodes")
         self.edges = _DirectoryMapping(self, "edges")
@@ -568,8 +573,11 @@ class DiskRailLineLibrary:
         return DiskRailLineLibrary(self.path, self.names, metadata)
 
     def line_name(self, ident, source_name):
+        marker = self.metadata.get('line-assembly:' + str(ident), {})
+        shared_name = (marker.get('attributes', {}).get('display_name') or marker.get('name')) if marker.get('active', True) else None
         return (
             self.metadata.get(ident, {}).get("display_name")
+            or shared_name
             or self.names.get(ident)
             or self.workspace.names.get(ident)
             or source_name
@@ -699,10 +707,7 @@ class DiskRailLineLibrary:
 
     @contextmanager
     def connect(self):
-        with closing(
-            sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)
-        ) as db:
-            self.workspace.install(db)
+        with self._sessions.connect() as db:
             yield db
 
     @staticmethod
@@ -735,18 +740,8 @@ class DiskRailLineLibrary:
         term = (
             "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         )
-        aliases = [
-            key
-            for key, name in {
-                **{
-                    key: value.get("display_name", "")
-                    for key, value in self.metadata.items()
-                    if value.get("display_name")
-                },
-                **self.names,
-            }.items()
-            if query.casefold() in name.casefold()
-        ]
+        with self.connect() as db:
+            aliases = self.metadata.line_aliases(db, self.workspace, self.names, query)
         aliases.extend(key for key in self.workspace.targets if query.casefold() in key.casefold())
         aliases = list(dict.fromkeys(self.workspace.canonical(key) for key in aliases))
         alias_clause = " OR id IN (" + ",".join("?" for _ in aliases) + ")" if aliases else ""
@@ -917,6 +912,7 @@ class DiskRailLineLibrary:
     def search_endpoints(self, query="", line_id=None, limit=100, reachable=None, physical=False,
                          reference=False, next_line=None):
         """Logical stations by default; exact rail nodes for explicit disambiguation."""
+        station_names, station_connections, station_keys, node_names = self.metadata.station_snapshot()
         line_id = self.workspace.canonical(line_id)
         search_text = query.split(' · 接轨：', 1)[0].strip().removesuffix('站')
         term = "%" + search_text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
@@ -935,12 +931,11 @@ class DiskRailLineLibrary:
             )
             override_sources = [
                 key.removeprefix("station:")
-                for key, metadata in self.metadata.items()
-                if key.startswith("station:")
-                and isinstance(metadata.get("connected_lines"), list)
+                for key, connections in station_connections.items()
+                if isinstance(connections, list)
                 and any(
                     isinstance(value, dict) and self.workspace.canonical(value.get("line_id")) == line_id
-                    for value in metadata["connected_lines"]
+                    for value in connections
                 )
             ] if line_id else []
             source_marks = ",".join("?" for _ in override_sources)
@@ -952,9 +947,8 @@ class DiskRailLineLibrary:
                     + (f" OR a.source_id IN ({source_marks})" if override_sources else "")
                     + ")"
                 )
-            renamed_sources = [key.removeprefix('station:') for key, value in self.metadata.items()
-                               if key.startswith('station:') and value.get('display_name')
-                               and search_text.casefold() in value['display_name'].casefold()]
+            renamed_sources = [key.removeprefix('station:') for key, name in station_names.items()
+                               if name and search_text.casefold() in name.casefold()]
             renamed_clause = (' OR a.source_id IN (' + ','.join('?' for _ in renamed_sources) + ')') if renamed_sources else ''
             args = [term, term, *renamed_sources]
             if line_id:
@@ -1010,7 +1004,8 @@ class DiskRailLineLibrary:
             result = []
             seen_stations = set()
             query_key = query.casefold()
-            for key, metadata in sorted(self.metadata.items()):
+            for key in station_keys:
+                metadata = self.metadata[key]
                 if not key.startswith("station:signalbox/"):
                     continue
                 source_id = key.removeprefix("station:")
@@ -1106,8 +1101,8 @@ class DiskRailLineLibrary:
                 if reachable is not None:
                     control_clause += " AND n.id IN (SELECT id FROM reachable_nodes)"
                 renamed_nodes = []
-                for key, value in self.metadata.items():
-                    if not value.get('display_name') or search_text.casefold() not in value['display_name'].casefold():
+                for key, name in node_names.items():
+                    if search_text.casefold() not in name.casefold():
                         continue
                     for prefix in ('object:network_node_id:', 'object:osm_node_id:',
                                    'object:infrastructure_id:node/', 'node:', 'switch:node/'):
@@ -1508,8 +1503,9 @@ class DiskRailLineLibrary:
                 ))
         owners = {
             int(node): custom.get("display_name", "未命名线路所")
-            for key, custom in self.metadata.items()
+            for key in sorted(self.metadata.station_keys)
             if key.startswith("station:signalbox/")
+            for custom in [self.metadata[key]]
             for node in custom.get("member_switch_ids", [])
             if str(node).isdigit()
         }

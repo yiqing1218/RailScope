@@ -907,7 +907,6 @@ class RailEditor(OperationsEditor):
                 index_ready,
             )
             from background_work import prepare_with_progress
-        edges = {e["id"]: e for e in self.graph["edges"]}
         database = (self.directory / "rail.sqlite").resolve()
         stamp = database.stat().st_mtime_ns if database.exists() else None
         names_path = Path(self.path).parent / "rail_line_names.json"
@@ -951,7 +950,7 @@ class RailEditor(OperationsEditor):
             self._line_library = DiskRailLineLibrary(index, names, metadata)
         else:
             self._line_library = RailLineLibrary(
-                list(edges.values()), list(self.graph["points"]), names
+                list(self.graph['edges']), list(self.graph["points"]), names
             )
         self._line_library_signature = signature
         return self._line_library
