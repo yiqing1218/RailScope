@@ -85,10 +85,22 @@ def track_sections(sections, by_edge, overrides):
 def station_assets(db, source):
     """All source-associated platforms/areas, even outside track bounding boxes."""
     source_node = str(source).removeprefix('node/')
-    return [json.loads(raw) for (raw,) in db.execute(
-        "SELECT data FROM features WHERE kind IN ('railPlatforms','railStationAreas') AND EXISTS "
-        "(SELECT 1 FROM json_each(json_extract(data,'$.properties.associated_station_ids')) WHERE CAST(value AS TEXT) IN (?,?))",
-        (source,source_node))]
+    try:
+        from .rail_platform_associations import apply_associations, association_edits
+    except ImportError:
+        from rail_platform_associations import apply_associations, association_edits
+    path = db.execute('PRAGMA database_list').fetchone()[2]
+    edits = association_edits(Path(path).parent) if path else {}
+    edited_sources = [key for key, edit in edits.items() if
+                      {source, source_node} & set(map(str, edit.get('properties', {}).get('associated_station_ids') or []))]
+    features = [json.loads(raw) for (raw,) in db.execute(
+        "SELECT data FROM features WHERE kind IN ('railPlatforms','railStationAreas') AND (EXISTS "
+        "(SELECT 1 FROM json_each(json_extract(data,'$.properties.associated_station_ids')) WHERE CAST(value AS TEXT) IN (?,?)) "
+        "OR json_extract(data,'$.properties.infrastructure_id') IN (SELECT value FROM json_each(?)))",
+        (source, source_node, json.dumps(edited_sources)))]
+    features = apply_associations(features, Path(path).parent) if path else features
+    return [f for f in features if source_node in set(map(str,f['properties'].get('associated_station_ids', [])))
+            or source in set(map(str,f['properties'].get('associated_station_ids', [])))]
 
 
 def extend_station_approaches(db, index_path, edges, bounds, distance=2500, topology_depth=None):
@@ -360,6 +372,19 @@ def load_station_tracks(directory, identity_path, station, overrides, approach_d
         context.extend(f for f in station_assets(db,source) if f not in context)
     context = [f for f in context if not f['properties'].get('associated_station_ids')
                or source_node in set(map(str, f['properties'].get('associated_station_ids', [])))]
+    try:
+        from .rail_platform_associations import apply_associations
+    except ImportError:
+        from rail_platform_associations import apply_associations
+    context = apply_associations(context,directory)
+    context = [f for f in context if not f['properties'].get('association_candidate_station_ids') or
+               f['properties'].get('associated_station_ids')]
+    try:
+        from .rail_platforms import platform_display
+    except ImportError:
+        from rail_platforms import platform_display
+    platforms = [f for f in context if f['properties'].get('boundary_kind') == 'platform']
+    context = [f for f in context if f not in platforms] + platform_display(platforms)
     try:
         from .china_emu import station_reference
         from .reference_integration import integrate_station_yards

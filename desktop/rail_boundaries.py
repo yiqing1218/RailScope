@@ -134,6 +134,12 @@ def associate(features, stations):
             if len(candidates) == 1 and next(iter(candidates)) in by_node:
                 nearest = by_node[next(iter(candidates))]
                 evidence, confidence = 'real_station_outline_intersection', .8
+            else:
+                blockers = [outlines[int(index)] for index in tree.query(geometry, predicate='intersects')
+                            if outlines[int(index)]['properties'].get('source_name')]
+                if blockers:
+                    nearest = None
+                    props['association_candidate_station_ids'] = sorted({f['properties']['infrastructure_id'] for f in blockers})
         if nearest and (evidence != '空间关联真实铁路车站，待复核' or distance_m(center, nearest["geometry"]["coordinates"]) <= 1200):
             node = nearest['properties'].get('osm_node_id', nearest['properties'].get('station_source_id'))
             name = nearest["properties"]["name"]
@@ -163,7 +169,7 @@ def associate(features, stations):
             else "站区"
         )
         props["name"] = f"{name} · {label} · {source_id}"
-        if kind == 'station_outline' and props.get('associated_station_ids'):
+        if kind in ('station_outline', 'station_building'):
             geometry = shape(feature['geometry'])
             if geometry.is_valid:
                 outlines.append(feature); outline_shapes.append(geometry); tree = None
@@ -511,6 +517,12 @@ def extract(pbf, directory, progress=print):
             json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         temporary.replace(target)
+    # A new source snapshot also needs fresh mode evidence for untagged depots.
+    try:
+        from .rail_transport_context import build_transport_context
+    except ImportError:
+        from desktop.rail_transport_context import build_transport_context
+    build_transport_context(directory, pbf, progress=progress)
     refresh_station_index(source, directory / 'rail_lines.sqlite', previous_signature, progress)
     return report
 

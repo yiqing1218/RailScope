@@ -405,6 +405,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     self.server.config.get("railViewportBudget"),
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
+                    overrides=self.server.config.get('railDisplayOverrides'),
                 )
                 from rail_station_directory import load_directory
                 apply_rail_presentation(result, self.server.config.get('railLinePresentation', {}),

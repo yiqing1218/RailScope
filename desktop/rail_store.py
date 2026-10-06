@@ -307,7 +307,7 @@ def upgrade_render_features(directory, catalog):
     return True
 
 
-def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms=None, metro_database=None):
+def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms=None, metro_database=None, overrides=None):
     if kind not in ("rail", "railPoints", "railPlatforms", "railStationAreas"):
         raise ValueError("图层无效")
     west, south, east, north = bbox
@@ -404,14 +404,35 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 if not isinstance(states, list) or any(v not in ('operating','construction','planned','disused','unknown') for v in states):
                     raise ValueError('线路状态选择无效')
                 marks = ','.join('?' for _ in states) or "NULL"
-                clauses.append(f"coalesce(json_extract(f.data,'$.properties.construction_status'),CASE WHEN json_extract(f.data,'$.properties.construction')=1 THEN 'construction' ELSE 'operating' END) IN ({marks})")
+                try:
+                    from .rail_style_resolver import STATUS_ALIASES
+                except ImportError:
+                    from rail_style_resolver import STATUS_ALIASES
+                db.execute('CREATE TEMP TABLE status_overrides(id TEXT PRIMARY KEY,status TEXT)')
+                for key in overrides or {}:
+                    edit = overrides.get(key, {})
+                    status = edit.get('rail_semantics', {}).get('construction_status')
+                    if status is None:
+                        status = STATUS_ALIASES.get(edit.get('technical_attributes', {}).get('operating_status'))
+                    if status is None and type(edit.get('construction')) is bool:
+                        status = 'construction' if edit['construction'] else 'operating'
+                    if status is not None:
+                        if status not in ('operating','construction','planned','disused','unknown'):
+                            raise ValueError('运营状态覆盖无效')
+                        db.execute('INSERT INTO status_overrides VALUES(?,?)',(str(key),status))
+                properties = "json_extract(f.data,'$.properties.{}')"
+                effective_status = 'coalesce(' + ','.join(
+                    "(SELECT status FROM status_overrides WHERE id=" + expression + ")" for expression in (
+                        "'object:network_edge_id:'||" + properties.format('network_edge_id'),
+                        properties.format('catalog_group_id'), properties.format('line_id'))) + "," + properties.format('construction_status') + ",CASE WHEN " + properties.format('construction') + "=1 THEN 'construction' ELSE 'operating' END)"
+                clauses.append(f"{effective_status} IN ({marks})")
                 parameters.extend(states)
             if kind != "rail":
                 try:
                     from .transport_modes import rail_display_predicate
                 except ImportError:
                     from transport_modes import rail_display_predicate
-                clauses.append(rail_display_predicate(db, metro_database))
+                clauses.append(rail_display_predicate(db, metro_database, directory))
             if kind == "railPoints":
                 station_zoom = (min_zooms or {}).get("railStations", 10)
                 switch_zoom = (min_zooms or {}).get("railSwitches", 15)
@@ -477,6 +498,12 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 vertices += count
     finally:
         _viewport_gate.release()
+    if kind in ('railPlatforms', 'railStationAreas'):
+        try:
+            from .rail_platform_associations import apply_associations
+        except ImportError:
+            from rail_platform_associations import apply_associations
+        features = apply_associations(features, directory)
     if kind == "rail":
         for feature in features:
             props = feature["properties"]
@@ -552,6 +579,12 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                     if coordinates[-1] != coordinates[::step][-1]
                     else []
                 )
+    if kind == 'railPlatforms':
+        try:
+            from .rail_platforms import platform_display
+        except ImportError:
+            from rail_platforms import platform_display
+        features = platform_display(features)
     return {
         "type": "FeatureCollection",
         "features": features,

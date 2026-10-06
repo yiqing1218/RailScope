@@ -22,6 +22,21 @@ def semantic_record(value, override=None, *, include_provenance=True):
     custom = (override or {}).get('rail_semantics', {})
     if not isinstance(custom, dict):
         raise ValueError('铁路语义覆盖必须是对象')
+    custom = dict(custom)
+    # Old editors saved a free-text status which never reached rendering/routing.
+    # Decode only recognized workspace values; raw OSM attributes stay intact.
+    if 'construction_status' not in custom:
+        from_status = (override or {}).get('technical_attributes', {}).get('operating_status')
+        try:
+            from .rail_style_resolver import STATUS_ALIASES
+        except ImportError:
+            from rail_style_resolver import STATUS_ALIASES
+        if from_status in STATUS_ALIASES:
+            custom['construction_status'] = STATUS_ALIASES[from_status]
+        elif type((override or {}).get('construction')) is bool and (
+                'construction_status' not in (override or {}) or
+                override['construction'] != value.get('construction')):
+            custom['construction_status'] = 'construction' if override['construction'] else 'operating'
     for key, choices in (('railway_class', RAILWAY_CLASSES), ('line_role', LINE_ROLES),
                          ('track_role', TRACK_ROLES), ('construction_status', OPERATIONAL_STATUSES)):
         if key in custom and (not isinstance(custom[key], str) or custom[key] not in choices):
@@ -78,6 +93,7 @@ def semantic_record(value, override=None, *, include_provenance=True):
         result['facility_only'] = True
     elif (override or value).get('line_kind') == 'track' and result['track_role'] == 'unknown':
         result['facility_only'] = False
+    result['construction'] = result['construction_status'] in ('construction', 'planned', 'disused')
     return result
 
 

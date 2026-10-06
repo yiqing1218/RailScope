@@ -15,10 +15,10 @@ import sqlite3
 
 try:
     from .station_search import rail_name_key, station_names
-    from .transport_modes import other_transport
+    from .transport_modes import other_transport, urban_facility_ids
 except ImportError:
     from station_search import rail_name_key, station_names
-    from transport_modes import other_transport
+    from transport_modes import other_transport, urban_facility_ids
 
 
 def display_name(name):
@@ -53,10 +53,13 @@ def build_station_directory(db, source):
     db.execute('CREATE TABLE IF NOT EXISTS station_track_positions(source_id TEXT,edge_id TEXT,data TEXT,PRIMARY KEY(source_id,edge_id))')
     db.execute('DELETE FROM station_track_positions')
     stations = {}
+    urban_ids = urban_facility_ids(Path(source).parent)
     with closing(sqlite3.connect(Path(source).resolve().as_uri() + '?mode=ro', uri=True)) as src:
         type_evidence = {}
         for (raw,) in src.execute("SELECT data FROM features WHERE kind='railStationAreas'"):
             area = json.loads(raw)['properties']
+            if area.get('infrastructure_id') in urban_ids or other_transport(area.get('way_tags', {})):
+                continue
             hint = station_type(area.get('way_tags', {}))
             if hint == '未定义':
                 continue
@@ -68,7 +71,8 @@ def build_station_directory(db, source):
             p = feature.get('properties', {})
             if p.get('kind') not in ('station', 'halt', 'signal_box', 'junction', 'yard', 'depot', 'workshop', 'works', 'engine_shed'):
                 continue
-            if other_transport(p.get('node_tags', {})):
+            source_id = p.get('station_source_id') or 'node/' + str(p.get('osm_node_id'))
+            if source_id in urban_ids or other_transport(p.get('node_tags', {})):
                 db.execute('DELETE FROM station_aliases WHERE source_id=?', ('node/' + str(p.get('osm_node_id')),))
                 continue
             source_id = p.get('station_source_id') or 'node/' + str(p['osm_node_id'])

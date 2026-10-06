@@ -90,6 +90,15 @@ def source_line_attributes(properties, kind, custom=None):
     allowed = {field[0] for field in (METRO_LINE_FIELDS if kind == "metro" else RAIL_LINE_FIELDS)}
     result = {key: str(value).strip() for key, value in result.items() if key in allowed and value not in (None, "")}
     result.update(normalize_line_attributes(custom or {}, kind))
+    if kind == 'rail':
+        try:
+            from .rail_semantics import semantic_record
+            from .rail_style_resolver import STATUS_LABELS
+        except ImportError:
+            from rail_semantics import semantic_record
+            from rail_style_resolver import STATUS_LABELS
+        result['operating_status'] = STATUS_LABELS[semantic_record(properties,
+            {'technical_attributes': custom or {}})['construction_status']]
     if kind == "rail" and properties.get("external_reference"):
         try:
             from .china_emu import fill_missing

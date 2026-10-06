@@ -1212,6 +1212,7 @@ class RailCatalog(QWidget):
         edit = menu.addAction("编辑对象信息…",
                               lambda: self.line_edit_requested.emit(sorted(facilities)))
         edit.setEnabled(bool(facilities))
+        self._add_status_menu(menu, facilities)
         menu.addAction("在地图中定位", lambda: self.focus_catalog_key(node.object_id))
         menu.addSeparator()
         archived = all(self.meta(key).get("archived", False) for key in facilities)
@@ -3650,6 +3651,7 @@ class RailCatalog(QWidget):
         rename_action.setEnabled(bool(leaf or (folder and folder != ("已归档",))))
         if leaf:
             menu.addAction("编辑对象信息…", lambda: self.line_edit_requested.emit(sorted(keys)))
+        self._add_status_menu(menu, keys)
         move = menu.addMenu("移动到")
         add_folder_move_menu(
             move,
@@ -3706,6 +3708,33 @@ class RailCatalog(QWidget):
         if path and keys:
             clean = list(path[1:] if path[0] == "已归档" else path)
             self.move_items(keys, clean)
+
+    def _add_status_menu(self, menu, keys):
+        try:
+            from .rail_style_resolver import STATUS_LABELS
+        except ImportError:
+            from rail_style_resolver import STATUS_LABELS
+        status_menu = menu.addMenu('修改运营状态 / 实线虚线')
+        for status, label in STATUS_LABELS.items():
+            action = status_menu.addAction(label + (' · 虚线' if status in ('construction', 'planned', 'disused') else ''))
+            action.triggered.connect(lambda _checked=False, value=status: self.set_operational_status(keys, value))
+
+    def set_operational_status(self, keys, status):
+        try:
+            from .rail_style_resolver import STATUS_LABELS, INACTIVE_STATUSES
+        except ImportError:
+            from rail_style_resolver import STATUS_LABELS, INACTIVE_STATUSES
+        if status not in STATUS_LABELS:
+            raise ValueError('未知运营状态')
+        changes = {key: {'rail_semantics': {**self.overrides.get(key, {}).get('rail_semantics', {}),
+                          'construction_status': status, 'source': 'workspace_override',
+                          'verification_status': 'user_verified', 'confidence': None},
+                          'construction': status in INACTIVE_STATUSES,
+                          'technical_attributes': {**self.meta(key).get('technical_attributes', {}),
+                                                   'operating_status': STATUS_LABELS[status]}}
+                   for key in keys if key in self.catalog}
+        self.save_overrides(changes)
+        self.note.setText(f'已修改 {len(changes)} 项运营状态为「{STATUS_LABELS[status]}」；目录和地图线型同步更新。')
 
     def show_topology(self, key):
         meta = self.meta(key)
@@ -3865,14 +3894,15 @@ class RailCatalog(QWidget):
             raise ValueError("铁路总开关类型无效")
         self.line_masters[group] = bool(on)
         if not hasattr(self, "_source_construction_keys"):
-            self._source_construction_keys = {key for key, record in self.catalog.items() if record.get("construction")}
+            self._source_construction_keys = {key for key, record in self.catalog.items()
+                if record.get('construction_status') in ('construction','planned','disused') or record.get('construction')}
         construction = set(self._source_construction_keys)
         catalog_keys = set(self.catalog)
         for key, custom in self.overrides.items():
             if key in catalog_keys:
-                if custom.get("archived") or custom.get("construction") is False:
+                if custom.get("archived") or not self.meta(key).get('construction'):
                     construction.discard(key)
-                elif custom.get("construction"):
+                elif self.meta(key).get('construction'):
                     construction.add(key)
         facilities = self.station_track_keys()
         construction.difference_update(facilities)

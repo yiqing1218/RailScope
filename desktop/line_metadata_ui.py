@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLineEdit,
+    QLabel,
     QMessageBox,
     QPlainTextEdit,
     QScrollArea,
@@ -181,12 +182,30 @@ class LineMetadataDialog(QDialog):
                 self.speed_band.addItem(label, ident)
             self.speed_band.setCurrentIndex(self.speed_band.findData(band or 'unknown'))
             general_form.addRow('速度范围', self.speed_band)
+            try:
+                from .rail_style_resolver import STATUS_LABELS
+            except ImportError:
+                from rail_style_resolver import STATUS_LABELS
+            status = QComboBox()
+            for ident, label in STATUS_LABELS.items():
+                status.addItem(label, ident)
+            status.setCurrentIndex(status.findData(self._original_semantics.get('construction_status', 'unknown')))
+            status.setToolTip('保存后同步目录、地图线型及运行路径校验；在建、规划、停用采用虚线。')
+            self.rail_semantics['construction_status'] = status
+            general_form.addRow('运营状态 / 地图线型', status)
+            self.classification = QLabel()
+            self.classification.setWordWrap(True)
+            general_form.addRow('目录与样式分类', self.classification)
+            for control in (*self.rail_semantics.values(), self.speed_band):
+                control.currentIndexChanged.connect(self._sync_classification)
             self._general_form = general_form
             self._original_group = group
             self._original_band = band or 'unknown'
             self.line_kind.currentIndexChanged.connect(self._sync_line_controls)
+            self.line_kind.currentIndexChanged.connect(self._sync_classification)
             self.rail_semantics['railway_class'].currentIndexChanged.connect(self._sync_line_controls)
             self._sync_line_controls()
+            self._sync_classification()
         tabs.addTab(general, "名称与目录")
 
         detail_host = QWidget()
@@ -194,7 +213,7 @@ class LineMetadataDialog(QDialog):
         self.attribute_controls = {}
         fields = METRO_LINE_FIELDS if kind == "metro" else RAIL_LINE_FIELDS
         for key, label, hint in fields:
-            if kind == 'rail' and key in ('speed_band', 'design_speed_kmh'):
+            if kind == 'rail' and key in ('speed_band', 'design_speed_kmh', 'operating_status'):
                 continue
             control = QPlainTextEdit() if key == "remarks" else QLineEdit()
             if isinstance(control, QPlainTextEdit):
@@ -229,6 +248,21 @@ class LineMetadataDialog(QDialog):
         self.directory_view.setCurrentIndex(self.directory_view.findData('facilities' if station else 'lines'))
         self.directory_view.setEnabled(False)
 
+    def _sync_classification(self):
+        try:
+            from .rail_style_resolver import classification_path, STATUS_LABELS, INACTIVE_STATUSES
+        except ImportError:
+            from rail_style_resolver import classification_path, STATUS_LABELS, INACTIVE_STATUSES
+        facts = {key: control.currentData() for key,control in self.rail_semantics.items()}
+        facts['facility_only'] = self.line_kind.currentData() == 'station'
+        facts['track_role'] = facts['track_role'] if facts['facility_only'] else 'main_track'
+        facts['speed_band'] = self.speed_band.currentData()
+        path = classification_path(facts)
+        status = facts['construction_status']
+        if status in INACTIVE_STATUSES:
+            path = (STATUS_LABELS[status], *path)
+        self.classification.setText(' / '.join(path))
+
     def save(self):
         try:
             self.values()
@@ -251,6 +285,11 @@ class LineMetadataDialog(QDialog):
         semantics = {key: control.currentData() for key, control in self.rail_semantics.items()
                      if control.currentData() != self._original_semantics.get(key, 'unknown')}
         if self.kind == 'rail':
+            try:
+                from .rail_style_resolver import STATUS_LABELS
+            except ImportError:
+                from rail_style_resolver import STATUS_LABELS
+            attributes['operating_status'] = STATUS_LABELS[self.rail_semantics['construction_status'].currentData()]
             station = self.line_kind.currentData() == 'station'
             if station:
                 semantics.pop('line_role', None)

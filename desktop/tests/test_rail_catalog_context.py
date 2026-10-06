@@ -157,6 +157,7 @@ def test_context_rename_move_archive_restore_persist_without_source_edits(
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
         "重命名…",
         "编辑对象信息…",
+        "修改运营状态 / 实线虚线",
         "移动到",
         "移动到线路目录",
         "移动到车站目录…",

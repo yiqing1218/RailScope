@@ -111,6 +111,11 @@ class RailEditor(OperationsEditor):
                         "SELECT data FROM features WHERE kind='railPlatforms'"
                     )
                 ]
+        try:
+            from .rail_platform_associations import apply_associations
+        except ImportError:
+            from rail_platform_associations import apply_associations
+        self.platforms = apply_associations(self.platforms,self.directory)
         self.rail_payload = None
         self._autosave_ready = False
         self._plan_load_error = ''

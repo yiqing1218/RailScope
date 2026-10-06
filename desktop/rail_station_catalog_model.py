@@ -44,7 +44,9 @@ def station_catalog_signature(directory, catalog_path, overrides):
     with closing(sqlite3.connect(catalog_path)) as db:
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
     geometry = directory/'rail.sqlite'
-    return hashlib.sha256(_key([11, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
+    modes = directory/'rail_transport_context.json'
+    return hashlib.sha256(_key([12, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
+                                 modes.stat().st_mtime_ns if modes.exists() else None,
                                  catalog_version[0] if catalog_version else "",
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
 

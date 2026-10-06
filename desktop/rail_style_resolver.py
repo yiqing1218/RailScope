@@ -62,8 +62,10 @@ def legacy_style_key(facts):
 # One selector contract for the object editor, style editor and map adapter.
 GROUP_LABELS = {'track': '轨道线', 'station': '车站线'}
 CATEGORY_LABELS = {'conventional': '普速铁路', 'high_speed': '高速铁路',
-                   'freight': '货运铁路', 'other': '其他铁路'}
-TRACK_LINE_LABELS = {'main_line': '正线', 'branch_line': '支线', 'connecting_line': '联络线'}
+                   'freight': '货运铁路', 'other': '其他铁路', 'industrial': '工业铁路',
+                   'metro': '地铁', 'unknown': '类别待核实'}
+TRACK_LINE_LABELS = {'main_line': '正线', 'branch_line': '支线', 'connecting_line': '联络线',
+                     'dedicated_line': '专用线', 'industrial_line': '工业线', 'unknown': '线路功能待核实'}
 STATION_LINE_LABELS = {'unknown': '站场轨道线', **{k: v for k, v in ROLE_LABELS.items()
                                                if k != 'main_track' and k != 'unknown'}}
 STATION_LINE_LABELS['spur_track'] = '连接线'
@@ -73,6 +75,22 @@ SPEED_BANDS = {'300-350': '300–350 km/h', '250-300': '250–300 km/h',
 COMPAT_STYLE_SOURCES = dict(STYLE_SOURCES)
 DEFAULT_STYLE_KEY = '_default'
 CONFIGURED_STYLE_KEYS = '_configured_style_keys'
+STATUS_LABELS = {'operating': '运营中', 'construction': '在建', 'planned': '规划',
+                 'disused': '停用', 'unknown': '状态待核实'}
+INACTIVE_STATUSES = frozenset(('construction', 'planned', 'disused'))
+STATUS_ALIASES = {**{key: key for key in STATUS_LABELS},
+                  **{label: key for key, label in STATUS_LABELS.items()},
+                  '运营': 'operating', '已开通': 'operating', '停运': 'disused',
+                  '废弃': 'disused', '规划中': 'planned', '建设中': 'construction'}
+
+
+def classification_path(facts):
+    """Exactly the selector vocabulary used by both editors and the map."""
+    group, category, function, band = line_selection(facts)
+    functions = TRACK_LINE_LABELS if group == 'track' else STATION_LINE_LABELS
+    path = (GROUP_LABELS[group], CATEGORY_LABELS[category],
+            functions.get(function, '线路功能待核实'))
+    return path + ((SPEED_BANDS[band],) if band else ())
 
 
 def speed_band(facts):
@@ -111,8 +129,6 @@ def selection_style_key(group, category, function, band=None):
 
 def style_key(facts):
     selection = line_selection(facts)
-    if selection[0] == 'track' and selection[2] == 'unknown':
-        return DEFAULT_STYLE_KEY
     return selection_style_key(*selection)
 
 

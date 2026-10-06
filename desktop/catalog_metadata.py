@@ -498,6 +498,16 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
                 [*args, limit * 4 if region_match else limit],
             ).fetchall()
         features = [json.loads(row[0]) for row in rows]
+    try:
+        from .transport_modes import other_transport, urban_facility_ids
+    except ImportError:
+        from transport_modes import other_transport, urban_facility_ids
+    urban_ids = urban_facility_ids(directory)
+    unfiltered_count = len(features)
+    features = [f for f in features if not other_transport(f['properties'].get('node_tags', {}))
+                and (f['properties'].get('station_source_id') or
+                     'node/' + str(f['properties'].get('osm_node_id'))) not in urban_ids]
+    total -= unfiltered_count - len(features)
     node_ids = [f['properties'].get('osm_node_id', f['properties'].get('station_source_id')) for f in features]
     line_map = defaultdict(set)
     line_names = {}

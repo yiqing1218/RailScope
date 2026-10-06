@@ -24,7 +24,7 @@ except ImportError:
     from components import directory_checkbox_style
 
 
-PRESENTATION_VERSION = 10
+PRESENTATION_VERSION = 11
 LABEL_ONLY_FIELDS = {"display_name"}
 
 

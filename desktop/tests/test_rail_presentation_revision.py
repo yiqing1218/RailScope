@@ -28,7 +28,7 @@ def test_unresolved_line_uses_default_without_claiming_main_line():
     from desktop.rail_style_resolver import line_selection
     facts={'railway_class':'conventional','line_role':'unknown','track_role':'unknown'}
     assert line_selection(facts)[2]=='unknown'
-    assert style_key(facts)=='_default'
+    assert style_key(facts)=='track.conventional.unknown'
 
 
 def test_legacy_connector_does_not_get_overwritten_by_old_generic_style():

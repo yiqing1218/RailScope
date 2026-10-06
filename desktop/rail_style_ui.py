@@ -189,7 +189,7 @@ class RailStyleDialog(QDialog):
         self.setWindowTitle("铁路样式 · 属性匹配与默认样式")
         self.resize(960, 760)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("未单独规定的类别采用默认样式。新增时选择线的种类、铁路类别和功能；高速线再选择速度范围。"))
+        layout.addWidget(QLabel("目录、对象详情与此处共用相同分类。未单独规定的类别采用默认样式；在建、规划、停用统一显示虚线，在线路对象中修改运营状态。"))
         selector = QHBoxLayout()
         self.group_choice, self.class_choice, self.function_choice, self.band_choice = [QComboBox() for _ in range(4)]
         for key, label in GROUP_LABELS.items(): self.group_choice.addItem(label, key)
