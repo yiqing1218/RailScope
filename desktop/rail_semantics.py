@@ -76,6 +76,22 @@ def semantic_record(value, override=None, *, include_provenance=True):
     for key in SEMANTIC_FIELDS:
         if key not in custom:
             continue
+        automatic_group = custom.get('source') == 'rail_line_review' and custom.get('scope') == 'line_group'
+        if automatic_group and value.get('network_edge_id'):
+            # Mixed-line summaries and unresolved sections cannot overwrite the
+            # explicit lifecycle/type of a physical edge or turn a yard into main track.
+            if custom[key] == 'unknown' and result.get(key) != 'unknown':
+                proof = result.get('provenance', value.get('provenance', {})).get(key, {})
+                fresh = edge_semantics({'way_tags': tags}, include_provenance=include_provenance)
+                if proof.get('verification_status') in ('source_checked', 'user_verified'):
+                    continue
+                if fresh.get(key) not in (None, 'unknown'):
+                    result[key] = fresh[key]
+                    if include_provenance:
+                        result['provenance'][key] = fresh['provenance'][key]
+                    continue
+            if key == 'track_role' and tags.get('service') in ('yard', 'siding', 'crossover', 'spur'):
+                continue
         result[key] = custom[key]
         if include_provenance:
             result['provenance'][key] = {
@@ -85,6 +101,9 @@ def semantic_record(value, override=None, *, include_provenance=True):
                 'verification_status': custom.get('verification_status', 'user_verified'),
                 'confidence': custom.get('confidence'),
             }
+            proof = custom.get('provenance', {}).get(key) if custom.get('source') == 'rail_line_review' else None
+            if isinstance(proof, dict) and proof.get('value') == custom[key]:
+                result['provenance'][key] = dict(proof)
     if result['track_role'] == 'main_track':
         result['facility_only'] = False
     elif custom.get('track_role') not in (None, 'unknown'):

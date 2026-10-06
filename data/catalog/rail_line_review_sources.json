@@ -1,0 +1,1729 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-10-06",
+  "notice": "这是来源核对记录，不是全部线路已获官方确认的声明；不据此修改整线运营状态。",
+  "claims": [
+    {
+      "names": [
+        "滨洲线",
+        "滨洲铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "图佳线",
+        "图佳铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "城鸡线",
+        "城鸡铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨绥线",
+        "滨绥铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "绥佳线",
+        "绥佳铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "伊加线",
+        "伊加铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "嫩林线",
+        "嫩林铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨北线",
+        "滨北铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "齐北线",
+        "齐北铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "榆红线",
+        "榆红铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "红峰线",
+        "红峰铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "红峰疏解线",
+        "红峰疏解铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "拉滨线",
+        "拉滨铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "江北联络线",
+        "江北联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "定一联络线",
+        "定一联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "定二线",
+        "定二铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨江线",
+        "滨江铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "江南线",
+        "江南铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "香孙线",
+        "香孙铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "香东线",
+        "香东铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "东新线",
+        "东新铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "孙新线",
+        "孙新铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "王孙线",
+        "王孙铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "屯黎线",
+        "屯黎铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "屯黎联络线",
+        "屯黎联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "王岗疏解线",
+        "王岗疏解铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "王万联络线",
+        "王万联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "成宾线",
+        "成宾铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "哈西机走线",
+        "哈西机走铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "平齐线",
+        "平齐铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "富嫩线",
+        "富嫩铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "扎阿线",
+        "扎阿铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "榆树线",
+        "榆树铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "西昂线",
+        "西昂铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "三榆线",
+        "三榆铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "榆峰线",
+        "榆峰铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "三峰线",
+        "三峰铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "西峰线",
+        "西峰铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "平齐联络线",
+        "平齐联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "昂峰疏解线",
+        "昂峰疏解铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨绥宽线",
+        "滨绥宽铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "苇亚线",
+        "苇亚铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "火龙沟线",
+        "火龙沟铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "图牡货线",
+        "图牡货铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨绥货上线",
+        "滨绥货上铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "牡佳货上线",
+        "牡佳货上铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "绥阳南联络线",
+        "绥阳南联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "穆城联络线",
+        "穆城联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "牡丹江疏解线",
+        "牡丹江疏解铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "福前线",
+        "福前铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "公集联络线",
+        "公集联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "鹤北线",
+        "鹤北铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "鹤岗线",
+        "鹤岗铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "佳富线",
+        "佳富铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "秋冷线",
+        "秋冷铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "兴莲联络线",
+        "兴莲联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "向哈线",
+        "向哈铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "前抚线",
+        "前抚铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "牙林线",
+        "牙林铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "潮乌线",
+        "潮乌铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "博林线",
+        "博林铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "伊敏线",
+        "伊敏铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "呼工A线",
+        "呼工A铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "呼工B线",
+        "呼工B铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "滨洲宽线",
+        "滨洲宽铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "卓汇线",
+        "卓汇铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "准轨联络1线",
+        "准轨联络1铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "准轨联络2线",
+        "准轨联络2铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "宽轨联络1线",
+        "宽轨联络1铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "宽轨联络2线",
+        "宽轨联络2铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "伊阿线",
+        "伊阿铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "塔韩线",
+        "塔韩铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "古洛线",
+        "古洛铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "北黑线",
+        "北黑铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "汤林线",
+        "汤林铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "双乌线",
+        "双乌铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "翠峦线",
+        "翠峦铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "通让线",
+        "通让铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "壮让联络线",
+        "壮让联络铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional",
+        "line_role": "connecting_line"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "勃七线",
+        "勃七铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "林密线",
+        "林密铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "密东线",
+        "密东铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "恒山线",
+        "恒山铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/zzjg/jgj/syjd/sgsgg/201911/P020220825544637781349.pdf",
+      "source_snapshot": "sha256:105a5c3e37f6b669433a41be4dc24eab3ec853a473de3f6a06b84cecf32c42bf",
+      "bounds": [
+        115,
+        41,
+        135.2,
+        54
+      ],
+      "evidence": "国家铁路局普速铁路保护区线路表；只适用东北范围，货运或工业明确标签优先。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "京广线",
+        "京广铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/tlfc/tpsy/202601/t20260121_350446.shtml",
+      "evidence": "国家铁路局2026年资料明确称京广、京九为普速线，并区分京广高铁。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "京九线",
+        "京九铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.nra.gov.cn/tlfc/tpsy/202601/t20260121_350446.shtml",
+      "evidence": "国家铁路局2026年资料明确称京广、京九为普速线，并区分京广高铁。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "京沪线",
+        "京沪铁路",
+        "陇海线",
+        "陇海铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://www.beijing.gov.cn/fuwu/bmfw/sy/jrts/202606/t20260617_4703972.html",
+      "evidence": "2026年运行图资料把京沪、陇海既有线普速列车与高铁列车分别列出。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "宝中线",
+        "宝中铁路",
+        "兰新线",
+        "兰新铁路",
+        "临哈线",
+        "临哈铁路",
+        "宝成线",
+        "宝成铁路",
+        "西平线",
+        "西平铁路",
+        "包兰线",
+        "包兰铁路"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://fgw.pingliang.gov.cn/zcwjgzzd/art/2026/art_1101fe20d8ca4368a736dd1281021a81.html",
+      "evidence": "甘肃省2026年铁路政策在普速铁路网章节列出这些既有铁路。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "京沪高速线",
+        "京沪高速铁路",
+        "京沪高铁"
+      ],
+      "facts": {
+        "railway_class": "high_speed"
+      },
+      "source_url": "https://www.nra.gov.cn/ztzl/hd/cxdh/cxcg/kjj/jsjb/201705/t20170502_146895.shtml",
+      "evidence": "国家铁路局京沪高速铁路工程资料明确高速铁路性质及350 km/h设计速度。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "大秦线",
+        "大秦铁路"
+      ],
+      "facts": {
+        "railway_class": "freight"
+      },
+      "source_url": "https://www.nra.gov.cn/xwzx/xwxx/xwlb/202302/t20230224_339825.shtml",
+      "evidence": "国家铁路局介绍大秦铁路的煤炭重载货运功能。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "朔黄线",
+        "朔黄铁路"
+      ],
+      "facts": {
+        "railway_class": "freight"
+      },
+      "source_url": "https://www.nra.gov.cn/xwzx/tpsp/tpxx/202404/t20240422_345112.shtml",
+      "evidence": "国家铁路局记录朔黄铁路煤炭重载货物列车及运输功能。",
+      "reviewed_at": "2026-10-06"
+    },
+    {
+      "names": [
+        "浩吉线",
+        "浩吉铁路",
+        "瓦日线",
+        "瓦日铁路"
+      ],
+      "facts": {
+        "railway_class": "freight"
+      },
+      "source_url": "https://www.nra.gov.cn/xwzx/xwxx/xwlb/202410/t20241008_346969.shtml",
+      "reviewed_at": "2026-10-06",
+      "source_snapshot": "published:2024-10-08",
+      "evidence": "国家铁路局文章将浩吉、瓦日明确列为货运干线铁路。"
+    },
+    {
+      "names": [
+        "焦柳线",
+        "湘桂线",
+        "益湛线",
+        "醴茶线"
+      ],
+      "facts": {
+        "railway_class": "conventional"
+      },
+      "source_url": "https://jtt.hunan.gov.cn/jtt/xxgk/zwgg/202507/t20250717_33742600.html",
+      "reviewed_at": "2026-10-06",
+      "source_snapshot": "published:2025-07-17",
+      "evidence": "湖南省普速铁路实施方案列出的既有线路；仅提供类别依据，不将湖南局部设计速度或施工任务套用整线。"
+    }
+  ]
+}

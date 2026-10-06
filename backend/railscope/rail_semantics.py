@@ -72,12 +72,19 @@ def classify_railway_class(tags: dict, *, source="OpenStreetMap", snapshot_id=No
     if tags.get("railway") in {"subway", "light_rail"}:
         return _claim("metro", "OSM railway=" + tags["railway"], source, snapshot_id)
     if tags.get("highspeed") == "yes":
+        if tags.get('usage') in ('industrial', 'freight') or tags.get('passenger') == 'no':
+            return _unknown(source, snapshot_id, 'Conflicting highspeed and freight/industrial source tags')
         return _claim("high_speed", "OSM highspeed=yes", source, snapshot_id)
     if tags.get("usage") == "industrial":
         return _claim("industrial", "OSM usage=industrial", source, snapshot_id)
     if tags.get("usage") == "freight":
         return _claim("freight", "OSM usage=freight", source, snapshot_id)
-    if tags.get("highspeed") == "no" and tags.get("railway", "rail") == "rail":
+    mode = tags.get('railway', 'rail')
+    if mode in ('construction', 'proposed', 'planned', 'disused', 'abandoned'):
+        mode = tags.get(mode) or tags.get(mode + ':railway')
+    if mode == 'rail' and tags.get('passenger') == 'no':
+        return _claim('freight', 'OSM passenger=no on railway=rail', source, snapshot_id)
+    if tags.get("highspeed") == "no" and mode == "rail":
         return _claim("conventional", "OSM highspeed=no", source, snapshot_id)
     return _unknown(source, snapshot_id)
 

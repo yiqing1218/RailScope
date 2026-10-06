@@ -412,6 +412,10 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 for key in overrides or {}:
                     edit = overrides.get(key, {})
                     status = edit.get('rail_semantics', {}).get('construction_status')
+                    semantics = edit.get('rail_semantics', {})
+                    if (semantics.get('source') == 'rail_line_review' and
+                            semantics.get('scope') == 'line_group' and status == 'unknown'):
+                        continue  # mixed line summaries retain each source edge's lifecycle
                     if status is None:
                         status = STATUS_ALIASES.get(edit.get('technical_attributes', {}).get('operating_status'))
                     if status is None and type(edit.get('construction')) is bool:

@@ -184,7 +184,8 @@ def apply_rail_presentation(collection, presentation, overrides=None):
                 if edit.get('line_kind'):
                     props['line_kind'] = edit['line_kind']
                 technical = edit.get('technical_attributes', {})
-                if technical.get('speed_band'):
+                automatic = edit.get('rail_semantics', {}).get('source') == 'rail_line_review'
+                if technical.get('speed_band') and not (automatic and technical['speed_band'] == 'unknown'):
                     props['speed_band'] = technical['speed_band']
         group_edit = effective_override(overrides, props.get('catalog_group_id'), {})
         if group_edit.get('assembly_id'):

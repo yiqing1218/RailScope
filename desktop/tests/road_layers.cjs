@@ -7,7 +7,8 @@ const sandbox={console,URLSearchParams,AbortController,structuredClone,
   qt:{webChannelTransport:{}},QWebChannel:class{},setTimeout:()=>0,clearTimeout:()=>{},
   fetch:async(endpoint,options)=>{requests.push(JSON.parse(options.body));return {ok:true,json:async()=>({type:'FeatureCollection',features:[{id:requests.length}]})};}};
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync('desktop/assets/map.js','utf8'),sandbox);
+for(const file of ['entity-presentation.js','infrastructure-history.js','map.js'])
+  vm.runInContext(fs.readFileSync('desktop/assets/'+file,'utf8'),sandbox,{filename:file});
 assert.equal(vm.runInContext(`normalizedFeature({properties:{line_ids:'["RL-one"]',name:'[普通名称]'}}).properties.line_ids[0]`,sandbox),'RL-one');
 assert.equal(vm.runInContext(`normalizedFeature({properties:{name:'[普通名称]'}}).properties.name`,sandbox),'[普通名称]');
 // Sprite-free pedestrian polygons must have an explicit light fallback.

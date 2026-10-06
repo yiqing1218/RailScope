@@ -311,6 +311,8 @@ def _combined(paths, stamps):
         # The same original HTML can have richer parsed relationships after
         # upgrading the shipped parser, without inventing a newer snapshot.
         if shared and all(shared.get(k)==p.get(k) for k in ('snapshot_id','name','attributes')):
+            if p.get('retrieved_at', '') > shared.get('retrieved_at', ''):
+                profiles[p['id']] = {**shared, 'retrieved_at': p['retrieved_at']}
             continue
         profiles[p['id']] = p
     return ReferenceStore(list(profiles.values()))
@@ -373,7 +375,16 @@ def line_reference(record, store=None):
     if record.get("facility_only") or record.get("station_name"):
         return None
     names = [record.get(k, "") for k in ("line_name", "line_display_name", "name", "source_name")]
-    return (store or load_store()).match("line", [n for n in names if n])
+    try:
+        from .rail_line_review import reference_index, match_reference
+    except ImportError:
+        from rail_line_review import reference_index, match_reference
+    store = store or load_store()
+    if not hasattr(store, '_review_line_index'):
+        store._review_line_index = reference_index(store.profiles)
+    hits = [match_reference(n, store._review_line_index) for n in names if n]
+    unique = {json.dumps(p, sort_keys=True): p for p in hits if p}
+    return next(iter(unique.values())) if len(unique) == 1 else None
 
 
 def station_reference(properties, record, custom=None, store=None):

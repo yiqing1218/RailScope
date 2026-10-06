@@ -3514,6 +3514,7 @@ class Desk(QMainWindow):
             )
         rail_group = props.get("catalog_group_id")
         if rail_group in self.rail_catalog_widget.catalog:
+            map_facts = dict(props)
             catalog_meta = self.rail_catalog_widget.meta(rail_group)
             object_edit = self.rail_catalog_widget.overrides.get(object_key(props), {})
             props["display_name"] = (props.get('display_name') if yard_track_key(props) and props.get('display_name')
@@ -3533,14 +3534,34 @@ class Desk(QMainWindow):
             )
             from rail_semantics import semantic_record
             from rail_style_resolver import (line_selection, GROUP_LABELS, CATEGORY_LABELS,
-                                            TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS)
-            facts = {**props, **catalog_meta}
-            facts.update(semantic_record(facts, {} if catalog_meta.get('assembly_id') else object_edit))
+                                            TRACK_LINE_LABELS, STATION_LINE_LABELS, SPEED_BANDS,
+                                            STATUS_LABELS, speed_band)
+            # The selected physical section already uses the map adapter's
+            # facts. A mixed whole-line summary must not replace them.
+            facts = {**catalog_meta, **props}
+            if props.get('network_edge_id'):
+                facts.update(map_facts)
+            facts.update(semantic_record(facts, {**catalog_meta, **object_edit}))
+            if props.get('network_edge_id'):
+                facts['speed_band'] = speed_band(map_facts)
+            props['operating_status'] = STATUS_LABELS[facts['construction_status']]
             group, category, function, band = line_selection(facts)
             props['line_kind_label'] = GROUP_LABELS[group]
             props['railway_category_label'] = CATEGORY_LABELS[category]
             props['line_function_label'] = (TRACK_LINE_LABELS if group=='track' else STATION_LINE_LABELS).get(function, '线路功能待核实')
             if band: props['speed_band_label'] = SPEED_BANDS[band]
+            review = catalog_meta.get('classification_review')
+            if review:
+                props['classification_audit'] = (
+                    '缺少当前来源记录，需核对旧目录对象' if review.get('verification_status') == 'unresolved_missing_current_source' else
+                    '资料冲突，保留人工设置' if review.get('conflicts') else
+                    '区段属性不同，请按区段查看' if review.get('mixed_fields') else
+                    '有属性待核实' if any(facts.get(key) == 'unknown' for key in
+                        ('railway_class', 'line_role', 'track_role', 'construction_status')) else
+                    '已按来源复查（自动参考）')
+                urls = {proof['source_url'] for proof in facts.get('provenance', {}).values()
+                        if proof.get('source_url')}
+                if urls: props['classification_sources'] = '\n'.join(sorted(urls))
         merged_groups = props.get("merged_catalog_ids", [])
         # National line relationships can traverse thousands of topology nodes.
         # The editor loads them when needed; map selection must remain immediate.
@@ -3668,6 +3689,8 @@ class Desk(QMainWindow):
             'railway_category_label': '铁路类别',
             'line_function_label': '线路功能',
             'speed_band_label': '速度范围',
+            'classification_audit': '分类复查',
+            'classification_sources': '分类依据链接',
             "display_track_type": "地图显示样式类型",
             "kind": "对象种类",
             "station_type": "车站类型",
