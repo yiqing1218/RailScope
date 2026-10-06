@@ -12,7 +12,10 @@ from railscope.rail_semantics import (classify_railway_class, classify_line_role
                                     classify_track_role, classify_operational_status)
 from railscope.presentation import source_design_speed
 
-from .rail_style_resolver import speed_band, STYLE_SELECTIONS, CONFIGURED_STYLE_KEYS, DEFAULT_STYLE_KEY
+try:
+    from .rail_style_resolver import speed_band, STYLE_SELECTIONS, CONFIGURED_STYLE_KEYS, DEFAULT_STYLE_KEY
+except ImportError:  # desktop/launcher.py also runs directly as a script.
+    from rail_style_resolver import speed_band, STYLE_SELECTIONS, CONFIGURED_STYLE_KEYS, DEFAULT_STYLE_KEY
 
 FIELDS = ('railway_class', 'line_role', 'track_role', 'construction_status')
 CLASSIFIERS = (classify_railway_class, classify_line_role, classify_track_role, classify_operational_status)

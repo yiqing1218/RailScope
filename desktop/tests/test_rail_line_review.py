@@ -3,6 +3,25 @@ from collections import Counter
 from desktop.rail_semantics import semantic_record
 
 
+def test_script_startup_can_resolve_line_reference():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    result = subprocess.run(
+        [sys.executable, '-c', """
+from china_emu import ReferenceStore, line_reference
+profile = {'kind': 'line', 'name': '京沪高速铁路', 'attributes': {},
+           'scopes': [], 'source_url': 'https://example.test/rail'}
+reference = line_reference({'line_name': '京沪高速线'}, ReferenceStore([profile]))
+assert reference['source_url'] == profile['source_url']
+"""],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True, text=True, encoding='utf-8', timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_group_review_never_promotes_mixed_sections_to_one_class():
     from desktop.rail_line_review import review_group
     group = {'values': {'railway_class': Counter(high_speed=10, conventional=8),
