@@ -34,7 +34,7 @@ def change_types(before, after):
         fields.discard('attributes')
         fields |= {key for key in old.keys() | new.keys() if old.get(key) != new.get(key)}
     kinds = set()
-    if fields & DIRECTORY_FIELDS:
+    if fields & (DIRECTORY_FIELDS | {'technical_type', 'business_type'}):
         kinds.add('directory')
     if fields & PRESENTATION_FIELDS or 'archived' in fields:
         kinds.add('presentation')

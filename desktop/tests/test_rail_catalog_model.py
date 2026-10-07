@@ -219,7 +219,7 @@ def test_station_facilities_share_paged_tree_without_guessing_ambiguous_owner(qt
     assert segments == [("甲站改名 · A→B",), ("甲站2道 · A→B",)]
     location = RailCatalog.effective_directory_path(
         SimpleNamespace(catalog=catalog, station_model=model), "explicit")
-    assert location == ("车站目录", "甲省", "甲市", "甲站", "站内轨道")
+    assert location == ("车站目录", "甲省", "甲市", "技术作业待核实", "业务性质待核实", "甲站", "站内轨道")
     assert RailCatalog.effective_directory_path(
         SimpleNamespace(catalog=catalog, station_model=model), "unknown") == (
             "车站目录", "待核对", "调车线")

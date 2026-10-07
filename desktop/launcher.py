@@ -105,6 +105,7 @@ from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
 from railscope.services.topology import validate_topology
 from railscope.services.stations import StationRegistry
+from railscope.services.importers.native_paths import native_worker_cache
 from catalog_metadata import (
     CatalogOverrides,
     STATION_TYPES,
@@ -112,6 +113,7 @@ from catalog_metadata import (
     station_overview,
     station_directory_path,
 )
+from station_classification import TECHNICAL_TYPES, BUSINESS_TYPES, classification
 
 EMPTY = {"type": "FeatureCollection", "features": []}
 BASE_TYPES = ("standard", "satellite", "admin-province", "admin-city", "admin-county")
@@ -2516,18 +2518,19 @@ class Desk(QMainWindow):
             command = [sys.executable, str(ROOT / "desktop/import_roads.py"),
                        "--pbf", str(pbf), "--output", str(road_database_path(ROOT))]
             try:
-                process = subprocess.Popen(
-                    command, cwd=ROOT, stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                    errors="replace", env={**os.environ, "PYTHONUTF8": "1"},
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-                )
-                last = ""
-                for line in process.stdout:
-                    last = line.strip()
-                    if last:
-                        events.progress.emit(last)
-                code = process.wait()
+                with native_worker_cache(pbf) as native_cache:
+                    process = subprocess.Popen(
+                        command, cwd=ROOT, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                        errors="replace", env={**os.environ, "PYTHONUTF8": "1", "RAILSCOPE_NATIVE_TEMP": str(native_cache)},
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                    )
+                    last = ""
+                    for line in process.stdout:
+                        last = line.strip()
+                        if last:
+                            events.progress.emit(last)
+                    code = process.wait()
                 events.finished.emit(code == 0, last or "导入进程未返回结果")
             except OSError as error:
                 events.finished.emit(False, str(error))
@@ -3125,19 +3128,21 @@ class Desk(QMainWindow):
 
         def run():
             try:
-                process = subprocess.Popen(
-                    [sys.executable, str(ROOT / "desktop/import_admin.py"), "--pbf", str(pbf)],
-                    cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace",
-                    env={**os.environ, "PYTHONUTF8": "1"},
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-                )
-                last = ""
-                for line in process.stdout:
-                    last = line.strip()
-                    if last:
-                        events.progress.emit(last)
-                events.finished.emit(process.wait() == 0, last or "行政边界导入失败")
+                with native_worker_cache(pbf) as native_cache:
+                    process = subprocess.Popen(
+                        [sys.executable, str(ROOT / "desktop/import_admin.py"), "--pbf", str(pbf)],
+                        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace",
+                        env={**os.environ, "PYTHONUTF8": "1", "RAILSCOPE_NATIVE_TEMP": str(native_cache)},
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                    )
+                    last = ""
+                    for line in process.stdout:
+                        last = line.strip()
+                        if last:
+                            events.progress.emit(last)
+                    code = process.wait()
+                events.finished.emit(code == 0, last or "行政边界导入失败")
             except OSError as error:
                 events.finished.emit(False, str(error))
 
@@ -3595,6 +3600,7 @@ class Desk(QMainWindow):
             props.update({key:overview_props[key] for key in
                           ('external_reference','reference_conflicts','reference_provenance') if key in overview_props})
             props['station_type_provenance'] = record.get('station_type_provenance', {})
+            props.update(classification(record, station_custom))
         feature["properties"] = props
         self.selected_data = feature
         self._last_operating_detail = None
@@ -3693,7 +3699,11 @@ class Desk(QMainWindow):
             'classification_sources': '分类依据链接',
             "display_track_type": "地图显示样式类型",
             "kind": "对象种类",
-            "station_type": "车站类型",
+            "station_type": "来源类型",
+            "technical_type": "技术作业性质",
+            "business_type": "业务性质",
+            "classification_group": "对象分类",
+            "classification_provenance": "分类资料来源与核验状态",
             "line_names": "经过线路",
             "station_names": "途经站点",
             "connected_line_names": "联络 / 相接线路",
@@ -4161,6 +4171,23 @@ class Desk(QMainWindow):
         folder = QLineEdit()
         station_kind = QComboBox()
         station_kind.addItems(STATION_TYPES)
+        technical_kind = QComboBox()
+        technical_kind.addItems(TECHNICAL_TYPES)
+        business_kind = QComboBox()
+        business_kind.addItems(BUSINESS_TYPES)
+
+        def add_station_classification(record, custom):
+            values = classification(record, custom)
+            technical_kind.setCurrentText(values['technical_type'])
+            business_kind.setCurrentText(values['business_type'])
+            if values['classification_group'] == '其他':
+                form.addRow("设施类型（其他）", station_kind)
+            else:
+                form.addRow("技术作业性质", technical_kind)
+                form.addRow("业务性质", business_kind)
+            evidence = json.dumps(values['classification_provenance'], ensure_ascii=False)
+            technical_kind.setToolTip(evidence)
+            business_kind.setToolTip(evidence)
         station_overview_controls = {}
         station_custom = None
         record = None
@@ -4189,7 +4216,7 @@ class Desk(QMainWindow):
             city.setText(directory[1] if len(directory) > 1 else "")
             folder.setText(directory[2] if len(directory) > 2 else "")
             station_kind.setCurrentText(record["station_type"])
-            form.addRow("车站类型", station_kind)
+            add_station_classification(record, custom)
             connection_selector = StationConnectionSelector(
                 self.rail_operations.line_library(), "station:" + record["id"], dialog, async_load=True)
             from background_queries import query_queue
@@ -4285,7 +4312,7 @@ class Desk(QMainWindow):
                 city.setText(directory[1] if len(directory) > 1 else "")
                 folder.setText(directory[2] if len(directory) > 2 else "")
                 station_kind.setCurrentText(record["station_type"])
-                form.addRow("车站类型", station_kind)
+                add_station_classification(record, custom)
                 connection_selector = StationConnectionSelector(
                     self.rail_operations.line_library(),
                     "station:" + record["id"],
@@ -4342,6 +4369,8 @@ class Desk(QMainWindow):
                         station_kind.currentText(), connections,
                         {key: control.text() for key, control in station_overview_controls.items()},
                         custom_attributes,
+                        technical_type=technical_kind.currentText(),
+                        business_type=business_kind.currentText(),
                     )
                 elif relation in self.route_lookup:
                     self.hierarchy.set_parent({int(relation)}, province.text(), city.text(), folder.text())
@@ -4417,6 +4446,8 @@ class Desk(QMainWindow):
                             for key, control in station_overview_controls.items()
                         },
                         custom_attributes,
+                        technical_type=technical_kind.currentText(),
+                        business_type=business_kind.currentText(),
                     )
                 dialog.accept()
                 self.load_status.setText("  工作区目录已更新；原始 OSM 属性和稳定编号未修改")

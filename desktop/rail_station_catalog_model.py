@@ -16,11 +16,13 @@ try:
     from .lazy_directory import SqliteDirectoryModel
     from .catalog_metadata import rail_station_records, station_directory_path
     from .rail_station_types import FACILITY_TYPES
+    from .station_classification import station_catalog_path, REFERENCE
     from .rail_facility_ownership import facility_track_owners
 except ImportError:
     from lazy_directory import SqliteDirectoryModel
     from catalog_metadata import rail_station_records, station_directory_path
     from rail_station_types import FACILITY_TYPES
+    from station_classification import station_catalog_path, REFERENCE
     from rail_facility_ownership import facility_track_owners
 
 
@@ -33,9 +35,10 @@ def station_catalog_signature(directory, catalog_path, overrides):
     source = directory / "rail_lines.sqlite"
     if not source.exists():
         return None
-    station_edits = {k: {field: v[field] for field in ("folder_path", "archived", "station_type") if field in v}
+    placement_fields = ("folder_path", "archived", "station_type", "technical_type", "business_type")
+    station_edits = {k: {field: v[field] for field in placement_fields if field in v}
                      for k, v in overrides.items()
-                     if k.startswith("station:") and any(field in v for field in ("folder_path", "archived", "station_type"))}
+                     if k.startswith("station:") and any(field in v for field in placement_fields)}
     facility_edits = {k: {field: v[field] for field in ("station_id", "station_assignment") if field in v}
                       for k, v in overrides.items() if "station_id" in v or "station_assignment" in v}
     segment_edits = {k: {field: v[field] for field in ("display_name", "line_name", "track_type", "station_id", "station_source", "station_assignment", "rail_semantics", "line_kind") if field in v}
@@ -45,7 +48,8 @@ def station_catalog_signature(directory, catalog_path, overrides):
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
     geometry = directory/'rail.sqlite'
     modes = directory/'rail_transport_context.json'
-    return hashlib.sha256(_key([12, source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
+    return hashlib.sha256(_key([13, REFERENCE.stat().st_mtime_ns if REFERENCE.exists() else None,
+                                 source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
                                  modes.stat().st_mtime_ns if modes.exists() else None,
                                  catalog_version[0] if catalog_version else "",
                                  station_edits, facility_edits, segment_edits]).encode()).hexdigest()
@@ -117,10 +121,7 @@ def sync_station_catalog(directory, catalog_path, regions, overrides, signature=
             sid = record["id"]
             custom = overrides.get("station:" + sid, {})
             name = custom.get("display_name") or record["name"]
-            folder = station_directory_path(record, custom)
-            station_kind = custom.get('station_type') or record.get('station_type')
-            if not custom.get('folder_path') and station_kind in FACILITY_TYPES:
-                folder = (*folder, station_kind)
+            folder = station_catalog_path(record, custom)
             archived = bool(custom.get("archived"))
             path = root + (["已归档"] if archived else []) + list(folder)
             parent = ""
@@ -380,10 +381,7 @@ def update_station_assignments(catalog_path, changes, overrides):
 
 def _update_station_directory(db, record, custom):
     ident = 'station:' + record['id']
-    folder = station_directory_path(record, custom)
-    kind = custom.get('station_type') or record.get('station_type')
-    if not custom.get('folder_path') and kind in FACILITY_TYPES:
-        folder = (*folder, kind)
+    folder = station_catalog_path(record, custom)
     new_path = ['stations'] + (['已归档'] if custom.get('archived') else []) + list(folder) + [record['id']]
     row = db.execute('SELECT * FROM rail_station_nodes WHERE id=?', (ident,)).fetchone()
     if row is None:

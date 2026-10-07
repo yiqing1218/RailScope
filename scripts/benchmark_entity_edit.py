@@ -5,7 +5,7 @@ and their sidecars are copied. Never mutate or hard-link the user's dataset.
 """
 import argparse
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -26,7 +26,24 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'desktop'), str(ROOT / 'backend')]
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 
-def run(output, count=1, source_ref=None, capture_directory=None, project=None, scratch_root=None):
+def run(output, count=1, source_ref=None, capture_directory=None, project=None, scratch_root=None,
+        _workspace=None):
+    scratch_root = Path(scratch_root or ROOT / 'data/processed/edit-benchmark').resolve()
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    if _workspace is None:
+        with tempfile.TemporaryDirectory(prefix='run-', dir=scratch_root) as temporary:
+            command = [sys.executable, str(Path(__file__).resolve()), '--output',
+                       str(Path(output).resolve()), '--count', str(count),
+                       '--scratch-root', str(scratch_root), '--worker-workspace', temporary]
+            for flag, value in (('--source-ref', source_ref),
+                                ('--capture-directory', capture_directory), ('--project', project)):
+                if value is not None:
+                    command.extend((flag, str(value)))
+            subprocess.run(command, check=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+        return json.loads(Path(output).read_text(encoding='utf-8'))
+    if Path(_workspace).resolve().parent != scratch_root or not Path(_workspace).name.startswith('run-'):
+        raise ValueError('性能测试工作目录必须位于隔离缓存中')
     project = Path(project or ROOT)
     if source_ref:
         baseline = ROOT / 'data/processed/edit-benchmark/baseline-code'
@@ -107,7 +124,7 @@ def run(output, count=1, source_ref=None, capture_directory=None, project=None, 
             with measured(_name):
                 return _fn(*args, **kwargs)
         setattr(rail_connection_ui.StationConnectionSelector, name, invoke)
-    with tempfile.TemporaryDirectory(prefix='run-', dir=scratch_root, ignore_cleanup_errors=True) as temporary:
+    with nullcontext(_workspace) as temporary:
         target = Path(temporary)
         for path in source.iterdir():
             if path.suffix == '.sqlite':
@@ -267,5 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('--capture-directory', help='Grab the actual Qt editor widgets before saving')
     parser.add_argument('--project', type=Path, help='Explicit source project, copied read-only')
     parser.add_argument('--scratch-root', type=Path, help='Isolated copy directory on a disk with enough free space')
+    parser.add_argument('--worker-workspace', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    run(args.output, args.count, args.source_ref, args.capture_directory, args.project, args.scratch_root)
+    run(args.output, args.count, args.source_ref, args.capture_directory, args.project, args.scratch_root,
+        args.worker_workspace)

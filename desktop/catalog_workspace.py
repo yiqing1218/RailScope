@@ -78,12 +78,19 @@ def read_overrides(path):
 
 
 def validate_overrides(payload, path):
+    try:
+        from .station_classification import TECHNICAL_TYPES, BUSINESS_TYPES
+    except ImportError:
+        from station_classification import TECHNICAL_TYPES, BUSINESS_TYPES
     if not isinstance(payload, dict):
         raise ValueError(f'铁路目录文件格式无效：{path}')
     for key, value in payload.items():
         if not isinstance(key, str) or not isinstance(value, dict):
             raise ValueError(f'铁路目录对象格式无效：{path}')
         folder = value.get('folder_path')
+        if (value.get('technical_type', '待核实') not in TECHNICAL_TYPES or
+                value.get('business_type', '待核实') not in BUSINESS_TYPES):
+            raise ValueError(f'车站分类无效：{key}')
         color, width = value.get('color'), value.get('width')
         if color is not None and (not isinstance(color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', color)):
             raise ValueError(f'线路颜色必须为 #RRGGBB：{key}')

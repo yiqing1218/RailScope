@@ -71,7 +71,7 @@ def test_station_move_is_local_and_sends_no_map_selection(qtbot, tmp_path, monke
     widget.redo_catalog()
     with sqlite3.connect(widget.catalog.path) as db:
         assert db.execute("SELECT * FROM rail_station_nodes WHERE object_id='node/2'").fetchone() == untouched
-        assert json.loads(db.execute("SELECT path FROM rail_station_nodes WHERE id='station:node/1'").fetchone()[0]) == ['stations', 'Custom', 'Station', 'node/1']
+        assert json.loads(db.execute("SELECT path FROM rail_station_nodes WHERE id='station:node/1'").fetchone()[0]) == ['stations', 'Custom', 'Station', '技术作业待核实', '业务性质待核实', 'node/1']
     assert widget.map.calls == []
 
 

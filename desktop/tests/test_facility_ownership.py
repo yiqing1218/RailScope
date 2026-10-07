@@ -68,7 +68,7 @@ def test_real_area_assigns_each_track_to_its_own_facility_and_keeps_main_line(tm
     assert not model.ids_below('station:node/3')[1]  # No empty old mixed group.
     host=SimpleNamespace(catalog=catalog,station_model=model)
     assert RailCatalog.effective_directory_path(host,'object:network_edge_id:NE-a')==(
-        '车站目录','甲省','甲市','车辆段','甲车辆段','站内轨道','段管线')
+        '车站目录','甲省','甲市','其他','车辆段','甲车辆段','站内轨道','段管线')
     feature=RailCatalog._segment_feature(SimpleNamespace(catalog=catalog,directory=tmp_path),'segment:1')
     assert feature['properties']['network_edge_id']=='NE-a'
     assert (tmp_path/'rail.sqlite').read_bytes()==original

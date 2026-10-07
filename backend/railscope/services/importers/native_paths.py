@@ -1,6 +1,7 @@
 """ASCII aliases for libosmium's narrow Windows file API (no PBF copying)."""
 
 import atexit
+from contextlib import contextmanager
 import ctypes
 import os
 from pathlib import Path
@@ -10,6 +11,19 @@ import tempfile
 from uuid import uuid4
 
 _caches = {}
+_output_aliases = {}
+
+
+@contextmanager
+def native_worker_cache(anchor):
+    """Parent owns a unique cache; remove it only after the worker exits.
+
+    Windows can retain osmium's mmap until process exit. A parent-owned cache
+    makes that lifetime explicit and avoids leaking multi-GB coordinate files.
+    """
+    parent = temporary_directory(anchor)
+    with tempfile.TemporaryDirectory(prefix='worker-', dir=parent) as name:
+        yield Path(name)
 
 
 def _short(path):
@@ -59,6 +73,15 @@ def temporary_directory(path):
 
 def native_path(path, output=False):
     path = Path(path).resolve()
+    # Worker output indices always belong to the parent's disposable cache,
+    # including when the project path already happens to be ASCII.
+    if output and os.environ.get('RAILSCOPE_NATIVE_TEMP'):
+        cache = Path(os.environ['RAILSCOPE_NATIVE_TEMP'])
+        cache.mkdir(parents=True, exist_ok=True)
+        key = (str(cache.resolve()), str(path))
+        if key not in _output_aliases:
+            _output_aliases[key] = cache / (uuid4().hex + '.idx')
+        return _output_aliases[key]
     if sys.platform != "win32" or str(path).isascii():
         return path
     if output:

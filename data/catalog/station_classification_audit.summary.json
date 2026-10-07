@@ -1,0 +1,32 @@
+{
+  "total": 12738,
+  "groups": {
+    "车站": 10349,
+    "其他": 2389
+  },
+  "reference_objects": 2358,
+  "lookup": {
+    "unnamed_source_object": 195,
+    "matched_article": 5419,
+    "missing_article": 3941,
+    "not_station_article": 577,
+    "location_unconfirmed": 183,
+    "not_national_rail": 112,
+    "location_mismatch": 89,
+    "other_facility": 2222
+  },
+  "technical": {
+    "待核实": 9903,
+    "编组站": 70,
+    "中间站": 296,
+    "区段站": 80
+  },
+  "business": {
+    "待核实": 8223,
+    "货运站": 626,
+    "客货运站": 697,
+    "客运站": 803
+  },
+  "both_unresolved": 7970,
+  "both_classified": 193
+}

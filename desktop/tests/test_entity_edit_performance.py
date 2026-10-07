@@ -231,7 +231,7 @@ def test_station_placement_moves_only_owner_subtree_and_keeps_totals(tmp_path):
         # Descendants inherit placement through stable parents; moving a station
         # must not rewrite every physical track's redundant source-time path.
         assert db.execute('SELECT parent_id,path FROM rail_station_nodes WHERE id=?', ('facility:ST-1',)).fetchone() == ('station:way/1', '["stations","旧省","way/1","ST-1"]')
-        assert db.execute('SELECT parent_id FROM rail_station_nodes WHERE id=?', ('station:way/1',)).fetchone()[0] == 'folder:["stations","已归档","新省"]'
+        assert db.execute('SELECT parent_id FROM rail_station_nodes WHERE id=?', ('station:way/1',)).fetchone()[0] == 'folder:["stations","已归档","新省","其他","车辆段"]'
         assert db.execute('SELECT total,station_total,facility_total FROM rail_station_nodes WHERE id=?', ('folder:["stations","已归档","新省"]',)).fetchone() == (2, 1, 1)
         assert db.execute('SELECT path FROM rail_station_nodes WHERE id=?', ('station:way/2',)).fetchone()[0] == '["stations","way/2"]'
 

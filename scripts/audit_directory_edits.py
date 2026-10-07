@@ -6,7 +6,7 @@ commands; browser painting and active TrainRun rebuilding are outside timing.
 """
 import argparse
 from collections import Counter, defaultdict
-from contextlib import closing
+from contextlib import closing, nullcontext
 from functools import wraps
 import gc
 import hashlib
@@ -375,7 +375,22 @@ def national(ui, app, probe, base):
     return result
 
 
-def run(output, include_national=False):
+def run(output, include_national=False, _workspace=None):
+    scratch = (ROOT / 'data/processed/directory-audit').resolve()
+    scratch.mkdir(parents=True, exist_ok=True)
+    if _workspace is None:
+        # Windows releases every Qt/SQLite lease at worker exit. The parent
+        # owns deletion, including when the worker raises during measurement.
+        with tempfile.TemporaryDirectory(prefix='run-', dir=scratch) as temporary:
+            command = [sys.executable, str(Path(__file__).resolve()), '--output',
+                       str(Path(output).resolve()), '--worker-workspace', temporary]
+            if include_national:
+                command.append('--national')
+            subprocess.run(command, check=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+        return json.loads(Path(output).read_text(encoding='utf-8'))
+    if Path(_workspace).resolve().parent != scratch or not Path(_workspace).name.startswith('run-'):
+        raise ValueError('验证工作目录必须位于隔离缓存中')
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFontDatabase
     import rail_catalog_ui as ui
@@ -395,10 +410,8 @@ def run(output, include_national=False):
     sys.excepthook = exception_hook
     probe = Probe()
     install_probe(ui, probe)
-    scratch = ROOT / 'data/processed/directory-audit'
-    scratch.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix='run-', dir=scratch, ignore_cleanup_errors=True) as temporary:
+        with nullcontext(_workspace) as temporary:
             base = Path(temporary)
             result = {'source_ref': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                       'boundary': 'Current production Qt slots/SQLite, instrumented wall time; MapStub excludes browser paint. '
@@ -422,5 +435,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True)
     parser.add_argument('--national', action='store_true')
+    parser.add_argument('--worker-workspace', type=Path, help=argparse.SUPPRESS)
     options = parser.parse_args()
-    run(options.output, options.national)
+    run(options.output, options.national, options.worker_workspace)

@@ -583,6 +583,12 @@ def rail_station_records(directory, regions, query="", limit=4000, overrides=Non
             if query_key in (record["name"] + " " + record["id"]).casefold()
         ]
     result.extend(custom_records)
+    try:
+        from .station_classification import classification
+    except ImportError:
+        from station_classification import classification
+    for record in result:
+        record.update(classification(record, (overrides or {}).get('station:' + record['id'], {})))
     result = list({record["id"]: record for record in result}.values())
     if region_match:
         city = region_match[0].removesuffix("市")

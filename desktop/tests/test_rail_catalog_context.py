@@ -563,10 +563,9 @@ def test_station_overview_archive_and_arbitrary_folder_are_workspace_overrides(
     )
     assert widget.station_items["node/100"] is not original_item
     assert widget.station_tree.itemWidget(widget.station_items["node/100"], 1) is not None
-    assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
+    assert widget._station_path(widget.station_record_by_id['node/100']) == ('自定义站点', '技术作业待核实', '货运站')
     widget.save_station_changes({"node/100"}, archived=True)
-    assert widget.station_items["node/100"].parent().text(0).startswith("自定义站点")
-    assert widget.station_items["node/100"].parent().parent().text(0).startswith("已归档")
+    assert widget._station_path(widget.station_record_by_id['node/100']) == ('已归档', '自定义站点', '技术作业待核实', '货运站')
     from desktop.catalog_workspace import read_overrides
     stored = read_overrides(tmp_path / "settings.json")
     assert stored["station:node/100"]["overview_attributes"]["foreign_name"].startswith("Yanzhoubei")

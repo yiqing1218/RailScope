@@ -38,6 +38,7 @@ try:
     from .rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement, update_station_directory
     from .rail_semantics import semantic_record
     from .rail_station_types import FACILITY_TYPES
+    from .station_classification import classification, station_catalog_path, station_destination_changes, TECHNICAL_TYPES, BUSINESS_TYPES, REFERENCE
     from .provinces import geographic_catalog, VERSION
     from .rail_categories import catalog_parents, TRACK_TYPES
     from .catalog_metadata import (
@@ -56,6 +57,7 @@ except ImportError:
     from rail_station_catalog_model import StationCatalogModel, sync_station_catalog, update_station_label, station_catalog_signature, update_station_placement, update_station_directory
     from rail_semantics import semantic_record
     from rail_station_types import FACILITY_TYPES
+    from station_classification import classification, station_catalog_path, station_destination_changes, TECHNICAL_TYPES, BUSINESS_TYPES, REFERENCE
     from provinces import geographic_catalog, VERSION
     from rail_categories import catalog_parents, TRACK_TYPES
     from catalog_metadata import (
@@ -105,11 +107,11 @@ def save_line_directory(path, overrides):
 
 
 def station_directory_overrides(overrides):
-    return {key: {name: value[name] for name in ("folder_path", "display_name", "station_type", "archived")
+    return {key: {name: value[name] for name in ("folder_path", "display_name", "station_type", "technical_type", "business_type", "archived")
                   if name in value}
             for key, value in overrides.items()
             if key.startswith("station:") and isinstance(value, dict)
-            and any(name in value for name in ("folder_path", "display_name", "station_type", "archived"))}
+            and any(name in value for name in ("folder_path", "display_name", "station_type", "technical_type", "business_type", "archived"))}
 
 
 def save_station_directory(path, overrides):
@@ -487,7 +489,7 @@ class RailCatalog(QWidget):
         self.station_page = QWidget()
         station_layout = QVBoxLayout(self.station_page)
         station_layout.setContentsMargins(0, 0, 0, 0)
-        station_layout.addWidget(text_label("省 / 市 / 车站 / 设施", "sectionLabel"))
+        station_layout.addWidget(text_label("省 / 市 / 技术作业性质 / 业务性质；场段所归入其他", "sectionLabel", wrap=True))
         self.station_tree = CatalogTree()
         self.station_tree.setColumnCount(1)
         self.station_tree.setHeaderHidden(True)
@@ -674,6 +676,15 @@ class RailCatalog(QWidget):
             from rail_line_workspace import expand_assembly_changes
         changes = expand_assembly_changes(self.overrides, changes)
         before = {key: self.local_overrides.get(key, {}) for key in changes}
+        for key, delta in list(changes.items()):
+            axes = {'technical_type', 'business_type'} & delta.keys()
+            if key.startswith('station:') and axes:
+                evidence = {**before[key].get('classification_provenance', {})}
+                for field in axes:
+                    evidence[field] = {'source':'manual_workspace',
+                        'snapshot':str(self.workspace.revisions['directory'] + 1),
+                        'verification_status':'manual','confidence':None}
+                changes[key] = {**delta, 'classification_provenance':evidence}
         self.workspace.update(changes)
         self._merge_changed_overrides(changes)
         self._last_saved_keys = set(changes)
@@ -906,7 +917,8 @@ class RailCatalog(QWidget):
     def _station_token(self):
         sources = [(path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else None
                    for path in (self.directory / 'rail.sqlite', self.directory / 'rail_lines.sqlite')]
-        return json.dumps([12, self._directory_token(), sources])
+        return json.dumps([13, self._directory_token(), sources,
+                           REFERENCE.stat().st_mtime_ns if REFERENCE.exists() else None])
 
     def _mark_station_fresh(self):
         try:
@@ -916,7 +928,7 @@ class RailCatalog(QWidget):
         with closing(sqlite3.connect(self.catalog.path)) as db, db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='rail_station_nodes'").fetchone():
                 db.execute("INSERT OR REPLACE INTO metadata VALUES('station_cache_revision',?)", (self._station_token(),))
-                install_manifest(db, manifest('station-projection', 12, {'revision': self._station_token()},
+                install_manifest(db, manifest('station-projection', 13, {'revision': self._station_token()},
                     {kind: self.workspace.revisions[kind] for kind in ('directory','semantic','assignment','topology')}), 'station_manifest')
 
     def _populate_paged_directory(self):
@@ -2008,7 +2020,7 @@ class RailCatalog(QWidget):
         shown = len(self.station_records)
         suffix = "；结果已限制，请在主地图搜索框继续缩小范围" if shown < self.station_total else ""
         self.station_note.setText(
-            f"共匹配 {self.station_total:,} 个车站或线路所，当前列出 {shown:,} 项；展开站点可查看关联道岔，其余道岔可在地图选择{suffix}。"
+            f"共匹配 {self.station_total:,} 个车站或其他设施，当前列出 {shown:,} 项；展开站点可查看关联道岔，其余道岔可在地图选择{suffix}。"
         )
         self.station_tree.schedule_height()
         self.station_tree.setUpdatesEnabled(True)
@@ -2061,19 +2073,18 @@ class RailCatalog(QWidget):
         record["archived"] = bool(custom.get("archived", False))
         record["overview_attributes"] = custom.get("overview_attributes", {})
         record["custom_attributes"] = custom.get("custom_attributes", {})
+        record.update(classification(record, custom))
 
     def _station_path(self, record):
         custom = self.overrides.get("station:" + record["id"], {})
-        path = station_directory_path(record, custom)
-        kind = custom.get('station_type') or record.get('station_type')
-        if not custom.get('folder_path') and kind in FACILITY_TYPES:
-            path = (*path, kind)
+        path = station_catalog_path(record, custom)
         return ("已归档", *path) if record.get("archived") else path
 
     @staticmethod
     def _station_tooltip(record):
         return (
-            f"{record['name']}\n车站类型：{record['station_type']}\n"
+            f"{record['name']}\n技术作业性质：{record.get('technical_type', '待核实')}\n"
+            f"业务性质：{record.get('business_type', '待核实')}\n来源类型：{record['station_type']}\n"
             f"所在铁路：{', '.join(record['line_names']) or '待关联'}\n"
             f"稳定编号：{record['id']}"
         )
@@ -2264,6 +2275,7 @@ class RailCatalog(QWidget):
                         "infrastructure_id": record["id"],
                         "display_name": record["name"],
                         "station_type": record["station_type"],
+                        **classification(record, self.overrides.get('station:' + record['id'], {})),
                     },
                     "geometry": {"type": "Point", "coordinates": record["coordinates"]},
                 }
@@ -2413,11 +2425,10 @@ class RailCatalog(QWidget):
                 QMessageBox.warning(self, "道岔名称未保存", str(error))
 
     def station_destination_paths(self):
-        paths = set(self.station_folder_paths)
-        for path in self.station_groups:
-            clean = path[1:] if path and path[0] == "已归档" else path
-            if clean:
-                paths.add(tuple(clean))
+        # Move menus edit geographic/workspace folders. Classification is
+        # controlled by the two explicit fields, never saved as folder text.
+        paths = {station_directory_path(record, self.overrides.get('station:' + record['id'], {}))
+                 for record in self.station_record_by_id.values()}
         for key, value in self.overrides.items():
             folder = value.get("folder_path") if key.startswith("station:") else None
             if isinstance(folder, list) and folder:
@@ -2441,7 +2452,7 @@ class RailCatalog(QWidget):
         }
         if path and station_ids:
             clean = list(path[1:] if path[0] == "已归档" else path)
-            self.save_station_changes(station_ids, folder_path=clean)
+            self.save_station_changes(station_ids, **station_destination_changes(clean))
 
     def _station_group_path(self, item):
         return self.station_group_paths.get(id(item)) if item is not None else None
@@ -2910,6 +2921,8 @@ class RailCatalog(QWidget):
         overview_attributes=None,
         custom_attributes=None,
         archived=None,
+        technical_type=None,
+        business_type=None,
     ):
         record = self.station_record_by_id.get(station_id)
         if not record:
@@ -2929,6 +2942,12 @@ class RailCatalog(QWidget):
             if station_type_value not in STATION_TYPES:
                 raise ValueError("车站类型无效")
             change["station_type"] = station_type_value
+        for field, value, allowed in (("technical_type", technical_type, TECHNICAL_TYPES),
+                                      ("business_type", business_type, BUSINESS_TYPES)):
+            if value is not None:
+                if value not in allowed:
+                    raise ValueError("车站分类无效")
+                change[field] = value
         if connected_lines is not None:
             normalized = []
             for value in connected_lines:
@@ -2976,6 +2995,10 @@ class RailCatalog(QWidget):
             delta.pop("folder_path", None)
         if "station_type" not in before and change.get("station_type") == record.get("station_type"):
             delta.pop("station_type", None)
+        current_classification = classification(record, before)
+        for field in ("technical_type", "business_type"):
+            if field not in before and change.get(field) == current_classification[field]:
+                delta.pop(field, None)
         if not delta:
             return
         self._save_local_overrides({key: delta})
@@ -2984,14 +3007,14 @@ class RailCatalog(QWidget):
     def _refresh_station_changes(self, deltas):
         station_ids = {key.removeprefix('station:') for key in deltas}
         visible_ids = {key.removeprefix('station:') for key, delta in deltas.items()
-                       if {'display_name', 'folder_path', 'archived', 'station_type', 'connected_lines'} & delta.keys()}
+                       if {'display_name', 'folder_path', 'archived', 'station_type', 'technical_type', 'business_type', 'connected_lines'} & delta.keys()}
         self._refresh_station_items(station_ids, tree_ids=visible_ids)
         placement_changed = False
         placements = []
         for sid in station_ids:
             record = self.station_record_by_id.get(sid)
             delta = deltas['station:' + sid]
-            placement = bool({'folder_path', 'archived', 'station_type'} & delta.keys())
+            placement = bool({'folder_path', 'archived', 'station_type', 'technical_type', 'business_type'} & delta.keys())
             placement_changed |= placement
             if hasattr(self, 'station_model') and record:
                 if placement:

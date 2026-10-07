@@ -1,0 +1,42 @@
+{
+  "schema": "railscope.station-classification-primary.v1",
+  "sources": [
+    {
+      "url": "https://www.rails.cn/ths/html/proservice/product/bianzuzhan.html",
+      "technical_type": "编组站",
+      "station_names": [
+        "新丰镇",
+        "兰州北",
+        "包头西",
+        "丰台西",
+        "石家庄南",
+        "柳州南",
+        "哈尔滨南",
+        "襄阳北",
+        "向塘西",
+        "株洲北",
+        "昆明东",
+        "合肥东",
+        "乔司"
+      ],
+      "snapshot": "sha256:108abfbc9da9a2e2a4c55c3b95a506fff8ad52e6bcdf76e6ae5d90da45cef456",
+      "retrieved_at": "2026-10-07T05:58:02.528038+00:00",
+      "verification_status": "source_unverified",
+      "confidence": null
+    },
+    {
+      "url": "https://www.crsc.cn/news/tsi_4691_9732_28697.html",
+      "technical_type": "编组站",
+      "station_names": [
+        "郑州北",
+        "成都北",
+        "贵阳南",
+        "武汉北"
+      ],
+      "snapshot": "sha256:d7454e0c97e8d8d34fbbecb63c4970bd26c731773db641d6e48416e73c87b598",
+      "retrieved_at": "2026-10-07T05:58:02.811329+00:00",
+      "verification_status": "source_unverified",
+      "confidence": null
+    }
+  ]
+}
