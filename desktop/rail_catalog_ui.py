@@ -1019,11 +1019,16 @@ class RailCatalog(QWidget):
     def _replay_workspace_labels(self):
         """Recover derived labels if the app stopped after the edit transaction.
 
-        Only owners in the incremental store are visited. Cached labels are
+        Only actual name edits in the incremental journal are visited. Cached labels are
         never more authoritative than a successfully persisted edit or Undo.
         """
-        keys = self.workspace.edited_keys
-        self._refresh_line_labels({key for key in keys if key in self.catalog})
+        keys = self.workspace.label_edit_keys()
+        line_keys = {key for key in keys if key in self.catalog}
+        representatives = getattr(self, 'assembly_representatives', {})
+        line_keys.update(representatives[key.removeprefix('line-assembly:')]
+            for key in keys if key.startswith('line-assembly:') and
+            key.removeprefix('line-assembly:') in representatives)
+        self._refresh_line_labels(line_keys)
         if not hasattr(self, 'station_model'):
             return
         station_keys = {key for key in keys if key.startswith('station:')}

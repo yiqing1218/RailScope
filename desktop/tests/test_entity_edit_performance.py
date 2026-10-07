@@ -311,6 +311,22 @@ def test_saved_edit_and_undo_repair_an_old_directory_cache_after_restart(tmp_pat
         workspace.undo()
 
 
+def test_startup_label_recovery_skips_bulk_semantic_and_color_edits(tmp_path):
+    from desktop.rail_catalog_ui import RailCatalog
+    path = tmp_path / 'workspace.json'
+    path.write_text(json.dumps({f'RL-{i}': {'display_name': f'线路{i}'} for i in range(10000)}), encoding='utf-8')
+    workspace = CatalogWorkspace(path)
+    workspace.load()
+    workspace.update({f'RL-{i}': {'rail_semantics': {'line_role': 'connecting_line'}, 'color': '#2e7d32'}
+                      for i in range(10000)})
+    workspace.update({'RL-3': {'display_name': '真正改过的名称'}})
+    replayed = []
+    host = SimpleNamespace(workspace=workspace, catalog={f'RL-{i}': {} for i in range(10000)},
+        overrides=workspace.values, _refresh_line_labels=lambda keys: replayed.append(keys))
+    RailCatalog._replay_workspace_labels(host)
+    assert replayed == [{'RL-3'}]
+
+
 @pytest.mark.parametrize('value', [{'color': 'red'}, {'width': -1}, {'width': float('nan')}])
 def test_invalid_renderer_fields_do_not_create_an_edit_or_history(tmp_path, value):
     workspace = CatalogWorkspace(tmp_path / 'workspace.json')

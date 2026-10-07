@@ -209,6 +209,32 @@ class CatalogWorkspace:
             return None
         return self.values
 
+    def label_edit_keys(self):
+        """Recover name edits, without treating semantic/color edits as renames."""
+        if self.load_failed or not edit_database(self.path).exists():
+            return set()
+        fields = {'display_name', 'line_name', 'assembly_name'}
+        keys = set()
+        with closing(sqlite3.connect(edit_database(self.path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            # Legacy incremental entries have no journal. Retain their recovery
+            # behavior, but exclude ordinary migration seeds and semantic-only IDs.
+            legacy = db.execute("SELECT value FROM workspace_meta WHERE key='edited_keys'").fetchone()
+            for key in json.loads(legacy[0]) if legacy else ():
+                value = self.values.get(key)
+                attrs = (value or {}).get('attributes', value or {})
+                if value is None or fields & attrs.keys():
+                    keys.add(key)
+            # Large automatic classification commands can be hundreds of MB.
+            # Their typed revision excludes them before any JSON is decoded.
+            for (raw,) in db.execute("SELECT delta FROM command_history WHERE kinds LIKE '%\"presentation\"%'"):
+                for key, delta in json.loads(raw).items():
+                    before, after = delta.get('before') or {}, delta.get('after') or {}
+                    if key.startswith('line-assembly:'):
+                        before, after = before.get('attributes') or {}, after.get('attributes') or {}
+                    if any(before.get(field) != after.get(field) for field in fields):
+                        keys.add(key)
+        return keys
+
     def _commit(self, entries):
         if self.load_failed:
             raise ValueError('工作区未成功载入；请先修复文件并重新载入，原文件保留')
