@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .entity_refresh import field_delta, ordinary_attributes, PLACEMENT_FIELDS, NAME_FIELDS
+    from .entity_refresh import field_delta, ordinary_attributes, line_classification_change, PLACEMENT_FIELDS, NAME_FIELDS
     from .catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from .components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from .rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
@@ -49,7 +49,7 @@ try:
         station_directory_path,
     )
 except ImportError:
-    from entity_refresh import field_delta, ordinary_attributes, PLACEMENT_FIELDS, NAME_FIELDS
+    from entity_refresh import field_delta, ordinary_attributes, line_classification_change, PLACEMENT_FIELDS, NAME_FIELDS
     from catalog_workspace import CatalogWorkspace, read_overrides, station_assignment_changes
     from components import text_label, GrowingTree, CurrentPageTabs, directory_checkbox_style
     from rail_catalog_index import RailCatalogIndex, build_index as build_catalog_index
@@ -699,6 +699,14 @@ class RailCatalog(QWidget):
         value = self.local_overrides
         self._merge_changed_overrides(changed)
         deltas = {key: field_delta(previous.get(key), value.get(key)) for key in changed}
+        if changed and any({'rail_semantics', 'track_type'} & (
+                delta.get('attributes', {}).keys() if key.startswith('line-assembly:') else delta.keys())
+                for key, delta in deltas.items()) and all(line_classification_change(
+                previous.get(key, {}).get('attributes', {}) if key.startswith('line-assembly:') else previous.get(key),
+                value.get(key, {}).get('attributes', {}) if key.startswith('line-assembly:') else value.get(key))
+                for key in changed):
+            self._refresh_line_classifications(changed, deltas)
+            return
         if any({'station_id', 'station_source', 'station_assignment'} & delta.keys() for delta in deltas.values()) and all(set(delta) <= {'station_id', 'station_source', 'station_assignment', 'folder_path', 'directory_view'} for delta in deltas.values()):
             self._refresh_assignment_changes(deltas)
             return
@@ -3113,6 +3121,15 @@ class RailCatalog(QWidget):
         if not effective and not object_changes:
             return
 
+        combined = {**effective, **object_changes}
+        if any({'rail_semantics', 'track_type'} & change.keys() for change in combined.values()) and all(line_classification_change(
+                self.meta(key) if key in self.catalog else self.overrides.get(key),
+                {**(self.meta(key) if key in self.catalog else self.overrides.get(key, {})), **change})
+                for key, change in combined.items()):
+            self._save_local_overrides(combined)
+            self._refresh_line_classifications(self._last_saved_keys, self._last_saved_deltas)
+            return
+
         deltas = {key: field_delta(self.meta(key), {**self.meta(key), **change})
                   for key, change in effective.items()}
         deltas.update({key: field_delta(self.overrides.get(key),
@@ -3217,6 +3234,22 @@ class RailCatalog(QWidget):
         # Names, notes and renderer fields returned through the incremental
         # branches above. Structural changes retain canonical path revalidation.
         self._emit_structural_change()
+
+    def _refresh_line_classifications(self, keys, deltas):
+        catalog_keys = {key for key in keys if key in self.catalog}
+        catalog_keys.update(self.assembly_representatives[key.removeprefix('line-assembly:')]
+            for key in keys if key.startswith('line-assembly:') and
+            key.removeprefix('line-assembly:') in self.assembly_representatives)
+        if catalog_keys:
+            self._update_paged_directory(catalog_keys)
+        object_names = {key: delta for key, delta in deltas.items()
+                        if key.startswith('object:') and NAME_FIELDS & delta.keys()}
+        if object_names:
+            self._update_segment_labels(object_names)
+        # The station rows and physical ownership are unchanged. Record the
+        # current revision so reopening does not replay a nationwide rebuild.
+        self._mark_station_fresh()
+        self.entities_changed.emit(deltas)
 
     def _refresh_assignment_changes(self, deltas):
         try:

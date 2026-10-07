@@ -75,7 +75,7 @@ def track_type(tags):
         return "折返线", "OSM 名称中的折返用途；尚未核验联锁进路"
     if any(s in name for s in ("渡线", "渡A线", "渡B线")):
         return "渡线 / 道岔连接轨", "OSM 名称中的渡线用途"
-    if any(s in name for s in ("联络", "疏解")):
+    if any(s in name for s in ("联络", "连络线", "疏解")):
         return "联络线 / 匝道", "OSM 名称中的联络用途；不等于已验证的车次进路"
     if service == "spur":
         return "支线 / 岔道", "service=spur"

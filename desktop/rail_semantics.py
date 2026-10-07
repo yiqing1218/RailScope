@@ -5,6 +5,10 @@ legacy style settings are deliberately excluded from semantic overrides.
 """
 import math
 from railscope.rail_semantics import edge_semantics, RAILWAY_CLASSES, LINE_ROLES, TRACK_ROLES, OPERATIONAL_STATUSES
+try:
+    from .connecting_lines import connecting_line_name, NAME_RULE_VERSION
+except ImportError:
+    from connecting_lines import connecting_line_name, NAME_RULE_VERSION
 
 SEMANTIC_FIELDS = ('railway_class', 'line_role', 'track_role', 'facility_id',
                    'yard_id', 'zone_id', 'construction_status')
@@ -52,13 +56,24 @@ def semantic_record(value, override=None, *, include_provenance=True):
     # Decode old presentation labels into the SAME canonical fields. Keep the
     # migration evidence explicit; directory placement never determines a fact.
     legacy_type = str((override or {}).get('track_type') or value.get('track_type') or '')
-    name = str(value.get('source_name') or value.get('line_name') or value.get('name') or '')
+    name = str((override or {}).get('display_name') or (override or {}).get('line_name') or
+               value.get('source_name') or value.get('line_name') or value.get('name') or '')
+    named_connector = connecting_line_name(value, override)
+    if named_connector and custom.get('source') == 'rail_line_review':
+        # Replaying an old automatic OSM usage=branch review must not undo the
+        # requested name classification. Later explicit manual edits still win.
+        custom['line_role'] = 'connecting_line'
+        custom['provenance'] = {**custom.get('provenance', {}), 'line_role': {
+            'value': 'connecting_line', 'source': 'user_name_classification',
+            'snapshot_id': custom.get('snapshot_id'), 'version': NAME_RULE_VERSION,
+            'evidence': '名称含联络线或连络线：' + named_connector,
+            'verification_status': 'user_classified_by_name', 'confidence': None}}
     hints = {}
     if result['railway_class'] == 'unknown':
         hints['railway_class'] = {'高速铁路线': 'high_speed', '高速铁路站场股道': 'high_speed',
             '普速铁路线': 'conventional', '普速铁路站场股道': 'conventional',
             '货运铁路线': 'freight', '货运站场股道': 'freight'}.get(legacy_type, 'unknown')
-    if legacy_type == '联络线 / 匝道' or any(s in name for s in ('联络', '疏解', '联结线', '联线', '货联', '下联', '上联')):
+    if named_connector or legacy_type == '联络线 / 匝道' or any(s in name for s in ('联络', '疏解', '联结线', '联线', '货联', '下联', '上联')):
         hints['line_role'] = 'connecting_line'
     elif legacy_type == '支线 / 岔道' and result['line_role'] == 'unknown':
         hints['line_role'] = 'branch_line'
@@ -101,7 +116,10 @@ def semantic_record(value, override=None, *, include_provenance=True):
                 'verification_status': custom.get('verification_status', 'user_verified'),
                 'confidence': custom.get('confidence'),
             }
-            proof = custom.get('provenance', {}).get(key) if custom.get('source') == 'rail_line_review' else None
+            proof = custom.get('provenance', {}).get(key)
+            if custom.get('source') != 'rail_line_review' and (not isinstance(proof, dict) or
+                    proof.get('source') != 'user_name_classification'):
+                proof = None
             if isinstance(proof, dict) and proof.get('value') == custom[key]:
                 result['provenance'][key] = dict(proof)
     if result['track_role'] == 'main_track':

@@ -44,6 +44,37 @@ def forbid_full_work(monkeypatch, widget):
     monkeypatch.setattr('desktop.rail_catalog_ui.sync_station_catalog', reject)
 
 
+@pytest.mark.parametrize('scope', ['catalog', 'object', 'assembly'])
+def test_line_function_edit_and_history_do_not_prepare_station_directory(qtbot, tmp_path, monkeypatch, scope):
+    widget = widget_with_stations(qtbot, tmp_path, monkeypatch)
+    key = 'RL-0'
+    if scope == 'assembly':
+        widget.merge_line_segments({'RL-0', 'RL-1'}, 'Shared')
+    elif scope == 'object':
+        key = 'object:network_edge_id:NE-one'
+    widget._save_local_overrides({key: {'rail_semantics': {'line_role': 'branch_line'}}})
+    before = widget.workspace.revisions.copy()
+    with sqlite3.connect(widget.catalog.path) as db:
+        station_rows = db.execute('SELECT * FROM rail_station_nodes ORDER BY id').fetchall()
+    events = []
+    widget.entities_changed.connect(events.append)
+    forbid_full_work(monkeypatch, widget)
+    delta = {key: {'rail_semantics': {'line_role': 'connecting_line',
+                                   'source': 'workspace_override', 'verification_status': 'user_verified'}}}
+    widget.save_overrides(delta if scope != 'object' else {}, delta if scope == 'object' else None)
+    widget.undo_catalog()
+    widget.redo_catalog()
+    assert len(events) == 3
+    assert widget.overrides[key]['rail_semantics']['line_role'] == 'connecting_line'
+    assert widget.workspace.revisions['semantic'] == before['semantic'] + 3
+    assert widget.workspace.revisions['topology'] == before['topology']
+    with sqlite3.connect(widget.catalog.path) as db:
+        assert db.execute('SELECT * FROM rail_station_nodes ORDER BY id').fetchall() == station_rows
+    # Reopening with the current revision must keep the existing station cache.
+    monkeypatch.undo()
+    assert widget._prepare_station_catalog() is False
+
+
 def test_line_move_and_history_keep_unrelated_loaded_branch(qtbot, tmp_path, monkeypatch):
     widget = widget_with_stations(qtbot, tmp_path, monkeypatch)
     index = widget.line_model.reveal_catalog_id('RL-699')

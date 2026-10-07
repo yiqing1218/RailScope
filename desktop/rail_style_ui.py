@@ -54,11 +54,15 @@ def recommended_zoom_curve():
 
 
 def defaults():
+    try:
+        from .connecting_lines import CONNECTING_LINE_COLOR
+    except ImportError:
+        from connecting_lines import CONNECTING_LINE_COLOR
     colors = {
         "高速铁路线": "#c52c3b",
         "普速铁路线": "#283541",
         "货运铁路线": "#4b5055",
-        "联络线 / 匝道": "#75609a",
+        "联络线 / 匝道": CONNECTING_LINE_COLOR,
         "支线 / 岔道": "#557a69",
         "渡线 / 道岔连接轨": "#e09036",
         "高速铁路站场股道": "#b75964",
@@ -80,7 +84,11 @@ def defaults():
                   'track.conventional.connecting_line', 'track.freight.main_line']
     band_colors = {'300-350': '#c52c3b', '250-300': '#df7835', '200-250': '#2b8694', '150-200': '#587db0', 'unknown': '#667887'}
     for key, (_group, category, function, band) in STYLE_SELECTIONS.items():
-        if category == 'high_speed' and function in ('main_line', 'connecting_line'):
+        if _group == 'track' and function == 'connecting_line':
+            styles[key]['color'] = CONNECTING_LINE_COLOR
+            if key not in configured:
+                configured.append(key)
+        elif category == 'high_speed' and function == 'main_line':
             styles[key]['color'] = band_colors[band]
             configured.append(key)
     styles[CONFIGURED_STYLE_KEYS] = configured
