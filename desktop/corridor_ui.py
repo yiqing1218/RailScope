@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QGridLayout,
     QLineEdit,
     QTreeWidgetItem,
     QPushButton,
@@ -27,10 +28,10 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import GrowingTree, text_label, SquareSwitch
+    from .components import VisibilityTree, text_label, visibility_row, SquareSwitch
     from .rail_lines import RESOLUTION_KEY
 except ImportError:
-    from components import GrowingTree, text_label, SquareSwitch
+    from components import VisibilityTree, text_label, visibility_row, SquareSwitch
     from rail_lines import RESOLUTION_KEY
 
 
@@ -459,47 +460,43 @@ class CorridorPanel(QWidget):
         self.editor = editor
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 5, 0)
-        layout.addWidget(
-            text_label("完整物理路径 → 单向 Corridor → 多个 TrainRun", "muted", True)
-        )
-        layout.addWidget(
-            text_label(
-                "运行通道不是“八纵八横”规划分类。点击通道或车次，在主地图显示共享径路。",
-                wrap=True,
-            )
-        )
+        layout.setSpacing(8)
+        layout.addWidget(text_label("运行通道与车次", "panelTitle", True))
+        self.master = editor.route_switch
+        layout.addWidget(visibility_row("显示全部通道路径", self.master))
+        self.train_master = SquareSwitch()
+        self.train_master.toggled.connect(self.set_all_trains_visible)
+        layout.addWidget(visibility_row("显示全部车次", self.train_master,
+            "路径与车次分别控制；隐藏路径不影响列车运行。"))
         self.search = QLineEdit()
         self.search.setPlaceholderText("筛选运行通道 / 车次")
         self.search.textChanged.connect(self.refresh)
         layout.addWidget(self.search)
-        self.tree = GrowingTree()
-        self.tree.setColumnCount(2)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 30)
-        self.tree.setHeaderHidden(True)
+        self.tree = VisibilityTree()
+        self.tree.itemChanged.connect(self.visibility_changed)
         self.tree.itemClicked.connect(self.choose)
         self.tree.itemDoubleClicked.connect(self.open_item_editor)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         layout.addWidget(self.tree)
-        edit = QPushButton("编辑端点—线路通道表格…")
+        actions = QGridLayout()
+        edit = QPushButton("编辑通道…")
         edit.clicked.connect(self.edit_selected)
-        layout.addWidget(edit)
-        create = QPushButton("新建单向通道…")
+        actions.addWidget(edit, 0, 1)
+        create = QPushButton("新建通道…")
         create.clicked.connect(lambda: self.edit_table(None))
-        layout.addWidget(create)
+        actions.addWidget(create, 0, 0)
         remove = QPushButton('删除所选通道')
         remove.clicked.connect(self.delete_selected)
-        layout.addWidget(remove)
-        save = QPushButton("保存通道与国铁车次")
+        actions.addWidget(remove, 1, 0)
+        save = QPushButton("保存通道与车次")
         save.clicked.connect(self.save)
-        layout.addWidget(save)
+        actions.addWidget(save, 1, 1)
+        layout.addLayout(actions)
         self.note = text_label(
-            "通道导入 / 导出在“文件”菜单。新增车次只引用现有通道。", wrap=True
+            "双击编辑通道或车次；右键查看引用关系。新增车次引用完整共享通道。", wrap=True
         )
         layout.addWidget(self.note)
-        layout.addStretch()
         self._signature = None
         editor.updated.connect(self.refresh)
         self.refresh()
@@ -521,11 +518,27 @@ class CorridorPanel(QWidget):
         self._signature = signature
         selected = self.tree.currentItem()
         selected_id = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
+        selected_train = selected.data(0, Qt.ItemDataRole.UserRole + 1) if selected else None
         expanded = {
             self.tree.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole)
             for i in range(self.tree.topLevelItemCount())
             if self.tree.topLevelItem(i).isExpanded()
         }
+        route_ids = {route['id'] for route in payload.get('routes', [])}
+        train_ids = {train['id'] for train in self.editor.plan.trains}
+        all_on = bool(route_ids) and route_ids <= self.editor.visible_corridors
+        any_on = bool(route_ids & self.editor.visible_corridors)
+        self.master.blockSignals(True)
+        self.master.setChecked(all_on)
+        self.master.setMixed(any_on and not all_on)
+        self.master.setEnabled(bool(route_ids))
+        self.master.blockSignals(False)
+        self.train_master.blockSignals(True)
+        self.train_master.setChecked(bool(train_ids) and not (train_ids & self.editor.hidden_trains))
+        self.train_master.setMixed(bool(train_ids - self.editor.hidden_trains) and bool(train_ids & self.editor.hidden_trains))
+        self.train_master.setEnabled(bool(train_ids))
+        self.train_master.blockSignals(False)
+        self.tree.blockSignals(True)
         self.tree.clear()
         query = self.search.text().strip().lower()
         for route in payload.get("routes", []):
@@ -542,16 +555,14 @@ class CorridorPanel(QWidget):
                 not in (name + route["id"] + " ".join(t["id"] for t in trains)).lower()
             ):
                 continue
-            root = QTreeWidgetItem(self.tree, [f"{name} · {len(trains)} 车次"])
+            root = QTreeWidgetItem(self.tree, [f"{name}\n{len(trains)} 车次"])
             root.setData(0, Qt.ItemDataRole.UserRole, route["id"])
-            switch = SquareSwitch(route["id"] in self.editor.visible_corridors)
-            switch.setAccessibleName("显示通道及全部车次 " + name)
-            switch.setMixed(route["id"] in self.editor.visible_corridors and any(t["id"] in self.editor.hidden_trains for t in trains))
-            switch.toggled.connect(lambda on, ident=route["id"]: self.editor.set_corridor_visible(ident, on))
-            self.tree.setItemWidget(root, 1, switch)
+            on = route['id'] in self.editor.visible_corridors
+            root.setFlags(root.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            root.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
             root.setToolTip(
                 0,
-                f"{route['id']}\n{len(route['path'])} 个真实物理区间 · 完整连续 · 单向",
+                f"{name}\n{route['id']}\n{len(route['path'])} 个真实物理区间 · 完整连续 · 单向",
             )
             root.setExpanded(bool(query) or route["id"] in expanded)
             if route["id"] == selected_id:
@@ -560,12 +571,26 @@ class CorridorPanel(QWidget):
                 child = QTreeWidgetItem(root, [train["id"]])
                 child.setData(0, Qt.ItemDataRole.UserRole, route["id"])
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, train["id"])
-                train_switch = SquareSwitch(train["id"] not in self.editor.hidden_trains)
-                train_switch.toggled.connect(
-                    lambda on, ident=train["id"]: self.editor.set_trains_visible({ident}, on)
-                )
-                self.tree.setItemWidget(child, 1, train_switch)
+                child.setFlags(child.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                child.setCheckState(0, Qt.CheckState.Checked if train['id'] not in self.editor.hidden_trains else Qt.CheckState.Unchecked)
+                if route['id'] == selected_id and train['id'] == selected_train:
+                    self.tree.setCurrentItem(child)
+        self.tree.blockSignals(False)
         self.tree.schedule_height()
+
+    def visibility_changed(self, item, column):
+        on = item.checkState(0) != Qt.CheckState.Unchecked
+        train_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if train_id:
+            self.editor.set_trains_visible({train_id}, on)
+            # Defer rebuilding until the native checkbox event has returned.
+            QTimer.singleShot(0, self.refresh)
+        else:
+            self.editor.set_corridor_visible(item.data(0, Qt.ItemDataRole.UserRole), on)
+
+    def set_all_trains_visible(self, on):
+        self.editor.set_trains_visible({train['id'] for train in self.editor.plan.trains}, on)
+        QTimer.singleShot(0, self.refresh)
 
     def choose(self, item, column):
         self.selected.emit(

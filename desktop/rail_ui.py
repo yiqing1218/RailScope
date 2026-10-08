@@ -392,8 +392,6 @@ class RailEditor(OperationsEditor):
         domain_repo, domain_bindings = self.canonical_repository(
             self.workspace_identity_path, graph=graph, payload=document)
         # Publish only after both DTO and shared domain validation succeed.
-        self.pause()
-        self.set_enabled(False)
         self.graph = graph
         self.shared_station_features = {
             p["properties"]["osm_node_id"]: p for p in points if "geometry" in p
@@ -412,9 +410,8 @@ class RailEditor(OperationsEditor):
         self.line_combo.blockSignals(False)
         self.line_changed()
         self.changed("国铁径路与时刻已校验；这是时刻仿真，不是联锁安全校验")
-        self.clock = min(
-            (t["stops"][0]["departure_s"] for t in plan.trains), default=25200
-        )
+        if not self.playing:
+            self.clock = min((t["stops"][0]["departure_s"] for t in plan.trains), default=25200)
         if hasattr(self, "time_input"):
             self.time_input.setText(
                 f"{int(self.clock) // 3600:02}:{int(self.clock) % 3600 // 60:02}:{int(self.clock) % 60:02}"
@@ -437,9 +434,6 @@ class RailEditor(OperationsEditor):
         self.locate_current_line()
 
     def set_corridor_visible(self, ident, on):
-        ids = {train["id"] for train in (self.rail_payload or {}).get("trains", [])
-               if train["route_id"] == ident}
-        self.set_trains_visible(ids, on)
         if on:
             self.visible_corridors.add(ident)
         else:
@@ -637,6 +631,7 @@ class RailEditor(OperationsEditor):
         )
 
     def reset(self):
+        self.stop_follow_beijing()
         self.clock = min(
             (t["stops"][0]["departure_s"] for t in self.plan.trains), default=25200
         )
@@ -653,15 +648,13 @@ class RailEditor(OperationsEditor):
 
     def sidebar(self):
         try:
-            from .components import SquareSwitch, switch_row
+            from .components import SquareSwitch
         except ImportError:
-            from components import SquareSwitch, switch_row
+            from components import SquareSwitch
         body = super().sidebar()
         self.route_switch = SquareSwitch(False)
         self.route_switch.toggled.connect(self.set_reference_visible)
-        body.widget().layout().insertWidget(
-            2, switch_row("共享运行通道 / 控制点", self.route_switch)
-        )
+        self.vehicle_fold.hide()
         self.time_input.setText(format_time(self.clock))
         return body
 
@@ -788,7 +781,6 @@ class RailEditor(OperationsEditor):
             return
         for route in routes:
             self.visible_corridors.add(route["id"]) if on else self.visible_corridors.discard(route["id"])
-        self.set_trains_visible({train["id"] for train in self.plan.trains}, on)
         if not on:
             self.displayed_train_id = ""
         self.push_corridors()
@@ -1025,10 +1017,10 @@ class RailEditor(OperationsEditor):
             self.line_combo.setCurrentIndex(
                 self.line_combo.findData("rail/" + train_id)
             )
-            self.show_reference_route()
+            self.push_corridors()
+            self.locate_current_line()
             return
         self.displayed_train_id = ""
-        self.set_corridor_visible(corridor_id, True)
         lookup = {e["id"]: e for e in self.graph["edges"]}
         first, last = route["path"][0], route["path"][-1]
         start = lookup[first["edge_id"]][

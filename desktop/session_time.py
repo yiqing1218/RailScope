@@ -1,6 +1,7 @@
 """One clock for map, both players, history and station views."""
 
 from datetime import date
+from weakref import WeakSet
 from PySide6.QtCore import QObject, Signal, QTimer
 
 
@@ -14,6 +15,7 @@ class SessionTime(QObject):
         self.day = date.today().isoformat()
         self.current_date = True
         self.driver = None
+        self.players = WeakSet()
         self._timer = QTimer(self)
         self._timer.setInterval(60000)
         self._timer.timeout.connect(self.check_today)

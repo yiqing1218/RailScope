@@ -2742,35 +2742,31 @@ class Desk(QMainWindow):
         self.run_pages = QStackedWidget()
         self.run_pages.addWidget(self.operations.sidebar())
         rail_sidebar = self.rail_operations.sidebar()
-        self.rail_operations.vehicle_tree.parentWidget().hide()
         self.corridor_panel = CorridorPanel(self.rail_operations)
         self.corridor_panel.selected.connect(self.show_corridor)
-        rail_layout = rail_sidebar.widget().layout()
-        rail_layout.insertWidget(rail_layout.count() - 1, self.corridor_panel)
+        self.rail_operations.directory_layout.addWidget(self.corridor_panel)
         self.run_pages.addWidget(rail_sidebar)
         layout.addWidget(self.run_pages, 1)
         self.run_mode.currentIndexChanged.connect(self.change_run_mode)
         return body
 
     def change_run_mode(self, index):
-        self.operations.pause()
-        self.rail_operations.pause()
         self.run_pages.setCurrentIndex(index)
         self.map.call("setRunSystem", "rail" if index == 1 else "metro")
         self.map.call(
             "setVisibility",
             "vehicles",
-            index == 0 and self.operations.vehicle_switch.isChecked(),
+            self.operations.vehicle_switch.isChecked(),
         )
         self.map.call(
             "setVisibility",
             "railVehicles",
-            index == 1 and self.rail_operations.vehicle_switch.isChecked(),
+            self.rail_operations.vehicle_switch.isChecked(),
         )
         self.map.call(
             "setVisibility",
             "railPlan",
-            index == 1 and self.rail_operations.route_switch.isChecked(),
+            bool(self.rail_operations.visible_corridors),
         )
 
     def resize_run_editor(self, index, expanded=False):

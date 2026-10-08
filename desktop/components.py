@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QTreeWidget,
     QTabWidget,
+    QStyledItemDelegate,
 )
 
 THEME = """
@@ -285,6 +286,9 @@ class SquareSwitch(QAbstractButton):
         self._mixed = bool(value)
         self.update()
 
+    def isMixed(self):
+        return self._mixed
+
     def setChecked(self, checked):
         self._mixed = False
         super().setChecked(checked)
@@ -318,6 +322,42 @@ def directory_checkbox_style():
         for view in ("QTreeView", "QTreeWidget")
         for state, file in states.items()
     )
+
+
+class _VisibilityRowDelegate(QStyledItemDelegate):
+    def sizeHint(self, option, index):
+        tree = self.parent()
+        depth, parent = 1, index.parent()
+        while parent.isValid():
+            depth += 1
+            parent = parent.parent()
+        width = max(60, tree.viewport().width() - depth * tree.indentation() - 40)
+        from PySide6.QtGui import QFontMetrics
+        from PySide6.QtCore import QRect
+        font = index.data(Qt.ItemDataRole.FontRole) or tree.font()
+        bounds = QFontMetrics(font).boundingRect(QRect(0, 0, width, 10000),
+            Qt.TextFlag.TextWordWrap, str(index.data() or ''))
+        return QSize(width, max(34, bounds.height() + 16))
+
+
+class VisibilityTree(GrowingTree):
+    """A single left checkbox column; long route names wrap at the panel width."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setColumnCount(1)
+        self.setHeaderHidden(True)
+        self.setWordWrap(True)
+        self.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.setUniformRowHeights(False)
+        self.setIndentation(18)
+        self.setStyleSheet(directory_checkbox_style())
+        self.setItemDelegate(_VisibilityRowDelegate(self))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.doItemsLayout()
+        self.schedule_height()
 
 
 def text_label(text, name="muted", wrap=False):

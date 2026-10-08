@@ -31,7 +31,9 @@ def test_shared_clock_only_one_player_advances_and_jump_syncs(tmp_path):
         sidebars.append(editor.sidebar())
     editors[0].play()
     editors[1].play()
-    assert not editors[0].playing and session.driver is editors[1]
+    assert editors[0].playing and editors[1].playing and session.driver is editors[1]
+    editors[1].pause()
+    assert editors[0].playing and not editors[1].playing and session.driver is editors[0]
     editors[0].clock = 3600
     assert editors[1].clock == 3600 and session.seconds == 3600
     session.set_day("2015-06-01")

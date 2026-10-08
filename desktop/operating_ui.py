@@ -1,6 +1,7 @@
 """Single-workspace timetable/diagram editor; no external operational control."""
 
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 from time import monotonic
 from shiboken6 import isValid
 
@@ -8,8 +9,10 @@ from PySide6.QtCore import QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsScene,
@@ -40,15 +43,19 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import Switch, switch_row, text_label, GrowingTree, Fold
+    from .components import SquareSwitch, visibility_row, text_label, VisibilityTree, Fold, directory_checkbox_style
     from .geometry import interpolate
     from .operating import parse_time, format_time
     from .vehicle_motion import motion_frames
 except ImportError:
-    from components import Switch, switch_row, text_label, GrowingTree, Fold
+    from components import SquareSwitch, visibility_row, text_label, VisibilityTree, Fold, directory_checkbox_style
     from geometry import interpolate
     from operating import parse_time, format_time
     from vehicle_motion import motion_frames
+
+
+def beijing_now():
+    return datetime.now(timezone(timedelta(hours=8)))
 
 
 class TimeHandle(QGraphicsEllipseItem):
@@ -118,6 +125,7 @@ class OperationsEditor(QFrame):
 
     def bind_session(self,session):
         self.session_time=session
+        session.players.add(self)
         session.changed.connect(self._session_changed)
         session.calendar_changed.connect(self._session_changed)
 
@@ -142,6 +150,7 @@ class OperationsEditor(QFrame):
         self.enabled = False
         self.appearance = {"size": 14, "style": "glow"}
         self.speed = 30
+        self.follow_beijing = False
         self.loading = False
         self.selected_line = lines[0]["id"] if lines else None
         self.selected_train = None
@@ -328,11 +337,12 @@ class OperationsEditor(QFrame):
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
         card = QFrame()
         card.setObjectName("demoCard")
         cl = QVBoxLayout(card)
-        cl.setContentsMargins(14, 16, 14, 16)
+        cl.setContentsMargins(12, 12, 12, 12)
+        cl.setSpacing(8)
         cl.addWidget(text_label("计划仿真", "panelTitle", True))
         cl.addWidget(
             text_label(
@@ -343,9 +353,10 @@ class OperationsEditor(QFrame):
                 True,
             )
         )
-        self.enabled_switch = Switch(False)
+        self.enabled_switch = SquareSwitch(self.enabled)
+        self.vehicle_switch = self.enabled_switch
         self.enabled_switch.toggled.connect(self.set_enabled)
-        cl.addWidget(switch_row("开启运行展示", self.enabled_switch))
+        cl.addWidget(visibility_row("显示运行车次", self.enabled_switch))
         self.session_label = text_label("已关闭 · 地图浏览模式", "muted", True)
         cl.addWidget(self.session_label)
         self.clock_label = text_label(format_time(self.clock), "metricValue")
@@ -357,80 +368,81 @@ class OperationsEditor(QFrame):
         self.play_button.clicked.connect(
             lambda: self.pause() if self.playing else self.play()
         )
-        cl.addWidget(self.play_button)
+        playback = QHBoxLayout()
+        playback.addWidget(self.play_button, 1)
         reset = QPushButton(
             "回到始发时刻" if self.plan.system == "rail" else "回到 07:00:00"
         )
         reset.clicked.connect(self.reset)
-        cl.addWidget(reset)
+        playback.addWidget(reset, 1)
+        cl.addLayout(playback)
         layout.addWidget(card)
         time_row = QHBoxLayout()
         self.time_input = QLineEdit("07:00:00")
+        self.time_input.setMinimumWidth(80)
+        self.time_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.time_input.setAccessibleName("仿真时刻")
-        time_row.addWidget(self.time_input)
+        time_row.addWidget(self.time_input, 1)
         jump = QPushButton("跳转")
         jump.clicked.connect(self.jump)
         self.time_input.returnPressed.connect(self.jump)
         time_row.addWidget(jump)
-        layout.addLayout(time_row)
+        self.beijing_switch = QCheckBox("跟随北京时间")
+        self.beijing_switch.setChecked(self.follow_beijing)
+        self.beijing_switch.setStyleSheet(directory_checkbox_style().replace('QTreeWidget', 'QCheckBox'))
+        self.beijing_switch.toggled.connect(self.set_follow_beijing)
+        time_row.addWidget(self.beijing_switch)
+        cl.addLayout(time_row)
         self.speed_label = text_label("仿真速度  ×30")
-        layout.addWidget(self.speed_label)
+        cl.addWidget(self.speed_label)
         speed = QSlider(Qt.Orientation.Horizontal)
         speed.setRange(1, 100)
         speed.setValue(30)
         speed.valueChanged.connect(self.set_speed)
-        layout.addWidget(speed)
-        vehicles = Switch(False)
-        vehicles.toggled.connect(
-            lambda on: self.map.call("setVisibility", "vehicles", on)
-        )
-        layout.addWidget(switch_row("车辆图层", vehicles))
-        self.vehicle_switch = vehicles
-        self.vehicle_tree = GrowingTree()
-        self.vehicle_tree.setColumnCount(2)
-        self.vehicle_tree.setHeaderHidden(True)
-        self.vehicle_tree.header().setStretchLastSection(False)
-        self.vehicle_tree.header().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
-        self.vehicle_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.vehicle_tree.setColumnWidth(1, 62)
-        layout.addWidget(
-            Fold(
-                "列车可见性 · 按车次类型"
-                if self.plan.system == "rail"
-                else "列车可见性 · 按线路",
-                self.vehicle_tree,
-                expanded=False,
-            )
-        )
+        self.speed_slider = speed
+        cl.addWidget(speed)
+        self.directory_section = QWidget()
+        self.directory_layout = QVBoxLayout(self.directory_section)
+        self.directory_layout.setContentsMargins(0, 0, 0, 0)
+        self.vehicle_tree = VisibilityTree()
+        self.vehicle_tree.itemChanged.connect(self.vehicle_visibility_changed)
+        self.vehicle_fold = Fold("线路与车次" if self.plan.system != "rail" else "车次类型",
+                                self.vehicle_tree, expanded=True)
+        self.directory_layout.addWidget(self.vehicle_fold)
+        layout.addWidget(self.directory_section)
         self.refresh_vehicle_tree()
         if self.plan.system != "rail":
-            layout.addWidget(text_label("列车标记", "sectionLabel"))
+            appearance_body = QWidget()
+            appearance_layout = QVBoxLayout(appearance_body)
+            appearance_layout.setContentsMargins(8, 0, 8, 8)
             self.marker_style = QComboBox()
             for label, value in (("光晕圆点", "glow"), ("空心圆环", "ring"), ("列车图标", "train")):
                 self.marker_style.addItem(label, value)
             self.marker_style.currentIndexChanged.connect(self.change_appearance)
-            layout.addWidget(self.marker_style)
+            appearance_layout.addWidget(self.marker_style)
             self.marker_size_label = text_label("图标大小  14 px", "muted")
-            layout.addWidget(self.marker_size_label)
+            appearance_layout.addWidget(self.marker_size_label)
             self.marker_size = QSlider(Qt.Orientation.Horizontal)
             self.marker_size.setRange(8, 40)
             self.marker_size.setValue(14)
             self.marker_size.setAccessibleName("列车图标大小")
             self.marker_size.valueChanged.connect(self.change_appearance)
-            layout.addWidget(self.marker_size)
-        show = QPushButton(
-            "打开国铁时刻表 / 运行图"
-            if self.plan.system == "rail"
-            else "打开地铁运行表 / 运行图"
-        )
+            appearance_layout.addWidget(self.marker_size)
+            layout.addWidget(Fold("列车标记样式", appearance_body, expanded=False))
+        show = QPushButton("打开车次运行工作台")
+        show.setObjectName("primary")
         show.clicked.connect(self.workspace_requested.emit)
         layout.addWidget(show)
-        locate = QPushButton("定位当前运行线路")
+        actions = QGridLayout()
+        locate = QPushButton("定位线路")
         locate.clicked.connect(self.locate_current_line)
-        layout.addWidget(locate)
-        layout.addWidget(text_label("计划导入、导出请使用运行菜单。", wrap=True))
+        actions.addWidget(locate, 0, 0)
+        for title, slot, row, column in (("保存计划", self.save, 0, 1),
+            ("导入计划", self.import_plan, 1, 0), ("导出计划", self.export_plan, 1, 1)):
+            button = QPushButton(title)
+            button.clicked.connect(slot)
+            actions.addWidget(button, row, column)
+        layout.addLayout(actions)
         layout.addWidget(
             text_label(
                 "国铁按车次与跨线径路独立建图。G1 为公开时刻与 OSM 几何参考，不代表实际调度进路。"
@@ -543,6 +555,7 @@ class OperationsEditor(QFrame):
             for i in range(tree.topLevelItemCount())
             if tree.topLevelItem(i).isExpanded()
         }
+        tree.blockSignals(True)
         tree.clear()
         groups = {}
         for train in self.plan.trains:
@@ -555,25 +568,25 @@ class OperationsEditor(QFrame):
         for label, trains in [("全部列车", self.plan.trains), *sorted(groups.items())]:
             ids = {t["id"] for t in trains}
             parent = QTreeWidgetItem(tree, [label])
-            control = Switch(bool(ids - self.hidden_trains))
-            control.setMixed(
-                bool(ids & self.hidden_trains) and bool(ids - self.hidden_trains)
-            )
-            control.toggled.connect(
-                lambda on, keys=ids: self.set_trains_visible(keys, on)
-            )
-            tree.setItemWidget(parent, 1, control)
+            parent.setData(0, Qt.ItemDataRole.UserRole, ids)
+            parent.setFlags(parent.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            parent.setCheckState(0, Qt.CheckState.PartiallyChecked if ids & self.hidden_trains and ids - self.hidden_trains
+                else Qt.CheckState.Checked if ids - self.hidden_trains else Qt.CheckState.Unchecked)
+            parent.setToolTip(0, label)
             parent.setExpanded(label in expanded)
             if label == "全部列车":
                 continue
             for train in trains:
                 child = QTreeWidgetItem(parent, [train["id"]])
-                switch = Switch(train["id"] not in self.hidden_trains)
-                switch.toggled.connect(
-                    lambda on, key=train["id"]: self.set_trains_visible({key}, on)
-                )
-                tree.setItemWidget(child, 1, switch)
+                child.setData(0, Qt.ItemDataRole.UserRole, {train['id']})
+                child.setFlags(child.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                child.setCheckState(0, Qt.CheckState.Checked if train['id'] not in self.hidden_trains else Qt.CheckState.Unchecked)
+        tree.blockSignals(False)
         tree.schedule_height()
+
+    def vehicle_visibility_changed(self, item, column):
+        self.set_trains_visible(item.data(0, Qt.ItemDataRole.UserRole) or set(),
+                                item.checkState(0) != Qt.CheckState.Unchecked)
 
     def displayed_trains(self):
         return [
@@ -795,31 +808,30 @@ class OperationsEditor(QFrame):
         self.set_enabled(True)
         self.playing = True
         if getattr(self,'session_time',None):
-            if getattr(self.plan,'service_date',None) and self.plan.service_date!=self.session_time.day:
+            if not self.follow_beijing and getattr(self.plan,'service_date',None) and self.plan.service_date!=self.session_time.day:
                 self.session_time.set_day(self.plan.service_date)
-            if self.session_time.driver and self.session_time.driver is not self:
-                self.session_time.driver.pause()
             self.session_time.driver=self
         self._last_tick = monotonic()
         self.update_sidebar(0)
         self.push_positions()
 
     def pause(self):
+        self.stop_follow_beijing()
         self.playing = False
+        if getattr(self, 'session_time', None) and self.session_time.driver is self:
+            self.session_time.driver = next((player for player in self.session_time.players
+                if player is not self and isValid(player) and player.playing), None)
         self.update_sidebar(0)
         self.push_positions()
 
     def set_enabled(self, enabled):
         self.enabled = bool(enabled)
-        if not self.enabled:
-            self.playing = False
-        elif hasattr(self, "vehicle_switch"):
-            self.vehicle_switch.setChecked(True)
-        self._last_tick = monotonic()
+        # Display visibility does not stop the shared running clock.
         if hasattr(self, "enabled_switch"):
             self.enabled_switch.blockSignals(True)
             self.enabled_switch.setChecked(self.enabled)
             self.enabled_switch.blockSignals(False)
+        self.map.call("setVisibility", "vehicles", self.enabled)
         self.push_positions()
         self.updated.emit()
 
@@ -866,13 +878,16 @@ class OperationsEditor(QFrame):
         self._appearance_loading = False
 
     def reset(self):
+        self.stop_follow_beijing()
         self.clock = 25200
         self.update_sidebar(0)
         self.push_positions()
 
     def jump(self):
         try:
-            self.clock = parse_time(self.time_input.text())
+            clock = parse_time(self.time_input.text())
+            self.stop_follow_beijing()
+            self.clock = clock
             self.update_sidebar(0)
             self.push_positions()
         except ValueError as error:
@@ -880,17 +895,50 @@ class OperationsEditor(QFrame):
 
     def set_speed(self, value):
         self.speed = value
-        self.speed_label.setText("仿真速度  ×" + str(value))
+        self.speed_label.setText("北京时间 · 实时 ×1" if self.follow_beijing else "仿真速度  ×" + str(value))
+
+    def motion_speed(self):
+        return 1 if self.follow_beijing else self.speed
+
+    def sync_beijing_time(self):
+        now = beijing_now()
+        session = getattr(self, 'session_time', None)
+        if session:
+            session.set_day(now.date().isoformat())
+        self.clock = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1000000
+
+    def set_follow_beijing(self, on):
+        self.follow_beijing = bool(on)
+        self.speed_slider.setEnabled(not on)
+        self.set_speed(self.speed)
+        if on:
+            self.sync_beijing_time()
+            self.play()
+        else:
+            self.update_sidebar(0)
+            self.push_positions()
+
+    def stop_follow_beijing(self):
+        if not self.follow_beijing:
+            return
+        self.follow_beijing = False
+        if hasattr(self, 'beijing_switch'):
+            self.beijing_switch.blockSignals(True)
+            self.beijing_switch.setChecked(False)
+            self.beijing_switch.blockSignals(False)
+            self.speed_slider.setEnabled(True)
+            self.set_speed(self.speed)
 
     def tick(self):
         now = monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
-        advancing = self.enabled and self.playing and (not getattr(self,'session_time',None) or self.session_time.driver is self)
+        advancing = self.playing and (not getattr(self,'session_time',None) or self.session_time.driver is self)
         if advancing:
-            self.clock = min(172799, self.clock + self.speed * elapsed)
-        if self.clock >= 172799:
-            self.playing = False
+            if self.follow_beijing:
+                self.sync_beijing_time()
+            else:
+                self.clock = (self.clock + self.speed * elapsed) % 172800
         if advancing:
             self.push_positions(throttled=True)
         self._ticks += 1
@@ -936,7 +984,7 @@ class OperationsEditor(QFrame):
                             "simulation_time": format_time(self.clock),
                             "source": train["source"],
                             "motion_frames": motion_frames(self.plan, train, line['path'], self.clock,
-                                position['distance_m'], self.speed, self.playing),
+                                position['distance_m'], self.motion_speed(), self.playing),
                             "display_style": display.get("style", "glow"),
                             "display_size": max(8, min(40, int(display.get("size", 14)))),
                             "display_color": display.get("color", line["color"]),
@@ -979,7 +1027,8 @@ class OperationsEditor(QFrame):
                 format_time(self.clock),
                 f"{len(self.base_lines)} 条线路 · {len(self.plan.trains)} 列车计划 · {active} 列车在运行",
                 "暂停仿真" if self.playing else "开始仿真",
-                "运行中 · 按运行表推进"
+                ("运行中 · 车次已隐藏" if not self.enabled else
+                 "运行中 · 跟随北京时间（UTC+8）" if self.follow_beijing else "运行中 · 按运行表推进")
                 if self.playing
                 else "已暂停 · 保留列车位置"
                 if self.enabled
