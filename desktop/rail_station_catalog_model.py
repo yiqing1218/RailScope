@@ -17,13 +17,13 @@ try:
     from .catalog_metadata import rail_station_records, station_directory_path
     from .rail_station_types import FACILITY_TYPES
     from .station_classification import station_catalog_path, REFERENCE
-    from .rail_facility_ownership import facility_track_owners
+    from .rail_facility_ownership import facility_track_owners, OWNERSHIP_VERSION
 except ImportError:
     from lazy_directory import SqliteDirectoryModel
     from catalog_metadata import rail_station_records, station_directory_path
     from rail_station_types import FACILITY_TYPES
     from station_classification import station_catalog_path, REFERENCE
-    from rail_facility_ownership import facility_track_owners
+    from rail_facility_ownership import facility_track_owners, OWNERSHIP_VERSION
 
 
 def _key(parts):
@@ -48,7 +48,7 @@ def station_catalog_signature(directory, catalog_path, overrides):
         catalog_version = db.execute("SELECT value FROM metadata WHERE key='paged_directory_signature'").fetchone()
     geometry = directory/'rail.sqlite'
     modes = directory/'rail_transport_context.json'
-    return hashlib.sha256(_key([13, REFERENCE.stat().st_mtime_ns if REFERENCE.exists() else None,
+    return hashlib.sha256(_key([13, OWNERSHIP_VERSION, REFERENCE.stat().st_mtime_ns if REFERENCE.exists() else None,
                                  source.stat().st_mtime_ns, geometry.stat().st_mtime_ns if geometry.exists() else None,
                                  modes.stat().st_mtime_ns if modes.exists() else None,
                                  catalog_version[0] if catalog_version else "",
@@ -94,8 +94,8 @@ def sync_station_catalog(directory, catalog_path, regions, overrides, signature=
         db.execute('CREATE INDEX IF NOT EXISTS rail_facility_track_catalog ON rail_facility_track_owners(catalog_id)')
         db.execute('CREATE TABLE IF NOT EXISTS rail_facility_track_baseline(object_id TEXT PRIMARY KEY,station_id TEXT,data TEXT,catalog_id TEXT)')
         db.execute('CREATE INDEX IF NOT EXISTS rail_facility_baseline_catalog ON rail_facility_track_baseline(catalog_id)')
-        baseline_inputs = _key([(path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else None
-            for path in (directory/'rail.sqlite', directory/'rail_lines.sqlite')])
+        baseline_inputs = _key([OWNERSHIP_VERSION, [(path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else None
+            for path in (directory/'rail.sqlite', directory/'rail_lines.sqlite')]])
         previous_baseline = db.execute("SELECT value FROM metadata WHERE key='ownership_baseline_snapshot'").fetchone()
         if previous_baseline != (baseline_inputs,):
             db.execute('DELETE FROM rail_facility_track_baseline')

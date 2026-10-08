@@ -18,6 +18,33 @@ except ImportError:
 
 
 FACILITY_KINDS = frozenset(('yard','depot','workshop','works','engine_shed'))
+OWNERSHIP_VERSION = 2
+
+
+def can_assign_facility(track, edit=None):
+    """Area containment cannot turn a passing business railway into a station track.
+
+    Keep the source/canonical role unchanged. Unknown track role is not evidence
+    against an explicit main/branch/freight/industrial line; manual station
+    assignments and actual service-track evidence remain authoritative.
+    """
+    edit = edit or {}
+    facts = semantic_record(track, edit, include_provenance=False)
+    if facts['track_role'] == 'main_track':
+        return False
+    if facts['track_role'] != 'unknown':
+        return True
+    if edit.get('station_id') or edit.get('station_source') or edit.get('station_assignment') == 'pending':
+        return True
+    tags = track.get('way_tags') or track.get('source_tags') or {}
+    if tags.get('service') in ('yard', 'siding', 'crossover', 'spur'):
+        return True
+    if tags.get('usage') in ('main', 'branch', 'freight', 'industrial'):
+        return False
+    if not facts.get('facility_only') and (facts.get('line_role') not in (None, 'unknown') or
+            (edit.get('line_kind') or track.get('line_kind')) == 'track'):
+        return False
+    return True
 
 
 def connected_access_tracks(db,index_path,owners,overrides,station_ids):
@@ -57,8 +84,6 @@ def connected_access_tracks(db,index_path,owners,overrides,station_ids):
                 name=tags.get('name') or tags.get('full_name') or ''
                 if not any(word in name for word in ('动车','动走','车辆段','机务段','检修','出入段','客整','整备')):
                     continue
-                if semantic_record(edge, include_provenance=False)['track_role']=='main_track':
-                    continue
                 x,y=edge['coordinates'][0 if a==node else -1]
                 feature_row=next(((ident,raw) for ident,raw in db.execute(
                     "SELECT f.id,f.data FROM bounds b JOIN features f ON f.id=b.id WHERE f.kind='rail' "
@@ -69,8 +94,7 @@ def connected_access_tracks(db,index_path,owners,overrides,station_ids):
                 feature_id,raw=feature_row;track=json.loads(raw)['properties']
                 object_key='object:network_edge_id:'+str(key)
                 edit={**overrides.get(track.get('catalog_group_id'),{}),**overrides.get(object_key,{})}
-                facts=semantic_record(track,edit, include_provenance=False)
-                if facts['track_role']=='main_track':
+                if not can_assign_facility(track, edit):
                     continue
                 explicit=next((edit.get(field) for field in ('station_id','station_source') if edit.get(field) in station_ids),
                               edit.get('station_id') or edit.get('station_source'))
@@ -139,8 +163,7 @@ def facility_track_owners(directory, stations, overrides):
                     continue
                 key = 'object:network_edge_id:'+str(edge_id)
                 edit = {**overrides.get(track.get('catalog_group_id'),{}),**overrides.get(key,{})}
-                facts = semantic_record(track,edit, include_provenance=False)
-                if facts['track_role']=='main_track':
+                if not can_assign_facility(track, edit):
                     continue
                 explicit = next((edit.get(field) for field in ('station_id','station_source') if edit.get(field) in station_ids),
                                 edit.get('station_id') or edit.get('station_source'))
@@ -156,7 +179,7 @@ def facility_track_owners(directory, stations, overrides):
                         ('line_name','display_name','track_type','track_role','from_name','to_name')},
                     'source':'workspace_override' if explicit or edit.get('station_assignment')=='pending' else 'osm_facility_area_membership',
                     'source_member_ids':[props.get('infrastructure_id')],
-                    'snapshot':snapshot,'version':1,'verification_status':'user_named' if explicit else 'automatic_reference','confidence':None}
+                    'snapshot':snapshot,'version':OWNERSHIP_VERSION,'verification_status':'user_named' if explicit else 'automatic_reference','confidence':None}
                 if edge_id in owners and owners[edge_id]['station_id'] != assigned:
                     ambiguous.add(edge_id)
                 else:

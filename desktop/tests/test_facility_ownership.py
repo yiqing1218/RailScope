@@ -74,6 +74,24 @@ def test_real_area_assigns_each_track_to_its_own_facility_and_keeps_main_line(tm
     assert (tmp_path/'rail.sqlite').read_bytes()==original
 
 
+@pytest.mark.parametrize('usage',['main','branch','freight','industrial'])
+def test_passing_business_tracks_with_unknown_role_never_become_station_tracks(tmp_path,usage):
+    stations,_,_=dataset(tmp_path)
+    with sqlite3.connect(tmp_path/'rail.sqlite') as db:
+        feature=json.loads(db.execute('SELECT data FROM features WHERE id=3').fetchone()[0])
+        feature['properties'].update(track_role='unknown',track_type='未确认类型',
+            line_name='尧兴支线' if usage=='branch' else '通过线路',
+            way_tags={'railway':'rail','usage':usage})
+        db.execute('UPDATE features SET data=? WHERE id=3',(json.dumps(feature),))
+    original=(tmp_path/'rail.sqlite').read_bytes()
+    assert 'NE-main' not in facility_track_owners(tmp_path,stations,{})
+    assert set(facility_track_owners(tmp_path,stations,{}))=={'NE-a','NE-b'}
+    # A deliberate manual station-track role remains authoritative.
+    edits={'object:network_edge_id:NE-main':{'rail_semantics':{'track_role':'arrival_departure_track'}}}
+    assert 'NE-main' in facility_track_owners(tmp_path,stations,edits)
+    assert (tmp_path/'rail.sqlite').read_bytes()==original
+
+
 def test_manual_owner_pending_and_role_override_replay_without_source_changes(tmp_path,monkeypatch):
     import desktop.rail_station_catalog_model as module
     stations,_,catalog=dataset(tmp_path)
@@ -153,6 +171,23 @@ def test_facility_names_and_types_use_station_editor_without_extra_station_suffi
     assert display_name(name)==name
 
 
+def test_ownership_rule_upgrade_invalidates_old_cache_and_undo_baseline(tmp_path,monkeypatch):
+    import desktop.rail_station_catalog_model as module
+    stations,_,catalog=dataset(tmp_path)
+    monkeypatch.setattr(module,'rail_station_records',lambda *args,**kwargs:(stations,3))
+    monkeypatch.setattr(module,'OWNERSHIP_VERSION',1)
+    assert sync_station_catalog(tmp_path,catalog.path,[],{})
+    with sqlite3.connect(catalog.path) as db:
+        db.execute('INSERT INTO rail_facility_track_baseline VALUES(?,?,?,?)',
+            ('object:network_edge_id:NE-main','way/1','{}','RL-main'))
+    monkeypatch.setattr(module,'OWNERSHIP_VERSION',2)
+    assert sync_station_catalog(tmp_path,catalog.path,[],{})
+    with sqlite3.connect(catalog.path) as db:
+        assert not db.execute('SELECT 1 FROM rail_facility_track_baseline WHERE object_id=?',
+            ('object:network_edge_id:NE-main',)).fetchone()
+    assert sync_station_catalog(tmp_path,catalog.path,[],{}) is False
+
+
 def test_missing_outline_does_not_create_fake_facility_boundary(tmp_path):
     stations,_,_=dataset(tmp_path)
     with sqlite3.connect(tmp_path/'rail.sqlite') as db:
@@ -184,6 +219,16 @@ def test_connected_named_access_track_belongs_to_depot_but_main_track_stops_trav
     assert owners['NE-access']['station_id']=='way/1'
     assert owners['NE-access']['source']=='connected_facility_access_track'
     assert 'NE-outside-main' not in owners and 'NE-main' not in owners
+    with sqlite3.connect(tmp_path/'rail.sqlite') as db:
+        feature=json.loads(db.execute('SELECT data FROM features WHERE id=6').fetchone()[0])
+        feature['properties']['way_tags']['usage']='branch'
+        db.execute('UPDATE features SET data=? WHERE id=6',(json.dumps(feature),))
+        edge=json.loads(db.execute("SELECT data FROM edges WHERE id='NE-access'").fetchone()[0])
+        edge['way_tags']['usage']='branch'
+        db.execute("UPDATE edges SET data=? WHERE id='NE-access'",(json.dumps(edge),))
+    assert 'NE-access' not in facility_track_owners(tmp_path,stations,{})
+    manual={'object:network_edge_id:NE-access':{'rail_semantics':{'track_role':'maintenance_track'}}}
+    assert facility_track_owners(tmp_path,stations,manual)['NE-access']['station_id']=='way/1'
 
 
 def test_overlapping_named_facility_outlines_do_not_guess_one_owner(tmp_path):
@@ -223,6 +268,7 @@ def test_map_filters_apply_exact_track_visibility_alongside_catalog_groups():
 const filters={};
 const map={getLayer:()=>true,setFilter:(id,value)=>filters[id]=value};
 const visibility={rail:true,railStationTracks:false,railConstruction:false};
+function historyStateFilter(){return ['literal',true];}
 let railSections=[],railWays=[],railGroups=[],railExclude=false,railIncludedEdges=[],railExcludedEdges=[];
 function evaluate(x,p){
   if(!Array.isArray(x))return x;
