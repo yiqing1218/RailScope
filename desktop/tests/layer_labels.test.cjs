@@ -24,12 +24,14 @@ function allows(filter,properties,zoom=15){
 test('base labels cannot bypass motorway, station, or university layer selection',()=>{
  const {context}=setup();
  context.base={layers:[{id:'highway-shield',source:'openmaptiles','source-layer':'transportation_name',type:'symbol',layout:{'text-field':['get','name']}},
-  {id:'poi',source:'openmaptiles','source-layer':'poi',type:'symbol',layout:{'text-field':['get','name']}}]};
+  {id:'poi',source:'openmaptiles','source-layer':'poi',type:'symbol',layout:{'text-field':['get','name']}},
+  {id:'airport-name',source:'openmaptiles','source-layer':'aerodrome_label',type:'symbol',layout:{'text-field':['get','name']}}]};
  vm.runInContext('styleWorkbench(base)',context);
  assert.equal(allows(context.base.layers[0].filter,{class:'motorway'}),false);
  assert.equal(allows(context.base.layers[0].filter,{class:'primary'}),true);
- for(const props of [{class:'rail'},{class:'college'},{subclass:'university'},{subclass:'services'}])assert.equal(allows(context.base.layers[1].filter,props),false);
+ for(const props of [{class:'rail'},{class:'college'},{subclass:'university'},{subclass:'services'},{class:'airport'},{subclass:'aerodrome'}])assert.equal(allows(context.base.layers[1].filter,props),false);
  assert.equal(allows(context.base.layers[1].filter,{class:'hospital'}),true);
+ assert.equal(allows(context.base.layers[2].filter,{name:'浦东机场',iata:'PVG'}),false);
 });
 test('turning off base labels also hides road and administrative text',()=>{
  const {context,layers}=setup();
@@ -97,4 +99,24 @@ test('historical metro construction names respect their own zoom threshold',()=>
   assert.equal(allows(layers.get(id).filter,{osm_way_id:20,history_state:'construction'},13),false);
   assert.equal(allows(layers.get(id).filter,{osm_way_id:20,history_state:'construction'},14),true);
  }
+});
+
+test('airport outlines, points and names obey the layer switch and separate zoom thresholds',()=>{
+ const {context,layers}=setup();
+ vm.runInContext('visibility.airport=true;minZooms={airportPois:6,airportOutlines:13};applyVisibility();applyMinZooms();',context);
+ for(const id of ['airport-pois','airport-labels']){assert.equal(layers.get(id).minzoom,6);assert.equal(layers.get(id).layout.visibility,'visible');}
+ for(const id of ['airport-fill','airport-outline'])assert.equal(layers.get(id).minzoom,13);
+ vm.runInContext('visibility.airport=false;applyVisibility();',context);
+ for(const id of ['airport-fill','airport-outline','airport-pois','airport-labels'])assert.equal(layers.get(id).layout.visibility,'none');
+});
+
+test('airport HTTP response cannot restore features after unchecking the directory',async()=>{
+ const {context,map}=setup();
+ map.getBounds=()=>({getWest:()=>120,getSouth:()=>30,getEast:()=>122,getNorth:()=>32});
+ vm.runInContext("visibility.airport=true;airportSelection=['APT-1'];queryViewport=()=>new Promise(resolve=>{resolveRequest=resolve;});",context);
+ const response=vm.runInContext('updateAirportViewport()',context);
+ vm.runInContext('airportSelection=[];scheduleAirportViewport();',context);
+ vm.runInContext("resolveRequest({type:'FeatureCollection',features:[{properties:{airport_id:'APT-1'},geometry:{type:'Point',coordinates:[121,31]}}]})",context);
+ await response;
+ assert.equal(map.getSource('airports').data.features.length,0);
 });

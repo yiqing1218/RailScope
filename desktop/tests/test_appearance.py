@@ -59,3 +59,31 @@ def test_detail_values_follow_the_theme_instead_of_fixed_dark_ink(qtbot):
     assert table.item(1, 0).data(Qt.ItemDataRole.ForegroundRole) is None
     assert table.palette().color(QPalette.ColorRole.Text).name() == web_theme(theme)['text']
     assert table.palette().color(QPalette.ColorRole.PlaceholderText).name() == web_theme(theme)['muted']
+
+
+def test_native_panels_show_live_map_without_capturing_any_backdrop(qtbot):
+    from PySide6.QtGui import QColor, QPainter
+    from glass_workspace import GlassPanel, MapWorkspace
+
+    class AnimatedMap(QWidget):
+        color = '#ff0000'
+        def grab(self, *args):
+            raise AssertionError('Live native transparency must never sample the map')
+        def paintEvent(self, event):
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), QColor(self.color))
+
+    canvas = AnimatedMap()
+    panels = [GlassPanel() for _ in range(3)]
+    workspace = MapWorkspace(canvas, *panels)
+    qtbot.addWidget(workspace)
+    workspace.resize(1200,720);workspace.show()
+    QApplication.processEvents()
+    point = panels[0].geometry().center()
+    assert workspace.grab().toImage().pixelColor(point).name() == '#ff0000'
+    canvas.color = '#0000ff';canvas.update()
+    QApplication.processEvents()
+    assert workspace.grab().toImage().pixelColor(point).name() == '#0000ff'
+    assert workspace.insets()['panels']['left']['visible']
+    panels[0].hide();QApplication.processEvents()
+    assert not workspace.insets()['panels']['left']['visible']

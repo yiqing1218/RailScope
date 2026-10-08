@@ -1,6 +1,6 @@
-"""Native controls float over the actual map, with bounded backdrop sampling."""
-from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
+"""Transparent native controls over browser-composited map glass surfaces."""
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QDialog, QFrame, QVBoxLayout, QWidget
 
 from appearance import DEFAULT, web_theme
@@ -13,25 +13,22 @@ class GlassPanel(QFrame):
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.theme = web_theme(DEFAULT)
-        self.backdrop = QImage()
-        self.map_widget = None
+        self.web_backdrop = False
 
     def apply_theme(self, value):
         self.theme = web_theme(value)
         self.update()
 
     def paintEvent(self, event):
+        if self.web_backdrop:
+            # The browser paints and blurs the live map beneath these controls.
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 14, 14)
         painter.setClipPath(path)
-        if self.theme["glass"] and not self.backdrop.isNull() and self.map_widget:
-            origin = self.mapToGlobal(QPoint()) - self.map_widget.mapToGlobal(QPoint())
-            scale = self.backdrop.width() / max(1, self.map_widget.width())
-            painter.drawImage(QRectF(self.rect()), self.backdrop,
-                              QRectF(origin.x()*scale, origin.y()*scale, self.width()*scale, self.height()*scale))
         tint = QColor(self.theme["surface"])
         tint.setAlphaF(self.theme["opacity"] / 100 if self.theme["glass"] else 1)
         painter.fillPath(path, tint)
@@ -42,7 +39,6 @@ class GlassPanel(QFrame):
 
 class MapWorkspace(QWidget):
     insetsChanged = Signal(dict)
-    backdropChanged = Signal(object)
 
     def __init__(self, map_widget, left, right, rail, parent=None):
         super().__init__(parent)
@@ -52,15 +48,12 @@ class MapWorkspace(QWidget):
         self._layout_timer = QTimer(self)
         self._layout_timer.setSingleShot(True)
         self._layout_timer.timeout.connect(self.arrange)
-        self._backdrop_timer = QTimer(self)
-        self._backdrop_timer.setSingleShot(True)
-        self._backdrop_timer.timeout.connect(self.capture_backdrop)
         for widget in (map_widget, left, right, rail):
             widget.setParent(self)
         for widget in (left, right, rail):
             widget.installEventFilter(self)
             if isinstance(widget, GlassPanel):
-                widget.map_widget = map_widget
+                widget.web_backdrop = True
 
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.Show, QEvent.Type.Hide):
@@ -70,12 +63,10 @@ class MapWorkspace(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.arrange()
-        self.schedule_backdrop()
 
     def showEvent(self, event):
         super().showEvent(event)
         self.arrange()
-        self.schedule_backdrop()
 
     def arrange(self):
         self.map_widget.setGeometry(self.rect())
@@ -88,7 +79,10 @@ class MapWorkspace(QWidget):
         for widget in (self.rail, self.left, self.right):
             widget.raise_()
         insets = {"left": 78 + left_width + 12 if not self.left.isHidden() else 78,
-                  "right": right_width + 24 if not self.right.isHidden() else 12}
+                  "right": right_width + 24 if not self.right.isHidden() else 12,
+                  "panels": {key: {"x": panel.x(), "y": panel.y(), "width": panel.width(),
+                                   "height": panel.height(), "visible": not panel.isHidden()}
+                             for key, panel in (("left", self.left), ("right", self.right), ("rail", self.rail))}}
         if insets != self._insets:
             self._insets = insets
             self.insetsChanged.emit(insets)
@@ -100,24 +94,6 @@ class MapWorkspace(QWidget):
         for panel in (self.left, self.right, self.rail):
             if isinstance(panel, GlassPanel):
                 panel.apply_theme(value)
-        self.schedule_backdrop()
-
-    def schedule_backdrop(self, *_):
-        # Only after camera/layout changes; never copy a map every train frame.
-        self._backdrop_timer.start(300)
-
-    def capture_backdrop(self):
-        if not self.isVisible() or not any(p.isVisible() and isinstance(p, GlassPanel) and p.theme["glass"]
-                                            for p in (self.left, self.right, self.rail)):
-            return
-        # Low-resolution sampling softens the real map without blurring text
-        # or retaining another full-resolution WebGL frame.
-        image = self.map_widget.grab().toImage().scaledToWidth(160, Qt.TransformationMode.SmoothTransformation)
-        for panel in (self.left, self.right, self.rail):
-            if isinstance(panel, GlassPanel):
-                panel.backdrop = image
-                panel.update()
-        self.backdropChanged.emit(image)
 
 
 class WorkbenchWindow(QDialog):
@@ -131,22 +107,14 @@ class WorkbenchWindow(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self.panel = GlassPanel("workbenchPanel", self)
-        self.panel.map_widget = workspace.map_widget
         content = QVBoxLayout(self.panel)
         content.setContentsMargins(4, 4, 4, 4)
         content.addWidget(editor)
         layout.addWidget(self.panel)
         editor.closed.connect(self.hide)
-        workspace.backdropChanged.connect(self.update_backdrop)
-
-    def update_backdrop(self, image):
-        self.panel.backdrop = image
-        if self.isVisible():
-            self.panel.update()
 
     def show_workbench(self, expanded=False):
         self.editor.show()
-        self.panel.backdrop = self.workspace.left.backdrop
         if expanded:
             self.showMaximized()
         else:
@@ -161,7 +129,6 @@ class WorkbenchWindow(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.editor.show()
-        self.panel.backdrop = self.workspace.left.backdrop
         self.panel.update()
 
     def closeEvent(self, event):

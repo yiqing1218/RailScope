@@ -53,7 +53,7 @@ try{
     assert.equal(compiled.result,'success',JSON.stringify(compiled.value));
     return compiled.value.evaluate({zoom:15},{properties:props});
   };
-  vm.runInContext("visibility.rail=true;visibility.railConstruction=true;railLineIds=null;railHiddenLineIds=['RL-build'];railPointIncludes=null;railControlPointIncludes=null;sharedRailStationFilter();",sandbox);
+  vm.runInContext("visibility.rail=true;visibility.railConstruction=true;visibility.railStations=true;railLineIds=null;railHiddenLineIds=['RL-build'];railPointIncludes=null;railControlPointIncludes=null;sharedRailStationFilter();",sandbox);
   const exclusive={kind:'station',osm_node_id:1,line_ids:['RL-build'],operating_line_ids:[],construction_line_ids:['RL-build']};
   const shared={...exclusive,line_ids:['RL-build','RL-open'],operating_line_ids:['RL-open']};
   assert.equal(evaluate(layers.get('rail-points').filter,exclusive),false);

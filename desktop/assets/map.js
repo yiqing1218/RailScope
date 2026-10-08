@@ -3,7 +3,7 @@ const maplibregl = window.maplibregl;
 let bridge, map, config, standardStyle, currentBase = 'standard', pendingBase=null, selectedFeature = null, selectedLayer = null;
 let selectedFeatures=[],selectionMode='click',boxSelecting=false,suppressMapClick=false;
 let running = false, travelled = 0;
-const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railStationTracks:false,railStations:false,railControlPoints:false,railVehicles:false,railPlan:false,road:false,roadConstruction:false,roadServices:false,university:false, imported:false, vehicles:false};
+const visibility = {metro:false, stations:false, construction:false, rail:false, railConstruction:false,railStationTracks:false,railStations:false,railControlPoints:false,railVehicles:false,railPlan:false,road:false,roadConstruction:false,roadServices:false,university:false, airport:false, imported:false, vehicles:false};
 let railHiddenLineIds=[];
 const baseDetails = {roads:true, admin:true, labels:true, buildings:true};
 let visibleIds = [], visibleStationIds=[], vectorAvailable = false, sourceReadySent = false, mapErrors = [], mapWarnings = [];
@@ -18,6 +18,13 @@ function viewportPadding(extra=32){return {left:uiInsets.left+extra,right:uiInse
 function setUiInsets(value){
   uiInsets={left:Math.max(0,Math.min(500,Number(value.left)||0)),right:Math.max(0,Math.min(500,Number(value.right)||0))};
   for(const [key,amount] of Object.entries(uiInsets))document.documentElement.style.setProperty(`--${key}-inset`,amount+'px');
+  for(const key of ['left','right','rail']){
+    const element=document.getElementById('workspace-glass-'+key),rect=value.panels?.[key];
+    if(!element)continue;
+    element.hidden=!rect?.visible;
+    if(rect)for(const [css,field] of [['left','x'],['top','y'],['width','width'],['height','height']])
+      element.style[css]=Math.max(0,Number(rect[field])||0)+'px';
+  }
   fitFocusedBounds();
 }
 function setAppearance(theme){
@@ -26,6 +33,7 @@ function setAppearance(theme){
     document.documentElement.style.setProperty('--'+key,theme[key]);
   const color=theme.surface||'#f2faf8',rgb=[1,3,5].map(start=>parseInt(color.slice(start,start+2),16));
   document.documentElement.style.setProperty('--glass',`rgba(${rgb.join(',')},${theme.glass===false?1:(theme.opacity||86)/100})`);
+  document.documentElement.style.setProperty('--backdrop-filter',theme.glass===false?'none':'blur(18px) saturate(1.15)');
   document.documentElement.style.setProperty('--ui-density',theme.density==='compact'?'12px':'13px');
 }
 let chineseMapFamily='Microsoft YaHei UI';
@@ -210,9 +218,10 @@ function styleWorkbench(style) {
       // Owned infrastructure labels come only from the selectable overlays.
       const restrictions=[];
       if(sl==='transportation_name')restrictions.push(['!', ['in',['coalesce',['get','class'],''],['literal',['motorway','motorway_link']]]]);
+      if(sl==='aerodrome_label')restrictions.push(['literal',false]);
       if(sl==='poi'){
-        restrictions.push(['!', ['in',['coalesce',['get','class'],''],['literal',['rail','college','university']]]]);
-        restrictions.push(['!', ['in',['coalesce',['get','subclass'],''],['literal',['university','college','railway_station','halt','subway','tram_stop','services','rest_area']]]]);
+        restrictions.push(['!', ['in',['coalesce',['get','class'],''],['literal',['rail','college','university','airport']]]]);
+        restrictions.push(['!', ['in',['coalesce',['get','subclass'],''],['literal',['university','college','aerodrome','airport','railway_station','halt','subway','tram_stop','services','rest_area']]]]);
       }
       if(restrictions.length)layer.filter=['all',layer.filter||['literal',true],...restrictions];
 
@@ -355,6 +364,30 @@ async function updateUniversityViewport(){
     if(request!==universityRequest||!visibility.university)return;
     universityData=data;map.getSource('universities').setData(data);universityKey=key;refreshSelection();
     if(data.truncated)report('notice','大学图层达到视窗加载上限，放大地图可查看更多校园。');
+  }catch(error){if(error.name!=='AbortError')report('mapError',String(error));}
+}
+let airportController=null,airportTimer=null,airportRequest=0,airportKey=null,airportSelection=[];
+let airportData=empty;
+function scheduleAirportViewport(){
+  clearTimeout(airportTimer);airportController?.abort();++airportRequest;
+  const zoom=map.getZoom(),minimum=Math.min(minZooms.airportPois??7,minZooms.airportOutlines??10);
+  if(!visibility.airport||graphicsPaused||document.hidden||zoom<minimum||!airportSelection.length){
+    map.getSource('airports')?.setData(empty);airportData=empty;airportKey=null;refreshSelection();return;
+  }
+  airportTimer=setTimeout(updateAirportViewport,180);
+}
+async function updateAirportViewport(){
+  if(!map.getSource('airports')||!visibility.airport)return;
+  const controller=new AbortController();airportController=controller;
+  const request=++airportRequest,b=map.getBounds(),zoom=map.getZoom();
+  const kind=zoom<(minZooms.airportOutlines??10)?'poi':zoom<(minZooms.airportPois??7)?'outline':'all';
+  const params=new URLSearchParams({bbox:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].join(','),selected:JSON.stringify(airportSelection),kind,zoom:String(zoom)});
+  const key=params.toString();if(key===airportKey)return;
+  try{
+    const data=await queryViewport('/api/airports',params,controller.signal);
+    if(request!==airportRequest||!visibility.airport)return;
+    airportData=data;map.getSource('airports').setData(data);airportKey=key;refreshSelection();
+    if(data.truncated)report('notice','机场图层达到视窗加载上限，放大地图可查看更多机场。');
   }catch(error){if(error.name!=='AbortError')report('mapError',String(error));}
 }
 const metroSourceKeys=new Map();
@@ -655,7 +688,8 @@ function applyMinZooms(){
     railPlatforms:['rail-platform-fill','rail-platform-outline'],
     railAreas:['rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline'],
     roads:['road','road-construction','road-labels','road-construction-labels','history-road','history-road-labels'],
-    universityPois:['university-pois','university-labels'],universityOutlines:['university-fill','university-outline']
+    universityPois:['university-pois','university-labels'],universityOutlines:['university-fill','university-outline'],
+    airportPois:['airport-pois','airport-labels'],airportOutlines:['airport-fill','airport-outline']
   };
   for(const [kind,layers] of Object.entries(ranges)){
     const zoom=minZooms[kind];
@@ -668,8 +702,8 @@ function applyMinZooms(){
   applyRailWays();sharedRailStationFilter();
 }
 function installLayers() {
-  const sources = {...config.sources, universities:empty, roadServices:empty, vehicles:empty, selection:empty};
-  universityKey=null;
+  const sources = {...config.sources, universities:empty, airports:empty, roadServices:empty, vehicles:empty, selection:empty};
+  universityKey=null;airportKey=null;
   roadServiceKey=null;
   staticSourceState.clear();populatedRailSources.clear();railSourceKeys.clear();roadSourceKey=null;metroSourceKeys.clear();
   for (const [id, data] of Object.entries(sources)) addSource(id, ['metro','stations','areas','construction','road','imported'].includes(id)?empty:data);
@@ -716,6 +750,10 @@ function installLayers() {
   addLayer({id:'university-outline',type:'line',source:'universities',minzoom:12,filter:['==',['geometry-type'],'Polygon'],paint:{'line-color':'#347b71','line-width':1.5,'line-opacity':.8}});
   addLayer({id:'university-pois',type:'circle',source:'universities',minzoom:9,filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':['interpolate',['linear'],['zoom'],9,3,13,4.5,17,6],'circle-color':'#f2faf8','circle-stroke-color':'#347b71','circle-stroke-width':1.8}});
   addLayer({id:'university-labels',type:'symbol',source:'universities',minzoom:9,filter:['==',['geometry-type'],'Point'],layout:{'text-field':['get','name'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-color':'#245d55','text-halo-color':'#ffffff','text-halo-width':1.8}});
+  addLayer({id:'airport-fill',type:'fill',source:'airports',minzoom:10,filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':'#4784ae','fill-opacity':.14}});
+  addLayer({id:'airport-outline',type:'line',source:'airports',minzoom:10,filter:['==',['geometry-type'],'Polygon'],paint:{'line-color':'#39769f','line-width':1.5,'line-opacity':.8}});
+  addLayer({id:'airport-pois',type:'circle',source:'airports',minzoom:7,filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':['interpolate',['linear'],['zoom'],7,3,12,4.5,17,6],'circle-color':'#edf6fc','circle-stroke-color':'#39769f','circle-stroke-width':1.8}});
+  addLayer({id:'airport-labels',type:'symbol',source:'airports',minzoom:7,filter:['==',['geometry-type'],'Point'],layout:{'text-field':['get','name'],'text-font':vectorAvailable?['Noto Sans Regular']:['Open Sans Regular'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-color':'#285c80','text-halo-color':'#ffffff','text-halo-width':1.8}});
   addLayer({id:'imported-line',type:'line',source:'imported',filter:['!=',['geometry-type'],'Point'],paint:{'line-color':'#697dcc','line-width':3}});
   addLayer({id:'imported-point',type:'circle',source:'imported',filter:['==',['geometry-type'],'Point'],paint:{'circle-color':'#697dcc','circle-radius':5,'circle-stroke-color':'white','circle-stroke-width':2}});
   addLayer({id:'selection-line',type:'line',source:'selection',filter:['!=',['geometry-type'],'Point'],paint:{'line-color':'#0c9c90','line-width':9,'line-opacity':.35}});
@@ -743,7 +781,7 @@ function installLayers() {
   applyRailPointStyles();
   applyMinZooms();
   applyMapFontSizes();
-  scheduleUniversityViewport();
+  scheduleUniversityViewport();scheduleAirportViewport();
   scheduleRailViewport();
   scheduleRoadViewport();
   scheduleMetroViewport();
@@ -752,6 +790,7 @@ function installLayers() {
 }
 const groups = {metro:['metro','line-labels'],stations:['stations','station-labels','areas-fill','areas-outline'],construction:['construction'],rail:['rail','rail-stripes','rail-line-labels'],railConstruction:['rail-construction'],railStations:['rail-points','rail-detail-points','rail-station-labels','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol'],railControlPoints:[],railVehicles:['rail-vehicles','rail-vehicle-symbols','rail-vehicle-labels'],railPlan:['rail-plan-path','rail-plan-stations','rail-plan-labels'],road:['road','road-labels'],roadConstruction:['road-construction','road-construction-labels'],roadServices:['road-service-outline-fill','road-service-outline','road-service-buildings','road-service-poi','road-service-labels'],imported:['imported-fill','imported-line','imported-point'],vehicles:['vehicles-halo','vehicles','vehicles-symbol','vehicle-label']};
 groups.university=['university-fill','university-outline','university-pois','university-labels'];
+groups.airport=['airport-fill','airport-outline','airport-pois','airport-labels'];
 function railOwnersVisibleFilter(){
   const present=field=>{
     const owners=['coalesce',['get',field],['literal',[]]];
@@ -809,7 +848,8 @@ function refreshSelection(){
     const group=Object.entries(groups).find(([,layers])=>layers.includes(layer))?.[0];
     if(group&&!(['rail-detail-points','rail-station-labels'].includes(layer)&&visibility.railControlPoints)&&!visibility[group]&&!(group==='rail'&&visibility.railStationTracks)&&!(layer==='rail-line-labels'&&(visibility.railConstruction||visibility.railStationTracks)))return false;
     if(p.service_id)return roadVisibleServices.includes(p.service_id);
-    if(p.campus_id)return visibility.university&&universitySelection.includes(p.campus_id);
+    if(p.campus_id)return visibility.university&&universitySelection.includes(p.campus_id)&&map.getZoom()>=(feature.geometry.type==='Point'?(minZooms.universityPois??9):(minZooms.universityOutlines??12));
+    if(p.airport_id)return visibility.airport&&airportSelection.includes(p.airport_id)&&map.getZoom()>=(feature.geometry.type==='Point'?(minZooms.airportPois??7):(minZooms.airportOutlines??10));
     if(group==='railStations'&&Array.isArray(p.line_ids)&&p.line_ids.length){
       const explicit=(railPointIncludes||[]).includes(p.osm_node_id??p.station_source_id)||(railControlPointIncludes||[]).includes(p.osm_node_id);
       const owners=[...(visibility.rail?(p.operating_line_ids||[]):[]),...(visibility.railConstruction?(p.construction_line_ids||[]):[])];
@@ -830,7 +870,9 @@ function refreshSelection(){
     if(vehicleLayers.includes(feature.__layer))return false;
     return entityVisible(feature);
   }).flatMap(({__layer,...feature})=>feature.properties.service_id?
-    (config.sources.roadServices?.features||[]).filter(value=>value.properties.service_id===feature.properties.service_id):[feature]);
+    (config.sources.roadServices?.features||[]).filter(value=>value.properties.service_id===feature.properties.service_id):
+    feature.properties.airport_id?airportData.features.filter(value=>value.properties.airport_id===feature.properties.airport_id&&entityVisible(value)):
+    feature.properties.campus_id?universityData.features.filter(value=>value.properties.campus_id===feature.properties.campus_id&&entityVisible(value)):[feature]);
   map.getSource('selection').setData(visibleSelection.length?{type:'FeatureCollection',features:visibleSelection}:(selectedFeatures.length===0&&selectedFeature&&entityVisible(selectedFeature)&&!vehicleLayers.includes(selectedLayer)?{type:'FeatureCollection',features:[selectedFeature]}:empty));
 }
 function applyVisibility() {
@@ -893,6 +935,7 @@ async function setBase(type) {
 function selectionKey(feature){
   const p=feature.properties||{};
   if(p.campus_id)return "campus:"+p.campus_id;
+  if(p.airport_id)return "airport:"+p.airport_id;
   if(p.service_id)return "service:"+p.service_id;
   return [feature.__layer||feature.layer?.id,p.infrastructure_id,p.catalog_group_id,p.network_edge_id,p.osm_node_id,p.osm_way_id,p.route_relation_id,p.station_id,p.corridor_id,p.trip_id,p.service_id,p.source_ref].join('|');
 }
@@ -939,18 +982,22 @@ async function init() {
     pixelRatio:1,maxCanvasSize:[2560,1440],maxTileCacheSize:96,antialias:false,fadeDuration:0,crossSourceCollisions:false});
   railVehicleOverlay=new window.RailScopeMotion.VehicleOverlay(map,maplibregl.Marker,selectFeature,'rail-vehicles');
   metroVehicleOverlay=new window.RailScopeMotion.VehicleOverlay(map,maplibregl.Marker,selectFeature,'vehicles');
+  railVehicleOverlay.setLabelSettings(config.trainLabels);metroVehicleOverlay.setLabelSettings(config.trainLabels);
   map.on('webglcontextlost',()=>{
     universityController?.abort();clearTimeout(universityTimer);++universityRequest;
+    airportController?.abort();clearTimeout(airportTimer);++airportRequest;
     graphicsPaused=true;railVehicleOverlay.setPaused(true);metroVehicleOverlay.setPaused(true);railController?.abort();clearTimeout(railTimer);++railRequest;roadController?.abort();clearTimeout(roadTimer);++roadRequest;
     document.getElementById('loading').style.display='none';
     document.getElementById('camera-status').textContent='图形资源中断，地图已暂停；可保存计划后重启';
     report('mapError','图形上下文丢失，已暂停地图数据更新，运行计划仍可保存。');
   });
-  map.on('webglcontextrestored',()=>{graphicsPaused=false;railVehicleOverlay.setPaused(false);metroVehicleOverlay.setPaused(false);staticSourceState.clear();metroSourceKeys.clear();railSourceKeys.clear();roadSourceKey=null;updateStaticSources();scheduleRailViewport();scheduleRoadViewport();scheduleMetroViewport();});
+  map.on('webglcontextrestored',()=>{graphicsPaused=false;railVehicleOverlay.setPaused(false);metroVehicleOverlay.setPaused(false);staticSourceState.clear();metroSourceKeys.clear();railSourceKeys.clear();roadSourceKey=null;updateStaticSources();scheduleRailViewport();scheduleRoadViewport();scheduleMetroViewport();scheduleUniversityViewport();scheduleAirportViewport();});
   document.addEventListener('visibilitychange',()=>{scheduleRailViewport();scheduleRoadViewport();scheduleMetroViewport();scheduleAdminViewport();updateStaticSources();});
   map.on('moveend',updateStaticSources);
   map.on('moveend',scheduleUniversityViewport);
+  map.on('moveend',scheduleAirportViewport);
   document.addEventListener('visibilitychange',scheduleUniversityViewport);
+  document.addEventListener('visibilitychange',scheduleAirportViewport);
   // Keep a selected corridor fully visible when the editor changes map size.
   // User navigation releases this framing instead of snapping back later.
   map.on('resize',()=>fitFocusedBounds());
@@ -983,7 +1030,7 @@ async function init() {
   });
   map.on('sourcedata',event=>{if(event.sourceId==='metro'&&event.isSourceLoaded&&!sourceReadySent){sourceReadySent=true;document.getElementById('loading').style.display='none';report('dataReady');}});
   map.on('moveend',()=>{const p=map.getCenter(),status=`${p.lat.toFixed(3)}° N · ${p.lng.toFixed(3)}° E`;if(status!==lastCameraStatus){lastCameraStatus=status;document.getElementById('camera-status').textContent=status;report('cameraChanged',p.lng,p.lat,map.getZoom());}const nearest=config.cities.reduce((best,city)=>{const d=Math.hypot((city.center[0]-p.lng)*Math.cos(p.lat*Math.PI/180),city.center[1]-p.lat);return d<best.d?{city,d}:best;},{city:null,d:Infinity});document.getElementById('scene-title').textContent=map.getZoom()>=9&&nearest.d<.6?nearest.city.name+' · 轨道交通':'全国 · 轨道交通';});
-  const selectableLayers=()=>['rail-vehicle-symbols','rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','university-labels','university-pois','university-outline','university-fill','history-rail','history-metro','history-road','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-station-labels','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol','rail-construction','rail','road-service-poi','road-service-buildings','road-service-outline-fill','road-construction','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));
+  const selectableLayers=()=>['rail-vehicle-symbols','rail-vehicles','rail-plan-stations','rail-plan-path','vehicles-symbol','vehicles','university-labels','university-pois','university-outline','university-fill','airport-labels','airport-pois','airport-outline','airport-fill','history-rail','history-metro','history-road','stations','areas-fill','metro','construction','rail-points','rail-detail-points','rail-station-labels','rail-platform-fill','rail-platform-outline','rail-station-fill','rail-station-outline','rail-signal-box-fill','rail-signal-box-outline','rail-signal-box-symbol','rail-construction','rail','road-service-poi','road-service-buildings','road-service-outline-fill','road-construction','road','imported-fill','imported-line','imported-point'].filter(id=>map.getLayer(id));
   map.on('dblclick',event=>{
     const feature=map.queryRenderedFeatures(event.point,{layers:selectableLayers()})[0];
     if(!feature)return;
@@ -1072,6 +1119,7 @@ async function init() {
     visible:()=>{
       const features=[];
       if(visibility.university)features.push(...universityData.features);
+      if(visibility.airport)features.push(...airportData.features);
       for(const [kind,data] of entityPresentation.sources)if(railSourceVisible(kind))features.push(...data.features);
       for(const id of visibleIds){const b=config.routeBounds[id];if(b)features.push({geometry:{coordinates:[[b[0],b[1]],[b[2],b[3]]]}});}
       for(const key of ['road','imported'])if(visibility[key]&&Array.isArray(config.sources[key]?.features))features.push(...config.sources[key].features);
@@ -1082,6 +1130,9 @@ async function init() {
     setAppearance, setUiInsets, setFonts,
     setUniversitySelection(ids){universitySelection=ids||[];scheduleUniversityViewport();refreshSelection();},
     reloadUniversityViewport(){universityKey=null;scheduleUniversityViewport();},
+    setAirportSelection(ids){airportSelection=ids||[];scheduleAirportViewport();refreshSelection();},
+    reloadAirportViewport(){airportKey=null;scheduleAirportViewport();},
+    setTrainLabels(value){config.trainLabels=value;railVehicleOverlay.setLabelSettings(value);metroVehicleOverlay.setLabelSettings(value);},
     setInfrastructureHistory(day,records){
       const previouslyConfigured=hasRailHistory();
       applyInfrastructureHistory(day,records);
@@ -1115,7 +1166,7 @@ async function init() {
     setRailPointStyles(value){config.railPointStyles=value;applyRailPointStyles();applyLineLabelVisibility();updateHistoryPaints();updateHistoryLines();},
     setRailSignalBoxes(value){config.sources.railSignalBoxes=value||empty;map.getSource('railSignalBoxes')?.setData(value||empty);},
     setMetroStyles(value){config.metroStyles=value;applyMetroStyles();updateHistoryPaints();},
-    setMinZooms(value){minZooms=value||{};config.minZooms=minZooms;applyMinZooms();staticSourceState.clear();metroSourceKeys.clear();railSourceKeys.clear();roadSourceKey=null;updateStaticSources();scheduleMetroViewport();scheduleRailViewport();scheduleRoadViewport();scheduleUniversityViewport();},
+    setMinZooms(value){minZooms=value||{};config.minZooms=minZooms;applyMinZooms();staticSourceState.clear();metroSourceKeys.clear();railSourceKeys.clear();roadSourceKey=null;updateStaticSources();scheduleMetroViewport();scheduleRailViewport();scheduleRoadViewport();scheduleUniversityViewport();scheduleAirportViewport();},
     setSelectionMode(value){selectionMode=['box','box_switch','box_line','box_station'].includes(value)?value:'click';if(selectionMode.startsWith('box'))map.dragPan.disable();else map.dragPan.enable();map.getCanvas().style.cursor=selectionMode.startsWith('box')?'crosshair':'grab';document.getElementById('selection-box').dataset.mode=selectionMode;},
     clearSelection(){selectedFeatures=[];selectedFeature=null;selectedLayer=null;refreshSelection();publishSelection();},
     setRailPlan(data){config.sources.railPlan=data;map.getSource('railPlan')?.setData(data);visibility.railPlan=true;applyVisibility();},
@@ -1142,7 +1193,7 @@ async function init() {
       const timeout=setTimeout(()=>finish('error: 地图渲染等待超时，请检查底图或缩小范围后重试'),15000);
       map.once(event,capture);map.triggerRepaint();
     },
-    setVisibility(key,on){if(visibility[key]===!!on)return;visibility[key]=!!on;applyVisibility();updateStaticSources();if(['rail','railConstruction','railStationTracks','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();if(key==='university')scheduleUniversityViewport();},
+    setVisibility(key,on){if(visibility[key]===!!on)return;visibility[key]=!!on;applyVisibility();updateStaticSources();if(['rail','railConstruction','railStationTracks','railStations','railControlPoints'].includes(key))scheduleRailViewport();if(['road','roadConstruction','roadServices'].includes(key))scheduleRoadViewport();if(['metro','stations','construction'].includes(key))scheduleMetroViewport();if(key==='university')scheduleUniversityViewport();if(key==='airport')scheduleAirportViewport();},
     setOverlay,
     setVehicleAppearance(value){const size=Number(value.size);if(!Number.isFinite(size)||!['glow','ring','train'].includes(value.style))return;vehicleAppearance={size:Math.max(8,Math.min(40,size)),style:value.style};applyVisibility();},
     setLines(ids){visibleIds=ids;applyLineFilter();updateStaticSources();scheduleMetroViewport();},
@@ -1174,7 +1225,7 @@ async function init() {
         metroLoaded:!!map.getSource('metro')&&map.isSourceLoaded('metro'),
         baseLoaded:!!map.getSource(baseSource)&&map.isSourceLoaded(baseSource),
         currentBase,adminFeatureCount,visibleLines:visibleIds.length,visibleConstruction:constructionIds.length,selectionMode,selectedCount:selectedFeatures.length,
-        universityFeatures:universityData.features.length,fontSettings:config.fonts,uiInsets,
+        universityFeatures:universityData.features.length,airportFeatures:airportData.features.length,trainLabels:config.trainLabels,fontSettings:config.fonts,uiInsets,
         universityPoiScreen:(()=>{const feature=universityData.features.find(f=>f.geometry.type==='Point');if(!feature)return null;const p=map.project(feature.geometry.coordinates);return [p.x,p.y];})(),
         center:map.getCenter(),zoom:map.getZoom(),
         loadingVisible:document.getElementById('loading').style.display!=='none',

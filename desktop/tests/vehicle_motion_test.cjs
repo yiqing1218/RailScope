@@ -17,7 +17,9 @@ class Marker {
   addTo() { return this; }
   remove() { removed++; }
 }
-const map = {getSource() { throw Error('Vehicle updates must not touch GeoJSON sources'); }};
+let zoom=10,zoomCallback;
+const map = {getSource() { throw Error('Vehicle updates must not touch GeoJSON sources'); },
+  getZoom:()=>zoom,on:(event,cb)=>{if(event==='zoom')zoomCallback=cb;},project:()=>({x:100,y:100})};
 const selected = [];
 const overlay = new VehicleOverlay(map, Marker, f => selected.push(f), 'rail-vehicles');
 const feature = {properties: {trip_id: 'G1', motion_frames: frames, display_style: 'ring'},
@@ -25,6 +27,20 @@ const feature = {properties: {trip_id: 'G1', motion_frames: frames, display_styl
 overlay.setVisible(true);
 overlay.update({features: [feature]}, true);
 const item = overlay.items.get('G1');
+assert.equal(item.label.style.display,'none');
+overlay.setLabelSettings({size:22,minZoom:12});
+assert.equal(item.label.style.fontSize,'22px');
+zoom=12;zoomCallback();
+assert.equal(item.label.style.display,'');
+zoom=11.99;zoomCallback();
+assert.equal(item.label.style.display,'none');
+assert.equal(item.element.style.display,''); // Hiding numbers preserves the train marker.
+const drawn=[];
+const ctx={save(){},restore(){},beginPath(){},arc(){},stroke(){},fill(){},fillText(text){drawn.push([text,this.font]);}};
+overlay.draw(ctx,2);
+assert.deepEqual(drawn,[]);
+zoom=12;zoomCallback();overlay.draw(ctx,2);
+assert.deepEqual(drawn,[['G1','44px sans-serif']]);
 callback(item.started + 150);
 assert.deepEqual(item.marker.value, [1, .5]);
 overlay.update({features: [feature]}, false);

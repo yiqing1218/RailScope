@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFileDialog, QInputDialog, QLineEdit, QMenu, QMes
                               QPushButton, QTreeView, QVBoxLayout, QWidget)
 from components import Fold, directory_checkbox_style, text_label
 from lazy_directory import SqliteDirectoryModel
-from university_store import database_path, ensure_index, install_index
+import university_store
 
 
 class CampusDirectoryModel(SqliteDirectoryModel):
@@ -32,6 +32,11 @@ class CampusDirectoryModel(SqliteDirectoryModel):
 
 
 class UniversityCatalog(QWidget):
+    profile = university_store.UNIVERSITY
+    store = university_store
+    selection_command = "setUniversitySelection"
+    reload_command = "reloadUniversityViewport"
+
     visibilityChanged = Signal(bool, bool)
     overridesChanged = Signal(dict)
 
@@ -39,7 +44,7 @@ class UniversityCatalog(QWidget):
         super().__init__(parent)
         self.root, self.map_view = Path(root), map_view
         self.visible = set()
-        self.override_path = self.root / "data/user_settings/universities.json"
+        self.override_path = self.root / "data/user_settings" / (self.profile["directory"]+".json")
         try:
             self.overrides = json.loads(self.override_path.read_text(encoding="utf-8"))
             if not isinstance(self.overrides, dict):
@@ -51,7 +56,7 @@ class UniversityCatalog(QWidget):
         layout.setContentsMargins(8, 0, 8, 6)
         layout.setSpacing(8)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索大学、学院或校区")
+        self.search.setPlaceholderText("搜索"+self.profile["label"])
         layout.addWidget(self.search)
         self.summary = text_label("", wrap=True)
         layout.addWidget(self.summary)
@@ -66,8 +71,8 @@ class UniversityCatalog(QWidget):
         self.tree.doubleClicked.connect(self.locate)
         self.tree.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.tree)
-        layout.addWidget(text_label("省 → 市 → 校园。一个目录项同时控制真实轮廓与 POI；无来源边界时只显示点位。", wrap=True))
-        update = QPushButton("从本地 OSM 更新大学图层…")
+        layout.addWidget(text_label(f"省 → 市 → {self.profile['noun']}。一个目录项同时控制真实轮廓与 POI；无来源边界时只显示点位。", wrap=True))
+        update = QPushButton("从本地 OSM 更新"+self.profile["label"]+"图层…")
         update.clicked.connect(self.import_data)
         layout.addWidget(update)
         self.search.textChanged.connect(self.search_changed)
@@ -77,22 +82,22 @@ class UniversityCatalog(QWidget):
         if hasattr(self, "model"):
             self.model._sessions.close_current_thread()
             self.model.deleteLater()
-        self.path = ensure_index(database_path(self.root))
+        self.path = self.store.ensure_index(self.store.database_path(self.root))
         self.model = CampusDirectoryModel(self.path, self.overrides)
         self.model.toggled.connect(self.toggled)
         self.tree.setModel(self.model)
         self.model.fetchMore()
         with closing(sqlite3.connect(self.path)) as db:
-            self.all_ids = {row[0] for row in db.execute("SELECT id FROM campuses")}
+            self.all_ids = {row[0] for row in db.execute(f"SELECT id FROM {self.profile['table']}")}
             outlines = int(dict(db.execute("SELECT key,value FROM metadata")).get("outlines", 0))
         self.visible.intersection_update(self.all_ids)
-        self.summary.setText(f"{len(self.all_ids):,} 个校园 · {outlines:,} 个来源轮廓" if self.all_ids else "尚未导入大学数据，请使用下方更新按钮。")
+        self.summary.setText(f"{len(self.all_ids):,} 个{self.profile['noun']} · {outlines:,} 个来源轮廓" if self.all_ids else "尚未导入"+self.profile["label"]+"数据，请使用下方更新按钮。")
         # Never silently reassign a human edit to a new source object.
         missing = sorted(set(self.overrides) - self.all_ids)
-        conflict_path = self.override_path.with_name("university_conflicts.json")
+        conflict_path = self.override_path.with_name(self.profile["key"]+"_conflicts.json")
         if missing or conflict_path.exists():
-            conflicts = [{"campus_id": key, "override": self.overrides[key],
-                          "reason": "missing_campus_in_active_snapshot", "verification_status": "unresolved"}
+            conflicts = [{self.profile["id_key"]: key, "override": self.overrides[key],
+                          "reason": "missing_"+self.profile["key"]+"_in_active_snapshot", "verification_status": "unresolved"}
                          for key in missing]
             try:
                 conflict_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +127,7 @@ class UniversityCatalog(QWidget):
         self.publish()
 
     def publish(self):
-        self.map_view.call("setUniversitySelection", sorted(self.visible))
+        self.map_view.call(self.selection_command, sorted(self.visible))
         self.visibilityChanged.emit(bool(self.visible), bool(self.visible) and self.visible != self.all_ids)
         self.overridesChanged.emit(self.overrides)
 
@@ -133,7 +138,7 @@ class UniversityCatalog(QWidget):
                 parent.button.setChecked(True)
                 break
             parent = parent.parentWidget()
-        index = self.model.index_for_key("campus:"+ident)
+        index = self.model.index_for_key(self.profile["node_prefix"]+ident)
         if not index.isValid():
             return
         parent = index.parent()
@@ -148,7 +153,7 @@ class UniversityCatalog(QWidget):
         with closing(sqlite3.connect(self.path)) as db:
             db.execute("CREATE TEMP TABLE selected(id TEXT PRIMARY KEY)")
             db.executemany("INSERT INTO selected VALUES(?)", ((key,) for key in ids))
-            data = [json.loads(row[0]) for row in db.execute("SELECT data FROM campuses WHERE id IN (SELECT id FROM selected)")]
+            data = [json.loads(row[0]) for row in db.execute(f"SELECT data FROM {self.profile['table']} WHERE id IN (SELECT id FROM selected)")]
         if not data:
             return
         bounds = [row["bounds"] for row in data]
@@ -160,11 +165,11 @@ class UniversityCatalog(QWidget):
 
     def rename(self, ident):
         with closing(sqlite3.connect(self.path)) as db:
-            row = db.execute("SELECT name FROM campuses WHERE id=?", (ident,)).fetchone()
+            row = db.execute(f"SELECT name FROM {self.profile['table']} WHERE id=?", (ident,)).fetchone()
         if not row:
             return
         current = self.overrides.get(ident, {}).get("name", row[0])
-        name, accepted = QInputDialog.getText(self, "校园显示名称", "大学/学院/校区名称", text=current)
+        name, accepted = QInputDialog.getText(self, self.profile["noun"]+"显示名称", self.profile["label"]+"名称", text=current)
         if not accepted or not name.strip():
             return
         value = {**self.overrides, ident: {"name": name.strip(), "source": "manual", "verification_status": "user_named"}}
@@ -178,10 +183,10 @@ class UniversityCatalog(QWidget):
             return
         self.overrides = value
         self.model.overrides = value
-        index = self.model.index_for_key("campus:"+ident)
+        index = self.model.index_for_key(self.profile["node_prefix"]+ident)
         self.model.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole])
         self.overridesChanged.emit(value)
-        self.map_view.call("reloadUniversityViewport")
+        self.map_view.call(self.reload_command)
 
     def context_menu(self, point):
         index = self.tree.indexAt(point)
@@ -189,7 +194,7 @@ class UniversityCatalog(QWidget):
             return
         node = self.model._node(index)
         menu = QMenu(self)
-        menu.addAction("定位校园 / 目录范围", lambda: self.locate(index))
+        menu.addAction("定位"+self.profile["noun"]+" / 目录范围", lambda: self.locate(index))
         menu.addAction("显示轮廓与 POI", lambda: self.toggled(node.key, True))
         menu.addAction("隐藏轮廓与 POI", lambda: self.toggled(node.key, False))
         if node.kind == "object":
@@ -198,13 +203,13 @@ class UniversityCatalog(QWidget):
 
     def import_data(self):
         from background_work import prepare_with_progress
-        filename, _ = QFileDialog.getOpenFileName(self, "选择包含大学/学院的 OSM 快照",
+        filename, _ = QFileDialog.getOpenFileName(self, "选择包含"+self.profile["label"]+"的 OSM 快照",
             str(self.root / "data/raw/osm/china-latest.osm.pbf"), "OSM (*.osm.pbf *.pbf *.osm)")
         if not filename:
             return
         try:
-            prepare_with_progress(self, "建立大学图层", lambda progress: install_index(self.root, filename, progress))
+            prepare_with_progress(self, "建立"+self.profile["label"]+"图层", lambda progress: self.store.install_index(self.root, filename, progress))
             self.reload()
-            self.map_view.call("reloadUniversityViewport")
+            self.map_view.call(self.reload_command)
         except (OSError, ValueError, RuntimeError) as error:
-            QMessageBox.warning(self, "大学图层未更新", str(error))
+            QMessageBox.warning(self, self.profile["label"]+"图层未更新", str(error))

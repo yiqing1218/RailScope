@@ -14,6 +14,8 @@
     constructor(map, Marker, select, layer) {
       this.map=map;this.Marker=Marker;this.select=select;this.layer=layer;
       this.items=new Map();this.visible=false;this.paused=false;this.frame=0;this.selected=new Set();
+      this.labelSettings={size:12,minZoom:11};
+      map.on?.('zoom',()=>this.refreshLabels());
     }
     update(data, playing) {
       const now=performance.now(), keep=new Set();
@@ -33,6 +35,7 @@
         item.feature=feature;item.started=now;
         item.frames=playing&&p.motion_frames?.length?p.motion_frames:[[0,...feature.geometry.coordinates]];
         item.label.textContent=p.trip_id||p.vehicle_id||'';
+        this.updateLabel(item);
         item.element.title=p.name||item.label.textContent;
         item.element.setAttribute('aria-label',item.element.title);
         item.element.dataset.style=p.display_style||'glow';
@@ -48,6 +51,14 @@
     }
     setVisible(value){this.visible=!!value;for(const item of this.items.values())item.element.style.display=this.visible&&!this.paused?'':'none';this.start();}
     setPaused(value){this.paused=!!value;this.setVisible(this.visible);}
+    setLabelSettings(value){
+      const valid=(key,low,high,fallback)=>Number.isInteger(value?.[key])&&value[key]>=low&&value[key]<=high?value[key]:fallback;
+      this.labelSettings={size:valid('size',8,32,12),minZoom:valid('minZoom',0,22,11)};
+      this.refreshLabels();
+    }
+    labelVisible(){return (this.map.getZoom?.()??22)>=this.labelSettings.minZoom;}
+    updateLabel(item){item.label.style.fontSize=this.labelSettings.size+'px';item.label.style.display=this.labelVisible()?'':'none';}
+    refreshLabels(){for(const item of this.items.values())this.updateLabel(item);}
     setSelected(ids){this.selected=new Set(ids.map(String));for(const [key,item] of this.items)item.element.dataset.selected=String(this.selected.has(key));}
     start(){if(!this.frame&&this.visible&&!this.paused&&!document.hidden)this.frame=requestAnimationFrame(now=>this.tick(now));}
     tick(now){
@@ -77,7 +88,10 @@
           ctx.stroke();
         }
         ctx.restore();
-        ctx.font=`${12*scale}px sans-serif`;ctx.fillText(p.trip_id||'',point.x*scale,(point.y-14)*scale);
+        if(this.labelVisible()){
+          ctx.font=`${this.labelSettings.size*scale}px sans-serif`;
+          ctx.fillText(p.trip_id||p.vehicle_id||'',point.x*scale,(point.y-(p.display_size||14)/2-4)*scale);
+        }
       }
     }
   }

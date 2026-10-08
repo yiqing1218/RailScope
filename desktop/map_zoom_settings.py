@@ -17,6 +17,8 @@ DEFAULT = {
     "roads": 0,
     "universityPois": 9,
     "universityOutlines": 12,
+    "airportPois": 7,
+    "airportOutlines": 10,
 }
 
 LABELS = {
@@ -32,6 +34,8 @@ LABELS = {
     "roads": "高速公路",
     "universityPois": "大学与学院 POI",
     "universityOutlines": "大学与学院真实校园轮廓",
+    "airportPois": "机场 POI",
+    "airportOutlines": "机场真实边界轮廓",
 }
 
 
