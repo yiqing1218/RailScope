@@ -1,6 +1,6 @@
 """One shared overview for every facility, line and operating object."""
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor, QPalette, QTextDocument, QTextOption, QAbstractTextDocumentLayout
+from PySide6.QtGui import QPalette, QTextDocument, QTextOption, QAbstractTextDocumentLayout
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QStyleOptionViewItem, QStyle
 
 
@@ -32,6 +32,8 @@ class _WrappedValue(QStyledItemDelegate):
         foreground = index.data(Qt.ItemDataRole.ForegroundRole)
         if option.state & QStyle.StateFlag.State_Selected:
             context.palette.setColor(QPalette.ColorRole.Text, option.palette.color(QPalette.ColorRole.HighlightedText))
+        elif index.data(Qt.ItemDataRole.UserRole) == 'label':
+            context.palette.setColor(QPalette.ColorRole.Text, option.palette.color(QPalette.ColorRole.PlaceholderText))
         elif foreground is not None:
             context.palette.setColor(QPalette.ColorRole.Text, foreground.color())
         painter.save()
@@ -62,11 +64,10 @@ class PropertyOverview(QTableWidget):
         self._fields.clear()
         for i, (key, value) in enumerate(rows):
             label = QTableWidgetItem(str(key))
-            label.setForeground(QColor('#526775'))
+            label.setData(Qt.ItemDataRole.UserRole, 'label')
             label.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.setItem(2*i, 0, label)
             item = QTableWidgetItem(str(value))
-            item.setForeground(QColor('#20313d'))
             item.setToolTip(str(value))
             item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
             self.setItem(2*i+1, 0, item)

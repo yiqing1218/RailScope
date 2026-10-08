@@ -15,6 +15,8 @@ DEFAULT = {
     "railPlatforms": 12,
     "railAreas": 11,
     "roads": 0,
+    "universityPois": 9,
+    "universityOutlines": 12,
 }
 
 LABELS = {
@@ -28,6 +30,8 @@ LABELS = {
     "railPlatforms": "国铁站台线",
     "railAreas": "国铁真实站区",
     "roads": "高速公路",
+    "universityPois": "大学与学院 POI",
+    "universityOutlines": "大学与学院真实校园轮廓",
 }
 
 

@@ -127,7 +127,7 @@ def test_national_viewport_has_hard_feature_budget(tmp_path):
         )
         feature = json.dumps({
             "type": "Feature",
-            "properties": {"osm_node_id": 1},
+            "properties": {"osm_node_id": 1, "kind": "station"},
             "geometry": {"type": "Point", "coordinates": [121, 31]},
         })
         db.executemany(

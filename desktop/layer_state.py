@@ -18,6 +18,7 @@ def initial_visibility():
             "road",
             "roadConstruction",
             "roadServices",
+            "university",
             "imported",
             "vehicles",
         )

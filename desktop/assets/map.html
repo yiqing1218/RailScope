@@ -15,19 +15,35 @@
     <div class="title-row"><strong id="scene-title">全国 · 轨道交通</strong><span class="live-dot"></span></div>
     <span id="scene-subtitle">全国 OSM 路网 · 可编辑计划驱动仿真</span>
   </section>
-  <div id="map-tools" class="glass tools" role="toolbar" aria-label="地图视图工具" data-role="nav" data-height-px="46" data-single-line="true" data-layout="toolbar">
-    <button id="focus-china" title="查看全国">全国</button>
-    <span class="divider"></span>
-    <button id="zoom-in" title="放大" aria-label="放大">＋</button>
-    <button id="zoom-out" title="缩小" aria-label="缩小">−</button>
-    <button id="north" title="恢复正北">N ↑</button>
-    <button id="tilt" title="切换俯视与倾斜视图">3D</button>
+  <svg class="icon-library" aria-hidden="true"><defs>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9v11h14V9M10 20v-7h4v7"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8Z"/></symbol>
+    <symbol id="i-tilt" viewBox="0 0 24 24"><path d="m12 3 10 6-10 6L2 9Zm-9 11 9 6 9-6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m10 5-7 7 7 7M3 12h18"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="m14 5 7 7-7 7M21 12H3"/></symbol>
+  </defs></svg>
+  <div id="map-tools" class="glass tools" role="toolbar" aria-label="地图导航" data-layout="toolbar">
+    <span class="tools-heading">地图导航</span>
+    <button id="open-location" class="wide" title="城市、线路与经纬度定位" aria-label="打开定位"><svg><use href="#i-pin"/></svg><span>定位</span></button>
+    <button id="north" title="恢复正北与俯视" aria-label="恢复正北"><span id="compass-arrow" class="compass">↑</span><small>N</small></button>
+    <button id="tilt" title="切换俯视与倾斜视图" aria-label="切换倾斜视图" aria-pressed="false"><svg><use href="#i-tilt"/></svg></button>
+    <button id="zoom-out" title="缩小" aria-label="缩小"><span class="zoom-symbol">−</span></button>
+    <button id="zoom-in" title="放大" aria-label="放大"><span class="zoom-symbol">＋</span></button>
+    <output id="zoom-level" class="zoom-level" aria-label="当前缩放级别">4.0</output>
+    <button id="view-back" title="上一视图 · Alt+←" aria-label="上一视图" disabled><svg><use href="#i-back"/></svg></button>
+    <button id="view-forward" title="下一视图 · Alt+→" aria-label="下一视图" disabled><svg><use href="#i-next"/></svg></button>
+    <button id="focus-china" title="查看全国路网" aria-label="查看全国"><svg><use href="#i-home"/></svg></button>
+    <button id="fit-selected" title="适应选中对象" aria-label="适应选中对象"><svg><use href="#i-target"/></svg></button>
+    <button id="fit-visible" class="wide" title="适应已加载要素与所选地铁线路"><svg><use href="#i-fit"/></svg><span>适应要素</span></button>
   </div>
   <div class="glass location-panel" id="location-panel" hidden>
+    <div class="location-heading"><strong>地图定位</strong><button id="close-location" title="关闭 · Esc" aria-label="关闭定位">×</button></div>
     <label for="city-view">城市定位</label><select id="city-view"><option value="">选择城市</option></select>
     <label for="line-view">全国线路定位</label><select id="line-view"><option value="">选择城市与线路</option></select>
     <label for="coordinate-view">经纬度（WGS84）</label><div class="coordinate-row"><input id="coordinate-view" placeholder="121.47, 31.23"><button id="coordinate-go">定位</button></div>
-    <div class="coordinate-row"><button id="fit-visible">适应可见线路</button><button id="follow-train">跟随首列车</button></div>
+    <div class="coordinate-row"><button id="follow-train">跟随首列车</button></div>
     <span id="location-message" role="status"></span>
   </div>
   <div id="map-legend" class="glass legend" data-layout="legend">
@@ -48,6 +64,7 @@
     await import('./map-export.js');
     await import('./entity-presentation.js');
     await import('./infrastructure-history.js');
+    await import('./map-navigation.js');
     await import('./map.js');
   </script>
 </body>

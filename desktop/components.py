@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QEvent,
     QSize,
 )
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
@@ -295,10 +295,11 @@ class SquareSwitch(QAbstractButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if not self.isEnabled():
             painter.setOpacity(0.45)
-        painter.setBrush(QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#0c776f" if self.isChecked() or self._mixed else "#8297a2"), 1.5))
+        accent = self.window().property("appearanceAccent") or "#0c776f"
+        painter.setBrush(self.palette().color(QPalette.ColorRole.Base))
+        painter.setPen(QPen(QColor(accent if self.isChecked() or self._mixed else "#8297a2"), 1.5))
         painter.drawRoundedRect(QRectF(2.5, 2.5, 17, 17), 2, 2)
-        painter.setPen(QPen(QColor("#0c776f"), 2.3, Qt.PenStyle.SolidLine,
+        painter.setPen(QPen(QColor(accent), 2.3, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         if self._mixed:
             painter.drawLine(7, 11, 15, 11)

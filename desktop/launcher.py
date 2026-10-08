@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
+from contextlib import closing
 import argparse
 import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QCompleter,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QFormLayout,
@@ -59,7 +61,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from components import Fold, SquareSwitch, THEME, visibility_row, directory_checkbox_style, text_label
+from components import Fold, SquareSwitch, visibility_row, directory_checkbox_style, text_label
+from appearance import load as load_appearance, save as save_appearance, stylesheet as appearance_stylesheet, native_palette, web_theme, AppearanceDialog
+from glass_workspace import GlassPanel, MapWorkspace
+from font_settings import load as load_fonts, save as save_fonts, stylesheet as font_stylesheet, FontDialog
+from university_store import database_path as university_database_path, viewport as university_viewport
+from university_ui import UniversityCatalog
 from geometry import build_demo_path
 from hierarchy import Hierarchy
 from hierarchy_ui import HierarchyDialog
@@ -99,7 +106,7 @@ from lazy_directory import SqliteDirectoryModel
 from metro_line_directory import MetroLineDirectoryModel, sync_line_directory
 from road_catalog_ui import RoadCatalog
 from road_services import viewport as road_services_viewport
-from viewport_settings import DEFAULT as DEFAULT_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget
+from viewport_settings import HIGH as HIGH_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget, enforce_budget
 from map_zoom_settings import LABELS as ZOOM_LABELS, load as load_map_zooms, save as save_map_zooms
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
@@ -289,7 +296,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
             return
         # Large directory selections do not fit in HTTP's request line.
         # These are read-only viewport queries; the body contains only filters.
-        if not self.valid_host() or urlsplit(self.path).path not in {"/api/metro", "/api/roads", "/api/rail"}:
+        if not self.valid_host() or urlsplit(self.path).path not in {"/api/metro", "/api/roads", "/api/rail", "/api/universities"}:
             self.send_error(404)
             return
         try:
@@ -383,6 +390,24 @@ class LocalHandler(SimpleHTTPRequestHandler):
             except (ValueError, KeyError, OSError, sqlite3.Error):
                 self.send_error(400)
             return
+        if path == "/api/universities":
+            try:
+                query = self.request_query()
+                result = university_viewport(university_database_path(ROOT),
+                    [float(v) for v in query['bbox'][0].split(',')], json.loads(query['selected'][0]),
+                    query.get('kind', ['all'])[0], float(query.get('zoom', ['14'])[0]),
+                    self.server.config.get('universityOverrides'))
+                payload = json.dumps(result, ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except ConnectionError:
+                pass
+            except (ValueError, KeyError, OSError, sqlite3.Error):
+                self.send_error(400)
+            return
         if path == "/api/rail":
             try:
                 from rail_store import viewport
@@ -398,13 +423,19 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 selection["exclude"] = query.get("exclude", ["false"])[0] == "true"
                 selection["facility"] = query.get("facility", ["all"])[0]
                 selection['only_explicit'] = query.get('only_explicit',['false'])[0]=='true'
+                for key in ('point_stations', 'point_controls'):
+                    if key in query:
+                        if query[key][0] not in ('true', 'false'):
+                            raise ValueError('铁路点显示选项无效')
+                        selection[key] = query[key][0] == 'true'
+                budget = self.server.config.get("railViewportBudget")
                 result = viewport(
                     active_rail_directory(ROOT),
                     query["kind"][0],
                     [float(v) for v in query["bbox"][0].split(",")],
                     float(query["zoom"][0]),
                     selection or None,
-                    self.server.config.get("railViewportBudget"),
+                    budget,
                     self.server.config.get("minZooms"),
                     metro_database=getattr(self.server, "metro_db", None),
                     overrides=self.server.config.get('railDisplayOverrides'),
@@ -423,6 +454,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                             renamed = switch_names.get(str(props.get("osm_node_id")))
                             if renamed:
                                 props["display_name"] = renamed
+                enforce_budget(result, budget)
                 payload = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -755,7 +787,7 @@ class Desk(QMainWindow):
         self.rail_operations.updated.connect(self.refresh_operating_selection)
         self.connect_map()
         self.map.bridge.initialized.connect(self.restore_map_state)
-        self.setStyleSheet(THEME)
+        self.apply_appearance(self.config["appearance"])
         if self.hierarchy_load_error:
             QTimer.singleShot(
                 0,
@@ -877,6 +909,8 @@ class Desk(QMainWindow):
         sources["imported"] = EMPTY
         return {
             "sources": sources,
+            "appearance": load_appearance(ROOT / "data/user_settings/appearance.json"),
+            "fonts": load_fonts(ROOT / "data/user_settings/fonts.json"),
             "railStyles": load_rail_styles(ROOT / "data/user_settings/rail_styles.json"),
             "railPointStyles": load_rail_point_styles(ROOT / "data/user_settings/rail_point_styles.json"),
             "metroStyles": load_metro_styles(ROOT / "data/user_settings/metro_styles.json"),
@@ -917,17 +951,18 @@ class Desk(QMainWindow):
         outer.setSpacing(0)
         outer.addWidget(self.header())
         workspace = QHBoxLayout()
-        workspace.setContentsMargins(12, 12, 12, 12)
-        workspace.setSpacing(10)
-        workspace.addWidget(self.rail())
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
+        workspace.setContentsMargins(0, 0, 0, 0)
+        workspace.setSpacing(0)
+        self.navigation_rail = self.rail()
         self.left = self.sidebar()
         self.right = self.inspector()
-        self.splitter.addWidget(self.left)
         self.map_stack = QSplitter(Qt.Orientation.Vertical)
         self.map.setMinimumHeight(200)
-        self.map_stack.addWidget(self.map)
+        self.map_workspace = MapWorkspace(self.map, self.left, self.right, self.navigation_rail)
+        self.map_workspace.insetsChanged.connect(lambda value: self.map.call("setUiInsets", value))
+        self.map.bridge.camera.connect(self.map_workspace.schedule_backdrop)
+        self.map.bridge.dataLoaded.connect(self.map_workspace.schedule_backdrop)
+        self.map_stack.addWidget(self.map_workspace)
         self.editor_hosts = []
         for editor in (self.operations, self.rail_operations):
             host = QWidget()
@@ -951,11 +986,7 @@ class Desk(QMainWindow):
             lambda: self.resize_run_editor(1, expanded=True)
         )
         self.operations.hide()
-        self.splitter.addWidget(self.map_stack)
-        self.splitter.addWidget(self.right)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setSizes([310, 910, 320])
-        workspace.addWidget(self.splitter, 1)
+        workspace.addWidget(self.map_stack, 1)
         outer.addLayout(workspace, 1)
         self.setCentralWidget(root)
         self.build_status()
@@ -1143,6 +1174,8 @@ class Desk(QMainWindow):
         self.add_action(edit, "站场股道命名 / 自动编号…", self.edit_station_tracks)
         map_menu = bar.addMenu("显示")
         self.add_action(map_menu, "打开图层控制", lambda: self.open_sidebar(0))
+        self.add_action(map_menu, "界面外观…", self.edit_appearance)
+        self.add_action(map_menu, "中文字体…", self.edit_fonts)
         self.line_names_action = map_menu.addAction("显示线路名称")
         self.line_names_action.setCheckable(True)
         self.line_names_action.setChecked(self.config["railPointStyles"]["labels"]["show_line_names"])
@@ -1248,6 +1281,7 @@ class Desk(QMainWindow):
         data.addSeparator()
         self.add_action(data, "下载或更新全国地铁数据…", self.open_data_download)
         self.add_action(data, "下载或更新全国铁路数据…", self.open_rail_download)
+        self.add_action(data, "导入或更新大学 / 学院图层…", lambda: self.university_catalog.import_data())
         self.add_action(
             data, "刷新铁路目录", lambda: self.rail_catalog_widget.refresh_catalog()
         )
@@ -1303,26 +1337,76 @@ class Desk(QMainWindow):
         self.add_action(help, "运行计划交换标准 / AI 编写说明", self.show_plan_standard)
         self.map.bridge.screenshot.connect(self.save_map_capture)
 
+    def apply_appearance(self, value):
+        theme = web_theme(value)
+        self.setProperty("appearanceAccent", theme["accent"])
+        self.setPalette(native_palette(value))
+        self.setStyleSheet(appearance_stylesheet(value) + font_stylesheet(self.config["fonts"]))
+        self.map_workspace.apply_theme(value)
+        self.map.call("setAppearance", theme)
+
+    def edit_appearance(self):
+        previous = self.config["appearance"].copy()
+        dialog = AppearanceDialog(previous, self.apply_appearance, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.apply_appearance(previous)
+            return
+        try:
+            value = save_appearance(ROOT / "data/user_settings/appearance.json", dialog.value())
+            self.config["appearance"] = value
+            self.apply_appearance(value)
+        except OSError as error:
+            self.apply_appearance(previous)
+            QMessageBox.warning(self, "外观未保存", str(error))
+
+    def apply_fonts(self, value):
+        self.setStyleSheet(appearance_stylesheet(self.config["appearance"]) + font_stylesheet(value))
+        self.map.call("setFonts", value, False)
+
+    def edit_fonts(self):
+        previous = self.config["fonts"]
+        dialog = FontDialog(previous, self.apply_fonts, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.apply_fonts(previous)
+            return
+        try:
+            value = save_fonts(ROOT / "data/user_settings/fonts.json", dialog.value())
+            self.config["fonts"] = value
+            self.apply_fonts(value)
+            self.map.call("setFonts", value, True)
+        except OSError as error:
+            self.apply_fonts(previous)
+            QMessageBox.warning(self, "字体未保存", str(error))
+
     def edit_viewport_budget(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("地图元素加载上限")
         form = QFormLayout(dialog)
-        form.addRow(text_label("按当前地图范围加载；为避免卡顿和崩溃，所有配置均受安全上限约束。", wrap=True))
+        form.addRow(text_label(
+            "仅用于国铁线路、车站与控制点、站台、站区；每个数据图层分别限额，含地图边缘预加载范围。\n"
+            "元素指地图要素（线路按物理区间计），不是整条线路或屏幕上的符号数量。\n"
+            "四项限制同时生效，以先达到者为准；选中线路也遵守相同上限。\n"
+            "数据量按最终要素 JSON 的 UTF-8 字节统计，不代表内存占用。自定义最大值与高内存配置一致。", wrap=True))
         preset = QComboBox()
         preset.addItem("默认", "default")
         preset.addItem("高内存电脑", "high")
         preset.addItem("自定义", "custom")
         fields = {}
         for key, label, divisor in (
-            ("features", "元素数 / 图层", 1),
-            ("bytes", "视窗数据 / MB", 1024 * 1024),
-            ("vertices", "几何顶点数", 1),
-            ("feature_bytes", "单个元素 / MB", 1024 * 1024),
+            ("features", "元素数 / 数据图层", 1),
+            ("bytes", "要素数据 / MiB / 图层", 1024 * 1024),
+            ("vertices", "几何顶点数 / 图层", 1),
+            ("feature_bytes", "单个元素 / MiB", 1024 * 1024),
         ):
-            control = QSpinBox()
-            control.setRange(1, 100000000 if divisor == 1 else 16384)
-            control.setValue(max(1, (self.config["railViewportBudget"].get(key) or DEFAULT_VIEWPORT_BUDGET[key]) // divisor))
+            control = QSpinBox() if divisor == 1 else QDoubleSpinBox()
+            if divisor != 1:
+                control.setDecimals(7)
+                control.setSingleStep(.25)
+            control.setRange(1 if divisor == 1 else 1 / divisor,
+                             HIGH_VIEWPORT_BUDGET[key] if divisor == 1 else HIGH_VIEWPORT_BUDGET[key] / divisor)
+            control.setValue(self.config["railViewportBudget"][key] if divisor == 1 else self.config["railViewportBudget"][key] / divisor)
             control.setProperty("budgetDivisor", divisor)
+            control.setProperty("budgetKey", key)
             fields[key] = control
             form.addRow(label, control)
 
@@ -1336,7 +1420,8 @@ class Desk(QMainWindow):
             value = VIEWPORT_PRESETS.get(preset.currentData())
             for key, control in fields.items():
                 if value is not None and value[key] is not None:
-                    control.setValue(max(1, value[key] // control.property("budgetDivisor")))
+                    divisor = control.property("budgetDivisor")
+                    control.setValue(value[key] if divisor == 1 else value[key] / divisor)
                 control.setEnabled(preset.currentData() == "custom")
 
         preset.currentIndexChanged.connect(change_preset)
@@ -1350,7 +1435,7 @@ class Desk(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         value = VIEWPORT_PRESETS.get(preset.currentData()) or {
-            key: control.value() * control.property("budgetDivisor")
+            key: round(control.value() * control.property("budgetDivisor"))
             for key, control in fields.items()
         }
         try:
@@ -1773,7 +1858,7 @@ class Desk(QMainWindow):
         return header
 
     def rail(self):
-        rail = frame("rail")
+        rail = GlassPanel("rail")
         rail.setFixedWidth(54)
         layout = QVBoxLayout(rail)
         layout.setContentsMargins(4, 8, 4, 8)
@@ -1831,7 +1916,7 @@ class Desk(QMainWindow):
         layout.addLayout(row)
 
     def sidebar(self):
-        panel = frame("panel")
+        panel = GlassPanel("panel")
         panel.setMinimumWidth(285)
         panel.setMaximumWidth(420)
         layout = QVBoxLayout(panel)
@@ -1865,10 +1950,40 @@ class Desk(QMainWindow):
         )
         layout.addWidget(Fold("公路", self.reference_controls("road"), expanded=False))
         layout.addWidget(Fold("国铁", self.rail_controls(), expanded=False))
+        university_body = QWidget()
+        university_layout = QVBoxLayout(university_body)
+        university_layout.setContentsMargins(0, 0, 0, 0)
+        university_layout.addWidget(self.new_switch("university", "校园轮廓与 POI"))
+        self.university_catalog = UniversityCatalog(ROOT, self.map)
+        self.university_catalog.visibilityChanged.connect(self.university_visibility_changed)
+        self.university_catalog.overridesChanged.connect(lambda value: self.config.update(universityOverrides=value))
+        self.config['universityOverrides'] = self.university_catalog.overrides
+        university_layout.addWidget(self.university_catalog)
+        layout.addWidget(Fold("大学", university_body, expanded=False))
         layout.addWidget(Fold("底图", self.base_controls(), expanded=False))
+        # Keep a newly opened catalog in view instead of stacking it below
+        # hundreds of rows from another expanded layer.
+        folds = [layout.itemAt(i).widget() for i in range(layout.count())]
+        def activate_fold(current, opened):
+            if opened:
+                for other in folds:
+                    if other is not current:
+                        other.button.setChecked(False)
+                QTimer.singleShot(0, lambda: scroll.ensureWidgetVisible(current))
+        for fold in folds:
+            fold.button.toggled.connect(lambda opened, current=fold: activate_fold(current, opened))
         layout.addStretch()
         scroll.setWidget(body)
         return scroll
+
+    def university_visibility_changed(self, on, mixed):
+        self.flags['university'] = on
+        control = self.switches['university']
+        control.blockSignals(True)
+        control.setChecked(on)
+        control.setMixed(mixed)
+        control.blockSignals(False)
+        self.map.call('setVisibility', 'university', on)
 
     def base_controls(self):
         body = QWidget()
@@ -2720,7 +2835,7 @@ class Desk(QMainWindow):
             self.data_download.kind.setCurrentIndex(1)
 
     def inspector(self):
-        panel = frame("panel")
+        panel = GlassPanel("panel")
         panel.setMinimumWidth(275)
         panel.setMaximumWidth(450)
         layout = QVBoxLayout(panel)
@@ -2811,6 +2926,9 @@ class Desk(QMainWindow):
 
     def restore_map_state(self):
         """Replay bounded Python-owned UI state after a renderer restart."""
+        self.map.call("setAppearance", web_theme(self.config["appearance"]))
+        self.map.call("setUiInsets", self.map_workspace.insets())
+        self.map.call("setFonts", self.config["fonts"], False)
         self.map.call(
             "setBase", BASE_TYPES[self.base_combo.currentIndex()]
         )
@@ -2822,6 +2940,7 @@ class Desk(QMainWindow):
         self.send_directory_filter()
         self.rail_catalog_widget.send_visibility(False)
         self.refresh_signal_boxes()
+        self.map.call("setUniversitySelection", sorted(self.university_catalog.visible))
         for key, enabled in self.flags.items():
             self.map.call("setVisibility", key, enabled)
         self.map.call("imported", self.imported)
@@ -3221,12 +3340,12 @@ class Desk(QMainWindow):
         self.detail_rail.setChecked(self.right.isVisible())
 
     def _restore_inspector_width(self):
-        sizes = self.splitter.sizes()
-        if len(sizes) == 3 and sizes[2] < 275:
-            needed = 300 - sizes[2]
-            self.splitter.setSizes([sizes[0], max(300, sizes[1] - needed), 300])
+        self.map_workspace.arrange()
 
     def set_flag(self, key, on):
+        if key == 'university':
+            self.university_catalog.set_all(on)
+            return
         self.flags[key] = on
         control = self.switches.get(key)
         if control and control.isChecked() != on:
@@ -3428,6 +3547,9 @@ class Desk(QMainWindow):
                 group_id=props.get("catalog_group_id"),
                 network_edge_id=props.get('network_edge_id'),
             )
+        elif props.get('campus_id'):
+            self.open_sidebar(0)
+            self.university_catalog.select_campus(props['campus_id'])
         elif layer in RAIL_STATION_LAYERS:
             record = self._rail_station_record_for_feature(feature)
             if record:
@@ -3626,6 +3748,7 @@ class Desk(QMainWindow):
             r"\s*·\s*(?:RS|RL|IL|ST|NE|NN|SA|MS)-[A-Za-z0-9_-]+\s*$", "", title
         )
         layers = {
+            **{key: '大学 / 学院（校园轮廓与 POI）' for key in ('university-fill','university-outline','university-pois','university-labels')},
             **{key: '服务区（统一实体）' for key in ('road-service-poi','road-service-labels','road-service-outline-fill','road-service-outline','road-service-buildings')},
             "rail-points": "国铁车站 / 线路所 / 道岔",
             "rail-detail-points": "国铁控制点 / 设施点位",
@@ -3654,6 +3777,10 @@ class Desk(QMainWindow):
         )
         rows = []
         translated = {
+            'campus_id': '校园编号', 'university_name': '院校 / 校区名称', 'snapshot': '来源快照',
+            'has_outline': '具有来源轮廓', 'boundary_status': '校园边界', 'geometry_origin': '几何依据',
+            'association_status': '轮廓与点位关联', 'source_member_ids': '关联来源对象',
+            'directory_status': '省市归属依据',
             'service_id': '服务区编号', 'entity_id': '实体编号', 'representations': '点位 / 边界 / 建筑',
             'station_track_id': '股道编号（稳定 ID）', 'track_number': '股道编号', 'track_name': '股道名称',
             "corridor_id": "单向运行通道编号",
@@ -3740,6 +3867,16 @@ class Desk(QMainWindow):
                     if key in ("station_names", "line_names", "connected_line_names") and isinstance(props[key], list)
                     else str(props[key])
                 )
+                if props.get('campus_id'):
+                    value = {
+                        'kind': {'university': '大学', 'college': '学院'},
+                        'verification_status': {'source_unverified': '来源数据，未经人工核验'},
+                        'boundary_status': {'source_polygon': '真实来源轮廓', 'missing_source_outline': '来源缺少校园边界'},
+                        'geometry_origin': {'source_polygon': 'OSM 原始多边形', 'source_poi': 'OSM 原始 POI', 'derived_label_anchor': '真实轮廓内派生标签锚点'},
+                        'association_status': {'automatic_reference': '自动关联参考', 'source_object': '来源对象'},
+                        'directory_status': {'source_address_or_admin_reference': '来源地址 / 行政区空间参考'},
+                        'has_outline': {'True': '是', 'False': '否'},
+                    }.get(key, {}).get(value, value)
                 rows.append((label, value))
         for key, value in props.get("station_overview", {}).items():
             if station_detail and key == "region":
@@ -3769,7 +3906,7 @@ class Desk(QMainWindow):
             for key, conflict in props.get("reference_conflicts", {}).items():
                 label = reference_labels.get(key, key)
                 rows.append(("资料差异 · " + label, f"已有：{conflict['existing']}；网站参考：{conflict['reference']}"))
-        tags = {**props.get("way_tags", {}), **props.get("relation_tags", {})}
+        tags = {**props.get("source_tags", {}), **props.get("way_tags", {}), **props.get("relation_tags", {})}
         for key, title in [
             ("from", "起点"),
             ("to", "终点"),
@@ -3794,7 +3931,7 @@ class Desk(QMainWindow):
             rows.append(("开放街图关系成员数量", str(len(props["relation_members"]))))
         unknown = {}
         for key, value in props.items():
-            if value is None or key in translated or key in ("way_tags", "relation_tags", "relation_members", "station_overview", "external_reference", "reference_conflicts", "reference_provenance"):
+            if value is None or key in translated or key in ("source_tags", "way_tags", "relation_tags", "relation_members", "station_overview", "external_reference", "reference_conflicts", "reference_provenance"):
                 continue
             unknown[key] = value
         if unknown:
@@ -4109,6 +4246,13 @@ class Desk(QMainWindow):
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout
 
         props = feature.get("properties", {})
+        if props.get('campus_id'):
+            self.university_catalog.rename(props['campus_id'])
+            edit = self.university_catalog.overrides.get(props['campus_id'], {})
+            if edit.get('name'):
+                props.update(name=edit['name'], display_name=edit['name'], university_name=edit['name'])
+                self.display_feature(feature)
+            return
         if props.get("service_id"):
             self.edit_service_area(feature)
             return
@@ -4772,6 +4916,16 @@ class Desk(QMainWindow):
             )["features"]
         if self.flags["road"]:
             features += self.config["sources"]["road"]["features"]
+        if self.flags["university"]:
+            with closing(sqlite3.connect(self.university_catalog.path)) as db:
+                db.execute("CREATE TEMP TABLE selected(id TEXT PRIMARY KEY)")
+                db.executemany("INSERT INTO selected VALUES(?)", ((key,) for key in self.university_catalog.visible))
+                for raw, in db.execute("SELECT data FROM features WHERE campus_id IN (SELECT id FROM selected)"):
+                    feature = json.loads(raw)
+                    edit = self.university_catalog.overrides.get(feature["properties"]["campus_id"], {})
+                    if edit.get("name"):
+                        feature["properties"].update(name=edit["name"], display_name=edit["name"], university_name=edit["name"])
+                    features.append(feature)
         if self.flags["vehicles"]:
             features += [
                 f

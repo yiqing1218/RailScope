@@ -9,9 +9,9 @@ from uuid import uuid4
 from threading import BoundedSemaphore
 from railscope.rail_semantics import edge_semantics
 try:
-    from .viewport_settings import DEFAULT, HIGH, normalize
+    from .viewport_settings import DEFAULT, SCAN_LIMIT, normalize, coordinate_count, enforce_budget
 except ImportError:
-    from viewport_settings import DEFAULT, HIGH, normalize
+    from viewport_settings import DEFAULT, SCAN_LIMIT, normalize, coordinate_count, enforce_budget
 
 try:
     from .rail_categories import track_type as classify_track_type
@@ -21,14 +21,6 @@ except ImportError:
 # Compatibility name used by import and viewport regression tests.
 VIEWPORT_FEATURES = DEFAULT["features"]
 _viewport_gate = BoundedSemaphore(1)
-
-
-def coordinate_count(value):
-    if not value:
-        return 0
-    if isinstance(value[0], (int, float)):
-        return 1
-    return sum(coordinate_count(part) for part in value)
 
 
 def _rail_feature(edge, section_props=None):
@@ -327,7 +319,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     }
     if zoom < minimum_zoom.get(kind, 0):
         return {"type": "FeatureCollection", "features": [], "truncated": False}
-    selection = selection if kind == "rail" and isinstance(selection, dict) else {}
+    selection = selection if isinstance(selection, dict) else {}
     selected_values = {}
     for name in ("sections", "ways", "groups", "facility_groups", "included_edges", "excluded_edges"):
         values = selection.get(name, [])
@@ -352,14 +344,11 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     byte_limit = budget["bytes"]
     vertex_limit = budget["vertices"]
     feature_byte_limit = budget["feature_bytes"]
-    if explicit:
-        feature_limit = min(feature_limit * 2, HIGH["features"])
-        byte_limit = min(byte_limit * 4, HIGH["bytes"])
-        vertex_limit = min(vertex_limit * 10, HIGH["vertices"])
     # Do not queue concurrent national JSON decoding jobs after rapid camera moves.
     if not _viewport_gate.acquire(blocking=False):
         return {"type": "FeatureCollection", "features": [], "busy": True}
-    features, byte_count, vertices, truncated = [], 0, 0, False
+    features, byte_count, vertices = [], 0, 0
+    reasons = set()
     try:
         with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
             db.execute("PRAGMA cache_size=-2048")
@@ -440,10 +429,14 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
             if kind == "railPoints":
                 station_zoom = (min_zooms or {}).get("railStations", 10)
                 switch_zoom = (min_zooms or {}).get("railSwitches", 15)
-                if zoom < switch_zoom:
-                    clauses.append("coalesce(json_extract(f.data,'$.properties.kind'),'')!='switch'")
-                if zoom < station_zoom:
-                    clauses.append("json_extract(f.data,'$.properties.kind')='switch'")
+                station_kinds = "('station','halt','yard','depot','workshop','works','engine_shed')"
+                for key in ("point_stations", "point_controls"):
+                    if type(selection.get(key, True)) is not bool:
+                        raise ValueError("铁路点显示选项无效")
+                if zoom < switch_zoom or not selection.get("point_controls", True):
+                    clauses.append("coalesce(json_extract(f.data,'$.properties.kind'),'') IN " + station_kinds)
+                if zoom < station_zoom or not selection.get("point_stations", True):
+                    clauses.append("coalesce(json_extract(f.data,'$.properties.kind'),'') NOT IN " + station_kinds)
                 # Legacy indices may contain urban-only POIs. Keep the two
                 # station switches independent even before reimporting OSM.
                 clauses.append("coalesce(json_extract(f.data,'$.properties.node_tags.station'),'') NOT IN ('subway','light_rail','monorail')")
@@ -475,27 +468,37 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 parameters.append(zoom)
             if selected_values['excluded_edges']:
                 clauses.append("coalesce(json_extract(f.data,'$.properties.network_edge_id'),'') NOT IN (SELECT id FROM excluded_edges)")
-            parameters.append(feature_limit + 1 if feature_limit is not None else -1)
+            parameters.append(SCAN_LIMIT + 1)
             rows = db.execute(
-                'SELECT CASE WHEN ? IS NULL OR length(f.data)<=? THEN f.data ELSE NULL END '
+                'SELECT CASE WHEN length(CAST(f.data AS BLOB))<=? THEN f.data ELSE NULL END '
                 "FROM features f JOIN bounds b ON f.id=b.id WHERE "
                 + " AND ".join(clauses)
                 + " LIMIT ?",
-                (feature_byte_limit, feature_byte_limit, *parameters),
+                (feature_byte_limit, *parameters),
             )
-            for (raw,) in rows:
-                if raw is None:
-                    truncated = True
-                    continue
-                size = len(raw.encode("utf-8")) if byte_limit is not None else 0
-                if ((feature_limit is not None and len(features) >= feature_limit)
-                        or (byte_limit is not None and byte_count + size > byte_limit)):
-                    truncated = True
+            for scanned, (raw,) in enumerate(rows):
+                if len(features) >= feature_limit:
+                    reasons.add("features")
                     break
+                if scanned >= SCAN_LIMIT:
+                    reasons.add("scan")
+                    break
+                if raw is None:
+                    reasons.add("feature_bytes")
+                    continue
+                size = len(raw.encode("utf-8"))
+                if byte_count + size > byte_limit:
+                    reasons.add("bytes")
+                    continue
                 feature = json.loads(raw)
+                if zoom < 10 and feature["geometry"]["type"] == "LineString":
+                    coordinates = feature["geometry"]["coordinates"]
+                    step = max(1, len(coordinates) // 8)
+                    feature["geometry"]["coordinates"] = coordinates[::step] + (
+                        [coordinates[-1]] if coordinates[-1] != coordinates[::step][-1] else [])
                 count = coordinate_count(feature["geometry"]["coordinates"])
-                if vertex_limit is not None and vertices + count > vertex_limit:
-                    truncated = True
+                if vertices + count > vertex_limit:
+                    reasons.add("vertices")
                     continue
                 features.append(feature)
                 byte_count += size
@@ -573,27 +576,18 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
         if "infrastructure_id" not in props:
             source = "node" if "osm_node_id" in props else "way" if "osm_way_id" in props else "relation"
             props["infrastructure_id"] = f"{source}/{props.get('osm_'+source+'_id')}"
-    if zoom < 10:
-        for feature in features:
-            if feature["geometry"]["type"] == "LineString":
-                coordinates = feature["geometry"]["coordinates"]
-                step = max(1, len(coordinates) // 8)
-                feature["geometry"]["coordinates"] = coordinates[::step] + (
-                    [coordinates[-1]]
-                    if coordinates[-1] != coordinates[::step][-1]
-                    else []
-                )
     if kind == 'railPlatforms':
         try:
             from .rail_platforms import platform_display
         except ImportError:
             from rail_platforms import platform_display
         features = platform_display(features)
-    return {
+    return enforce_budget({
         "type": "FeatureCollection",
         "features": features,
-        "truncated": truncated,
-    }
+        "truncated": bool(reasons),
+        "budget": {"reasons": sorted(reasons)},
+    }, budget)
 
 
 def load_edges(directory, ids):
