@@ -49,7 +49,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QSplitter,
     QStackedWidget,
     QStatusBar,
     QTabWidget,
@@ -63,7 +62,7 @@ from PySide6.QtWidgets import (
 
 from components import Fold, SquareSwitch, visibility_row, directory_checkbox_style, text_label
 from appearance import load as load_appearance, save as save_appearance, stylesheet as appearance_stylesheet, native_palette, web_theme, AppearanceDialog
-from glass_workspace import GlassPanel, MapWorkspace
+from glass_workspace import GlassPanel, MapWorkspace, WorkbenchWindow
 from font_settings import load as load_fonts, save as save_fonts, stylesheet as font_stylesheet, FontDialog
 from university_store import database_path as university_database_path, viewport as university_viewport
 from university_ui import UniversityCatalog
@@ -85,7 +84,7 @@ from line_metadata_ui import LineMetadataDialog
 from rail_categories import TRACK_TYPES
 from corridor_ui import CorridorPanel
 from rail_connection_ui import StationConnectionSelector
-from layer_state import initial_visibility, editor_sizes
+from layer_state import initial_visibility
 from map_commands import MapCommands
 from display_names import apply_names, object_key, rail_line_presentation, apply_rail_presentation, restore_presentation
 from yard_track_names import yard_track_key
@@ -106,7 +105,7 @@ from lazy_directory import SqliteDirectoryModel
 from metro_line_directory import MetroLineDirectoryModel, sync_line_directory
 from road_catalog_ui import RoadCatalog
 from road_services import viewport as road_services_viewport
-from viewport_settings import HIGH as HIGH_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load as load_viewport_budget, save as save_viewport_budget, enforce_budget
+from viewport_settings import MAXIMUM as MAXIMUM_VIEWPORT_BUDGET, PRESETS as VIEWPORT_PRESETS, load_settings as load_viewport_settings, save_settings as save_viewport_settings, infer_mode as viewport_mode, enforce_budget
 from map_zoom_settings import LABELS as ZOOM_LABELS, load as load_map_zooms, save as save_map_zooms
 from data_install_ui import DataDownloadDialog
 from railscope.demo import load_demo
@@ -877,6 +876,7 @@ class Desk(QMainWindow):
                 QMessageBox.warning(self, "站点样式未保存", str(error))
 
     def make_config(self):
+        viewport_settings = load_viewport_settings(ROOT / "data/user_settings/rail_viewport_budget.json")
         sources = {key: EMPTY for key in ("metro", "stations", "areas", "construction")}
         rail = ROOT / "data" / "raw" / "osm" / "beijing_highspeed.geojson"
         sources["rail"] = (
@@ -918,7 +918,9 @@ class Desk(QMainWindow):
             "metroViewport": True,
             "railViewport": (rail_data / "rail.sqlite").exists(),
             "roadViewport": road_index_ready,
-            "railViewportBudget": load_viewport_budget(ROOT / "data/user_settings/rail_viewport_budget.json"),
+            "railViewportBudget": viewport_settings["limits"],
+            "railViewportMode": viewport_settings["mode"],
+            "railViewportCustomBudget": viewport_settings["custom"],
             "minZooms": load_map_zooms(ROOT / "data/user_settings/map_min_zooms.json"),
             "visibleIds": sorted(r for r in self.visible_lines if r > 0),
             "constructionIds": sorted(-r for r in self.visible_lines if r < 0),
@@ -956,29 +958,16 @@ class Desk(QMainWindow):
         self.navigation_rail = self.rail()
         self.left = self.sidebar()
         self.right = self.inspector()
-        self.map_stack = QSplitter(Qt.Orientation.Vertical)
         self.map.setMinimumHeight(200)
         self.map_workspace = MapWorkspace(self.map, self.left, self.right, self.navigation_rail)
         self.map_workspace.insetsChanged.connect(lambda value: self.map.call("setUiInsets", value))
         self.map.bridge.camera.connect(self.map_workspace.schedule_backdrop)
         self.map.bridge.dataLoaded.connect(self.map_workspace.schedule_backdrop)
-        self.map_stack.addWidget(self.map_workspace)
-        self.editor_hosts = []
-        for editor in (self.operations, self.rail_operations):
-            host = QWidget()
-            row = QHBoxLayout(host)
-            row.setContentsMargins(8, 0, 8, 0)
-            row.addStretch()
-            row.addWidget(editor, 1)
-            row.addStretch()
-            editor.closed.connect(host.hide)
-            host.hide()
-            self.editor_hosts.append(host)
-            self.map_stack.addWidget(host)
+        self.editor_windows = [WorkbenchWindow(editor, self.map_workspace, self)
+                               for editor in (self.operations, self.rail_operations)]
         self.operations.workspace_requested.connect(self.open_metro_operations)
         self.rail_operations.workspace_requested.connect(self.open_rail_operations)
         self.rail_operations.hide()
-        self.map_stack.setSizes([350, 500, 0])
         self.operations.expand_requested.connect(
             lambda: self.resize_run_editor(0, expanded=True)
         )
@@ -986,10 +975,12 @@ class Desk(QMainWindow):
             lambda: self.resize_run_editor(1, expanded=True)
         )
         self.operations.hide()
-        workspace.addWidget(self.map_stack, 1)
+        workspace.addWidget(self.map_workspace, 1)
         outer.addLayout(workspace, 1)
         self.setCentralWidget(root)
         self.build_status()
+        for editor in (self.operations, self.rail_operations):
+            self.workbench.add_vehicle_controls(editor)
 
     def add_action(self, menu, text, callback, shortcut=None):
         action = QAction(text, self)
@@ -1343,6 +1334,10 @@ class Desk(QMainWindow):
         self.setPalette(native_palette(value))
         self.setStyleSheet(appearance_stylesheet(value) + font_stylesheet(self.config["fonts"]))
         self.map_workspace.apply_theme(value)
+        for window in self.editor_windows:
+            window.setProperty("appearanceAccent", theme["accent"])
+            window.setPalette(native_palette(value))
+            window.panel.apply_theme(value)
         self.map.call("setAppearance", theme)
 
     def edit_appearance(self):
@@ -1386,10 +1381,10 @@ class Desk(QMainWindow):
             "仅用于国铁线路、车站与控制点、站台、站区；每个数据图层分别限额，含地图边缘预加载范围。\n"
             "元素指地图要素（线路按物理区间计），不是整条线路或屏幕上的符号数量。\n"
             "四项限制同时生效，以先达到者为准；选中线路也遵守相同上限。\n"
-            "数据量按最终要素 JSON 的 UTF-8 字节统计，不代表内存占用。自定义最大值与高内存配置一致。", wrap=True))
+            "数据量按最终要素 JSON 的 UTF-8 字节统计，不代表内存占用。自定义可超过高内存预设；最多 100000 个元素、128 MiB、200 万顶点，单元素 16 MiB。", wrap=True))
         preset = QComboBox()
-        preset.addItem("默认", "default")
-        preset.addItem("高内存电脑", "high")
+        preset.addItem("默认低内存", "low")
+        preset.addItem("默认高内存", "high")
         preset.addItem("自定义", "custom")
         fields = {}
         for key, label, divisor in (
@@ -1403,7 +1398,7 @@ class Desk(QMainWindow):
                 control.setDecimals(7)
                 control.setSingleStep(.25)
             control.setRange(1 if divisor == 1 else 1 / divisor,
-                             HIGH_VIEWPORT_BUDGET[key] if divisor == 1 else HIGH_VIEWPORT_BUDGET[key] / divisor)
+                             MAXIMUM_VIEWPORT_BUDGET[key] if divisor == 1 else MAXIMUM_VIEWPORT_BUDGET[key] / divisor)
             control.setValue(self.config["railViewportBudget"][key] if divisor == 1 else self.config["railViewportBudget"][key] / divisor)
             control.setProperty("budgetDivisor", divisor)
             control.setProperty("budgetKey", key)
@@ -1411,18 +1406,26 @@ class Desk(QMainWindow):
             form.addRow(label, control)
 
         current = self.config["railViewportBudget"]
-        preset.setCurrentIndex(next(
-            (i for i in range(preset.count()) if VIEWPORT_PRESETS.get(preset.itemData(i)) == current),
-            2,
-        ))
+        mode = self.config.get("railViewportMode", viewport_mode(current))
+        mode = "low" if mode == "default" else mode
+        preset.setCurrentIndex(max(0, preset.findData(mode)))
+        custom = dict(self.config.get("railViewportCustomBudget", current))
+        previous_mode = [None]
+
+        def field_values():
+            return {key: round(control.value() * control.property("budgetDivisor"))
+                    for key, control in fields.items()}
 
         def change_preset():
-            value = VIEWPORT_PRESETS.get(preset.currentData())
+            if previous_mode[0] == "custom":
+                custom.update(field_values())
+            selected = preset.currentData()
+            value = VIEWPORT_PRESETS.get(selected, custom)
             for key, control in fields.items():
-                if value is not None and value[key] is not None:
-                    divisor = control.property("budgetDivisor")
-                    control.setValue(value[key] if divisor == 1 else value[key] / divisor)
-                control.setEnabled(preset.currentData() == "custom")
+                divisor = control.property("budgetDivisor")
+                control.setValue(value[key] / divisor)
+                control.setEnabled(selected == "custom")
+            previous_mode[0] = selected
 
         preset.currentIndexChanged.connect(change_preset)
         change_preset()
@@ -1434,14 +1437,14 @@ class Desk(QMainWindow):
         form.addRow(buttons)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        value = VIEWPORT_PRESETS.get(preset.currentData()) or {
-            key: round(control.value() * control.property("budgetDivisor"))
-            for key, control in fields.items()
-        }
+        if preset.currentData() == "custom":
+            custom.update(field_values())
         try:
-            self.config["railViewportBudget"] = save_viewport_budget(
-                ROOT / "data/user_settings/rail_viewport_budget.json", value
+            settings = save_viewport_settings(
+                ROOT / "data/user_settings/rail_viewport_budget.json", preset.currentData(), custom
             )
+            self.config.update(railViewportBudget=settings["limits"], railViewportMode=settings["mode"],
+                               railViewportCustomBudget=settings["custom"])
             self.map.call("reloadRailViewport")
         except OSError as error:
             QMessageBox.warning(self, "加载上限未保存", str(error))
@@ -2678,7 +2681,7 @@ class Desk(QMainWindow):
         rail_layout = rail_sidebar.widget().layout()
         rail_layout.insertWidget(rail_layout.count() - 1, self.corridor_panel)
         self.run_pages.addWidget(rail_sidebar)
-        layout.addWidget(self.run_pages)
+        layout.addWidget(self.run_pages, 1)
         self.run_mode.currentIndexChanged.connect(self.change_run_mode)
         return body
 
@@ -2702,42 +2705,23 @@ class Desk(QMainWindow):
             "railPlan",
             index == 1 and self.rail_operations.route_switch.isChecked(),
         )
-        self.operations.setVisible(self.side_pages.currentIndex() == 1 and index == 0)
-        self.rail_operations.setVisible(
-            self.side_pages.currentIndex() == 1 and index == 1
-        )
-        for i, host in enumerate(self.editor_hosts):
-            host.setVisible(self.side_pages.currentIndex() == 1 and index == i)
-        if self.side_pages.currentIndex() == 1:
-            self.resize_run_editor(index)
 
     def resize_run_editor(self, index, expanded=False):
-        self.map_stack.setSizes(editor_sizes(self.map_stack.height(), index, expanded))
+        self.editor_windows[index].show_workbench(expanded)
         if index == 1:
-            QTimer.singleShot(
-                0,
-                self.rail_operations.refresh_diagram,
-            )
-
-            def refocus_rail():
-                if (
-                    self.run_mode.currentIndex() == 1
-                    and self.rail_operations.isVisible()
-                    and self.rail_operations.route_switch.isChecked()
-                ):
-                    self.rail_operations.locate_current_line()
-
-            QTimer.singleShot(150, refocus_rail)
+            QTimer.singleShot(0, self.rail_operations.refresh_diagram)
 
     def open_rail_operations(self):
         self.open_sidebar(1)
         self.run_mode.setCurrentIndex(1)
         self.change_run_mode(1)
+        self.resize_run_editor(1)
 
     def open_metro_operations(self):
         self.open_sidebar(1)
         self.run_mode.setCurrentIndex(0)
         self.change_run_mode(0)
+        self.resize_run_editor(0)
 
     def rail_controls(self):
         body = QWidget()
@@ -3307,14 +3291,6 @@ class Desk(QMainWindow):
                 index
             ]
         )
-        self.operations.setVisible(index == 1 and self.run_mode.currentIndex() == 0)
-        self.rail_operations.setVisible(
-            index == 1 and self.run_mode.currentIndex() == 1
-        )
-        for i, host in enumerate(self.editor_hosts):
-            host.setVisible(index == 1 and self.run_mode.currentIndex() == i)
-        if index == 1:
-            self.resize_run_editor(self.run_mode.currentIndex())
 
     def open_or_toggle(self, index):
         if self.left.isVisible() and self.side_pages.currentIndex() == index:
@@ -4973,6 +4949,10 @@ class Desk(QMainWindow):
             )
             event.ignore()
             return
+        for window in self.editor_windows:
+            window.hide()
+        self.operations.timer.stop()
+        self.rail_operations.timer.stop()
         self.server.shutdown()
         self.server.server_close()
         super().closeEvent(event)

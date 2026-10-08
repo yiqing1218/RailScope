@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QTabWidget,
     QScrollArea,
+    QSizePolicy,
 )
 from railscope.domain import Vehicle
 from railscope.identity import IdentityRegistry, new_id
@@ -89,6 +90,8 @@ class Workbench:
         self.dialogs = []
         self.vehicle_tree = None
         self.vehicle_catalog = None
+        self.vehicle_controls = []
+        self.vehicles = self.store.collection("vehicles")
 
     def repo(self):
         repo = self.desk.rail_operations.domain_repo
@@ -100,6 +103,8 @@ class Workbench:
     def page(self, index):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        if index == 2:
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 5, 0)
@@ -109,12 +114,15 @@ class Workbench:
             except ImportError:
                 from china_emu_ui import ReferencePanel
             tabs = QTabWidget()
+            tabs.setUsesScrollButtons(False)
+            tabs.setMinimumWidth(0)
+            tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
             layout.addWidget(tabs)
             catalog = ReferencePanel(body, vehicle_only=True, create_vehicle=lambda p: self.edit_vehicle(template=p))
             self.vehicle_catalog, self.vehicle_tabs = catalog, tabs
-            tabs.addTab(catalog, f"车型资料（{catalog.objects.rowCount()}）")
+            tabs.addTab(catalog, "车型资料")
             units = QWidget()
-            tabs.addTab(units, "具体车辆 / 担当")
+            tabs.addTab(units, "车辆担当")
             layout = QVBoxLayout(units)
             self.vehicle_tree = QTreeWidget()
             self.vehicle_tree.setHeaderLabels(["车辆 / 线路"])
@@ -152,7 +160,8 @@ class Workbench:
             self.action_buttons(layout, "edit")
         else:
             self.action_buttons(layout, "exchange")
-        layout.addStretch()
+        if index != 2:
+            layout.addStretch()
         scroll.setWidget(body)
         return scroll
 
@@ -248,11 +257,15 @@ class Workbench:
         return ident
 
     def refresh_vehicles(self):
+        self.vehicles = self.store.collection("vehicles")
+        for editor, combo, button in self.vehicle_controls:
+            editor.vehicle_registry = self.vehicles
+            self.refresh_vehicle_controls(editor, combo, button)
         if not self.vehicle_tree:
             return
         if self.vehicle_catalog:
             self.vehicle_catalog.refresh_profiles()
-            self.vehicle_tabs.setTabText(0,f"车型资料（{sum(p['kind']=='vehicle' for p in self.vehicle_catalog.profiles)}）")
+            self.vehicle_tabs.setTabText(0,"车型资料")
         self.vehicle_tree.clear()
         groups = {}
         repo = getattr(self.desk.rail_operations, "domain_repo", None)
@@ -432,25 +445,71 @@ class Workbench:
         buttons.accepted.connect(lambda: guarded(dialog, "车辆未保存", save))
         dialog.exec()
 
+    def add_vehicle_controls(self, editor):
+        editor.vehicle_registry = self.vehicles
+        row = QHBoxLayout()
+        row.addWidget(QLabel("车次担当车辆"))
+        combo = QComboBox()
+        combo.setMinimumWidth(200)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        button = QPushButton("应用担当")
+        button.clicked.connect(lambda: guarded(self.desk, "担当未修改", lambda: self.bind_vehicle(editor, combo.currentData())))
+        archive = QPushButton("车辆档案")
+        archive.clicked.connect(lambda: self.desk.open_sidebar(2))
+        row.addWidget(combo, 1)
+        row.addWidget(button)
+        row.addWidget(archive)
+        editor.layout().itemAt(0).widget().layout().addLayout(row)
+        self.vehicle_controls.append((editor, combo, button))
+        refresh = lambda: self.refresh_vehicle_controls(editor, combo, button)
+        editor.updated.connect(refresh)
+        for selector in (editor.line_combo, editor.variant_combo, editor.train_combo):
+            selector.currentIndexChanged.connect(refresh)
+        self.refresh_vehicle_controls(editor, combo, button)
+
+    def refresh_vehicle_controls(self, editor, combo, button):
+        train = next((t for t in editor.plan.trains if t["id"] == editor.selected_train), None)
+        ident = (train or {}).get("extensions", {}).get("railscope.org/vehicle", {}).get("vehicle_id")
+        vehicles = sorted((v for v in self.vehicles.values() if v.mode == editor.plan.system), key=lambda v: (v.name, v.id))
+        signature = (editor.selected_train, ident, tuple((v.id, v.name, v.model, v.code) for v in vehicles))
+        if getattr(combo, "assignment_signature", None) == signature:
+            return
+        combo.assignment_signature = signature
+        combo.clear()
+        combo.addItem("未指定具体车辆", None)
+        for vehicle in vehicles:
+            combo.addItem(vehicle.name + " · " + (vehicle.code or vehicle.model or vehicle.id), vehicle.id)
+        if ident and combo.findData(ident) < 0:
+            combo.addItem("未找到车辆 · " + ident, ident)
+        combo.setCurrentIndex(max(0, combo.findData(ident)))
+        combo.setEnabled(train is not None)
+        button.setEnabled(train is not None)
+        combo.setToolTip("一趟车次引用一辆具体车辆；同一车辆可担当时间不重叠的多个车次。")
+
     def assign_vehicle(self):
         ident = self.selected_vehicle()
         vehicle = self.store.collection("vehicles")[ident]
-        editor = (
-            self.desk.rail_operations
-            if vehicle.mode == "rail"
-            else self.desk.operations
-        )
+        editor = self.desk.rail_operations if vehicle.mode == "rail" else self.desk.operations
+        self.bind_vehicle(editor, ident)
+
+    def bind_vehicle(self, editor, ident):
+        vehicle = self.store.collection("vehicles").get(ident) if ident else None
+        if ident and vehicle is None:
+            raise ValueError("所选车辆不存在，请刷新车辆档案")
+        if vehicle and vehicle.mode != editor.plan.system:
+            raise ValueError("车次与车辆制式不一致")
         if not editor.selected_train:
             raise ValueError("请先在运行模块选中一趟车次")
-        if vehicle.mode == "rail":
+        if editor.plan.system == "rail":
             before = editor.document()
             payload = deepcopy(before)
             train = next(
                 t for t in payload["trains"] if t["id"] == editor.selected_train
             )
-            train.setdefault("extensions", {})["railscope.org/vehicle"] = {
-                "vehicle_id": ident
-            }
+            if ident:
+                train.setdefault("extensions", {})["railscope.org/vehicle"] = {"vehicle_id": ident}
+            else:
+                train.setdefault("extensions", {}).pop("railscope.org/vehicle", None)
             editor.accept_batch(payload, before, editor.selected_train)
         else:
             before = editor.snapshot_state()
@@ -458,17 +517,21 @@ class Workbench:
             old = deepcopy(train)
             try:
                 if not train.get("cycle_id"):
-                    train["vehicle_id"] = ident
-                train.setdefault("extensions", {})["railscope.org/vehicle"] = {
-                    "vehicle_id": ident
-                }
+                    if ident:
+                        train["vehicle_id"] = ident
+                    else:
+                        train.pop("vehicle_id", None)
+                if ident:
+                    train.setdefault("extensions", {})["railscope.org/vehicle"] = {"vehicle_id": ident}
+                else:
+                    train.setdefault("extensions", {}).pop("railscope.org/vehicle", None)
                 duties = sorted(
                     (t["stops"][0]["departure_s"], t["stops"][-1]["arrival_s"])
                     for t in editor.plan.trains
                     if t.get("extensions", {})
                     .get("railscope.org/vehicle", {})
                     .get("vehicle_id")
-                    == ident
+                    == ident and ident is not None
                 )
                 if any(a[1] > b[0] for a, b in zip(duties, duties[1:])):
                     raise ValueError("该车辆的担当时间重叠")
@@ -481,7 +544,8 @@ class Workbench:
             editor.redo_stack.clear()
             editor.changed("已分配真实车辆")
         editor.save()
-        self.desk.statusBar().showMessage("车次已引用车辆 " + vehicle.name, 5000)
+        self.refresh_vehicles()
+        self.desk.statusBar().showMessage("车次已引用车辆 " + vehicle.name if vehicle else "已解除车次的具体车辆担当", 5000)
 
     def show_duties(self):
         ident = self.selected_vehicle()

@@ -79,7 +79,7 @@ def test_budget_dialog_ranges_and_roundtrip(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QDoubleSpinBox, QMainWindow, QSpinBox
     import launcher
-    from desktop.viewport_settings import HIGH
+    from desktop.viewport_settings import MAXIMUM
 
     app = QApplication.instance() or QApplication([])
     owner = QMainWindow()
@@ -95,7 +95,7 @@ def test_budget_dialog_ranges_and_roundtrip(monkeypatch, tmp_path):
         assert len(controls) == 4
         for control in controls:
             key = control.property("budgetKey")
-            assert round(control.maximum() * control.property("budgetDivisor")) == HIGH[key]
+            assert round(control.maximum() * control.property("budgetDivisor")) == MAXIMUM[key]
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(QDialog, "exec", accept)
@@ -103,6 +103,37 @@ def test_budget_dialog_ranges_and_roundtrip(monkeypatch, tmp_path):
     assert owner.config["railViewportBudget"] == current
     assert calls == [("reloadRailViewport",)]
     owner.close()
+
+
+def test_custom_profile_survives_equal_preset_values_and_reopening(monkeypatch, tmp_path, qtbot):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QComboBox, QDialog, QMainWindow
+    import launcher
+    from viewport_settings import HIGH, load_settings
+    owner=QMainWindow();qtbot.addWidget(owner)
+    owner.config={'railViewportBudget':HIGH.copy(),'railViewportMode':'custom','railViewportCustomBudget':HIGH.copy()}
+    owner.map=SimpleNamespace(call=lambda *args:None)
+    monkeypatch.setattr(launcher,'ROOT',tmp_path)
+    def accept(dialog):
+        assert dialog.findChild(QComboBox).currentData()=='custom'
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QDialog,'exec',accept)
+    launcher.Desk.edit_viewport_budget(owner)
+    saved=load_settings(tmp_path/'data/user_settings/rail_viewport_budget.json')
+    assert saved['mode']=='custom'
+    assert saved['limits']==HIGH
+    launcher.Desk.edit_viewport_budget(owner)
+
+
+def test_custom_values_above_high_preset_are_effective_and_preserved(tmp_path):
+    from viewport_settings import HIGH, normalize, save_settings, load_settings
+    custom={key:value*2 for key,value in HIGH.items()}
+    assert normalize(custom)==custom
+    path=tmp_path/'budget.json'
+    save_settings(path,'custom',custom)
+    assert load_settings(path)=={'mode':'custom','limits':custom,'custom':custom}
+    save_settings(path,'low',custom)
+    assert load_settings(path)['custom']==custom
 
 
 def test_http_budget_is_applied_after_display_names(monkeypatch, tmp_path):
@@ -139,3 +170,38 @@ def test_http_budget_is_applied_after_display_names(monkeypatch, tmp_path):
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+def test_custom_budget_can_load_beyond_the_old_scan_ceiling(tmp_path):
+    from desktop.viewport_settings import HIGH
+    store(tmp_path, [point(i) for i in range(24010)])
+    custom = {key: value * 3 for key, value in HIGH.items()}
+    result = viewport(tmp_path, "railPoints", [120, 30, 122, 32], 16, limits=custom)
+    assert len(result["features"]) == 24010
+    assert not result["truncated"] and result["budget"]["limits"] == custom
+
+
+def test_dialog_restores_custom_after_visiting_both_presets(monkeypatch, tmp_path, qtbot):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QDialog, QMainWindow, QComboBox, QSpinBox
+    import launcher
+    owner = QMainWindow()
+    qtbot.addWidget(owner)
+    owner.config = {"railViewportBudget": DEFAULT.copy(), "railViewportMode": "low",
+                    "railViewportCustomBudget": {**DEFAULT, "features": 30000}}
+    owner.map = SimpleNamespace(call=lambda *args: None)
+    monkeypatch.setattr(launcher, "ROOT", tmp_path)
+    def accept(dialog):
+        combo = dialog.findChild(QComboBox)
+        fields = {w.property("budgetKey"): w for w in dialog.findChildren(QSpinBox)}
+        combo.setCurrentIndex(combo.findData("custom"))
+        assert fields["features"].value() == 30000
+        fields["features"].setValue(40000)
+        for mode in ("high", "low", "custom"):
+            combo.setCurrentIndex(combo.findData(mode))
+        assert fields["features"].value() == 40000
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QDialog, "exec", accept)
+    launcher.Desk.edit_viewport_budget(owner)
+    assert owner.config["railViewportMode"] == "custom"
+    assert owner.config["railViewportBudget"]["features"] == 40000

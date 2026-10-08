@@ -46,23 +46,21 @@ test('only assigned station yards receive descriptive names', () => {
   assert.equal(namedFeature({...feature,properties:{...feature.properties,station_name:'未关联站场'}}).properties.line_display_name,undefined);
 });
 
-test('actual map animation changes only the vehicle source, without viewport fetch or camera changes', () => {
-  const writes=[],scheduled=[];
-  let now=0;
-  const context=vm.createContext({window:{maplibregl:{}},VehicleMotion,namedFeature,
-    document:{hidden:false},qt:{webChannelTransport:{}},QWebChannel:function(){},
-    performance:{now:()=>now},requestAnimationFrame:callback=>(scheduled.push(callback),1),
-    setTimeout:()=>{throw new Error('Static map refresh scheduled during animation');},
-    clearTimeout:()=>{},console});
-  const source=readFileSync(new URL('../assets/map.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
-  vm.runInContext(source,context);
-  context.testMap={getSource:id=>({setData:data=>writes.push({id,data})})};
-  context.data=packet(50);context.paths={'COR-1':path};
-  vm.runInContext("map=testMap;visibility.railVehicles=true;receiveVehicles('railVehicles',data,0,true,{paths,speed:1});",context);
-  now=300;context.data=packet(150);
-  vm.runInContext("receiveVehicles('railVehicles',data,.3,true,{speed:1});",context);
-  now=450;vm.runInContext('drawVehicleFrame(450)',context);
-  assert(writes.length>=3);
-  assert(writes.every(write=>write.id==='railVehicles'));
-  assert.deepEqual(Array.from(writes.at(-1).data.features[0].geometry.coordinates),[1,0]);
+test('actual vehicle update sends only vehicle packets to the independent overlay', () => {
+  const packets=[];
+  const context=vm.createContext({window:{maplibregl:{}},document:{hidden:false},
+    qt:{webChannelTransport:{}},QWebChannel:function(){},setTimeout:()=>{throw new Error('Static map refresh during vehicle update');},clearTimeout:()=>{},console});
+  for(const file of ['entity-presentation.js','infrastructure-history.js','map.js'])
+    vm.runInContext(readFileSync(new URL('../assets/'+file,import.meta.url),'utf8'),context);
+  context.overlay={update:(data,playing)=>packets.push({data,playing})};
+  const source=readFileSync(new URL('../assets/map.js',import.meta.url),'utf8');
+  const body=source.match(/setRailOperatingVehicles\(data,clock,playing\)\{(.*?)\},/s)[1];
+  vm.runInContext(`config={sources:{}};railVehicleOverlay=overlay;vehicleUpdate=function(data,clock,playing){${body}}`,context);
+  context.data=packet(50);
+  vm.runInContext('vehicleUpdate(data,0,true)',context);
+  context.data=packet(150);
+  vm.runInContext('vehicleUpdate(data,.3,false)',context);
+  assert.equal(packets.length,2);
+  assert.equal(packets[1].playing,false);
+  assert.equal(packets[1].data.features[0].properties.distance_m,150);
 });

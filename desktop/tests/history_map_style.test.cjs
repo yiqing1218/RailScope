@@ -12,7 +12,8 @@ test('history layers retain valid data-driven colors, widths and dash arrays',()
  const sources=new Map(Object.keys(style.sources).map(id=>[id,{setData(data){this.data=data;return this;}}]));
  const map={getStyle:()=>style,getLayer:id=>style.layers.find(l=>l.id===id),getSource:id=>sources.get(id),
   addSource(id,value){style.sources[id]=value;sources.set(id,{setData(data){this.data=data;return this;}});},
-  addLayer(layer){style.layers.push(layer);},setFilter(id,filter){this.getLayer(id).filter=filter;},
+  addLayer(layer){style.layers.push(layer);},
+  setLayerZoomRange(id,min,max){Object.assign(this.getLayer(id),{minzoom:min,maxzoom:max});},setFilter(id,filter){this.getLayer(id).filter=filter;},
   getPaintProperty(id,key){return this.getLayer(id)?.paint[key];},setPaintProperty(id,key,value){this.getLayer(id).paint[key]=value;},
   setLayoutProperty(id,key,value){const layer=this.getLayer(id);(layer.layout??={})[key]=value;}};
  const context=vm.createContext({window:{maplibregl:{}},mockMap:map,mockConfig:{sources:{},railStyles:{},railViewport:false},

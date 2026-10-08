@@ -8,7 +8,9 @@ DEFAULT = {"features": 6000, "bytes": 8 * 1024 * 1024,
            "vertices": 100000, "feature_bytes": 1024 * 1024}
 HIGH = {"features": 12000, "bytes": 16 * 1024 * 1024,
         "vertices": 250000, "feature_bytes": 2 * 1024 * 1024}
-PRESETS = {"default": DEFAULT, "high": HIGH}
+MAXIMUM = {"features": 100000, "bytes": 128 * 1024 * 1024,
+           "vertices": 2000000, "feature_bytes": 16 * 1024 * 1024}
+PRESETS = {"low": DEFAULT, "default": DEFAULT, "high": HIGH}
 # Bound scanning even when many geometries cannot fit the requested budget.
 SCAN_LIMIT = HIGH["features"] * 2
 
@@ -62,6 +64,9 @@ def normalize(value):
     """Reject corrupt settings instead of letting them disable the request guard."""
     if not isinstance(value, dict):
         return DEFAULT.copy()
+    value = value.get("limits", value)
+    if not isinstance(value, dict):
+        return DEFAULT.copy()
     result = {}
     for key, default in DEFAULT.items():
         item = value.get(key, default)
@@ -71,23 +76,52 @@ def normalize(value):
             item = HIGH[key]
         if type(item) is not int or item < 1:
             return DEFAULT.copy()
-        result[key] = min(item, HIGH[key])
+        result[key] = min(item, MAXIMUM[key])
     return result
 
 
-def load(path):
+def scan_limit(limits):
+    return max(SCAN_LIMIT, normalize(limits)["features"] * 2)
+
+
+def infer_mode(limits):
+    return next((key for key in ("low", "high") if PRESETS[key] == limits), "custom")
+
+
+def load_settings(path):
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return DEFAULT.copy()
-    return normalize(value)
+        value = {}
+    limits = normalize(value)
+    mode = value.get("mode", infer_mode(limits)) if isinstance(value, dict) else "low"
+    if mode == "default":
+        mode = "low"
+    if mode not in {"low", "high", "custom"}:
+        mode = "low"
+    custom = normalize(value.get("custom", limits)) if isinstance(value, dict) else DEFAULT.copy()
+    return {"mode": mode, "limits": PRESETS.get(mode, limits).copy(), "custom": custom}
 
 
-def save(path, value):
-    value = normalize(value)
+def save_settings(path, mode, custom):
+    if mode == "default":
+        mode = "low"
+    if mode not in {"low", "high", "custom"}:
+        raise ValueError("未知加载上限配置")
+    custom = normalize(custom)
+    value = {"mode": mode, "limits": PRESETS.get(mode, custom).copy(), "custom": custom}
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(path)
     return value
+
+
+def load(path):
+    return load_settings(path)["limits"]
+
+
+def save(path, value):
+    value = normalize(value)
+    return save_settings(path, infer_mode(value), value)["limits"]

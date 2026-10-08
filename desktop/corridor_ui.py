@@ -27,10 +27,10 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from .components import GrowingTree, text_label, Switch
+    from .components import GrowingTree, text_label, SquareSwitch
     from .rail_lines import RESOLUTION_KEY
 except ImportError:
-    from components import GrowingTree, text_label, Switch
+    from components import GrowingTree, text_label, SquareSwitch
     from rail_lines import RESOLUTION_KEY
 
 
@@ -476,7 +476,7 @@ class CorridorPanel(QWidget):
         self.tree.setColumnCount(2)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 58)
+        self.tree.setColumnWidth(1, 30)
         self.tree.setHeaderHidden(True)
         self.tree.itemClicked.connect(self.choose)
         self.tree.itemDoubleClicked.connect(self.open_item_editor)
@@ -544,7 +544,9 @@ class CorridorPanel(QWidget):
                 continue
             root = QTreeWidgetItem(self.tree, [f"{name} · {len(trains)} 车次"])
             root.setData(0, Qt.ItemDataRole.UserRole, route["id"])
-            switch = Switch(route["id"] in self.editor.visible_corridors)
+            switch = SquareSwitch(route["id"] in self.editor.visible_corridors)
+            switch.setAccessibleName("显示通道及全部车次 " + name)
+            switch.setMixed(route["id"] in self.editor.visible_corridors and any(t["id"] in self.editor.hidden_trains for t in trains))
             switch.toggled.connect(lambda on, ident=route["id"]: self.editor.set_corridor_visible(ident, on))
             self.tree.setItemWidget(root, 1, switch)
             root.setToolTip(
@@ -558,7 +560,7 @@ class CorridorPanel(QWidget):
                 child = QTreeWidgetItem(root, [train["id"]])
                 child.setData(0, Qt.ItemDataRole.UserRole, route["id"])
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, train["id"])
-                train_switch = Switch(train["id"] not in self.editor.hidden_trains)
+                train_switch = SquareSwitch(train["id"] not in self.editor.hidden_trains)
                 train_switch.toggled.connect(
                     lambda on, ident=train["id"]: self.editor.set_trains_visible({ident}, on)
                 )

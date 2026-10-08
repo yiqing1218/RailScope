@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QDialog, QVBoxLayout, QLineEdit, QLabel,
-    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QWidget, QPushButton,
+    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QWidget, QPushButton, QSizePolicy,
 )
 
 try:
@@ -21,12 +21,17 @@ class ReferencePanel(QWidget):
         super().__init__(parent)
         self.setWindowTitle("中国动车组 · 线路、站场与车型参考资料")
         self.resize(980, 720)
+        self.vehicle_only = vehicle_only
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.store = store
         self.profiles = (store or load_store()).profiles
         layout = QVBoxLayout(self)
         label = QLabel('来源：<a href="https://china-emu.cn/">中国动车组</a> · '
                        '未核验参考 · <a href="https://china-emu.cn/About/Agreement/">使用协议（禁止商业使用）</a>')
         label.setOpenExternalLinks(True)
+        label.setWordWrap(True)
+        label.setMinimumWidth(0)
         layout.addWidget(label)
         self.kind = QComboBox()
         for title, value in [("车型", "vehicle"), ("线路 / 区段", "line"), ("车站 / 站场", "station")]:
@@ -41,11 +46,24 @@ class ReferencePanel(QWidget):
         self.objects.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.objects.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.objects.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        if vehicle_only:
+            self.objects.setColumnHidden(1, True)
+            self.objects.verticalHeader().hide()
+            self.objects.setShowGrid(False)
+            self.objects.horizontalHeader().setMinimumSectionSize(40)
+            self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         layout.addWidget(self.objects, 1)
-        self.details = QTableWidget(0, 2)
-        self.details.setHorizontalHeaderLabels(["属性 / 适用范围", "网站参考值"])
-        self.details.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.details.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        if vehicle_only:
+            try:
+                from .property_overview import PropertyOverview
+            except ImportError:
+                from property_overview import PropertyOverview
+            self.details = PropertyOverview()
+        else:
+            self.details = QTableWidget(0, 2)
+            self.details.setHorizontalHeaderLabels(["属性 / 适用范围", "网站参考值"])
+            self.details.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.details.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.details, 2)
         if create_vehicle:
             create = QPushButton("用选中车型新建车辆…")
@@ -81,6 +99,7 @@ class ReferencePanel(QWidget):
             self.objects.insertRow(row)
             item = QTableWidgetItem(profile["name"])
             item.setData(Qt.ItemDataRole.UserRole, profile)
+            item.setToolTip(profile["name"] + "\n" + profile["source_url"])
             self.objects.setItem(row, 0, item)
             self.objects.setItem(row, 1, QTableWidgetItem(profile["source_url"]))
         if self.objects.rowCount():
@@ -105,11 +124,19 @@ class ReferencePanel(QWidget):
             values.extend((span + " · 站场", y["name"] + " · " + y.get("lines", "")) for y in scope.get("yards", []))
             if scope.get("platform_numbers"):
                 values.append((span + " · 来源标注站台编号", "、".join(scope["platform_numbers"])))
-        self.details.setRowCount(len(values))
-        for row, (key, value) in enumerate(values):
-            self.details.setItem(row, 0, QTableWidgetItem(key))
-            self.details.setItem(row, 1, QTableWidgetItem(value))
-        self.details.resizeRowsToContents()
+        if self.vehicle_only:
+            self.details.set_rows(values)
+        else:
+            self.details.setRowCount(len(values))
+            for row, (key, value) in enumerate(values):
+                self.details.setItem(row, 0, QTableWidgetItem(key))
+                self.details.setItem(row, 1, QTableWidgetItem(value))
+            self.details.resizeRowsToContents()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "details") and self.vehicle_only:
+            self.details.resizeRowsToContents()
 
 
 class ReferenceDialog(QDialog):

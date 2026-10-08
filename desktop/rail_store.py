@@ -9,9 +9,9 @@ from uuid import uuid4
 from threading import BoundedSemaphore
 from railscope.rail_semantics import edge_semantics
 try:
-    from .viewport_settings import DEFAULT, SCAN_LIMIT, normalize, coordinate_count, enforce_budget
+    from .viewport_settings import DEFAULT, scan_limit, normalize, coordinate_count, enforce_budget
 except ImportError:
-    from viewport_settings import DEFAULT, SCAN_LIMIT, normalize, coordinate_count, enforce_budget
+    from viewport_settings import DEFAULT, scan_limit, normalize, coordinate_count, enforce_budget
 
 try:
     from .rail_categories import track_type as classify_track_type
@@ -340,6 +340,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
     if kind == "rail" and facility_mode not in ("all", "lines", "facilities"):
         raise ValueError("站场轨道选择无效")
     budget = normalize(limits) if limits is not None else DEFAULT
+    maximum_scan = scan_limit(budget)
     feature_limit = budget["features"]
     byte_limit = budget["bytes"]
     vertex_limit = budget["vertices"]
@@ -468,7 +469,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 parameters.append(zoom)
             if selected_values['excluded_edges']:
                 clauses.append("coalesce(json_extract(f.data,'$.properties.network_edge_id'),'') NOT IN (SELECT id FROM excluded_edges)")
-            parameters.append(SCAN_LIMIT + 1)
+            parameters.append(maximum_scan + 1)
             rows = db.execute(
                 'SELECT CASE WHEN length(CAST(f.data AS BLOB))<=? THEN f.data ELSE NULL END '
                 "FROM features f JOIN bounds b ON f.id=b.id WHERE "
@@ -480,7 +481,7 @@ def viewport(directory, kind, bbox, zoom, selection=None, limits=None, min_zooms
                 if len(features) >= feature_limit:
                     reasons.add("features")
                     break
-                if scanned >= SCAN_LIMIT:
+                if scanned >= maximum_scan:
                     reasons.add("scan")
                     break
                 if raw is None:

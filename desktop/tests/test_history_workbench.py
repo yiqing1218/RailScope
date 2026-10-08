@@ -244,7 +244,32 @@ def test_six_module_shell_and_colored_stacked_details(tmp_path, monkeypatch):
             window.side_pages.currentIndex() == index
             and window.module_buttons[index].isChecked()
         )
+    window.open_sidebar(1)
+    app.processEvents()
+    full_height = window.map_workspace.height()
+    assert window.left.height() == full_height - 24
+    window.open_rail_operations()
+    app.processEvents()
+    popup = window.editor_windows[1]
+    assert popup.isWindow() and popup.isVisible() and not popup.isModal()
+    assert window.rail_operations.window() is popup
+    popup.resize(1400, 780)
+    app.processEvents()
+    assert window.rail_operations.width() >= popup.width() - 40
+    assert window.map_workspace.height() == full_height
+    original = popup.pos()
+    popup.move(original.x() + 20, original.y() + 30)
+    assert popup.pos() != original
+    popup.close()
+    app.processEvents()
+    assert not popup.isVisible()
     window.open_sidebar(2)
+    app.processEvents()
+    page = window.side_pages.widget(2)
+    assert page.horizontalScrollBar().maximum() == 0
+    assert not page.horizontalScrollBar().isVisible()
+    assert not window.workbench.vehicle_catalog.objects.horizontalScrollBar().isVisible()
+    assert not window.workbench.vehicle_catalog.details.horizontalScrollBar().isVisible()
     window.display_feature(
         {
             "layer": "rail",
@@ -257,10 +282,9 @@ def test_six_module_shell_and_colored_stacked_details(tmp_path, monkeypatch):
         }
     )
     assert window.properties.columnCount() == 1
-    assert (
-        window.properties.item(0, 0).foreground().color()
-        != window.properties.item(1, 0).foreground().color()
-    )
+    # The delegate takes label/value colors from the active palette.
+    assert window.properties.item(0, 0).data(Qt.ItemDataRole.UserRole) == "label"
+    assert window.properties.item(1, 0).data(Qt.ItemDataRole.UserRole) != "label"
     window.history.show()
     app.processEvents()
     window.history.slider.setValue(2015)

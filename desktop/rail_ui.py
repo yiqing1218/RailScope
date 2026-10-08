@@ -437,6 +437,9 @@ class RailEditor(OperationsEditor):
         self.locate_current_line()
 
     def set_corridor_visible(self, ident, on):
+        ids = {train["id"] for train in (self.rail_payload or {}).get("trains", [])
+               if train["route_id"] == ident}
+        self.set_trains_visible(ids, on)
         if on:
             self.visible_corridors.add(ident)
         else:
@@ -650,11 +653,11 @@ class RailEditor(OperationsEditor):
 
     def sidebar(self):
         try:
-            from .components import Switch, switch_row
+            from .components import SquareSwitch, switch_row
         except ImportError:
-            from components import Switch, switch_row
+            from components import SquareSwitch, switch_row
         body = super().sidebar()
-        self.route_switch = Switch(False)
+        self.route_switch = SquareSwitch(False)
         self.route_switch.toggled.connect(self.set_reference_visible)
         body.widget().layout().insertWidget(
             2, switch_row("共享运行通道 / 控制点", self.route_switch)
@@ -775,15 +778,21 @@ class RailEditor(OperationsEditor):
         return ((recommended[0] + "（推荐）", True) if recommended else ("未命名控制点", True))
 
     def set_reference_visible(self, on):
-        if on and self.plan.trains:
-            self.show_reference_route()
-        else:
-            self.map.call("setVisibility", "railPlan", False)
+        routes = (self.rail_payload or {}).get("routes", [])
+        if not routes:
             if on:
                 self.message.setText("请先导入国铁车次计划。")
                 self.route_switch.blockSignals(True)
                 self.route_switch.setChecked(False)
                 self.route_switch.blockSignals(False)
+            return
+        for route in routes:
+            self.visible_corridors.add(route["id"]) if on else self.visible_corridors.discard(route["id"])
+        self.set_trains_visible({train["id"] for train in self.plan.trains}, on)
+        if not on:
+            self.displayed_train_id = ""
+        self.push_corridors()
+        self.updated.emit()
 
     def document(self, *, plan=None, payload=None, graph=None):
         plan = self.plan if plan is None else plan

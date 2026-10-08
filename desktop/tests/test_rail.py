@@ -153,7 +153,7 @@ def test_national_viewport_has_hard_feature_budget(tmp_path):
 
 
 def test_viewport_budget_caps_legacy_unlimited_settings(tmp_path):
-    from desktop.viewport_settings import DEFAULT, HIGH, PRESETS, load, save
+    from desktop.viewport_settings import DEFAULT, HIGH, MAXIMUM, PRESETS, load, save
 
     path = tmp_path / "viewport.json"
     assert load(path) == DEFAULT
@@ -161,7 +161,7 @@ def test_viewport_budget_caps_legacy_unlimited_settings(tmp_path):
     assert load(path) == HIGH
     path.write_text('{"features": null, "bytes": null, "vertices": null, "feature_bytes": null}', encoding="utf-8")
     assert load(path) == HIGH
-    assert save(path, {key: value * 100 for key, value in HIGH.items()}) == HIGH
+    assert save(path, {key: value * 100 for key, value in HIGH.items()}) == MAXIMUM
     path.write_text('{"features": -1}', encoding="utf-8")
     assert load(path) == DEFAULT
 

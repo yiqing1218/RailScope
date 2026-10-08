@@ -133,7 +133,6 @@ class OperationsEditor(QFrame):
     def __init__(self, plan, map_view, lines, path):
         super().__init__()
         self.setObjectName("panel")
-        self.setMaximumWidth(1120)
         self.plan = plan
         self.map = map_view
         self.base_lines = lines
@@ -916,12 +915,18 @@ class OperationsEditor(QFrame):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]
                 display = {**self.appearance, **train.get("extensions", {}).get("railscope.org/display", {})}
+                assigned = train.get("extensions", {}).get("railscope.org/vehicle", {}).get("vehicle_id")
+                vehicle = getattr(self, "vehicle_registry", {}).get(assigned)
                 features.append(
                     {
                         "type": "Feature",
                         "properties": {
                             "vehicle_id": train.get('extensions',{}).get('railscope.org/vehicle',{}).get('vehicle_id') or train.get("vehicle_id", train["id"]),
                             "trip_id": train["id"],
+                            "vehicle_assigned": bool(assigned),
+                            "vehicle_name": vehicle.name if vehicle else "未指定具体车辆",
+                            "vehicle_model": vehicle.model if vehicle else "",
+                            "vehicle_code": vehicle.code if vehicle else "",
                             "name": train["id"] + " · " + line["name"],
                             "line_ref": line["ref"],
                             "route_relation_id": line["relation_id"],
