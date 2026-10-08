@@ -131,7 +131,7 @@ class OperationsEditor(QFrame):
 
     def _session_changed(self):
         self.push_positions(throttled=True)
-        self.update_sidebar(0)
+        self.update_sidebar(len(getattr(self, 'current_vehicle_features', [])))
 
     updated = Signal()
     expand_requested = Signal()
@@ -331,6 +331,7 @@ class OperationsEditor(QFrame):
 
     def map_ready(self):
         self.map.call("setVehicleAppearance", self.appearance)
+        self.map.call("setVisibility", "vehicles", self.enabled)
         self.push_positions()
 
     def sidebar(self):
@@ -908,6 +909,8 @@ class OperationsEditor(QFrame):
         self.clock = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1000000
 
     def set_follow_beijing(self, on):
+        if not on:
+            self.stop_follow_beijing()
         self.follow_beijing = bool(on)
         self.speed_slider.setEnabled(not on)
         self.set_speed(self.speed)
@@ -928,6 +931,11 @@ class OperationsEditor(QFrame):
             self.beijing_switch.blockSignals(False)
             self.speed_slider.setEnabled(True)
             self.set_speed(self.speed)
+        session = getattr(self, 'session_time', None)
+        # Leave the imported timetable date intact; return to its calendar
+        # when this player stops driving the live Beijing reference clock.
+        if session and session.driver is self and getattr(self.plan, 'service_date', None):
+            session.set_day(self.plan.service_date)
 
     def tick(self):
         now = monotonic()
@@ -956,9 +964,11 @@ class OperationsEditor(QFrame):
             return
         self._last_vehicle_push = now
         features = []
+        session = getattr(self, 'session_time', None)
+        reference_clock = self.follow_beijing or bool(getattr(getattr(session, 'driver', None), 'follow_beijing', False))
         for train, position in (
-            self.plan.vehicle_positions(self.clock) if self.enabled and (not getattr(self,'session_time',None)
-                or not getattr(self.plan,'service_date',None) or self.plan.service_date==self.session_time.day) else []
+            self.plan.vehicle_positions(self.clock) if self.enabled and (reference_clock or not session
+                or not getattr(self.plan,'service_date',None) or self.plan.service_date==session.day) else []
         ):
             if position and train["id"] not in self.hidden_trains:
                 line = self.plan.lines[train["line_id"]]

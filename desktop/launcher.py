@@ -2993,6 +2993,8 @@ class Desk(QMainWindow):
         for key, enabled in self.flags.items():
             self.map.call("setVisibility", key, enabled)
         self.map.call("imported", self.imported)
+        # Playback state owns these layers, rather than the initial false flags.
+        self.change_run_mode(self.run_mode.currentIndex())
 
     def map_selection_changed(self, data):
         try:

@@ -467,7 +467,7 @@ class CorridorPanel(QWidget):
         self.train_master = SquareSwitch()
         self.train_master.toggled.connect(self.set_all_trains_visible)
         layout.addWidget(visibility_row("显示全部车次", self.train_master,
-            "路径与车次分别控制；隐藏路径不影响列车运行。"))
+            "顶部路径开关只控制路径；目录通道勾选联动其全部车次。"))
         self.search = QLineEdit()
         self.search.setPlaceholderText("筛选运行通道 / 车次")
         self.search.textChanged.connect(self.refresh)
@@ -557,12 +557,16 @@ class CorridorPanel(QWidget):
                 continue
             root = QTreeWidgetItem(self.tree, [f"{name}\n{len(trains)} 车次"])
             root.setData(0, Qt.ItemDataRole.UserRole, route["id"])
-            on = route['id'] in self.editor.visible_corridors
+            ids = {train['id'] for train in trains}
+            shown = ids - self.editor.hidden_trains
+            state = (Qt.CheckState.PartiallyChecked if shown and ids & self.editor.hidden_trains
+                     else Qt.CheckState.Checked if shown else Qt.CheckState.Unchecked) if ids else (
+                         Qt.CheckState.Checked if route['id'] in self.editor.visible_corridors else Qt.CheckState.Unchecked)
             root.setFlags(root.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            root.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+            root.setCheckState(0, state)
             root.setToolTip(
                 0,
-                f"{name}\n{route['id']}\n{len(route['path'])} 个真实物理区间 · 完整连续 · 单向",
+                f"{name}\n{route['id']}\n{len(route['path'])} 个真实物理区间 · 完整连续 · 单向\n勾选此项控制通道与全部车次；顶部开关仅控制路径。",
             )
             root.setExpanded(bool(query) or route["id"] in expanded)
             if route["id"] == selected_id:

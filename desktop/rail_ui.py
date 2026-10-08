@@ -434,6 +434,11 @@ class RailEditor(OperationsEditor):
         self.locate_current_line()
 
     def set_corridor_visible(self, ident, on):
+        # Directory rows control the whole group; the top path switch uses
+        # set_reference_visible instead and never changes train visibility.
+        ids = {train['id'] for train in (self.rail_payload or {}).get('trains', [])
+               if train['route_id'] == ident}
+        self.set_trains_visible(ids, on)
         if on:
             self.visible_corridors.add(ident)
         else:

@@ -38,7 +38,7 @@ def setup_editor(tmp_path):
     return app,desk,editor,sidebar,workbench
 
 
-def test_corridor_and_train_visibility_are_independent_and_keep_map_positions(tmp_path):
+def test_top_path_toggle_is_independent_but_directory_toggle_controls_all_its_trains(tmp_path):
     app,desk,editor,sidebar,workbench=setup_editor(tmp_path)
     try:
         second=deepcopy(editor.rail_payload)
@@ -49,15 +49,22 @@ def test_corridor_and_train_visibility_are_independent_and_keep_map_positions(tm
         editor.apply_payload(second)
         panel=CorridorPanel(editor)
         editor.clock=50;editor.set_enabled(True)
-        editor.set_corridor_visible('c',False)
+        editor.set_reference_visible(False)
         assert not editor.hidden_trains
         assert editor.current_vehicle_features
         panel.refresh()
         root=panel.tree.topLevelItem(0)
-        assert panel.tree.columnCount()==1 and root.checkState(0)==Qt.CheckState.Unchecked
-        root.setCheckState(0,Qt.CheckState.Checked);app.processEvents()
+        assert panel.tree.columnCount()==1 and root.checkState(0)==Qt.CheckState.Checked
+        root.setCheckState(0,Qt.CheckState.Unchecked);app.processEvents()
+        assert editor.hidden_trains=={'G1','G2'} and not editor.visible_corridors
+        assert not editor.current_vehicle_features
+        panel.tree.topLevelItem(0).setCheckState(0,Qt.CheckState.Checked);app.processEvents()
         assert editor.hidden_trains==set() and editor.visible_corridors=={'c'}
         assert editor.current_vehicle_features[0]['properties']['trip_id']=='G1'
+        editor.set_trains_visible({'G2'},False);panel.refresh()
+        assert panel.tree.topLevelItem(0).checkState(0)==Qt.CheckState.PartiallyChecked
+        panel.tree.topLevelItem(0).setCheckState(0,Qt.CheckState.Checked);app.processEvents()
+        assert not editor.hidden_trains
         editor.play()
         clock=editor.clock
         editor.apply_payload(editor.document())
@@ -93,7 +100,7 @@ def test_running_sidebar_has_left_checkboxes_full_names_and_master_toggle(tmp_pa
         root.setExpanded(True)
         root.child(0).setCheckState(0,Qt.CheckState.Unchecked);app.processEvents()
         assert editor.hidden_trains=={'G1'}
-        assert panel.tree.topLevelItem(0).checkState(0)==Qt.CheckState.Checked
+        assert panel.tree.topLevelItem(0).checkState(0)==Qt.CheckState.Unchecked
         assert not panel.master.isMixed()
         panel.train_master.click();app.processEvents()
         assert editor.hidden_trains==set() and editor.visible_corridors=={'c'}
@@ -169,6 +176,13 @@ def test_master_controls_filtered_out_corridors_and_trains(tmp_path):
         assert editor.visible_corridors=={'c','c2'} and not editor.hidden_trains
         panel.master.click();app.processEvents()
         assert not editor.visible_corridors and not editor.hidden_trains
+        # A directory group affects only its own children, even while filtered.
+        panel.tree.topLevelItem(0).setCheckState(0,Qt.CheckState.Unchecked);app.processEvents()
+        assert editor.hidden_trains=={'G1'} and not editor.visible_corridors
+        panel.tree.topLevelItem(0).setCheckState(0,Qt.CheckState.Checked);app.processEvents()
+        assert not editor.hidden_trains and editor.visible_corridors=={'c'}
+        panel.master.click();app.processEvents()  # Mixed path state turns all on.
+        panel.master.click();app.processEvents()  # Then paths only off.
         panel.train_master.click();app.processEvents()
         assert not editor.visible_corridors and editor.hidden_trains=={'G1','G2'}
         panel.close()
@@ -191,3 +205,63 @@ def test_switching_run_panel_preserves_both_running_layers():
     assert ('setVisibility','vehicles',True) in map_view.calls
     assert ('setVisibility','railVehicles',True) in map_view.calls
     assert ('setVisibility','railPlan',True) in map_view.calls
+
+
+def test_beijing_replays_reference_schedule_without_hiding_vehicles_on_date_mismatch(tmp_path,monkeypatch):
+    from datetime import datetime,timezone,timedelta
+    import desktop.operating_ui as module
+    app,desk,editor,sidebar,workbench=setup_editor(tmp_path)
+    session=SessionTime();editor.bind_session(session)
+    source_date=editor.plan.service_date
+    try:
+        now=datetime(2026,10,8,0,0,50,tzinfo=timezone(timedelta(hours=8)))
+        monkeypatch.setattr(module,'beijing_now',lambda:now)
+        editor.beijing_switch.click()
+        assert editor.playing and editor.enabled and session.day=='2026-10-08'
+        assert editor.current_vehicle_features[0]['properties']['trip_id']=='G1'
+        assert editor.document()['service_date']==source_date
+        now=datetime(2026,10,9,0,0,1,tzinfo=now.tzinfo);editor.tick()
+        assert session.day=='2026-10-09' and editor.current_vehicle_features
+        assert '1 列车在运行' in editor.count_label.text()
+        editor.beijing_switch.click()
+        assert editor.playing and editor.current_vehicle_features
+        editor.beijing_switch.click();editor.pause()
+        assert not editor.playing and editor.current_vehicle_features
+    finally:
+        editor.timer.stop();session._timer.stop();sidebar.close();editor.close();desk.close()
+
+
+def test_running_rail_layer_visibility_is_replayed_after_renderer_restart(tmp_path):
+    app,desk,editor,sidebar,workbench=setup_editor(tmp_path)
+    try:
+        editor.clock=50;editor.play()
+        view=editor.map.view;view.calls.clear()
+        editor.map_ready()
+        assert ('setVisibility','railVehicles',True) in view.calls
+        assert editor.current_vehicle_features
+        editor.set_enabled(False);view.calls.clear();editor.map_ready()
+        assert ('setVisibility','railVehicles',False) in view.calls
+        assert editor.playing and not editor.current_vehicle_features
+    finally:
+        editor.timer.stop();sidebar.close();editor.close();desk.close()
+
+
+def test_desk_restores_live_player_visibility_after_stale_initial_flags(monkeypatch):
+    from unittest.mock import MagicMock
+    import launcher
+    app=QApplication.instance() or QApplication([])
+    host=MagicMock()
+    host.config={'appearance':{},'fonts':{},'trainLabels':{}}
+    host.flags={'vehicles':False,'railVehicles':False}
+    host.base_switches={};host.overlay_actions={}
+    host.base_combo.currentIndex.return_value=0;host.run_mode.currentIndex.return_value=1
+    host.operations.vehicle_switch=SquareSwitch(True)
+    host.rail_operations.vehicle_switch=SquareSwitch(True)
+    host.rail_operations.visible_corridors={'c'}
+    host.university_catalog.visible=set();host.airport_catalog.visible=set()
+    host.change_run_mode.side_effect=lambda index:launcher.Desk.change_run_mode(host,index)
+    monkeypatch.setattr(launcher,'web_theme',lambda value:value)
+    launcher.Desk.restore_map_state(host)
+    calls=[call.args for call in host.map.call.call_args_list]
+    for key in ('vehicles','railVehicles'):
+        assert [call[2] for call in calls if call[:2]==('setVisibility',key)][-1] is True
