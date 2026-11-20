@@ -1,0 +1,20 @@
+[package]
+name = "railscope-next-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+flate2 = "1"
+geozero = { version = "0.15", default-features = false, features = ["with-wkb", "with-geojson"] }
+lru = "0.18"
+pmtiles = { version = "0.28.1", default-features = false }
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tracing = "0.1"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

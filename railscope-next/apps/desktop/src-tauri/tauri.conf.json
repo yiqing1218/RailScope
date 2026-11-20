@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RailScope Next",
+  "version": "0.1.0",
+  "identifier": "app.railscope.next",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      { "label": "main", "title": "RailScope Next", "width": 1440, "height": 900, "minWidth": 850, "minHeight": 620 }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost railscope-tile: http://railscope-tile.localhost; img-src 'self' data: blob:; worker-src 'self' blob:; font-src 'self'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost railscope-tile: http://railscope-tile.localhost ws://127.0.0.1:1420; img-src 'self' data: blob:; worker-src 'self' blob:; font-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"]
+  }
+}

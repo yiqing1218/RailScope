@@ -1,0 +1,221 @@
+use anyhow::{Context, Result, ensure};
+use flate2::read::GzDecoder;
+use lru::LruCache;
+use pmtiles::{Compression, PmTilesReader, TileCoord, TileType};
+use rusqlite::{Connection, OpenFlags};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    fs::{self, File},
+    io::{self, Read},
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Instant,
+};
+
+const TILE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_TILE: usize = 8 * 1024 * 1024;
+type TileKey = (u8, u32, u32);
+type Tile = Arc<[u8]>;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Manifest {
+    pub schema: u32,
+    pub snapshot: String,
+    pub region: String,
+    pub source: String,
+    pub source_file: String,
+    pub source_sha256: String,
+    pub license: String,
+    #[serde(default)]
+    pub basemap: Option<String>,
+    pub generator: String,
+    pub crs: String,
+    pub bounds: [f64; 4],
+    pub min_zoom: u8,
+    pub max_zoom: u8,
+    pub counts: BTreeMap<String, u64>,
+    pub skipped: BTreeMap<String, u64>,
+    pub files: BTreeMap<String, String>,
+}
+
+impl Manifest {
+    pub fn read(path: &Path) -> Result<Self> {
+        let input = File::open(path.join("manifest.json"))?;
+        let manifest: Self = serde_json::from_reader(input.take(128 * 1024))?;
+        ensure!(
+            manifest.schema == 1
+                && path.file_name().and_then(|name| name.to_str()) == Some(&manifest.snapshot)
+                && valid_id(&manifest.snapshot)
+                && manifest.crs == "EPSG:4326"
+                && manifest.min_zoom <= manifest.max_zoom
+                && manifest.max_zoom <= 22
+                && valid_bounds(manifest.bounds),
+            "数据包版本或范围无效"
+        );
+        Ok(manifest)
+    }
+}
+
+pub fn valid_id(value: &str) -> bool {
+    (1..=80).contains(&value.len())
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_.".contains(&byte)
+        })
+}
+
+pub fn valid_bounds([west, south, east, north]: [f64; 4]) -> bool {
+    (-180.0..=180.0).contains(&west)
+        && (-180.0..=180.0).contains(&east)
+        && (-90.0..=90.0).contains(&south)
+        && (-90.0..=90.0).contains(&north)
+        && west <= east
+        && south <= north
+}
+
+#[derive(Clone, Default, Serialize)]
+pub struct TileStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    pub bytes: usize,
+    pub read_micros: u64,
+    pub pending: u64,
+}
+
+struct TileCache {
+    items: LruCache<TileKey, Tile>,
+    stats: TileStats,
+}
+
+pub struct Pack {
+    pub manifest: Manifest,
+    database: PathBuf,
+    archive: PmTilesReader<File>,
+    cache: Mutex<TileCache>,
+}
+
+impl Pack {
+    pub fn open(path: &Path) -> Result<Self> {
+        let manifest = Manifest::read(path)?;
+        let database = path.join("canonical.sqlite");
+        let tiles = path.join("transport.pmtiles");
+        for (name, file) in [
+            ("canonical.sqlite", &database),
+            ("transport.pmtiles", &tiles),
+        ] {
+            let expected = manifest.files.get(name).context("清单缺少文件校验值")?;
+            let mut hash = Sha256::new();
+            io::copy(&mut File::open(file)?, &mut hash)?;
+            ensure!(
+                &format!("{:x}", hash.finalize()) == expected,
+                "数据包校验失败 · {name}"
+            );
+        }
+        let archive = PmTilesReader::new_with_path(&tiles)?;
+        let header = archive.get_header();
+        ensure!(
+            header.tile_type == TileType::Mvt
+                && matches!(
+                    header.tile_compression,
+                    Compression::None | Compression::Gzip
+                ),
+            "数据包必须包含 MVT 矢量瓦片"
+        );
+        let pack = Self {
+            manifest,
+            database,
+            archive,
+            cache: Mutex::new(TileCache {
+                items: LruCache::new(NonZeroUsize::new(2048).unwrap()),
+                stats: TileStats::default(),
+            }),
+        };
+        let connection = pack.connection()?;
+        let version: u32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        ensure!(version == 1, "不支持的 SQLite 快照版本");
+        connection.prepare("SELECT id, render_id FROM entity LIMIT 1")?;
+        tracing::info!(snapshot = %pack.manifest.snapshot, "data pack validated");
+        Ok(pack)
+    }
+
+    pub fn connection(&self) -> Result<Connection> {
+        Ok(Connection::open_with_flags(
+            &self.database,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?)
+    }
+
+    pub fn stats(&self) -> TileStats {
+        self.cache.lock().unwrap().stats.clone()
+    }
+
+    pub fn tile(&self, z: u8, x: u32, y: u32) -> Result<Tile> {
+        let coord = TileCoord::new(z, x, y)?;
+        let key = (z, x, y);
+        {
+            let mut cache = self.cache.lock().unwrap();
+            if let Some(hit) = cache.items.get(&key).cloned() {
+                cache.stats.hits += 1;
+                return Ok(hit);
+            }
+            cache.stats.misses += 1;
+            cache.stats.pending += 1;
+        }
+        let start = Instant::now();
+        let result = self.read_tile(coord);
+        let mut cache = self.cache.lock().unwrap();
+        cache.stats.pending -= 1;
+        cache.stats.read_micros += start.elapsed().as_micros() as u64;
+        let tile = result?;
+        if let Some(existing) = cache.items.get(&key) {
+            return Ok(existing.clone());
+        }
+        while cache.stats.bytes + tile.len() > TILE_BYTES
+            || cache.items.len() == cache.items.cap().get()
+        {
+            if let Some((_, evicted)) = cache.items.pop_lru() {
+                cache.stats.bytes -= evicted.len();
+                cache.stats.evictions += 1;
+            }
+        }
+        cache.stats.bytes += tile.len();
+        cache.items.put(key, tile.clone());
+        Ok(tile)
+    }
+
+    fn read_tile(&self, coord: TileCoord) -> Result<Tile> {
+        let Some(raw) = self.archive.get_tile(coord)? else {
+            return Ok(Arc::from([]));
+        };
+        ensure!(raw.len() <= MAX_TILE, "压缩瓦片超出大小限制");
+        let tile = if self.archive.get_header().tile_compression == Compression::Gzip {
+            let mut payload = Vec::new();
+            GzDecoder::new(raw.as_ref())
+                .take((MAX_TILE + 1) as u64)
+                .read_to_end(&mut payload)?;
+            ensure!(payload.len() <= MAX_TILE, "瓦片超出解压大小限制");
+            Arc::from(payload)
+        } else {
+            Arc::from(raw.as_ref())
+        };
+        Ok(tile)
+    }
+}
+
+pub fn available(root: &Path) -> Result<Vec<Manifest>> {
+    let mut packs = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir()
+            && let Ok(manifest) = Manifest::read(&entry.path())
+        {
+            packs.push(manifest);
+        }
+    }
+    packs.sort_by(|a, b| b.snapshot.cmp(&a.snapshot));
+    Ok(packs)
+}

@@ -1,0 +1,194 @@
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { ArrowDown, ArrowLeft, ArrowUpRight, Building2, ChevronDown, ChevronRight, CircleHelp, Database, Folder,
+  GitBranch, Layers3, LocateFixed, MapPin, Route as RouteIcon, Search, TrainFront, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { api, type Bounds, type Conflict, type Filter, type Group, type Kind, type Pack, type Page, type Summary } from './api'
+import { layerGroups, type LayerGroup } from './map'
+
+export const kindNames: Record<Kind, string> = {
+  rail: '国铁轨道', metro: '城市轨道', road: '高速公路', station: '车站',
+  poi: '交通设施', facility: '铁路设施', line: '业务线路',
+}
+const classes: Record<string, string> = {
+  high_speed: '高速铁路', conventional: '普速铁路', freight: '货运', yard: '站内轨道', siding: '侧线',
+  spur: '专用线', crossover: '渡线', subway: '地铁', light_rail: '轻轨', tram: '有轨电车',
+  motorway: '高速主线', motorway_link: '高速匝道', rail_station: '铁路车站', metro_station: '地铁车站',
+  motorway_junction: '高速出入口', rest_area: '停车区', services: '服务区', toll_booth: '收费站',
+  aerodrome: '机场', switch: '道岔', platform: '站台', station_area: '站区',
+  railway_crossing: '铁路交叉点', level_crossing: '平交道口', railway: '铁路线路',
+  train: '列车线路关系', road: '道路线路', unknown: '类别待核验',
+}
+export const className = (value: string) => classes[value] ?? value
+export const statusName = (value: string) => ({
+  operating: '运营', construction: '在建', planned: '规划', disused: '停用', unknown: '待核验',
+})[value] ?? value
+
+const types: { id: Kind; icon: typeof TrainFront }[] = [
+  { id: 'line', icon: GitBranch }, { id: 'station', icon: MapPin }, { id: 'rail', icon: TrainFront },
+  { id: 'metro', icon: TrainFront }, { id: 'road', icon: RouteIcon },
+  { id: 'facility', icon: Building2 }, { id: 'poi', icon: LocateFixed },
+]
+
+export function PackMenu({ packs, active, changing, change, conflicts }: {
+  packs: Pack[]; active: Pack | null; changing: boolean; change: (pack: Pack) => void; conflicts: Conflict[]
+}) {
+  const [open, setOpen] = useState(false)
+  return <div className="pack-menu">
+    <button className="pack-trigger" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <Database size={17} /><span>{active?.region ?? '数据包'}</span><ChevronDown size={14} />
+    </button>
+    {open && <div className="pack-popover">
+      <div className="popup-title">本地数据包<button className="icon" aria-label="关闭数据包" onClick={() => setOpen(false)}><X size={16} /></button></div>
+      {packs.length === 0 ? <p>将已生成的数据包放入应用的 packs 目录后重新启动。</p>
+        : packs.map(pack => <button key={pack.snapshot} disabled={changing} className="pack-choice"
+          onClick={() => { change(pack); setOpen(false) }}>
+          <span>{pack.region}<small>{pack.snapshot}</small></span>
+          {active?.snapshot === pack.snapshot ? <b>使用中</b> : <ArrowUpRight size={16} />}
+        </button>)}
+      {active && <p>{active.source} · {active.license}{active.basemap ? ' · Natural Earth' : ''}</p>}
+      {conflicts.length > 0 && <details open><summary>工作区迁移冲突</summary>
+        <ul className="conflicts">{conflicts.map(conflict => <li key={`${conflict.source_snapshot}:${conflict.entity}`}>
+          {conflict.reason}<small>{conflict.entity} · {conflict.source_snapshot}</small>
+        </li>)}</ul></details>}
+    </div>}
+  </div>
+}
+
+export function Catalog({ pack, selected, onSelect, group, setGroup, view, visibility, onLayer, workspaceChange }: {
+  pack: Pack | null; selected?: string; onSelect: (summary: Summary) => void
+  group: Summary | undefined; setGroup: (summary?: Summary) => void; view?: Bounds
+  visibility: Record<LayerGroup, boolean>; onLayer: (group: LayerGroup, value: boolean) => void
+  workspaceChange: number
+}) {
+  const [tab, setTab] = useState<'catalog' | 'layers'>('catalog')
+  const [query, setQuery] = useState('')
+  const [kind, setKind] = useState<Kind>()
+  const [groups, setGroups] = useState<Group[]>([])
+  const [workGroup, setWorkGroup] = useState<string>()
+  const [nearby, setNearby] = useState(false)
+  const [result, setResult] = useState<Page>({ items: [], next: null })
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const request = useRef(0)
+  const list = useRef<HTMLDivElement>(null)
+  const snapshot = pack?.snapshot
+  const bbox = nearby ? view : undefined
+  const browse = Boolean(query.trim() || kind || group || nearby || workGroup)
+  const virtualizer = useVirtualizer({
+    count: result.items.length, getScrollElement: () => list.current, estimateSize: () => 57, overscan: 6,
+  })
+
+  function filter(cursor?: string): Filter {
+    return { query: query.trim(), kind: group ? undefined : kind, parent: group?.id, bbox, cursor }
+  }
+
+  useEffect(() => {
+    let closed = false
+    if (snapshot) void api.groups(snapshot).then(items => { if (!closed) setGroups(items) })
+      .catch(error => { if (!closed) setError(String(error)) })
+    else setGroups([])
+    return () => { closed = true }
+  }, [snapshot, workspaceChange])
+  useEffect(() => setWorkGroup(undefined), [snapshot, group?.id])
+
+  function fetchPage(snapshot: string, cursor?: string) {
+    return workGroup ? api.groupMembers(snapshot, workGroup, cursor) : api.page(snapshot, filter(cursor))
+  }
+
+  useEffect(() => {
+    const version = ++request.current
+    setError('')
+    setResult({ items: [], next: null })
+    list.current?.scrollTo(0, 0)
+    setPending(Boolean(snapshot && browse))
+    if (!snapshot || !browse) return
+    const timer = window.setTimeout(() => fetchPage(snapshot)
+      .then(page => { if (request.current === version) setResult(page) })
+      .catch(e => { if (request.current === version) setError(String(e)) })
+      .finally(() => { if (request.current === version) setPending(false) }), query.trim() ? 180 : 0)
+    return () => { window.clearTimeout(timer); request.current++ }
+  }, [snapshot, query, kind, group?.id, bbox, browse, workGroup, workspaceChange])
+
+  async function more() {
+    if (!result.next || pending || !snapshot) return
+    const version = request.current
+    setPending(true)
+    try {
+      const page = await fetchPage(snapshot, result.next)
+      if (version === request.current) setResult({ items: [...result.items, ...page.items], next: page.next })
+    } catch (e) {
+      if (version === request.current) setError(String(e))
+    } finally {
+      if (version === request.current) setPending(false)
+    }
+  }
+
+  function overview() {
+    setKind(undefined)
+    setGroup(undefined)
+    setWorkGroup(undefined)
+    setQuery('')
+    setNearby(false)
+  }
+
+  return <aside className="sidebar" aria-label="数据浏览">
+    <div className="tabs">
+      <button className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}><Database size={15} />目录</button>
+      <button className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}><Layers3 size={15} />图层</button>
+    </div>
+    {tab === 'catalog' ? <>
+      <div className="sidebar-heading">
+        <span className="small-label">本地交通地理数据</span>
+        <h1>{pack ? `${pack.region}交通网` : '交通网络'}</h1>
+      </div>
+      <label className="search"><Search size={17} />
+        <input aria-label="搜索交通实体" placeholder="搜索车站、线路或拼音" value={query}
+          onChange={e => { setWorkGroup(undefined); setQuery(e.target.value) }} maxLength={128} />
+        {query && <button className="icon" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}
+      </label>
+      <div className="section-label">
+        {browse ? <button className="back" onClick={overview}><ArrowLeft size={14} />{workGroup ?? group?.name ?? (kind ? kindNames[kind] : '浏览目录')}</button>
+          : <span>按对象浏览</span>}
+        <button className={nearby ? 'nearby on' : 'nearby'} aria-pressed={nearby} disabled={!pack || !!workGroup} title="限制在当前视野"
+          onClick={() => setNearby(!nearby)}><LocateFixed size={15} />当前视野</button>
+      </div>
+      {!browse ? <div className="categories">
+        {types.map(({ id, icon: Icon }) => <button key={id} disabled={!pack} onClick={() => setKind(id)}>
+          <Icon size={18} /><span>{kindNames[id]}</span><small>{(pack?.counts[id] ?? 0).toLocaleString('zh-CN')}</small>
+          <ChevronRight size={15} />
+        </button>)}
+        {groups.length > 0 && <div className="group-label">工作区分组</div>}
+        {groups.map(item => <button key={item.name} onClick={() => setWorkGroup(item.name)}>
+          <Folder size={18} /><span className="group-name">{item.name}</span><small>{item.count}</small><ChevronRight size={15} />
+        </button>)}
+      </div> : <>
+        <div className="results" ref={list}>
+          {error && <p className="sidebar-message" role="alert">{error}</p>}
+          {!error && !result.items.length && <p className="sidebar-message">{pending ? '正在查询…' : '没有符合条件的对象'}</p>}
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualizer.getVirtualItems().map(virtualRow => {
+              const item = result.items[virtualRow.index]
+              const Icon = types.find(type => type.id === item.kind)?.icon ?? CircleHelp
+              return <button key={item.id} className={selected === item.id ? 'result-row current' : 'result-row'}
+                style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
+                onClick={() => onSelect(item)}>
+                <Icon size={17} /><span><strong>{item.name}</strong><small>{className(item.class)} · {statusName(item.status)}</small></span>
+                <ChevronRight size={15} />
+              </button>
+            })}
+          </div>
+          {result.next && <button className="more" disabled={pending} onClick={more}><ArrowDown size={14} />{pending ? '载入中…' : '加载更多'}</button>}
+        </div>
+      </>}
+      <div className="sidebar-base"><Database size={14} /> {pack ? `${Object.values(pack.counts).reduce((a, b) => a + b, 0).toLocaleString('zh-CN')} 个对象` : '等待安装离线数据'}</div>
+    </> : <>
+      <div className="sidebar-heading"><span className="small-label">地图显示</span><h1>交通图层</h1></div>
+      <div className="layer-controls">
+        {layerGroups.map(layer => <label key={layer.id} className="layer-control">
+          <span className="swatch" style={{ background: layer.color }} /><span>{layer.name}</span>
+          <input type="checkbox" checked={visibility[layer.id]} onChange={e => onLayer(layer.id, e.target.checked)} />
+        </label>)}
+      </div>
+    </>}
+  </aside>
+}
