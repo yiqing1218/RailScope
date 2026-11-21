@@ -1,3 +1,4 @@
+use crate::{precision, tile_cache::DiskTiles};
 use anyhow::{Context, Result, ensure};
 use flate2::read::GzDecoder;
 use lru::LruCache;
@@ -17,7 +18,7 @@ use std::{
 
 const TILE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_TILE: usize = 8 * 1024 * 1024;
-type TileKey = (u8, u32, u32);
+type TileKey = (u8, u32, u32, bool);
 type Tile = Arc<[u8]>;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -39,6 +40,12 @@ pub struct Manifest {
     pub counts: BTreeMap<String, u64>,
     pub skipped: BTreeMap<String, u64>,
     pub files: BTreeMap<String, String>,
+    #[serde(default)]
+    pub source_schema: u32,
+    #[serde(default)]
+    pub source_objects: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub coverage_kind: Option<String>,
 }
 
 impl Manifest {
@@ -84,6 +91,9 @@ pub struct TileStats {
     pub bytes: usize,
     pub read_micros: u64,
     pub pending: u64,
+    pub disk_hits: u64,
+    pub precise_tiles: u64,
+    pub precise_micros: u64,
 }
 
 struct TileCache {
@@ -96,10 +106,16 @@ pub struct Pack {
     database: PathBuf,
     archive: PmTilesReader<File>,
     cache: Mutex<TileCache>,
+    disk: Option<Arc<DiskTiles>>,
+    work: [Mutex<()>; 32],
 }
 
 impl Pack {
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_cached(path, None)
+    }
+
+    pub(crate) fn open_cached(path: &Path, disk: Option<Arc<DiskTiles>>) -> Result<Self> {
         let manifest = Manifest::read(path)?;
         let database = path.join("canonical.sqlite");
         let tiles = path.join("transport.pmtiles");
@@ -133,11 +149,23 @@ impl Pack {
                 items: LruCache::new(NonZeroUsize::new(2048).unwrap()),
                 stats: TileStats::default(),
             }),
+            disk,
+            work: std::array::from_fn(|_| Mutex::new(())),
         };
         let connection = pack.connection()?;
         let version: u32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
         ensure!(version == 1, "不支持的 SQLite 快照版本");
         connection.prepare("SELECT id, render_id FROM entity LIMIT 1")?;
+        if pack.manifest.source_schema >= 3 {
+            connection
+                .prepare("SELECT osm_id, longitude, latitude, tags FROM source_node LIMIT 1")?;
+            connection.prepare("SELECT osm_id, node_ids FROM source_way LIMIT 1")?;
+            connection.prepare("SELECT relation_ref, ordinal, member_ref, role FROM source_relation_member LIMIT 1")?;
+            connection.prepare("SELECT source_ref, wkb FROM base_feature LIMIT 1")?;
+            connection.prepare(
+                "SELECT edge_id, service_id, colour_source_ref FROM metro_service_track LIMIT 1",
+            )?;
+        }
         tracing::info!(snapshot = %pack.manifest.snapshot, "data pack validated");
         Ok(pack)
     }
@@ -154,8 +182,21 @@ impl Pack {
     }
 
     pub fn tile(&self, z: u8, x: u32, y: u32) -> Result<Tile> {
+        self.tile_mode(z, x, y, false)
+    }
+
+    pub fn is_precise(&self, z: u8) -> bool {
+        z >= 15 || z > self.manifest.max_zoom || (self.manifest.source_schema >= 3 && z >= 9)
+    }
+
+    pub fn tile_mode(&self, z: u8, x: u32, y: u32, archive_only: bool) -> Result<Tile> {
         let coord = TileCoord::new(z, x, y)?;
-        let key = (z, x, y);
+        let detail = !archive_only && self.is_precise(z);
+        let key = (z, x, y, detail);
+        let _work = self.work
+            [((x as usize).wrapping_mul(31) ^ y as usize ^ z as usize) % self.work.len()]
+        .lock()
+        .unwrap();
         {
             let mut cache = self.cache.lock().unwrap();
             if let Some(hit) = cache.items.get(&key).cloned() {
@@ -166,10 +207,42 @@ impl Pack {
             cache.stats.pending += 1;
         }
         let start = Instant::now();
-        let result = self.read_tile(coord);
+        let mut disk_hit = false;
+        let result: Result<Tile> = if detail {
+            (|| {
+                let cache_key = format!(
+                    "v3-a:{}:{z}/{x}/{y}",
+                    self.manifest.files["canonical.sqlite"]
+                );
+                if let Some(disk) = &self.disk
+                    && let Ok(Some(tile)) = disk.get(&cache_key)
+                {
+                    disk_hit = true;
+                    return Ok(Arc::from(tile));
+                }
+                let data =
+                    precision::generate(&self.connection()?, precision::Address::new(z, x, y)?)?;
+                if let Some(disk) = &self.disk
+                    && let Err(error) = disk.put(&cache_key, &data)
+                {
+                    tracing::warn!(%error,"could not cache precise tile");
+                }
+                Ok(Arc::from(data))
+            })()
+        } else {
+            self.read_tile(coord)
+        };
         let mut cache = self.cache.lock().unwrap();
         cache.stats.pending -= 1;
-        cache.stats.read_micros += start.elapsed().as_micros() as u64;
+        let elapsed = start.elapsed().as_micros() as u64;
+        cache.stats.read_micros += elapsed;
+        if disk_hit {
+            cache.stats.disk_hits += 1;
+        }
+        if detail && !disk_hit && result.is_ok() {
+            cache.stats.precise_tiles += 1;
+            cache.stats.precise_micros += elapsed;
+        }
         let tile = result?;
         if let Some(existing) = cache.items.get(&key) {
             return Ok(existing.clone());
@@ -216,6 +289,12 @@ pub fn available(root: &Path) -> Result<Vec<Manifest>> {
             packs.push(manifest);
         }
     }
-    packs.sort_by(|a, b| b.snapshot.cmp(&a.snapshot));
+    packs.sort_by(|a, b| {
+        (b.region == "全国", b.source_schema, &b.snapshot).cmp(&(
+            a.region == "全国",
+            a.source_schema,
+            &a.snapshot,
+        ))
+    });
     Ok(packs)
 }

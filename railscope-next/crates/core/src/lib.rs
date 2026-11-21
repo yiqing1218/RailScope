@@ -1,6 +1,10 @@
+pub mod business_lines;
 pub mod catalog;
 pub mod graph;
+pub mod operations;
 pub mod pack;
+pub mod precision;
+mod tile_cache;
 pub mod workspace;
 
 use anyhow::{Context, Result, ensure};
@@ -8,8 +12,12 @@ use pack::{Manifest, Pack};
 use rusqlite::Connection;
 use std::{
     fs,
-    path::PathBuf,
-    sync::{Arc, Mutex, RwLock},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 type ActivePack = Option<Arc<Pack>>;
@@ -19,19 +27,31 @@ pub struct Engine {
     active: RwLock<ActivePack>,
     previous: Mutex<ActivePack>,
     workspace: Mutex<Connection>,
+    disk_tiles: Option<Arc<tile_cache::DiskTiles>>,
 }
 
 impl Engine {
     pub fn new(root: PathBuf, workspace: PathBuf) -> Result<Self> {
         fs::create_dir_all(&root)?;
+        let cache_path = workspace.with_file_name("precision-tiles.sqlite");
+        let disk_tiles = match tile_cache::DiskTiles::open(&cache_path) {
+            Ok(cache) => Some(Arc::new(cache)),
+            Err(error) => {
+                tracing::warn!(%error, "could not initialize disk tile cache");
+                None
+            }
+        };
         let db = Connection::open(workspace)?;
         workspace::initialize(&db)?;
+        operations::initialize(&db)?;
+        business_lines::initialize(&db)?;
         let saved = workspace::active(&db)?;
         let engine = Self {
             root,
             active: RwLock::new(None),
             previous: Mutex::new(None),
             workspace: Mutex::new(db),
+            disk_tiles,
         };
         let packs = engine.packs()?;
         let preferred = packs
@@ -56,6 +76,52 @@ impl Engine {
         pack::available(&self.root)
     }
 
+    pub fn install_pack(
+        &self,
+        source: &Path,
+        cancel: &AtomicBool,
+        report: impl Fn(u64, u64),
+    ) -> Result<Manifest> {
+        let manifest = Manifest::read(source)?;
+        let destination = self.root.join(&manifest.snapshot);
+        ensure!(!destination.exists(), "此快照已安装，版本目录不能覆盖");
+        let temporary = tempfile::Builder::new()
+            .prefix(".install-")
+            .tempdir_in(&self.root)?;
+        let stage = temporary.path().join(&manifest.snapshot);
+        fs::create_dir(&stage)?;
+        let names = ["manifest.json", "canonical.sqlite", "transport.pmtiles"];
+        let mut total = 0_u64;
+        for name in names {
+            let info = fs::symlink_metadata(source.join(name))?;
+            ensure!(info.file_type().is_file(), "数据包包含无效文件");
+            total = total
+                .checked_add(info.len())
+                .context("数据包文件大小无效")?;
+        }
+        let mut copied = 0;
+        let mut chunk = vec![0_u8; 1024 * 1024];
+        for name in names {
+            let mut input = fs::File::open(source.join(name))?;
+            let mut file = fs::File::create_new(stage.join(name))?;
+            loop {
+                ensure!(!cancel.load(Ordering::Relaxed), "数据包安装已取消");
+                let count = input.read(&mut chunk)?;
+                if count == 0 {
+                    break;
+                }
+                file.write_all(&chunk[..count])?;
+                copied += count as u64;
+                report(copied, total);
+            }
+            file.sync_all()?;
+        }
+        drop(Pack::open(&stage)?);
+        ensure!(!cancel.load(Ordering::Relaxed), "数据包安装已取消");
+        fs::rename(stage, destination)?;
+        Ok(manifest)
+    }
+
     pub fn active(&self) -> ActivePack {
         self.active.read().unwrap().clone()
     }
@@ -73,7 +139,7 @@ impl Engine {
             fs::symlink_metadata(&path)?.file_type().is_dir(),
             "数据包文件夹无效"
         );
-        let pack = Arc::new(Pack::open(&path)?);
+        let pack = Arc::new(Pack::open_cached(&path, self.disk_tiles.clone())?);
         let mut workspace = self.workspace.lock().unwrap();
         let mut active = self.active.write().unwrap();
         if let Some(active) = active

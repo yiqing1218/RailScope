@@ -1,0 +1,13 @@
+{
+  "snapshot": "shanghai-osm-202609-v3",
+  "previous_snapshot": "shanghai-osm-202609-r3",
+  "line_id": "0307ed16-5f63-558a-a8d5-df572c0fe55a",
+  "merge_line_id": "bc9d7875-285b-5eb0-956f-8b34bc711473",
+  "start_id": "760aefbe-18a7-5dcf-80e1-40672cfc1a47",
+  "end_id": "1fd4515a-9a3a-5678-b719-3b15966c19e5",
+  "way_ref": "osm:way:1332138008",
+  "lon": 121.3198411,
+  "lat": 31.1988798,
+  "origin_station_id": "8806f39b-9cd5-5bf3-b216-36690d6f59d5",
+  "destination_station_id": "238af7c5-bc98-5d0f-9b0b-23771c9b9dc1"
+}

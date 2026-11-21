@@ -14,6 +14,8 @@ pub struct Override {
     pub color: String,
     pub point: Option<[f64; 2]>,
     pub group: String,
+    pub width: Option<f64>,
+    pub opacity: Option<f64>,
 }
 
 impl Override {
@@ -41,6 +43,14 @@ impl Override {
             self.point
                 .is_none_or(|[lon, lat]| valid_bounds([lon, lat, lon, lat])),
             "坐标超出 WGS84 范围"
+        );
+        ensure!(
+            self.width
+                .is_none_or(|value| (0.25..=24.0).contains(&value))
+                && self
+                    .opacity
+                    .is_none_or(|value| (0.0..=1.0).contains(&value)),
+            "线宽须为 0.25–24 像素，透明度须为 0–1"
         );
         Ok(())
     }
@@ -170,6 +180,12 @@ fn migrate(db: &Connection, old: &Pack, new: &Pack) -> Result<()> {
             [to, from, &id, reason],
         )?;
     }
+    crate::business_lines::migrate(db, old, new, &old_db, &new_db)?;
+    db.execute(
+        "INSERT OR IGNORE INTO conflicts(snapshot,source_snapshot,entity,reason)
+         SELECT ?1,?2,id,'通道与车次仍指向原图谱版本' FROM ops_corridor WHERE snapshot=?2 GROUP BY id",
+        [to,from],
+    )?;
     Ok(())
 }
 
@@ -205,7 +221,8 @@ pub struct Visual {
 pub fn visuals(db: &Connection, pack: &Pack, after: Option<&str>) -> Result<Vec<Visual>> {
     let mut modified = db.prepare(
         "SELECT entity, payload FROM overrides WHERE snapshot=?1 AND entity > coalesce(?2,'')
-         AND (json_extract(payload,'$.color') != '' OR json_extract(payload,'$.point') IS NOT NULL)
+         AND (json_extract(payload,'$.color') != '' OR json_extract(payload,'$.point') IS NOT NULL
+              OR json_extract(payload,'$.width') IS NOT NULL OR json_extract(payload,'$.opacity') IS NOT NULL)
          ORDER BY entity LIMIT 160",
     )?;
     let canonical = pack.connection()?;

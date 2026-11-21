@@ -74,6 +74,11 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     ensure!(filter.bbox.is_none_or(valid_bounds), "无效的查询范围");
     let connection = pack.connection()?;
     let fts = filter.query.nfkc().collect::<String>().to_lowercase();
+    let source_ref = fts.trim().strip_prefix("osm:").and_then(|ref_| {
+        let (kind, id) = ref_.split_once(':')?;
+        (matches!(kind, "node" | "way" | "relation") && id.parse::<i64>().is_ok())
+            .then_some(fts.trim())
+    });
     let query = fts
         .split(|ch: char| !ch.is_alphanumeric())
         .filter(|word| !word.is_empty())
@@ -92,7 +97,7 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
         filter.limit.min(150)
     };
     let mut sql = format!("SELECT {SUMMARY} FROM {ENTITY} ");
-    if !query.is_empty() {
+    if !query.is_empty() && source_ref.is_none() {
         sql.push_str("JOIN entity_search ON entity_search.entity_id = e.id ");
     }
     if filter.bbox.is_some() {
@@ -104,7 +109,9 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     if filter.kind.is_some() {
         sql.push_str("AND e.kind = :kind ");
     }
-    if !query.is_empty() {
+    if source_ref.is_some() {
+        sql.push_str("AND e.source_ref=:source_ref ");
+    } else if !query.is_empty() {
         sql.push_str("AND entity_search MATCH :query ");
     }
     if filter.bbox.is_some() {
@@ -123,7 +130,12 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     if let Some(kind) = filter.kind {
         statement.raw_bind_parameter(statement.parameter_index(":kind")?.unwrap(), kind)?;
     }
-    if !query.is_empty() {
+    if let Some(source_ref) = source_ref {
+        statement.raw_bind_parameter(
+            statement.parameter_index(":source_ref")?.unwrap(),
+            source_ref,
+        )?;
+    } else if !query.is_empty() {
         statement.raw_bind_parameter(statement.parameter_index(":query")?.unwrap(), query)?;
     }
     if let Some(parent) = filter.parent {
@@ -146,6 +158,95 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
         None
     };
     Ok(Page { items, next })
+}
+
+pub fn raw_source(pack: &Pack, reference: &str, offset: u32) -> Result<Value> {
+    let mut parts = reference.split(':');
+    ensure!(parts.next() == Some("osm"), "无效 OSM 对象引用");
+    let kind = parts.next().unwrap_or_default();
+    let id = parts.next().and_then(|value| value.parse::<i64>().ok());
+    let Some(id) = id else {
+        anyhow::bail!("无效 OSM 对象编号")
+    };
+    ensure!(
+        parts.next().is_none() && matches!(kind, "node" | "way" | "relation"),
+        "无效 OSM 对象类型"
+    );
+    let db = pack.connection()?;
+    let rec: Option<(u32, String)> = db
+        .query_row(
+            "SELECT source_version,tags FROM source_object WHERE ref=?",
+            [reference],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let mut result = serde_json::json!({"ref":reference,"kind":kind,"osm_id":id,"snapshot":pack.manifest.snapshot,
+      "source":pack.manifest.source_file,"license":pack.manifest.license,"complete":pack.manifest.source_schema>=3,"rows":[]});
+    if let Some((version, tags)) = rec {
+        result["version"] = serde_json::json!(version);
+        result["tags"] = serde_json::from_str(&tags)?;
+    }
+    if pack.manifest.source_schema < 3 {
+        return Ok(result);
+    }
+    match kind {
+        "node" => {
+            if let Some((x, y, v, t)) = db
+                .query_row(
+                    "SELECT longitude,latitude,source_version,tags FROM source_node WHERE osm_id=?",
+                    [id],
+                    |r| {
+                        Ok((
+                            r.get::<_, f64>(0)?,
+                            r.get::<_, f64>(1)?,
+                            r.get::<_, u32>(2)?,
+                            r.get::<_, String>(3)?,
+                        ))
+                    },
+                )
+                .optional()?
+            {
+                result["point"] = serde_json::json!([x, y]);
+                result["version"] = serde_json::json!(v);
+                result["tags"] = serde_json::from_str(&t)?;
+            } else {
+                result["complete"] = Value::Bool(false);
+            }
+        }
+        "way" => {
+            let mut stmt=db.prepare("SELECT CAST(item.key AS INTEGER), item.value, n.longitude,n.latitude
+                FROM source_way w,json_each(w.node_ids) item LEFT JOIN source_node n ON n.osm_id=item.value
+                WHERE w.osm_id=? LIMIT 101 OFFSET ?")?;
+            let mut rows = stmt.query(params![id, offset])?;
+            let mut block = vec![];
+            while let Some(r) = rows.next()? {
+                block.push(serde_json::json!({"ordinal":r.get::<_,u32>(0)?,
+                "ref":format!("osm:node:{}",r.get::<_,i64>(1)?),
+                "longitude":r.get::<_,Option<f64>>(2)?,"latitude":r.get::<_,Option<f64>>(3)?}));
+            }
+            result["next"] =
+                serde_json::json!((block.len() > 100).then(|| offset.saturating_add(100)));
+            block.truncate(100);
+            result["rows"] = serde_json::json!(block);
+        }
+        _ => {
+            let mut stmt = db.prepare(
+                "SELECT ordinal,member_ref,role FROM source_relation_member WHERE relation_ref=?
+                ORDER BY ordinal LIMIT 101 OFFSET ?",
+            )?;
+            let mut rows = stmt.query(params![reference, offset])?;
+            let mut block = vec![];
+            while let Some(r) = rows.next()? {
+                block.push(serde_json::json!({"ordinal":r.get::<_,u32>(0)?,
+                "ref":r.get::<_,String>(1)?,"role":r.get::<_,String>(2)?}));
+            }
+            result["next"] =
+                serde_json::json!((block.len() > 100).then(|| offset.saturating_add(100)));
+            block.truncate(100);
+            result["rows"] = serde_json::json!(block);
+        }
+    }
+    Ok(result)
 }
 
 pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {

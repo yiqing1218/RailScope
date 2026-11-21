@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result, ensure};
-use railscope_next_core::{Engine, catalog, graph, pack, workspace};
+use railscope_next_core::{Engine, catalog, graph, operations as rail_ops, pack, workspace};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -10,7 +10,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use tauri::{Manager, State, http};
@@ -21,6 +21,97 @@ type Core<'a> = State<'a, Arc<Engine>>;
 #[derive(Default)]
 struct Routes(Mutex<HashMap<String, Arc<AtomicBool>>>);
 struct TileWorkers(Arc<Semaphore>);
+struct OpsClock(Mutex<rail_ops::Clock>);
+#[derive(Default)]
+struct InstallJobs(Mutex<HashMap<String, Arc<InstallProgress>>>);
+#[derive(Default)]
+struct InstallProgress {
+    done: AtomicU64,
+    total: AtomicU64,
+    stop: AtomicBool,
+}
+
+#[tauri::command]
+async fn install_data_pack(
+    path: String,
+    job: String,
+    engine: Core<'_>,
+    jobs: State<'_, Arc<InstallJobs>>,
+) -> AppResult<pack::Manifest> {
+    if path.len() > 4096 || !PathBuf::from(&path).is_absolute() || !pack::valid_id(&job) {
+        return Err("请输入数据包文件夹的绝对路径".into());
+    }
+    let engine = Arc::clone(engine.inner());
+    let jobs = Arc::clone(jobs.inner());
+    let progress = Arc::new(InstallProgress::default());
+    {
+        let mut entries = jobs.0.lock().unwrap();
+        if !entries.is_empty() {
+            return Err("已有数据包安装任务".into());
+        }
+        entries.insert(job.clone(), progress.clone());
+    }
+    let result = background(move || {
+        engine.install_pack(&PathBuf::from(path), &progress.stop, |done, total| {
+            progress.done.store(done, Ordering::Relaxed);
+            progress.total.store(total, Ordering::Relaxed);
+        })
+    })
+    .await;
+    jobs.0.lock().unwrap().remove(&job);
+    result
+}
+
+#[tauri::command]
+fn data_pack_job(job: String, cancel: bool, jobs: State<'_, Arc<InstallJobs>>) -> Option<[u64; 2]> {
+    let jobs = jobs.0.lock().unwrap();
+    let progress = jobs.get(&job)?;
+    if cancel {
+        progress.stop.store(true, Ordering::Relaxed);
+    }
+    Some([
+        progress.done.load(Ordering::Relaxed),
+        progress.total.load(Ordering::Relaxed),
+    ])
+}
+
+#[tauri::command]
+async fn operations(snapshot: String, request: Value, engine: Core<'_>) -> AppResult<Value> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        engine.with_workspace(&snapshot, |db, pack| rail_ops::execute(db, pack, request))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn edit_business_line(
+    snapshot: String,
+    request: Value,
+    engine: Core<'_>,
+) -> AppResult<Value> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        engine.with_workspace(&snapshot, |db, pack| {
+            railscope_next_core::business_lines::execute(db, pack, request)
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+fn operations_clock(
+    action: String,
+    value: Option<f64>,
+    clock: State<'_, OpsClock>,
+) -> AppResult<Value> {
+    clock
+        .0
+        .lock()
+        .unwrap()
+        .apply(&action, value)
+        .map_err(|error| error.to_string())
+}
 
 async fn background<T: Send + 'static>(
     f: impl FnOnce() -> Result<T> + Send + 'static,
@@ -91,6 +182,20 @@ async fn get_entity(snapshot: String, id: String, engine: Core<'_>) -> AppResult
 async fn get_geometry(snapshot: String, id: String, engine: Core<'_>) -> AppResult<Option<Value>> {
     let engine = Arc::clone(engine.inner());
     background(move || catalog::geometry(&engine.for_snapshot(&snapshot)?.connection()?, &id)).await
+}
+
+#[tauri::command]
+async fn get_osm_source(
+    snapshot: String,
+    reference: String,
+    offset: u32,
+    engine: Core<'_>,
+) -> AppResult<Value> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        catalog::raw_source(engine.for_snapshot(&snapshot)?.as_ref(), &reference, offset)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -231,13 +336,24 @@ fn diagnostics(engine: Core<'_>) -> Option<pack::TileStats> {
     engine.active().map(|pack| pack.stats())
 }
 
-fn tile(engine: &Engine, path: &str) -> Result<Arc<[u8]>> {
+fn tile(engine: &Engine, path: &str) -> Result<(Arc<[u8]>, &'static str)> {
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
-    let [snapshot, z, x, y] = parts.as_slice() else {
-        anyhow::bail!("invalid tile path")
+    let (snapshot, z, x, y, archive) = match parts.as_slice() {
+        [snapshot, z, x, y] => (snapshot, z, x, y, false),
+        [snapshot, z, x, y, "archive"] => (snapshot, z, x, y, true),
+        _ => anyhow::bail!("invalid tile path"),
     };
     let pack = engine.for_tile(snapshot).context("inactive snapshot")?;
-    pack.tile(z.parse()?, x.parse()?, y.parse()?)
+    let zoom = z.parse()?;
+    let source = if !archive && pack.is_precise(zoom) {
+        "original_source"
+    } else {
+        "overview"
+    };
+    Ok((
+        pack.tile_mode(zoom, x.parse()?, y.parse()?, archive)?,
+        source,
+    ))
 }
 
 fn main() {
@@ -262,7 +378,9 @@ fn main() {
             let engine = Engine::new(packs, data.join("workspace.sqlite"))?;
             app.manage(Arc::new(engine));
             app.manage(Arc::new(Routes::default()));
-            app.manage(TileWorkers(Arc::new(Semaphore::new(8))));
+            app.manage(OpsClock(Mutex::new(rail_ops::Clock::default())));
+            app.manage(Arc::new(InstallJobs::default()));
+            app.manage(TileWorkers(Arc::new(Semaphore::new(4))));
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol(
@@ -304,8 +422,9 @@ fn main() {
                     })
                     .await;
                     let response = match result {
-                        Ok(bytes) => response
+                        Ok((bytes, precision)) => response
                             .header("cache-control", "public, max-age=86400, immutable")
+                            .header("x-railscope-precision", precision)
                             .body(bytes.to_vec()),
                         Err(_) => response.status(404).body(Vec::new()),
                     };
@@ -316,9 +435,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             list_data_packs,
             activate_data_pack,
+            install_data_pack,
+            data_pack_job,
             catalog_page,
             get_entity,
             get_geometry,
+            get_osm_source,
             update_workspace,
             replay_workspace,
             workspace_visuals,
@@ -328,6 +450,9 @@ fn main() {
             query_path,
             cancel_path,
             diagnostics,
+            operations,
+            edit_business_line,
+            operations_clock,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start RailScope Next");

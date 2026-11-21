@@ -6,6 +6,7 @@ __pycache__/
 .audit-*/
 .ruff_cache/
 .codex-remote-attachments/
+artifacts/next-v3/
 .venv/
 node_modules/
 desktop/vendor/

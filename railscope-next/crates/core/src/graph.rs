@@ -48,18 +48,33 @@ pub fn route(pack: &Pack, start_id: &str, end_id: &str, cancel: &AtomicBool) -> 
     route_in_snapshot(&db, start_id, end_id, cancel)
 }
 
-fn route_in_snapshot(
+pub(crate) fn route_in_snapshot(
     db: &rusqlite::Connection,
     start_id: &str,
     end_id: &str,
     cancel: &AtomicBool,
 ) -> Result<Route> {
+    route_options(db, start_id, end_id, cancel, None, "", "[]")
+}
+
+pub(crate) fn route_options(
+    db: &rusqlite::Connection,
+    start_id: &str,
+    end_id: &str,
+    cancel: &AtomicBool,
+    kind: Option<&str>,
+    excluded: &str,
+    lines: &str,
+) -> Result<Route> {
     let endpoint = |id: &str| -> Result<_> {
         let query = "SELECT from_node,to_node,edge.forward,edge.reverse,edge.meters,node.network
                      FROM edge JOIN node ON from_node=node.id JOIN entity ON entity.id=edge.id
-                     WHERE edge.id=?1 AND entity.status='operating' AND entity.class!='unknown'";
+                     WHERE edge.id=?1 AND entity.status='operating' AND entity.class!='unknown'
+                       AND (?2 IS NULL OR entity.kind=?2)
+                       AND (?3='[]' OR EXISTS(SELECT 1 FROM line_member m
+                         WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?3))))";
         Ok(db
-            .query_row(query, [id], |r| {
+            .query_row(query, params![id, kind, lines], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
@@ -120,11 +135,15 @@ fn route_in_snapshot(
     let mut neighbors = db.prepare(
         "SELECT edge.id, to_node, meters FROM edge JOIN entity ON entity.id=edge.id
          WHERE from_node=?1 AND forward=1 AND status='operating' AND class!='unknown'
-           AND edge.id NOT IN (?2,?3)
+           AND edge.id NOT IN (?2,?3,?4) AND (?5 IS NULL OR entity.kind=?5)
+           AND (?6='[]' OR EXISTS(SELECT 1 FROM line_member m
+             WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?6))))
          UNION ALL
          SELECT edge.id, from_node, meters FROM edge JOIN entity ON entity.id=edge.id
          WHERE to_node=?1 AND reverse=1 AND status='operating' AND class!='unknown'
-           AND edge.id NOT IN (?2,?3)",
+           AND edge.id NOT IN (?2,?3,?4) AND (?5 IS NULL OR entity.kind=?5)
+           AND (?6='[]' OR EXISTS(SELECT 1 FROM line_member m
+             WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?6))))",
     )?;
     let mut visited = 0;
     while let Some(Visit { meters, node }) = queue.pop() {
@@ -149,7 +168,7 @@ fn route_in_snapshot(
         }
         visited += 1;
         ensure!(visited <= MAX_VISITS, "已达到路径搜索范围上限");
-        let mut rows = neighbors.query(params![node, start_id, end_id])?;
+        let mut rows = neighbors.query(params![node, start_id, end_id, excluded, kind, lines])?;
         while let Some(row) = rows.next()? {
             let edge: String = row.get(0)?;
             let to: String = row.get(1)?;

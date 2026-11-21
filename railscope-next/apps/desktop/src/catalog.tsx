@@ -15,6 +15,7 @@ const classes: Record<string, string> = {
   motorway: '高速主线', motorway_link: '高速匝道', rail_station: '铁路车站', metro_station: '地铁车站',
   motorway_junction: '高速出入口', rest_area: '停车区', services: '服务区', toll_booth: '收费站',
   aerodrome: '机场', switch: '道岔', platform: '站台', station_area: '站区',
+  station_building:'站房', monorail:'单轨',
   railway_crossing: '铁路交叉点', level_crossing: '平交道口', railway: '铁路线路',
   train: '列车线路关系', road: '道路线路', unknown: '类别待核验',
 }
@@ -29,10 +30,32 @@ const types: { id: Kind; icon: typeof TrainFront }[] = [
   { id: 'facility', icon: Building2 }, { id: 'poi', icon: LocateFixed },
 ]
 
-export function PackMenu({ packs, active, changing, change, conflicts }: {
+export function PackMenu({ packs, active, changing, change, conflicts, onInstalled }: {
   packs: Pack[]; active: Pack | null; changing: boolean; change: (pack: Pack) => void; conflicts: Conflict[]
+  onInstalled:(pack:Pack)=>void
 }) {
   const [open, setOpen] = useState(false)
+  const [path,setPath]=useState('')
+  const [job,setJob]=useState('')
+  const [progress,setProgress]=useState<[number,number]>()
+  const [status,setStatus]=useState('')
+  const [failure,setFailure]=useState('')
+  useEffect(()=>{
+    if(!job)return
+    const timer=window.setInterval(()=>void api.packJob(job).then(value=>{if(value)setProgress(value)}).catch(()=>{}),350)
+    return ()=>window.clearInterval(timer)
+  },[job])
+  async function install(){
+    const id=crypto.randomUUID()
+    setJob(id);setStatus('');setFailure('');setProgress(undefined)
+    try{
+      const manifest=await api.install(path.trim(),id)
+      onInstalled(manifest)
+      setStatus('校验通过，数据包已安装')
+      setPath('')
+    } catch(e){setFailure(String(e))}
+    finally{setJob('')}
+  }
   return <div className="pack-menu">
     <button className="pack-trigger" onClick={() => setOpen(!open)} aria-expanded={open}>
       <Database size={17} /><span>{active?.region ?? '数据包'}</span><ChevronDown size={14} />
@@ -42,10 +65,21 @@ export function PackMenu({ packs, active, changing, change, conflicts }: {
       {packs.length === 0 ? <p>将已生成的数据包放入应用的 packs 目录后重新启动。</p>
         : packs.map(pack => <button key={pack.snapshot} disabled={changing} className="pack-choice"
           onClick={() => { change(pack); setOpen(false) }}>
-          <span>{pack.region}<small>{pack.snapshot}</small></span>
+          <span>{pack.region}<small>{pack.snapshot}</small><small>{pack.source_schema>=3?'原始对象已索引':`预建 Z${pack.min_zoom}–${pack.max_zoom}`}</small></span>
           {active?.snapshot === pack.snapshot ? <b>使用中</b> : <ArrowUpRight size={16} />}
         </button>)}
       {active && <p>{active.source} · {active.license}{active.basemap ? ' · Natural Earth' : ''}</p>}
+      <details><summary>安装本地快照</summary>
+        <form className="pack-install" onSubmit={e=>{e.preventDefault();void install()}}>
+          <input value={path} onChange={e=>setPath(e.target.value)} placeholder="数据包文件夹的绝对路径" aria-label="数据包文件夹"/>
+          <div className="ops-actions"><button className="secondary compact" disabled={!path.trim()||!!job}>校验并安装</button>
+            {!!job&&<button type="button" className="secondary compact" onClick={()=>void api.packJob(job,true)}>取消</button>}
+          </div>
+          {job&&<><progress value={progress?.[0]??0} max={progress?.[1]||1}/>
+            <small>{progress?.[0]===progress?.[1]?'校验快照…':'复制数据…'}</small></>}
+          {status&&<small role="status">{status}</small>}{failure&&<small role="alert" className="error-text">{failure}</small>}
+        </form>
+      </details>
       {conflicts.length > 0 && <details open><summary>工作区迁移冲突</summary>
         <ul className="conflicts">{conflicts.map(conflict => <li key={`${conflict.source_snapshot}:${conflict.entity}`}>
           {conflict.reason}<small>{conflict.entity} · {conflict.source_snapshot}</small>

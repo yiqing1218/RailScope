@@ -16,6 +16,8 @@ export type Pack = {
   max_zoom: number
   bounds: Bounds
   counts: Partial<Record<Kind, number>>
+  source_schema: number
+  source_objects: Record<string, number>
 }
 export type Summary = {
   id: string
@@ -36,23 +38,35 @@ export type Entity = Summary & {
   has_geometry: boolean
   has_edge: boolean
 }
-export type Override = { name: string; note: string; color: string; point: [number, number] | null; group: string }
+export type Override = { name: string; note: string; color: string; point: [number, number] | null; group: string;
+  width?:number|null;opacity?:number|null }
 export type Workspace = { revision: number; value: Override; can_undo: boolean; can_redo: boolean }
 export type Inspection = { entity: Entity; workspace: Workspace }
 export type Page = { items: Summary[]; next: string | null }
 export type Filter = { kind?: Kind; parent?: string; query: string; bbox?: Bounds; cursor?: string }
-export type Stats = { hits: number; misses: number; evictions: number; bytes: number; read_micros: number; pending: number }
+export type Stats = { hits: number; misses: number; evictions: number; bytes: number; read_micros: number; pending: number;
+  disk_hits: number; precise_tiles: number; precise_micros: number }
 export type Route = { edges: string[]; meters: number; verification: string; geometry: Geometry | null }
 export type Visual = Pick<Summary, 'id' | 'render_id' | 'kind' | 'class'> & { value: Override }
 export type Conflict = { entity: string; source_snapshot: string; reason: string }
 export type Group = { name: string; count: number }
+export type RawSource={ref:string;kind:string;version?:number;tags?:Record<string,string>;license:string;
+  complete:boolean;point?:[number,number];next?:number;rows:Array<{ordinal:number;ref:string;role?:string;longitude?:number;latitude?:number}>}
+export type BusinessLineList = { lines: {id: string; name: string; member_count: number}[]; undo: boolean; redo: boolean }
+type LineEditRequest = {action: 'list' | 'undo' | 'redo'} |
+  {action: 'create'; name: string; sources: string[]; split_at: number | null} |
+  {action: 'members'; id: string; offset: number}
 
 export const api = {
   packs: () => invoke<{ active: Pack | null; packs: Pack[] }>('list_data_packs'),
   activate: (snapshot: string) => invoke<Pack>('activate_data_pack', { snapshot }),
+  install: (path:string,job:string)=>invoke<Pack>('install_data_pack',{path,job}),
+  packJob:(job:string,cancel=false)=>invoke<[number,number]|null>('data_pack_job',{job,cancel}),
   page: (snapshot: string, filter: Filter) => invoke<Page>('catalog_page', { snapshot, filter }),
   entity: (snapshot: string, id: string) => invoke<Inspection>('get_entity', { snapshot, id }),
   geometry: (snapshot: string, id: string) => invoke<Geometry | null>('get_geometry', { snapshot, id }),
+  rawSource:(snapshot:string,reference:string,offset=0)=>invoke<RawSource>('get_osm_source',{snapshot,reference,offset}),
+  lineEdit: <T>(snapshot: string, request: LineEditRequest) => invoke<T>('edit_business_line', {snapshot, request}),
   update: (snapshot: string, id: string, expected: number, value: Override) =>
     invoke<Workspace>('update_workspace', { snapshot, id, expected, value }),
   replay: (snapshot: string, id: string, expected: number, redo: boolean) =>
@@ -68,6 +82,6 @@ export const api = {
   diagnostics: () => invoke<Stats | null>('diagnostics'),
 }
 
-export function tileTemplate(snapshot: string) {
-  return `${convertFileSrc('', 'railscope-tile').replace(/\/+$/, '')}/${snapshot}/{z}/{x}/{y}`
+export function tileTemplate(snapshot: string, archive = false) {
+  return `${convertFileSrc('', 'railscope-tile').replace(/\/+$/, '')}/${snapshot}/{z}/{x}/{y}${archive ? '/archive' : ''}`
 }

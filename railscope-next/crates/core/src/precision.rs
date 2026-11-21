@@ -1,0 +1,549 @@
+//! Spatially indexed, lossless-source high zoom MVT generation.
+use anyhow::{Context, Result, ensure};
+use geo::{BooleanOps, Coord, Geometry, LineString, Polygon, Rect};
+use geozero::{ToGeo, wkb::Wkb};
+use rusqlite::{Connection, params};
+use std::collections::{BTreeMap, HashMap};
+
+pub const MAX_ZOOM: u8 = 22;
+pub const LIMIT: usize = 8 * 1024 * 1024;
+const EXTENT: i32 = 8192;
+const BUFFER: i32 = 64;
+const EDGE: f64 = (EXTENT + BUFFER) as f64;
+const LEAD: f64 = -(BUFFER as f64);
+#[derive(Clone, Copy)]
+pub struct Address {
+    pub z: u8,
+    pub x: u32,
+    pub y: u32,
+}
+
+impl Address {
+    pub fn new(z: u8, x: u32, y: u32) -> Result<Self> {
+        ensure!(
+            z <= MAX_ZOOM && x < (1 << z) && y < (1 << z),
+            "无效瓦片地址"
+        );
+        Ok(Self { z, x, y })
+    }
+
+    fn project(self, c: Coord) -> Coord {
+        let y =
+            c.y.clamp(-85.0511287798, 85.0511287798)
+                .to_radians()
+                .tan()
+                .asinh();
+        let span = f64::from(1_u32 << self.z);
+        Coord {
+            x: ((c.x + 180.0) / 360.0 * span - f64::from(self.x)) * f64::from(EXTENT),
+            y: ((1.0 - y / std::f64::consts::PI) * 0.5 * span - f64::from(self.y))
+                * f64::from(EXTENT),
+        }
+    }
+
+    pub fn bounds(self) -> [f64; 4] {
+        let span = f64::from(1_u32 << self.z);
+        let buffer = f64::from(BUFFER) / f64::from(EXTENT);
+        let x = f64::from(self.x);
+        let y = f64::from(self.y);
+        let lat = |row: f64| {
+            (std::f64::consts::PI * (1.0 - 2.0 * row / span))
+                .sinh()
+                .atan()
+                .to_degrees()
+        };
+        [
+            ((x - buffer) / span * 360.0 - 180.0).max(-180.0),
+            lat(y + 1.0 + buffer),
+            ((x + 1.0 + buffer) / span * 360.0 - 180.0).min(180.0),
+            lat(y - buffer),
+        ]
+    }
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+enum Value {
+    Text(String),
+    UInt(u64),
+}
+
+#[derive(Default)]
+struct Layer {
+    keys: Vec<String>,
+    key_index: HashMap<String, u64>,
+    values: Vec<Value>,
+    value_index: HashMap<Value, u64>,
+    features: Vec<u8>,
+}
+impl Layer {
+    fn push(&mut self, id: u64, kind: u64, properties: Vec<(&str, Value)>, commands: Vec<u8>) {
+        if commands.is_empty() {
+            return;
+        }
+        let mut tags = Vec::new();
+        for (key, value) in properties {
+            let key = *self.key_index.entry(key.into()).or_insert_with(|| {
+                self.keys.push(key.into());
+                self.keys.len() as u64 - 1
+            });
+            let index = *self.value_index.entry(value.clone()).or_insert_with(|| {
+                self.values.push(value);
+                self.values.len() as u64 - 1
+            });
+            varint(&mut tags, key);
+            varint(&mut tags, index);
+        }
+        let mut feature = Vec::new();
+        scalar(&mut feature, 1, id);
+        field(&mut feature, 2, &tags);
+        scalar(&mut feature, 3, kind);
+        field(&mut feature, 4, &commands);
+        field(&mut self.features, 2, &feature);
+    }
+
+    fn encode(self, name: &str) -> Vec<u8> {
+        let mut layer = Vec::new();
+        field(&mut layer, 1, name.as_bytes());
+        layer.extend(self.features);
+        for key in self.keys {
+            field(&mut layer, 3, key.as_bytes());
+        }
+        for value in self.values {
+            let mut encoded = Vec::new();
+            match value {
+                Value::Text(value) => field(&mut encoded, 1, value.as_bytes()),
+                Value::UInt(value) => scalar(&mut encoded, 5, value),
+            }
+            field(&mut layer, 4, &encoded);
+        }
+        scalar(&mut layer, 5, EXTENT as u64);
+        scalar(&mut layer, 15, 2);
+        layer
+    }
+}
+
+fn varint(buf: &mut Vec<u8>, mut value: u64) {
+    while value >= 128 {
+        buf.push((value as u8) | 128);
+        value >>= 7;
+    }
+    buf.push(value as u8);
+}
+fn scalar(buf: &mut Vec<u8>, key: u64, value: u64) {
+    varint(buf, key << 3);
+    varint(buf, value);
+}
+fn field(buf: &mut Vec<u8>, key: u64, value: &[u8]) {
+    varint(buf, (key << 3) | 2);
+    varint(buf, value.len() as u64);
+    buf.extend_from_slice(value);
+}
+
+type Pixel = (i32, i32);
+fn quantize(c: Coord) -> Pixel {
+    (c.x.round() as i32, c.y.round() as i32)
+}
+fn inside(c: Coord) -> bool {
+    c.x >= LEAD && c.x <= EDGE && c.y >= LEAD && c.y <= EDGE
+}
+fn delta(buf: &mut Vec<u8>, cursor: &mut Pixel, pixel: Pixel) {
+    for d in [pixel.0 - cursor.0, pixel.1 - cursor.1] {
+        varint(buf, ((d << 1) ^ (d >> 31)) as u32 as u64);
+    }
+    *cursor = pixel;
+}
+
+fn emit_path(buf: &mut Vec<u8>, cursor: &mut Pixel, mut points: Vec<Pixel>, ring: Option<bool>) {
+    points.dedup();
+    if let Some(outer) = ring {
+        if points.first() == points.last() {
+            points.pop();
+        }
+        if points.len() < 3 {
+            return;
+        }
+        let sum: i64 = points
+            .iter()
+            .zip(points.iter().cycle().skip(1))
+            .map(|(a, b)| i64::from(a.0) * i64::from(b.1) - i64::from(b.0) * i64::from(a.1))
+            .sum();
+        if sum == 0 {
+            return;
+        }
+        if (sum > 0) != outer {
+            points.reverse();
+        }
+    } else if points.len() < 2 {
+        return;
+    }
+    varint(buf, 9);
+    delta(buf, cursor, points[0]);
+    varint(buf, ((points.len() as u64 - 1) << 3) | 2);
+    for point in points.into_iter().skip(1) {
+        delta(buf, cursor, point);
+    }
+    if ring.is_some() {
+        varint(buf, 15);
+    }
+}
+
+fn segment(a: Coord, b: Coord) -> Option<(Coord, Coord)> {
+    if inside(a) && inside(b) {
+        return Some((a, b));
+    }
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let (mut entering, mut leaving) = (0.0_f64, 1.0_f64);
+    for (s, d) in [
+        (a.x - LEAD, dx),
+        (EDGE - a.x, -dx),
+        (a.y - LEAD, dy),
+        (EDGE - a.y, -dy),
+    ] {
+        if d > 0.0 {
+            entering = entering.max(-s / d);
+        } else if d < 0.0 {
+            leaving = leaving.min(-s / d);
+        } else if s < 0.0 {
+            return None;
+        }
+    }
+    if entering > leaving {
+        return None;
+    }
+    let position = |t| Coord {
+        x: a.x + dx * t,
+        y: a.y + dy * t,
+    };
+    Some((position(entering), position(leaving)))
+}
+
+fn emit_line(buf: &mut Vec<u8>, cursor: &mut Pixel, line: LineString, addr: Address) {
+    let mut path = Vec::new();
+    for pair in line.0.windows(2) {
+        if let Some((a, b)) = segment(addr.project(pair[0]), addr.project(pair[1])) {
+            let (a, b) = (quantize(a), quantize(b));
+            if path.last() != Some(&a) {
+                emit_path(buf, cursor, std::mem::take(&mut path), None);
+                path.push(a);
+            }
+            path.push(b);
+        } else {
+            emit_path(buf, cursor, std::mem::take(&mut path), None);
+        }
+    }
+    emit_path(buf, cursor, path, None);
+}
+
+fn emit_polygon(buf: &mut Vec<u8>, cursor: &mut Pixel, part: Polygon, addr: Address) {
+    let project = |line: &LineString| LineString(line.0.iter().map(|c| addr.project(*c)).collect());
+    let projected = Polygon::new(
+        project(part.exterior()),
+        part.interiors().iter().map(project).collect(),
+    );
+    let emit = |part: &Polygon, buf: &mut Vec<u8>, cursor: &mut Pixel| {
+        let before = buf.len();
+        emit_path(
+            buf,
+            cursor,
+            part.exterior().0.iter().map(|c| quantize(*c)).collect(),
+            Some(true),
+        );
+        if buf.len() > before {
+            for ring in part.interiors() {
+                emit_path(
+                    buf,
+                    cursor,
+                    ring.0.iter().map(|c| quantize(*c)).collect(),
+                    Some(false),
+                );
+            }
+        }
+    };
+    if projected.exterior().0.iter().all(|c| inside(*c)) {
+        emit(&projected, buf, cursor);
+    } else {
+        let clip = Rect::new((LEAD, LEAD), (EDGE, EDGE)).to_polygon();
+        for part in projected.intersection(&clip) {
+            emit(&part, buf, cursor);
+        }
+    }
+}
+
+fn geometry(value: Geometry, addr: Address) -> (u64, Vec<u8>) {
+    let mut buf = Vec::new();
+    let mut cursor = (0, 0);
+    let kind = match value {
+        Geometry::Point(value) => {
+            let point = addr.project(value.0);
+            if inside(point) {
+                varint(&mut buf, 9);
+                delta(&mut buf, &mut cursor, quantize(point));
+            }
+            1
+        }
+        Geometry::MultiPoint(value) => {
+            let points = value
+                .0
+                .iter()
+                .map(|p| addr.project(p.0))
+                .filter(|p| inside(*p))
+                .collect::<Vec<_>>();
+            if !points.is_empty() {
+                varint(&mut buf, (points.len() as u64 * 8) | 1);
+                for point in points {
+                    delta(&mut buf, &mut cursor, quantize(point));
+                }
+            }
+            1
+        }
+        Geometry::LineString(line) => {
+            emit_line(&mut buf, &mut cursor, line, addr);
+            2
+        }
+        Geometry::MultiLineString(value) => {
+            for line in value {
+                emit_line(&mut buf, &mut cursor, line, addr);
+            }
+            2
+        }
+        Geometry::Polygon(value) => {
+            emit_polygon(&mut buf, &mut cursor, value, addr);
+            3
+        }
+        Geometry::MultiPolygon(value) => {
+            for part in value {
+                emit_polygon(&mut buf, &mut cursor, part, addr);
+            }
+            3
+        }
+        _ => 0,
+    };
+    (kind, buf)
+}
+
+pub fn normalized_colour(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let hex = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    if hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Some(format!("#{}", hex.to_ascii_lowercase()));
+    }
+    if trimmed.starts_with('#') && hex.len() == 3 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Some(format!(
+            "#{}",
+            hex.to_ascii_lowercase()
+                .chars()
+                .flat_map(|c| [c, c])
+                .collect::<String>()
+        ));
+    }
+    let named = match trimmed.to_ascii_lowercase().as_str() {
+        "red" => "#ff0000",
+        "green" => "#008000",
+        "blue" => "#0000ff",
+        "orange" => "#ffa500",
+        "yellow" => "#ffd42a",
+        "purple" => "#800080",
+        "brown" => "#a52a2a",
+        "pink" => "#ff69b4",
+        "gray" | "grey" => "#808080",
+        "black" => "#000000",
+        "white" => "#ffffff",
+        "cyan" => "#00ffff",
+        _ => return None,
+    };
+    Some(named.into())
+}
+
+const METRO: &str = "SELECT l.id, COALESCE(NULLIF(json_extract(src.tags,'$.ref'),''),l.name),
+       COALESCE(json_extract(src.tags,'$.colour'),'')
+       FROM line_member m JOIN entity l ON l.id=m.line_id JOIN source_object src ON src.ref=l.source_ref
+       WHERE m.member_id=? AND l.kind='line' ORDER BY l.id LIMIT 64";
+
+pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
+    let [west, south, east, north] = addr.bounds();
+    let mut query=connection.prepare(
+        "SELECT e.id,e.render_id,e.kind,e.class,e.status,e.name,g.wgs84_wkb FROM spatial s
+         CROSS JOIN geometry g ON g.rowid=s.rowid CROSS JOIN entity e ON e.id=g.entity_id
+         WHERE s.max_x>=?1 AND s.max_y>=?2 AND s.min_x<=?3 AND s.min_y<=?4 AND g.wgs84_wkb IS NOT NULL
+         ORDER BY g.rowid",
+    )?;
+    let new_source: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='metro_service_track')",
+        [],
+        |r| r.get(0),
+    )?;
+    let mut metro = connection.prepare_cached(if new_source {
+        "SELECT DISTINCT l.id, COALESCE(NULLIF(json_extract(src.tags,'$.ref'),''),l.name),
+         COALESCE(m.colour,'') FROM metro_service_track m JOIN entity l ON l.id=m.service_id
+         JOIN source_object src ON src.ref=l.source_ref WHERE m.edge_id=? ORDER BY l.id LIMIT 64"
+    } else {
+        METRO
+    })?;
+    let mut rows = query.query(params![west, south, east, north])?;
+    let mut layers: BTreeMap<&str, Layer> = BTreeMap::new();
+    let mut used = 0;
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get(2)?;
+        let layer = match kind.as_str() {
+            "rail" => "rail",
+            "metro" => "metro",
+            "road" => "road",
+            "station" | "poi" => "points",
+            "facility" if addr.z >= 12 => "facilities",
+            "base_road" if addr.z >= 10 => "base_road",
+            "base_building" if addr.z >= 14 => "base_building",
+            "base_water" => "base_water",
+            "base_green" => "base_green",
+            "base_place" => "base_place",
+            "base_admin" => "base_admin",
+            _ => continue,
+        };
+        let id = row.get::<_, i64>(1)? as u64;
+        let category: String = row.get(3)?;
+        let status: String = row.get(4)?;
+        let name: String = row.get(5)?;
+        let bytes: Vec<u8> = row.get(6)?;
+        let shape = Wkb(bytes)
+            .to_geo()
+            .with_context(|| format!("无效 WKB · {id}"))?;
+        let (shape_kind, commands) = geometry(shape, addr);
+        if commands.is_empty() {
+            continue;
+        }
+        let mut attrs = vec![
+            ("rid", Value::UInt(id)),
+            ("class", Value::Text(category)),
+            ("status", Value::Text(status)),
+        ];
+        if layer == "points" || layer == "base_place" {
+            attrs.push(("label", Value::Text(name)));
+        }
+        if layer == "metro" {
+            let eid: String = row.get(0)?;
+            let mut services = metro.query([eid])?;
+            let mut distinct = Vec::new();
+            while let Some(s) = services.next()? {
+                let label: String = s.get(1)?;
+                let colour: String = s.get(2)?;
+                if distinct.iter().any(|(existing, _, _)| existing == &label) {
+                    continue;
+                }
+                if let Some(colour) = normalized_colour(&colour) {
+                    distinct.push((label, s.get::<_, String>(0)?, colour));
+                }
+            }
+            let count = distinct.len();
+            if let Some((_, service, colour)) = distinct.first() {
+                attrs.push(("service1", Value::Text(service.clone())));
+                attrs.push(("metro_color", Value::Text(colour.clone())));
+            }
+            if let Some((_, service, colour)) = distinct.get(1) {
+                attrs.push(("service2", Value::Text(service.clone())));
+                attrs.push(("metro_secondary", Value::Text(colour.clone())));
+            }
+            if count > 1 {
+                attrs.push(("service_count", Value::UInt(count as u64)));
+            }
+        }
+        used += commands.len()
+            + attrs
+                .iter()
+                .map(|(k, v)| {
+                    k.len()
+                        + match v {
+                            Value::Text(s) => s.len(),
+                            _ => 8,
+                        }
+                        + 8
+                })
+                .sum::<usize>()
+            + 32;
+        ensure!(
+            used <= LIMIT * 2,
+            "高精度瓦片超过资源预算，当前区域需继续放大"
+        );
+        layers
+            .entry(layer)
+            .or_default()
+            .push(id, shape_kind, attrs, commands);
+    }
+    if new_source {
+        let mut base = connection.prepare(
+            "SELECT f.id,f.kind,f.class,f.name,f.wkb FROM base_spatial s
+             CROSS JOIN base_feature f ON f.id=s.id
+             WHERE s.max_x>=?1 AND s.max_y>=?2 AND s.min_x<=?3 AND s.min_y<=?4 ORDER BY f.id",
+        )?;
+        let mut features = base.query(params![west, south, east, north])?;
+        while let Some(row) = features.next()? {
+            let id = row.get::<_, i64>(0)? as u64;
+            let key: String = row.get(1)?;
+            let layer = match key.as_str() {
+                "base_road" if addr.z >= 10 => "base_road",
+                "base_building" if addr.z >= 14 => "base_building",
+                "base_water" => "base_water",
+                "base_green" => "base_green",
+                "base_place" => "base_place",
+                "base_admin" => "base_admin",
+                _ => continue,
+            };
+            let shape = Wkb(row.get::<_, Vec<u8>>(4)?)
+                .to_geo()
+                .with_context(|| format!("无效底图 WKB · {id}"))?;
+            let (shape_kind, commands) = geometry(shape, addr);
+            if commands.is_empty() {
+                continue;
+            }
+            let class: String = row.get(2)?;
+            let name: String = row.get(3)?;
+            used += commands.len() + name.len() + class.len() + 64;
+            ensure!(
+                used <= LIMIT * 2,
+                "高精度瓦片超过资源预算，当前区域需继续放大"
+            );
+            layers.entry(layer).or_default().push(
+                id,
+                shape_kind,
+                vec![("class", Value::Text(class)), ("label", Value::Text(name))],
+                commands,
+            );
+        }
+    }
+    let mut tile = Vec::new();
+    for (name, layer) in layers {
+        field(&mut tile, 3, &layer.encode(name));
+    }
+    ensure!(
+        tile.len() <= LIMIT,
+        "高精度瓦片超过资源预算，当前区域需继续放大"
+    );
+    Ok(tile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn preserves_in_tile_turns_and_clips_outside_segments() {
+        assert_eq!(
+            segment(Coord { x: -100., y: 50. }, Coord { x: 0., y: 50. })
+                .unwrap()
+                .0
+                .x,
+            LEAD
+        );
+        assert!(segment(Coord { x: -100., y: 20. }, Coord { x: -90., y: 40. }).is_none());
+        let addr = Address::new(19, 262144, 262144).unwrap();
+        let points = LineString::from(vec![
+            (0.0001, -0.0001),
+            (0.0002, -0.0002),
+            (0.00025, -0.0001),
+        ]);
+        let (_, commands) = geometry(points.into(), addr);
+        assert!(commands.contains(&18)); // LineTo with both source vertices
+    }
+    #[test]
+    fn respects_supported_osm_colour_forms() {
+        assert_eq!(normalized_colour("#F0a").as_deref(), Some("#ff00aa"));
+        assert!(normalized_colour("nonsense").is_none());
+    }
+}
