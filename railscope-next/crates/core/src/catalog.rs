@@ -32,8 +32,17 @@ pub struct Entity {
     pub tags: Value,
     pub semantics: crate::cartography::Semantics,
     pub memberships: Vec<Summary>,
+    pub station_links: Vec<StationLink>,
     pub has_geometry: bool,
     pub has_edge: bool,
+}
+
+#[derive(Serialize)]
+pub struct StationLink {
+    line: Summary,
+    relation: String,
+    evidence: String,
+    source_ref: String,
 }
 
 #[derive(Default, Deserialize)]
@@ -276,7 +285,7 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
         .query_row(&sql, [id], |r| {
             Ok((
                 summary(r)?,
-                r.get(10)?,
+                r.get::<_, String>(10)?,
                 r.get(11)?,
                 r.get(12)?,
                 r.get(13)?,
@@ -295,6 +304,18 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
     let memberships = statement
         .query_map([&base.id], summary)?
         .collect::<rusqlite::Result<_>>()?;
+    let station_links = if base.kind == "station" {
+        station_links(
+            &connection,
+            &base.id,
+            &source_ref,
+            pack.manifest.source_schema >= 3,
+        )?
+    } else {
+        Vec::new()
+    };
+    let has_geometry=has_geometry || (base.kind=="line" && connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM line_member m JOIN geometry g ON g.entity_id=m.member_id WHERE m.line_id=? AND g.wgs84_wkb IS NOT NULL)", [&base.id], |r|r.get::<_,bool>(0))?);
     let tags = serde_json::from_str(&tags)?;
     let semantics = crate::cartography::classify(
         &tags,
@@ -312,9 +333,63 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
         tags,
         semantics,
         memberships,
+        station_links,
         has_geometry,
         has_edge,
     }))
+}
+
+fn station_links(
+    db: &Connection,
+    id: &str,
+    source: &str,
+    has_relations: bool,
+) -> Result<Vec<StationLink>> {
+    let stop_area = if has_relations {
+        "UNION ALL SELECT line.id, 'OSM stop_area 成员关联'
+         FROM source_relation_member own JOIN source_object area ON area.ref=own.relation_ref
+         JOIN source_relation_member stop ON stop.relation_ref=area.ref
+         JOIN source_relation_member service ON service.member_ref=stop.member_ref
+            AND service.role IN ('stop','stop_entry_only','stop_exit_only','platform','platform_entry_only','platform_exit_only')
+         JOIN entity line ON line.source_ref=service.relation_ref AND line.kind='line'
+         WHERE own.member_ref=?2 AND json_extract(area.tags,'$.public_transport')='stop_area'"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "WITH matches(id,evidence) AS (
+        SELECT line_id,'OSM 线路成员' FROM line_member WHERE member_id=?1
+        {stop_area}
+        ) SELECT {SUMMARY},e.source_ref,min(matches.evidence)
+        FROM matches JOIN entity e ON e.id=matches.id JOIN geometry g ON g.entity_id=e.id
+        WHERE e.class IN ('railway','subway','light_rail','tram','train')
+        GROUP BY e.id ORDER BY e.name,e.id LIMIT 120"
+    );
+    let mut query = db.prepare(&sql)?;
+    let read = |r: &Row| {
+        let line = summary(r)?;
+        let relation = match line.class.as_str() {
+            "railway" => "infrastructure",
+            "train" => "route_reference",
+            _ => "service",
+        }
+        .to_owned();
+        Ok(StationLink {
+            line,
+            relation,
+            source_ref: r.get(10)?,
+            evidence: r.get(11)?,
+        })
+    };
+    if has_relations {
+        Ok(query
+            .query_map(params![id, source], read)?
+            .collect::<rusqlite::Result<_>>()?)
+    } else {
+        Ok(query
+            .query_map([id], read)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
 }
 
 pub fn geometry(connection: &Connection, id: &str) -> Result<Option<Value>> {
@@ -325,8 +400,25 @@ pub fn geometry(connection: &Connection, id: &str) -> Result<Option<Value>> {
             |r| r.get(0),
         )
         .optional()?;
-    bytes
-        .flatten()
-        .map(|wkb| Ok(serde_json::from_str(&Wkb(wkb).to_json()?)?))
-        .transpose()
+    if let Some(wkb) = bytes.flatten() {
+        return Ok(Some(serde_json::from_str(&Wkb(wkb).to_json()?)?));
+    }
+    let mut q = connection.prepare(
+        "SELECT g.wgs84_wkb FROM line_member m JOIN geometry g ON g.entity_id=m.member_id
+      JOIN entity e ON e.id=m.member_id WHERE m.line_id=? AND e.kind IN ('rail','metro','road')
+      AND g.wgs84_wkb IS NOT NULL ORDER BY m.sequence,m.position LIMIT 6001",
+    )?;
+    let mut rows = q.query([id])?;
+    let mut members = Vec::new();
+    let mut bytes = 0;
+    while let Some(row) = rows.next()? {
+        let geometry: Vec<u8> = row.get(0)?;
+        bytes += geometry.len();
+        if bytes > 8 * 1024 * 1024 || members.len() >= 6000 {
+            break;
+        }
+        members.push(serde_json::from_str::<Value>(&Wkb(geometry).to_json()?)?);
+    }
+    Ok((!members.is_empty())
+        .then(|| serde_json::json!({"type":"GeometryCollection","geometries":members})))
 }

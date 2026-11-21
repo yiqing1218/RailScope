@@ -1,0 +1,87 @@
+import { useMemo, useState } from 'react'
+import { formatTime, type Run, type RunDetail } from './operations-api'
+
+type Props={detail?:RunDetail;runs:Run[];time:number;select:(id:string)=>void;seek:(time:number)=>void;locate:(id:string)=>void}
+
+export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
+  const [scale,setScale]=useState<'station'|'distance'>('station')
+  const [direction,setDirection]=useState<'all'|'out'|'back'>('all')
+  const [span,setSpan]=useState(90)
+  const [follow,setFollow]=useState(false)
+  const base=detail?.service?.mode==='metro'?detail:undefined
+  const rows=useMemo(()=>{
+    const known=new Set<string>()
+    return (base?.chart??[]).filter(stop=>{
+      if(known.has(stop.station_id))return false
+      known.add(stop.station_id)
+      return true
+    })
+  },[base])
+  const indices=useMemo(()=>new Map(rows.map((stop,index)=>[stop.station_id,index])),[rows])
+  const plans=useMemo(()=>runs.flatMap(run=>{
+    if(run.status==='cancelled')return []
+    const stops=run.stops.flatMap(stop=>{
+      const index=indices.get(stop.station_id)
+      const arrive=stop.arrival_time_s??stop.departure_time_s
+      return index==null||arrive==null?[]:[{index,arrive,depart:stop.departure_time_s??arrive}]
+    })
+    if(stops.length<2||stops.length!==run.stops.length)return []
+    const reverse=stops[0].index>stops.at(-1)!.index
+    if(stops.some((stop,i)=>i>0&&(reverse?stop.index>=stops[i-1].index:stop.index<=stops[i-1].index)))return []
+    return [{run,stops,reverse}]
+  }),[runs,indices])
+  if(!base||rows.length<2)return <div className="metro-empty">先在左侧选择已编排停站的上海地铁车次。</div>
+  const anchor=base.chart[0]?.departure_time_s??base.chart[0]?.arrival_time_s??time
+  const start=Math.max(0,Math.floor(((follow?time:anchor)-span*15)/300)*300)
+  const end=start+span*60
+  const maxDist=rows.at(-1)?.distance_m??0
+  const byDistance=scale==='distance'&&maxDist>0&&rows.every(stop=>stop.distance_m!=null)
+  const width=960
+  const label=126
+  const height=Math.max(220,rows.length*23+58)
+  const x=(t:number)=>label+(t-start)/(end-start)*(width-label-22)
+  const y=(i:number)=>32+(byDistance?rows[i].distance_m!/maxDist:i/(rows.length-1))*(height-58)
+  const shown=plans.filter(({stops,reverse})=>stops[0].arrive<=end&&stops.at(-1)!.depart>=start&&
+    (direction==='all'||(direction==='back')===reverse)).sort((a,b)=>Number(b.run.id===base.run.id)-Number(a.run.id===base.run.id)).slice(0,240)
+  const ticks=Array.from({length:1+span/15},(_,i)=>start+i*900)
+  return <section className="metro-diagram" aria-label="上海地铁交路运行图">
+    <header className="metro-diagram-head">
+      <div><strong>{rows[0].station_name??'起点'} ↔ {rows.at(-1)?.station_name??'终点'}</strong>
+        <small>{base.run.service_date} · {shown.length} 趟 · 计划时刻</small></div>
+      <div className="metro-diagram-tools">
+        <label>方向<select value={direction} onChange={e=>setDirection(e.target.value as typeof direction)}><option value="all">双向</option><option value="out">顺向</option><option value="back">反向</option></select></label>
+        <label>纵轴<select value={scale} onChange={e=>setScale(e.target.value as typeof scale)}><option value="station">站序</option><option value="distance" disabled={!maxDist}>里程</option></select></label>
+        <label>时窗<select value={span} onChange={e=>setSpan(Number(e.target.value))}><option value={45}>45 分钟</option><option value={90}>90 分钟</option><option value={180}>3 小时</option></select></label>
+        <label><input type="checkbox" checked={follow} onChange={event=>setFollow(event.target.checked)}/>跟随时钟</label>
+      </div>
+    </header>
+    <div className="metro-keys"><span className="metro-out">顺向运行</span><span className="metro-return">反向运行</span><span className="metro-now">模拟时钟</span></div>
+    <div className="metro-diagram-scroll">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="时间与站序运行图"
+        onClick={event=>{
+          const box=event.currentTarget.getBoundingClientRect()
+          const point=(event.clientX-box.left)/box.width*width
+          if(point>=label)seek(Math.round(start+(point-label)/(width-label-22)*(end-start)))
+        }}>
+        <defs><clipPath id="metro-time-window"><rect x={label} y="26" width={width-label-22} height={height-46}/></clipPath></defs>
+        {ticks.map(t=><g key={t}><line x1={x(t)} x2={x(t)} y1="26" y2={height-22} className="metro-grid"/>
+          <text x={x(t)} y="16" textAnchor="middle">{formatTime(t).split(':').slice(0,2).join(':')}</text></g>)}
+        {rows.map((row,i)=><g key={row.station_id}><line x1={label} x2={width-22} y1={y(i)} y2={y(i)} className="metro-grid"/>
+          <text x={label-9} y={y(i)+4} textAnchor="end" className="metro-station-link" tabIndex={0} role="button"
+            onClick={event=>{event.stopPropagation();locate(row.station_id)}}
+            onKeyDown={event=>{if(event.key==='Enter')locate(row.station_id)}}>
+            {row.station_name??`第 ${i+1} 站`}</text></g>)}
+        <g clipPath="url(#metro-time-window)">
+          {[...shown].reverse().map(({run,stops,reverse})=><polyline key={run.id} points={stops.flatMap(stop=>[
+            `${x(stop.arrive)},${y(stop.index)}`,`${x(stop.depart)},${y(stop.index)}`,
+          ]).join(' ')} className={`metro-plan ${reverse?'return':''} ${run.id===base.run.id?'current':''}`}
+            tabIndex={0} role="button" aria-label={run.train_number}
+            onClick={event=>{event.stopPropagation();select(run.id);seek(stops[0].depart)}}
+            onKeyDown={event=>{if(event.key==='Enter'){select(run.id);seek(stops[0].depart)}}}>
+            <title>{run.train_number} · {formatTime(stops[0].depart)} → {formatTime(stops.at(-1)!.arrive)}</title></polyline>)}
+          {time>=start&&time<=end&&<line x1={x(time)} x2={x(time)} y1="26" y2={height-22} className="metro-time"/>}
+        </g>
+      </svg>
+    </div>
+  </section>
+}

@@ -30,7 +30,7 @@ python railscope-next/pipelines/build_pack.py `
 
 全国概览可用 `china-latest.osm.pbf`，以及 `--region 全国 --snapshot china-osm-202609 --maxzoom 8 --location-index disk`。数据包使用新的快照标识发布，支持小写英文字母、数字、点、短横线和下划线。
 
-0.4.0 可继续读取已有全国与上海快照，也支持重新抽取铁路设施生成独立快照。新工作区默认加载发现的最新全国源包，已有工作区可在「数据」或顶部数据包菜单切换。下例用匹配旧包 SHA-256 的 PBF 生成新的上海快照。
+0.5.0 可继续读取已有全国与上海快照，也支持重新抽取铁路设施生成独立快照。新工作区默认加载发现的最新全国源包，已有工作区可在「数据」或顶部数据包菜单切换。下例用匹配旧包 SHA-256 的 PBF 生成新的上海快照。
 
 ```powershell
 python railscope-next/pipelines/enrich_pack.py `
@@ -49,8 +49,8 @@ python railscope-next/pipelines/enrich_pack.py `
 
 ## 使用
 
-- **地图**可按名称、拼音或 `osm:way:…` 搜索。支持基础设施、运营线路和专题图层，右侧可读原始对象、查看精确几何和编辑工作区属性。
-- **运行**按端点、线路和方向编排共享通道。底部提供时刻表、运行图与仿真控制。CSV、JSON、GTFS 可从「车辆与交路」导入导出。地铁运行限定上海。
+- **地图**可按名称、拼音或 `osm:way:…` 搜索。分组控制底图文字、国铁、城轨、公路、通道和动态列车。地图的站名与业务线名可独立切换，车站详情可查看相关线路和 OSM 关系证据。
+- **运行**在底部按端点、线路和方向编排并预览共享通道。还提供时刻表、单车运行图、上海地铁双向交路图和仿真控制。CSV、JSON、GTFS 可从「车辆与交路」导入导出。
 - **分析与诊断**可执行临时路径查询、检查场景资源风险和查看系统性能。
 - **数据**可安装和切换快照、查看许可和来源、导入旧版计划及审校失败的引用。
 
@@ -61,4 +61,4 @@ python -m unittest discover -s railscope-next/tests -p test_pipeline.py -v
 cargo test --locked --manifest-path railscope-next/Cargo.toml -p railscope-next-core
 ```
 
-Windows 桌面回归通过临时工作区和 WebView2 调试端口运行。详见[0.4.0 验收](../docs/next-v4/acceptance.md)及[架构与迁移](../docs/next-v4/architecture.md)。OSM 数据来源和许可证在应用及清单中保留。[OpenStreetMap 署名与许可](https://www.openstreetmap.org/copyright)
+Windows 桌面回归通过临时工作区和 WebView2 调试端口运行。详见[0.5.0 验收与旧通道迁移](../docs/next-v5/acceptance.md)及[工作台架构](../docs/next-v4/architecture.md)。OSM 数据来源和许可证在应用及清单中保留。[OpenStreetMap 署名与许可](https://www.openstreetmap.org/copyright)

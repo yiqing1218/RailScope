@@ -6,6 +6,7 @@ import type { Geometry } from 'geojson'
 import type { Entity, Summary } from './api'
 import type { MapTrain } from './map'
 import { ControlCorridorEditor } from './corridor-workbench'
+import { MetroDiagram } from './metro-diagram'
 import {
   chinaDate,datedRunLabel,describeError,formatTime,opsApi,parseTime,sourceLabel,stateLabel,trustLabel,
   type Clock,type Corridor,type Cycle,type Level,type OperationList,type Provenance,type Run,type RunDetail,type Scenario,
@@ -16,10 +17,11 @@ export type OperationsHandle={selectRun:(id:string)=>void;startCorridor:(start?:
 export type OperationsMap={
   setTrains:(trains:MapTrain[],selected?:string)=>void
   showPath:(shape:Geometry|null)=>void
+  showCorridor:(shape:Geometry|null)=>void
   focusTrain:(point:[number,number],follow:boolean)=>void
 }
 type Props={snapshot?:string; visible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
-  openBottom:()=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void}
+  openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void}
 const blank:OperationList={corridors:[],services:[],runs:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
 const userSource:Provenance={source_kind:'user_defined',source_url_or_reference:'工作区人工录入'}
 const initialScenario:Scenario={id:'',name:'假设性场景',headway_s:120,turnaround_s:900,delays:{}}
@@ -58,7 +60,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [corridorFilter,setCorridorFilter]=useState('')
   const [onlySelected,setOnlySelected]=useState(false)
   const [trainMode,setTrainMode]=useState<'all'|'rail'|'metro'>('all')
-  const [bottomTab,setBottomTab]=useState<'table'|'chart'>('chart')
+  const [bottomTab,setBottomTab]=useState<'table'|'chart'|'metro'>('chart')
   const [past,setPast]=useState<Run[]>([])
   const [future,setFuture]=useState<Run[]>([])
   const list=useRef<HTMLDivElement>(null)
@@ -71,7 +73,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   useImperativeHandle(ref,()=>({
     selectRun:id=>{setSelected(id);setTab('trains');openBottom()},
     startCorridor:(start,end)=>{setTab('corridor');if(!corridorDirty||window.confirm('以所选对象替换通道草稿？')){
-      setCorridor(undefined);setPrefill({start,end})
+      setCorridor(undefined);setPrefill({start,end});openBottom()
     }},
     openScenario:()=>{setTab('scenario');openBottom()},
     pause:()=>void control('pause'),
@@ -111,7 +113,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     requestEpoch.current++
     setSelected('');setEditor(undefined);setDetail(undefined);setCorridor(undefined);setSimulation(undefined)
     setData(blank)
-    propsMap.current.setTrains([]);propsMap.current.showPath(null)
+    propsMap.current.setTrains([]);propsMap.current.showPath(null);propsMap.current.showCorridor(null)
     void reload().catch(e=>setError(describeError(e)))
   },[snapshot])
   useEffect(()=>{
@@ -177,7 +179,12 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     return ()=>{closed=true;if(timer!=null)window.clearTimeout(timer)}
   },[snapshot,batchKey,selected,level,scenario,byRun,byService,follow,onlySelected,editor,clock.playing,clock.playing?null:clock.time_s,clock.rate])
 
-  const changeRun=(id:string)=>{setSelected(id);setTab('trains');openBottom()}
+  const changeRun=(id:string)=>{
+    const run=byRun.get(id)
+    const metro=!!run&&byService.get(run.service_id)?.mode==='metro'
+    setSelected(id);setTab('trains');openBottom(metro)
+    if(!editor)setBottomTab(metro?'metro':'chart')
+  }
   const beginEdit=(run:Run)=>{if(!editor||window.confirm('以所选车次替换时刻草稿？')){
     setEditor(run);setPast([]);setFuture([]);setBottomTab('table');openBottom()
   }}
@@ -203,8 +210,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     {!snapshot?<p className="ops-message">请先加载交通数据包。</p>:<>
       <div hidden={tab!=='corridor'}>
         <ControlCorridorEditor snapshot={snapshot} corridors={corridorList} selection={selection} prefill={prefill} current={corridor}
-          setCurrent={setCorridor} execute={execute} busy={busy} dirty={setCorridorDirty} show={propsMap.current.showPath}
-          locate={point=>propsMap.current.focusTrain(point,false)}/>
+          setCurrent={setCorridor} execute={execute} busy={busy} dirty={setCorridorDirty} show={propsMap.current.showCorridor}
+          locate={point=>propsMap.current.focusTrain(point,false)} dock={bottomDock} visible={visible&&tab==='corridor'} open={openBottom}/>
         <details className="advanced-corridor"><summary>高级物理边与示例</summary><CorridorEditor snapshot={snapshot} corridors={corridorList} selection={selection}
           current={corridor} setCurrent={setCorridor} execute={execute} busy={busy}
           demoReady={runs=>{if(runs[0]){setSelected(runs[0].id);setDate(runs[0].service_date);setTab('trains');openBottom();void control('seek',28800)}}}/></details>
@@ -300,7 +307,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             </div></li>)}</ul>
         </>}
       </div>}
-      {bottomDock&&createPortal(<div hidden={!visible} className="ops-bottom">
+      {bottomDock&&createPortal(<div hidden={!visible||tab==='corridor'} className="ops-bottom">
       <div className="ops-time-panel">
         <div className="ops-time-top">
           <strong aria-label="运行时钟">{formatTime(clock.time_s)}</strong>
@@ -332,6 +339,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
       {editor&&draftFeedback&&<p className="muted" role="status">草稿位置暂不可预览 · {draftFeedback}</p>}
       <div className="bottom-tabs"><button className="secondary compact" aria-pressed={bottomTab==='table'} onClick={()=>setBottomTab('table')}>时刻表</button>
         <button className="secondary compact" aria-pressed={bottomTab==='chart'} onClick={()=>setBottomTab('chart')}>运行图</button>
+        {(detail?.service?.mode==='metro'||bottomTab==='metro')&&<button className="secondary compact"
+          aria-pressed={bottomTab==='metro'} onClick={()=>setBottomTab('metro')}>地铁交路运行图</button>}
         {editor&&<><button className="secondary compact" disabled={!past.length} onClick={()=>replayDraft(false)}>撤销时刻修改</button>
           <button className="secondary compact" disabled={!future.length} onClick={()=>replayDraft(true)}>重做时刻修改</button></>}</div>
       <div hidden={bottomTab!=='table'}>
@@ -346,6 +355,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
       </div>
       <div hidden={bottomTab!=='chart'}><RunGraph detail={detail} editor={editor} corridors={corridorList} time={clock.time_s}
         distance={(editor?draftPosition:selectedState)?.distance_m??null} seek={time=>void control('seek',time)} edit={updateDraft}/></div>
+      {bottomTab==='metro'&&<MetroDiagram detail={detail} runs={available.filter(run=>byService.get(run.service_id)?.mode==='metro')}
+        time={clock.time_s} select={changeRun} seek={time=>void control('seek',time)} locate={inspectStop}/>}
       </div>,bottomDock)}
     </>}
   </div>

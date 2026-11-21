@@ -54,6 +54,13 @@ fn corridor(
 ) -> Result<Corridor> {
     let old = key(&raw["id"])?;
     let name = raw["name"].as_str().unwrap_or(&old).to_owned();
+    let prepared = raw["migration_source"].as_str();
+    let legacy_key = format!("legacy-import:{old}");
+    if prepared.is_some() && let Some(existing)=from_row(tx,
+        "SELECT payload FROM ops_corridor WHERE snapshot=? AND json_extract(payload,'$.source_id')=?
+         ORDER BY version DESC LIMIT 1",params![pack.manifest.snapshot,legacy_key])?{
+        return Ok(existing);
+    }
     if let Some(items) = raw["sequence"].as_array() {
         ensure!(
             (3..=35).contains(&items.len()) && items.len() % 2 == 1,
@@ -128,9 +135,15 @@ fn corridor(
             edge_refs: refs,
             verification_status: "automatic_reference".into(),
             resolution_mode: "manual".into(),
-            source_id: "legacy-import".into(),
-            provenance: source.clone(),
-            warnings: Vec::new(),
+            source_id: legacy_key,
+            provenance: Provenance {
+                source_url_or_reference: prepared.map_or_else(
+                    || source.source_url_or_reference.clone(),
+                    |evidence| format!("旧通道 {old} · {evidence}"),
+                ),
+                ..source.clone()
+            },
+            warnings: vec!["旧版通道按当前物理图核对，可信度为自动参考".into()],
             candidates: Vec::new(),
             intent: Vec::new(),
         },

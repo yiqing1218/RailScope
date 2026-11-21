@@ -87,6 +87,7 @@ const input = (selector, value) => evaluate(`(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
   Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, ${JSON.stringify(value)});
   el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
 })()`)
 const select = (selector, value) => evaluate(`(() => {
   const element=document.querySelector(${JSON.stringify(selector)})
@@ -241,6 +242,21 @@ async function verifyV4(snapshot) {
   const resolved = await ops('import_legacy',{content:old,service_date:'2026-11-20',aliases:{'edge:old-edge':edge}})
   assert.equal(resolved.corridors,1)
   assert.ok(!(await ops('legacy_issues')).some(item=>item.reason===issue.issue))
+
+  await send('Page.reload',{ignoreCache:true})
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".snapshot")?.textContent)'),'cycle workspace reloaded')
+  await click('运行')
+  await click('车次与时刻')
+  await input('[aria-label=运营日期]','2026-11-20')
+  const metroDeparture='[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.querySelector("small")?.textContent==="10:00:00")'
+  await waitFor(()=>evaluate(`Boolean(${metroDeparture})`),'Shanghai cycle departures')
+  await evaluate(`(${metroDeparture}).click()`)
+  await waitFor(()=>evaluate('document.querySelectorAll(".metro-plan").length===3&&Boolean(document.querySelector(".metro-plan.return"))'),
+    'Shanghai chart shows both directions')
+  if(artifacts){
+    const image=await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifacts,'metro-cycle.png'),Buffer.from(image.data,'base64'))
+  }
 
   await click('地图')
   await evaluate('window.__railCanvas = document.querySelector(".maplibregl-canvas")')
@@ -513,6 +529,12 @@ async function captureReferenceRun(artifactFolder, result) {
   await input('[aria-label=运营日期]', result.historical_service_date)
   await waitFor(()=>evaluate(`Boolean([...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})))`),'reference run details')
   await evaluate(`[...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})).click()`)
+  if(result.run.includes('地铁')){
+    await waitFor(()=>evaluate('Boolean(document.querySelector(".metro-diagram svg .metro-plan"))'),'Shanghai metro diagram')
+    const metro=await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifactFolder,'metro-diagram.png'),Buffer.from(metro.data,'base64'))
+    await click('运行图')
+  }
   await waitFor(()=>evaluate('Boolean(document.querySelector(".run-graph svg"))'),'reference time–distance diagram')
   const seconds = Math.floor(result.sample.time_s)
   const time = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]

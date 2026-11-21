@@ -221,7 +221,7 @@ pub struct Visual {
 pub fn visuals(db: &Connection, pack: &Pack, after: Option<&str>) -> Result<Vec<Visual>> {
     let mut modified = db.prepare(
         "SELECT entity, payload FROM overrides WHERE snapshot=?1 AND entity > coalesce(?2,'')
-         AND (json_extract(payload,'$.color') != '' OR json_extract(payload,'$.point') IS NOT NULL
+         AND (json_extract(payload,'$.name') != '' OR json_extract(payload,'$.color') != '' OR json_extract(payload,'$.point') IS NOT NULL
               OR json_extract(payload,'$.width') IS NOT NULL OR json_extract(payload,'$.opacity') IS NOT NULL)
          ORDER BY entity LIMIT 160",
     )?;

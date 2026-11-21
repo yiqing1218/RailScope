@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Geometry } from 'geojson'
 import { api, type Entity, type Summary } from './api'
 import { describeError, opsApi, type ControlPoint, type ControlStep, type Corridor, type CorridorPreview } from './operations-api'
@@ -7,11 +8,12 @@ type Props={
   snapshot:string; corridors:Corridor[]; selection?:Entity; prefill?:{start?:Summary;end?:Summary}; current?:Corridor;
   setCurrent:(corridor?:Corridor)=>void; execute:(task:()=>Promise<unknown>,message?:string,refresh?:boolean)=>Promise<void>;
   busy:boolean; dirty:(value:boolean)=>void; show:(shape:Geometry|null)=>void; locate:(point:[number,number])=>void;
+  dock:HTMLElement|null;visible:boolean;open:()=>void;
 }
 type Choice = {id:string;name:string}
 const row=():ControlStep=>({node_id:'',line_id:null,via_edge:null})
 
-export function ControlCorridorEditor({snapshot,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate}:Props){
+export function ControlCorridorEditor({snapshot,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,visible,open}:Props){
   const [name,setName]=useState('')
   const [catalogQuery,setCatalogQuery]=useState('')
   const [mode,setMode]=useState<'rail'|'metro'>('rail')
@@ -48,6 +50,7 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
   function load(id:string){
     const found=corridors.find(item=>item.id===id)
     if(!found){reset();return}
+    open()
     void execute(async()=>{
       const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'preview',{corridor:found})
       setSteps(found.intent?.length?found.intent:[row(),row()]);setSource({});usePreview(value)
@@ -69,13 +72,11 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
     const a=document.createElement('a');a.href=href;a.download='railscope-corridor.json';a.click();window.setTimeout(()=>URL.revokeObjectURL(href),1000)
   }
 
-  return <div className="ops-pane corridor-form">
-    <label>检索共享通道<input value={catalogQuery} onChange={e=>setCatalogQuery(e.target.value)} placeholder="名称、端点或通道 ID"/></label>
-    <label>当前通道<select value={current?.id??''} onChange={e=>load(e.target.value)}>
-      <option value="">新建通道</option>{corridors.filter(item=>item.id===current?.id||
-        [item.name,item.id,item.origin_node_id,item.destination_node_id].some(value=>value.toLowerCase().includes(catalogQuery.trim().toLowerCase())))
-        .map(item=><option key={item.id} value={item.id}>{item.name} · v{item.version}</option>)}
-    </select></label>
+  const work=<div className="ops-pane corridor-form" hidden={!visible}>
+    <div className="corridor-work-title">
+      <strong>端点与线路编排</strong>
+      <span>{current?.source_id.startsWith('legacy-import:')?current.source_id.slice(14):'连续有向物理轨道'}</span>
+    </div>
     <div className="ops-actions">
       <button className="secondary compact" onClick={()=>{if(window.confirm('清除当前通道草稿？'))reset()}}>新建／清空草稿</button>
       <button className="secondary compact" disabled={!preview||busy} onClick={()=>{
@@ -94,11 +95,15 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
         <option value="reference">自动参考</option><option value="strict">严格唯一</option>
       </select></label>
     </div>
+    <div className="corridor-columns"><span>起点／换线端点</span><span>接轨线路</span><span>沿线可达端点</span></div>
     {steps.map((step,i)=><fieldset key={i} className="control-step"><legend>{i===0?'起点':i===steps.length-1?'终点':`途经控制点 ${i}`}</legend>
+      <div className="control-table-row"><div className="control-endpoint">
       <ControlPicker snapshot={snapshot} pointId={step.node_id} name={labels[step.node_id]} initial={source[i]}
         selection={selection} onPick={point=>choosePoint(i,point)}/>
+      </div>
       {i<steps.length-1&&<LegPicker snapshot={snapshot} mode={mode} step={step} setLine={id=>setStep(i,{line_id:id||null})}
         choose={point=>choosePoint(i+1,point)} setVia={value=>setStep(i,{via_edge:value||null})}/>}
+      </div>
       <div className="ops-actions">
         <button className="secondary compact" disabled={i===0} onClick={()=>{const next=[...steps];[next[i-1],next[i]]=[next[i],next[i-1]];changeRows(next)}}>上移</button>
         <button className="secondary compact" disabled={i===steps.length-1} onClick={()=>{const next=[...steps];[next[i],next[i+1]]=[next[i+1],next[i]];changeRows(next)}}>下移</button>
@@ -128,6 +133,16 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
         },'导入草稿已校验，请确认后保存',false)
       }}/>
     </div></details>
+  </div>
+  return <div className="ops-pane corridor-library">
+    <label>检索共享通道<input value={catalogQuery} onChange={e=>setCatalogQuery(e.target.value)} placeholder="名称、端点或通道 ID"/></label>
+    <label>当前通道<select value={current?.id??''} onChange={e=>load(e.target.value)}>
+      <option value="">新建通道</option>{corridors.filter(item=>item.id===current?.id||
+        [item.name,item.id,item.origin_node_id,item.destination_node_id,item.source_id].some(value=>value.toLowerCase().includes(catalogQuery.trim().toLowerCase())))
+        .map(item=><option key={item.id} value={item.id}>{item.name} · v{item.version}</option>)}
+    </select></label>
+    <button className="primary" onClick={open}>打开通道编排</button>
+    {dock&&createPortal(work,dock)}
   </div>
 }
 
@@ -204,19 +219,22 @@ function LegPicker({snapshot,mode,step,setLine,choose,setVia}:{snapshot:string;m
   }
   const matches=ends.filter(item=>`${item.name} ${item.id}`.toLowerCase().includes(query.toLowerCase())).slice(0,100)
   return <>
+    <div className="control-line">
     <div className="ops-inline"><button className="secondary compact" disabled={!step.node_id||!!busy} onClick={()=>void load('lines')}>查询接轨线路</button>
       <select aria-label="驶向下一端点的线路" value={step.line_id??''} onChange={e=>setLine(e.target.value)}>
         <option value="">驶向下一端点的线路</option>
         {step.line_id&&!lines.some(item=>item.id===step.line_id)&&<option value={step.line_id}>{step.line_id.slice(0,8)}</option>}
         {lines.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
       </select></div>
+    <details><summary>指定物理区段</summary><label>区段 ID<input value={step.via_edge??''} onChange={e=>setVia(e.target.value.trim())}/></label></details>
+    </div><div className="control-next">
     <button className="secondary compact" disabled={!step.node_id||!step.line_id||!!busy} onClick={()=>void load('destinations')}>查询可达下一端点</button>
     {!!ends.length&&<><input aria-label="筛选可达端点" placeholder={`筛选 ${ends.length} 个可达端点`} value={query} onChange={e=>setQuery(e.target.value)}/>
       <select aria-label="可达的下一端点" value="" onChange={e=>{const found=ends.find(item=>item.id===e.target.value);if(found)choose(found)}}>
         <option value="">选择下一端点</option>{matches.map(item=><option key={item.id} value={item.id}>{item.name} · {((item.meters??0)/1000).toFixed(2)} km</option>)}
       </select></>}
-    <details><summary>指定物理区段</summary><label>区段 ID<input value={step.via_edge??''} onChange={e=>setVia(e.target.value.trim())}/></label></details>
     {busy&&<small role="status">查询显式轨道连接…</small>}
     {error&&<p className="error-text" role="alert">{error}</p>}
+    </div>
   </>
 }

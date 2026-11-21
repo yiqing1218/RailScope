@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { createPortal } from 'react-dom'
 import { api, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
 import { Catalog, PackMenu, className, kindNames, statusName } from './catalog'
-import { layerGroups, MapController, type LayerGroup, type MapTheme } from './map'
+import { MapController, type MapTheme } from './map'
+import { LayerTree, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
-import { chinaDate, opsApi, type LegacyIssue } from './operations-api'
+import { chinaDate, opsApi, type ControlPoint, type LegacyIssue } from './operations-api'
 import { facilityStyles, lifecycles, missingColor, sites, svgSymbol, symbolName, thematic, tracks, type RailView } from './cartography'
 
 const visibilityKey = 'railscope-next.layers'
-const defaults: Record<LayerGroup, boolean> = { rail: true, metro: true, road: true, station: true, facility: true, labels:true, relics:false, signals:false }
 const themes:Record<MapTheme,string>={light:'专业浅色',color:'常规彩色',dark:'深色',transport:'纯交通'}
 type Mode = 'detail' | 'operations' | 'analysis' | 'data'
 const modes: {id:Mode; title:string; icon:typeof MapIcon}[] = [
@@ -31,7 +31,7 @@ function layoutPreferences(): Record<Mode,Layout> {
 function loadVisibility() {
   try {
     const saved = JSON.parse(localStorage.getItem(visibilityKey) ?? '{}')
-    return Object.fromEntries(layerGroups.map(({ id }) => [id, typeof saved[id] === 'boolean' ? saved[id] : defaults[id]])) as typeof defaults
+    return Object.fromEntries(Object.entries(defaults).map(([id, value])=>[id,typeof saved[id]==='boolean'?saved[id]:value])) as Visibility
   } catch {
     return defaults
   }
@@ -43,7 +43,10 @@ export function App() {
   const [changing, setChanging] = useState(true)
   const [globalError, setGlobalError] = useState('')
   const [visibility, setVisibility] = useState(loadVisibility)
+  const onPreset=(value:Partial<Visibility>)=>setVisibility(old=>({...old,...value}))
+  const onLayer=(key:LayerGroup,value:boolean)=>onPreset({[key]:value})
   const [details, setDetails] = useState<Inspection>()
+  const [backStation,setBackStation]=useState<Summary>()
   const [group, setGroup] = useState<Summary>()
   const [mapError, setMapError] = useState('')
   const [conflicts, setConflicts] = useState<Conflict[]>([])
@@ -81,6 +84,7 @@ export function App() {
   const operationsMap=useMemo(()=>({
     setTrains: (...args:Parameters<MapController['setTrains']>)=>controller.current?.setTrains(...args),
     showPath: (...args:Parameters<MapController['setTrainPath']>)=>controller.current?.setTrainPath(...args),
+    showCorridor: (...args:Parameters<MapController['setCorridorPath']>)=>controller.current?.setCorridorPath(...args),
     focusTrain: (...args:Parameters<MapController['focusTrain']>)=>controller.current?.focusTrain(...args),
   }),[])
 
@@ -139,7 +143,7 @@ export function App() {
     localStorage.setItem('railscope-next.rail-style',mapStyle)
   },[mapStyle])
   useEffect(() => {
-    for (const { id } of layerGroups) controller.current?.setLayer(id, visibility[id])
+    controller.current?.setLayers(visibility)
     localStorage.setItem(visibilityKey, JSON.stringify(visibility))
   }, [visibility])
   useEffect(() => {
@@ -181,6 +185,11 @@ export function App() {
       if (generation !== selection.current) return
       recordQuery(performance.now() - start)
       setDetails(result)
+      if(result.entity.kind==='line'&&result.entity.has_geometry) {
+        const geometry=await api.geometry(pack.snapshot,result.entity.id)
+        if(generation===selection.current)controller.current?.setExact(geometry)
+      }
+      if(generation===selection.current)controller.current?.setFocusLine(result.entity.kind==='line'?result.entity.render_id:undefined)
     } catch (error) {
       if (generation === selection.current) setDetailError(String(error))
     } finally {
@@ -255,8 +264,8 @@ export function App() {
     operations.current?.startCorridor(start,end)
   }
 
-  function openBottom(){
-    setLayouts(old=>({...old,operations:{...old.operations,hideBottom:false}}))
+  function openBottom(focus=false){
+    setLayouts(old=>({...old,operations:{...old.operations,hideBottom:false,focusBottom:focus||old.operations.focusBottom}}))
   }
 
   const zoom=view?Math.floor(view.zoom):0
@@ -283,7 +292,7 @@ export function App() {
       <div className="catalog-dock" hidden={mode!=='detail'}><Catalog pack={active} selected={details?.entity.id} onSelect={item => { void select(item.id, item) }}
         group={group} setGroup={setGroup} view={view?.bounds} visibility={visibility}
         workspaceChange={workspaceChange}
-        onLayer={(id: LayerGroup, value: boolean) => setVisibility(old => ({ ...old, [id]: value }))} /></div>
+        onLayer={onLayer} onPreset={onPreset} /></div>
       <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
         selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
@@ -354,8 +363,7 @@ export function App() {
               <option value="infrastructure">基础设施</option><option value="operations">运营线路</option>
               <optgroup label="专题属性">{Object.entries(thematic).map(([id,item])=><option key={id} value={id}>{item.name}</option>)}</optgroup>
             </select></label>
-            {layerGroups.map(item=><label className="ops-inline" key={item.id}><input type="checkbox" checked={visibility[item.id]}
-              onChange={e=>setVisibility(old=>({...old,[item.id]:e.target.checked}))}/>{item.name}</label>)}
+            <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
             <details className="rail-legend"><summary>图例</summary><MapLegend mode={mapStyle}/></details>
           </div></details>
         </div>
@@ -370,10 +378,12 @@ export function App() {
       <aside className="inspector" aria-label="工作面板" hidden={layout.hideRight}>
         <div hidden={mode==='data'||(mode==='operations'&&!details)}>
           <div className="panel-title"><FileText size={16} /><h2>对象属性</h2>{details && <button className="icon" aria-label="清除选中" onClick={clear}><X size={17} /></button>}</div>
+          {backStation&&details?.entity.kind==='line'&&<button className="secondary compact" onClick={()=>{void select(backStation.id,backStation);setBackStation(undefined)}}>返回 {backStation.name}</button>}
           {detailError && <p className="error-text" role="alert">{detailError}</p>}
           {busy ? <div className="blank">正在读取对象…</div> : details && active
             ? <Properties key={details.entity.id} inspection={details} pack={active} exact={exact}
                 showMembers={line=>{setGroup(line);setMode('detail')}} update={(state, target) => applyWorkspace(state, target, active)}
+                openLine={line=>{setBackStation(details.entity);void select(line.id,line)}}
                 useForCorridor={()=>showOperations(details.entity)} useForAnalysis={()=>{setAnalysisTab('route');setMode('analysis')}}
                 zoomOverride={point => controller.current?.fit([point[0], point[1], point[0], point[1]])} />
             : <div className="blank"><MapPin size={24} /><strong>选择地图对象</strong><p>点击地图或打开搜索结果即可查看资料。</p></div>}
@@ -460,8 +470,9 @@ function MapLegend({mode}:{mode:RailView}) {
   </ul>
 }
 
-function Properties({ inspection, pack, exact, showMembers, update, zoomOverride, useForCorridor, useForAnalysis }: {
+function Properties({ inspection, pack, exact, showMembers, openLine, update, zoomOverride, useForCorridor, useForAnalysis }: {
   inspection: Inspection; pack: Pack; exact: () => void; showMembers: (line: Summary) => void
+  openLine:(line:Summary)=>void
   update: (state: Workspace, target: Inspection) => void
   zoomOverride: (point: [number, number]) => void
   useForCorridor: () => void
@@ -527,6 +538,7 @@ function Properties({ inspection, pack, exact, showMembers, update, zoomOverride
       <button className={tab === 'workspace' ? 'active' : ''} onClick={() => setTab('workspace')}>工作区</button>
     </div>
     {tab === 'attributes' ? <div className="property-content">
+      {entity.kind==='station'&&<StationLinks entity={entity} pack={pack} openLine={openLine}/>}
       <dl>
         {workspace.value.name && <><dt>原始名称</dt><dd>{entity.name}</dd></>}
         <dt>快照</dt><dd>{pack.snapshot}</dd>
@@ -547,8 +559,8 @@ function Properties({ inspection, pack, exact, showMembers, update, zoomOverride
         {(entity.kind==='station'||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
         {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>用于路径分析</button>}
       </div>
-      {entity.memberships.length > 0 && <div className="members"><h4>所属线路</h4>{entity.memberships.map(line =>
-        <button key={line.id} onClick={() => showMembers(line)}>{line.name}<ArrowUpRight size={14} /></button>)}</div>}
+      {entity.kind!=='station'&&entity.memberships.length > 0 && <div className="members"><h4>所属线路</h4>{entity.memberships.map(line =>
+        <button key={line.id} onClick={() => openLine(line)}>{line.name}<ArrowUpRight size={14} /></button>)}</div>}
       <details><summary>原始 OSM 标签 · {Object.keys(entity.tags).length}</summary>
         <dl className="tags">{Object.entries(entity.tags).flatMap(([k, v]) => [<dt key={`k-${k}`}>{k}</dt>, <dd key={`v-${k}`}>{v}</dd>])}</dl>
       </details>
@@ -621,6 +633,42 @@ function SourceBrowser({snapshot,initial}:{snapshot:string;initial:string}){
       </div>
     </>}
   </details>
+}
+
+function StationLinks({entity,pack,openLine}:{entity:Inspection['entity'];pack:Pack;openLine:(line:Summary)=>void}){
+  const [tracks,setTracks]=useState<Summary[]>()
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+  async function load(){
+    setBusy(true);setError('')
+    try{
+      const controls=await opsApi.corridorQuery<ControlPoint[]>(pack.snapshot,'controls',{id:entity.id})
+      const mode=entity.class==='metro_station'?'metro':'rail'
+      const replies=await Promise.all(controls.slice(0,8).map(point=>opsApi.corridorQuery<{id:string;name:string}[]>(
+        pack.snapshot,'lines',{node:point.id,mode})))
+      const ids=[...new Set(replies.flat().map(item=>item.id))].slice(0,30)
+      setTracks(await Promise.all(ids.map(id=>api.entity(pack.snapshot,id).then(item=>item.entity))))
+    }catch(error){setError(String(error))}finally{setBusy(false)}
+  }
+  return <div className="members">
+    <h4>相关线路</h4>
+    {entity.station_links.length===0&&<p className="muted">线路待关联</p>}
+    {(['service','infrastructure','route_reference'] as const).map(relation=>{
+      const links=entity.station_links.filter(link=>link.relation===relation)
+      return links.length>0&&<div className="station-evidence" key={relation}>
+        <strong>{{service:'运营线路',infrastructure:'铁路业务线路',route_reference:'列车关系参考'}[relation]}</strong>
+        {links.map(link=><button key={link.line.id} onClick={()=>openLine(link.line)}>
+          <span>{link.line.name}<small>{link.evidence} · {link.source_ref}</small></span><ArrowUpRight size={14}/>
+        </button>)}
+      </div>
+    })}
+    <details className="station-evidence"><summary>物理接轨与待关联</summary>
+      {tracks==null&&!error&&<button className="secondary compact" disabled={busy} onClick={()=>void load()}>{busy?'正在查询轨道锚点…':'查询物理接轨'}</button>}
+      {tracks?.map(line=><button key={line.id} onClick={()=>openLine(line)}>{line.name}<ArrowUpRight size={14}/></button>)}
+      {tracks?.length===0&&<small>当前来源没有可确认的物理接轨。</small>}
+      {error&&<p className="error-text">{error}</p>}
+    </details>
+  </div>
 }
 
 function PathPanel({ pack, selection, show, transfer, dock, visible, reveal }: {

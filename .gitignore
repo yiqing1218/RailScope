@@ -8,6 +8,7 @@ __pycache__/
 .codex-remote-attachments/
 artifacts/next-v3/
 artifacts/next-v4/
+artifacts/next-v5/
 .venv/
 node_modules/
 desktop/vendor/

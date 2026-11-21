@@ -288,3 +288,48 @@ summary { cursor: pointer; color: #3b575c; }
  .ops-tabs button {font-size:11px;}
  .ops-time-top strong {font-size:15px;}
 }
+.layer-preset { display:grid; gap:5px; margin:10px 0; font-size:12px; }
+.layer-preset select { min-width:0; width:100%; }
+.layer-section { border-top:1px solid currentColor; border-color:color-mix(in srgb,currentColor 14%,transparent); padding:9px 0; }
+.layer-section summary { display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12px; font-weight:650; }
+.layer-section summary::after { content:'›'; margin-left:auto; }
+.layer-section[open] summary::after { transform:rotate(90deg); }
+.layer-section .layer-control { grid-template-columns:1fr auto; min-height:34px; padding:2px 0 2px 9px; font-size:12px; }
+.layer-section .layer-control input { width:14px; height:14px; }
+.map-tools .layer-controls { max-height:47vh; overflow:auto; padding:0 4px; }
+.corridor-work-title,.metro-diagram-head,.metro-diagram-tools { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.corridor-work-title { padding:5px 0 9px; border-bottom:1px solid var(--line); }
+.corridor-work-title span { font:11px 'IBM Plex Mono',monospace; color:var(--muted); }
+.corridor-columns,.control-table-row { display:grid; grid-template-columns:1.15fr 1fr 1fr; gap:10px; }
+.corridor-columns { background:#deebe9; color:#1e4850; padding:8px 10px; border-radius:5px; font-size:12px; font-weight:650; }
+.control-table-row > div { min-width:0; display:grid; gap:6px; align-content:start; }
+.control-table-row .ops-inline { flex-wrap:wrap; }
+.control-table-row input,.control-table-row select { width:100%; min-width:0; }
+.metro-diagram { background:#f9fcfb; border:1px solid #c6d8d2; border-radius:6px; padding:10px 12px; color:#173e47; }
+.metro-diagram-head { border-bottom:1px solid #d5e3df; padding-bottom:9px; }
+.metro-diagram-head small { display:block; margin-top:3px; color:#4e6870; font-variant-numeric:tabular-nums; }
+.metro-diagram-tools { gap:8px; }
+.metro-diagram-tools label { display:flex; gap:5px; align-items:center; font-size:11px; white-space:nowrap; }
+.metro-keys { display:flex; gap:16px; color:#42636a; font-size:11px; padding:7px 0 3px; }
+.metro-keys span::before { content:''; display:inline-block; width:14px; margin:0 5px 3px 0; border-top:2px solid currentColor; }
+.metro-keys .metro-out { color:#007c71; }
+.metro-keys .metro-return { color:#826440; }
+.metro-keys .metro-now { color:#34465b; }
+.metro-keys .metro-now::before { border-top-style:dashed; }
+.metro-diagram-scroll { overflow:auto; }
+.metro-diagram svg { display:block; width:100%; min-width:640px; }
+.metro-diagram svg text { font-size:11px; fill:#37545e; font-variant-numeric:tabular-nums; }
+.metro-grid { stroke:#c4d7d2; stroke-width:.75; }
+.metro-station-link { cursor:pointer; }
+.metro-plan { stroke:#007c71; stroke-width:1.45; fill:none; cursor:pointer; }
+.metro-plan.return { stroke:#95724a; }
+.metro-plan:hover,.metro-plan:focus,.metro-plan.current { stroke-width:3; }
+.metro-time { stroke:#34465b; stroke-width:1.5; stroke-dasharray:4 3; pointer-events:none; }
+.metro-empty { padding:12px; color:var(--muted); }
+.station-evidence { margin:9px 0 13px; }
+.station-evidence strong { display:block; font-size:11px; color:#526b70; }
+.station-evidence small { display:block; font-size:10px; white-space:normal; color:#526b70; }
+@media(max-width:1050px) {
+  .corridor-columns,.control-table-row { grid-template-columns:1fr; }
+  .corridor-columns { display:none; }
+}

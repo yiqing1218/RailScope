@@ -359,12 +359,41 @@ const METRO: &str = "SELECT l.id, COALESCE(NULLIF(json_extract(src.tags,'$.ref')
        FROM line_member m JOIN entity l ON l.id=m.line_id JOIN source_object src ON src.ref=l.source_ref
        WHERE m.member_id=? AND l.kind='line' ORDER BY l.id LIMIT 64";
 
+#[derive(Clone)]
+struct BusinessLabel {
+    id: u64,
+    key: String,
+    text: String,
+    layer: &'static str,
+}
+
+fn label_text(name: String, short: String, mode: &str) -> String {
+    if mode == "subway" && !short.is_empty() {
+        if short.bytes().all(|b| b.is_ascii_digit()) {
+            return format!("{short}号线");
+        }
+        return short;
+    }
+    if name.trim().is_empty() { short } else { name }
+}
+
+fn line_weight(shape: &Geometry, addr: Address) -> f64 {
+    let Geometry::LineString(line) = shape else {
+        return 0.;
+    };
+    line.0
+        .windows(2)
+        .filter_map(|p| segment(addr.project(p[0]), addr.project(p[1])))
+        .map(|(a, b)| (a.x - b.x).hypot(a.y - b.y))
+        .sum::<f64>()
+}
+
 pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
     let [west, south, east, north] = addr.bounds();
     let mut query=connection.prepare(
         "SELECT e.id,e.render_id,e.kind,e.class,e.status,e.name,g.wgs84_wkb,src.tags,e.verification FROM spatial s
          CROSS JOIN geometry g ON g.rowid=s.rowid CROSS JOIN entity e ON e.id=g.entity_id
-         LEFT JOIN source_object src ON src.ref=e.source_ref AND e.kind IN ('rail','metro','station','facility')
+         LEFT JOIN source_object src ON src.ref=e.source_ref AND e.kind IN ('rail','metro','station','facility','road')
          WHERE s.max_x>=?1 AND s.max_y>=?2 AND s.min_x<=?3 AND s.min_y<=?4 AND g.wgs84_wkb IS NOT NULL
          ORDER BY g.rowid",
     )?;
@@ -380,6 +409,19 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
     } else {
         METRO
     })?;
+    let mut memberships=connection.prepare_cached(
+        "SELECT l.render_id, l.name, COALESCE(json_extract(t.tags,'$.ref'),''),
+            json_extract(t.tags,'$.route'),COALESCE(json_extract(t.tags,'$.short_name'),'')
+         FROM line_member m JOIN entity l ON l.id=m.line_id JOIN source_object t ON t.ref=l.source_ref
+         WHERE m.member_id=? AND l.status NOT IN ('construction','planned','disused')
+           AND json_extract(t.tags,'$.route') IN ('railway','subway','light_rail','tram','road')
+         ORDER BY l.render_id LIMIT 24")?;
+    let mut station_links=connection.prepare_cached(
+        "SELECT count(DISTINCT m.line_id), group_concat(DISTINCT l.render_id) FROM line_member m JOIN entity l ON l.id=m.line_id
+         WHERE m.member_id=? AND l.status NOT IN ('construction','planned','disused') AND l.class IN ('railway','subway','light_rail','tram','train')")?;
+    let mut names: BTreeMap<(&'static str, String), (BusinessLabel, u64, f64, Vec<u8>)> =
+        BTreeMap::new();
+    let mut relation_cache = HashMap::<String, Vec<BusinessLabel>>::new();
     let mut rows = query.query(params![west, south, east, north])?;
     let mut layers: BTreeMap<&str, Layer> = BTreeMap::new();
     let mut used = 0;
@@ -390,7 +432,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             "metro" => "metro",
             "road" => "road",
             "station" | "poi" => "points",
-            "facility" if addr.z >= 12 => "facilities",
+            "facility" if addr.z >= 11 => "facilities",
             "base_road" if addr.z >= 10 => "base_road",
             "base_building" if addr.z >= 14 => "base_building",
             "base_water" => "base_water",
@@ -407,6 +449,23 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
         let shape = Wkb(bytes)
             .to_geo()
             .with_context(|| format!("无效 WKB · {id}"))?;
+        let rail_priority = match category.as_str() {
+            "high_speed" => 0,
+            "conventional" => 1,
+            "freight" => 2,
+            "motorway" | "subway" | "light_rail" => 1,
+            _ => 4,
+        };
+        let weight = if status == "operating"
+            && addr.z <= 16
+            && rail_priority < 4
+            && (layer != "road" || addr.z >= 10)
+            && matches!(layer, "rail" | "metro" | "road")
+        {
+            line_weight(&shape, addr)
+        } else {
+            0.
+        };
         let (shape_kind, commands) = geometry(shape, addr);
         if commands.is_empty() {
             continue;
@@ -416,12 +475,39 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             ("class", Value::Text(category.clone())),
             ("status", Value::Text(status.clone())),
         ];
-        if let Some(source) = row.get::<_, Option<String>>(7)? {
-            let tags = serde_json::from_str(&source)?;
+        let source = row.get::<_, Option<String>>(7)?;
+        if let Some(source) = &source {
+            let tags = serde_json::from_str(source)?;
             let verified = row.get::<_, String>(8)? == "verified";
             let facts = crate::cartography::classify(&tags, &kind, &category, &status, verified);
             attrs.push(("symbol", Value::Text(facts.render_class.into())));
             attrs.push(("life", Value::Text(facts.lifecycle.into())));
+            if kind == "station" {
+                let (links, line_ids): (u32, Option<String>) = station_links
+                    .query_row([row.get::<_, String>(0)?], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                if let Some(ids) = line_ids.filter(|ids| ids.len() <= 480) {
+                    attrs.push(("line_rids", Value::Text(format!(",{ids},"))));
+                }
+                let min_z: u64 = match facts.render_class {
+                    "metro_interchange" => 10,
+                    "metro_station" if links >= 3 => 11,
+                    "metro_station" => 12,
+                    "rail_halt" | "tram_stop" => 13,
+                    _ if facts.grade.is_some() || links >= 2 => 9,
+                    _ => 11,
+                };
+                attrs.push(("min_z", Value::UInt(min_z)));
+                attrs.push(("rank", Value::UInt(min_z.saturating_sub(8))));
+            }
+            if layer == "facilities" {
+                let label = tags["name:zh"]
+                    .as_str()
+                    .or(tags["name"].as_str())
+                    .or(tags["ref"].as_str());
+                if let Some(label) = label.filter(|name| !name.is_empty()) {
+                    attrs.push(("label", Value::Text(label.to_owned())));
+                }
+            }
             if matches!(kind.as_str(), "rail" | "metro") {
                 if let Some(limit) = facts.speed_kmh {
                     attrs.push((
@@ -464,7 +550,61 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             }
         }
         if layer == "points" || layer == "base_place" {
-            attrs.push(("label", Value::Text(name)));
+            attrs.push(("label", Value::Text(name.clone())));
+        }
+        // One representative physical segment per business identity in each visible tile.
+        if weight >= 272. {
+            let eid: String = row.get(0)?;
+            let labels = if let Some(cached) = relation_cache.get(&eid) {
+                cached.clone()
+            } else {
+                let found = memberships
+                    .query_map([&eid], |r| {
+                        let mode: String = r.get(3)?;
+                        let id = r.get::<_, i64>(0)? as u64;
+                        let name: String = r.get(1)?;
+                        let reference: String = r.get(2)?;
+                        let short: String = r.get(4)?;
+                        let label = label_text(
+                            name,
+                            if short.is_empty() { reference } else { short },
+                            &mode,
+                        );
+                        let layer = match mode.as_str() {
+                            "road" => "road_names",
+                            "railway" => "rail_names",
+                            _ => "metro_names",
+                        };
+                        let key = if layer == "metro_names" {
+                            label.clone()
+                        } else {
+                            id.to_string()
+                        };
+                        Ok(BusinessLabel {
+                            id,
+                            key,
+                            text: label,
+                            layer,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                relation_cache.insert(eid, found.clone());
+                found
+            };
+            for label in labels.into_iter().filter(|v| !v.text.trim().is_empty()) {
+                if (layer == "rail" && label.layer != "rail_names")
+                    || (layer == "road" && label.layer != "road_names")
+                    || (layer == "metro" && label.layer != "metro_names")
+                {
+                    continue;
+                }
+                let key = (label.layer, label.key.clone());
+                if names.get(&key).is_none_or(|(_, rank, length, _)| {
+                    rail_priority < *rank || (rail_priority == *rank && weight > *length)
+                }) {
+                    names.insert(key, (label, rail_priority, weight, commands.clone()));
+                }
+            }
         }
         if layer == "metro" {
             let eid: String = row.get(0)?;
@@ -529,7 +669,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             let id = row.get::<_, i64>(0)? as u64;
             let key: String = row.get(1)?;
             let layer = match key.as_str() {
-                "base_road" if addr.z >= 10 => "base_road",
+                "base_road" if addr.z >= 9 => "base_road",
                 "base_building" if addr.z >= 14 => "base_building",
                 "base_water" => "base_water",
                 "base_green" => "base_green",
@@ -546,6 +686,24 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             }
             let class: String = row.get(2)?;
             let name: String = row.get(3)?;
+            if layer == "base_place"
+                && addr.z < 11
+                && !matches!(
+                    class.as_str(),
+                    "city" | "county" | "province" | "state" | "district" | "borough"
+                )
+            {
+                continue;
+            }
+            if layer == "base_road"
+                && addr.z < 11
+                && !matches!(
+                    class.as_str(),
+                    "trunk" | "primary" | "secondary" | "trunk_link" | "primary_link"
+                )
+            {
+                continue;
+            }
             used += commands.len() + name.len() + class.len() + 64;
             ensure!(
                 used <= LIMIT * 2,
@@ -558,6 +716,18 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
                 commands,
             );
         }
+    }
+    for ((layer, _), (label, rank, _, geometry)) in names {
+        layers.entry(layer).or_default().push(
+            label.id,
+            2,
+            vec![
+                ("rid", Value::UInt(label.id)),
+                ("label", Value::Text(label.text)),
+                ("rank", Value::UInt(rank)),
+            ],
+            geometry,
+        );
     }
     let mut tile = Vec::new();
     for (name, layer) in layers {

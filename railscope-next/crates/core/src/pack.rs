@@ -211,7 +211,7 @@ impl Pack {
         let result: Result<Tile> = if detail {
             (|| {
                 let cache_key = format!(
-                    "v4-symbols:{}:{z}/{x}/{y}",
+                    "v5-labels:{}:{z}/{x}/{y}",
                     self.manifest.files["canonical.sqlite"]
                 );
                 if let Some(disk) = &self.disk

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowLeft, ArrowUpRight, Building2, ChevronDown, ChevronRigh
   GitBranch, Layers3, LocateFixed, MapPin, Route as RouteIcon, Search, TrainFront, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api, type Bounds, type Conflict, type Filter, type Group, type Kind, type Pack, type Page, type Summary } from './api'
-import { layerGroups, type LayerGroup } from './map'
+import { LayerTree, type LayerGroup, type Visibility } from './layers'
 
 export const kindNames: Record<Kind, string> = {
   rail: '国铁轨道', metro: '城市轨道', road: '高速公路', station: '车站',
@@ -88,10 +88,10 @@ export function PackMenu({ packs, active, changing, change, conflicts, onInstall
   </div>
 }
 
-export function Catalog({ pack, selected, onSelect, group, setGroup, view, visibility, onLayer, workspaceChange }: {
+export function Catalog({ pack, selected, onSelect, group, setGroup, view, visibility, onLayer, onPreset, workspaceChange }: {
   pack: Pack | null; selected?: string; onSelect: (summary: Summary) => void
   group: Summary | undefined; setGroup: (summary?: Summary) => void; view?: Bounds
-  visibility: Record<LayerGroup, boolean>; onLayer: (group: LayerGroup, value: boolean) => void
+  visibility: Visibility; onLayer: (group: LayerGroup, value: boolean) => void; onPreset:(value:Partial<Visibility>)=>void
   workspaceChange: number
 }) {
   const [tab, setTab] = useState<'catalog' | 'layers'>('catalog')
@@ -217,12 +217,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
       <div className="sidebar-base"><Database size={14} /> {pack ? `${Object.values(pack.counts).reduce((a, b) => a + b, 0).toLocaleString('zh-CN')} 个对象` : '等待安装离线数据'}</div>
     </> : <>
       <div className="sidebar-heading"><span className="small-label">地图显示</span><h1>交通图层</h1></div>
-      <div className="layer-controls">
-        {layerGroups.map(layer => <label key={layer.id} className="layer-control">
-          <span className="swatch" style={{ background: layer.color }} /><span>{layer.name}</span>
-          <input type="checkbox" checked={visibility[layer.id]} onChange={e => onLayer(layer.id, e.target.checked)} />
-        </label>)}
-      </div>
+      <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
     </>}
   </aside>
 }
