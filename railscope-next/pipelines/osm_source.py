@@ -6,32 +6,36 @@ from dataclasses import dataclass
 import osmium
 from shapely.geometry import LineString, Point, Polygon
 
-RAIL = {"rail", "narrow_gauge", "light_rail", "subway", "tram"}
+RAIL = {"rail", "narrow_gauge", "light_rail", "subway", "tram", "monorail", "maglev"}
+TECHNICAL = {"switch", "signal", "railway_crossing", "level_crossing", "subway_entrance"}
+OPERATING_SITES = {"yard", "junction", "crossover", "spur_junction"}
+LIFECYCLE = {"construction": "construction", "proposed": "planned", "disused": "disused", "abandoned": "disused", "razed": "disused"}
 
 
 def describe(tags, rails_only=False):
     railway = tags.get("railway")
     highway = tags.get("highway")
     status = "operating"
-    if railway in {"construction", "proposed", "disused", "abandoned"}:
-        status = {"proposed": "planned", "abandoned": "disused"}.get(railway, railway)
-        railway = tags.get("construction" if status == "construction" else "proposed")
-        railway = railway or tags.get("disused:railway") or tags.get("abandoned:railway")
-        railway = railway or "unknown"
+    markers = [name for name in LIFECYCLE if railway == name or f"{name}:railway" in tags]
+    if markers:
+        marker = markers[0]
+        status = LIFECYCLE[marker] if len(markers) == 1 else "unknown"
+        railway = tags.get(f"{marker}:railway") or (tags.get(marker) if railway == marker else railway) or "unknown"
     if railway in RAIL or railway == "unknown":
-        if railway in {"subway", "light_rail", "tram"}:
+        if railway in {"subway", "light_rail", "tram", "monorail", "maglev"}:
             return "metro", railway, status
         category = "unknown"
-        if tags.get("highspeed") == "yes":
+        service = tags.get("service", "")
+        if service in {"yard", "siding", "spur", "crossover"}:
+            category = service
+        elif service:
+            category = "unknown"
+        elif tags.get("highspeed") == "yes" and tags.get("usage") in {None, "", "main"}:
             category = "high_speed"
         elif tags.get("usage") in {"industrial", "military"} or tags.get("freight") == "only":
             category = "freight"
-        elif tags.get("service") in {"yard", "siding", "spur", "crossover"}:
-            category = tags["service"]
-        elif tags.get("highspeed") == "no" or tags.get("maxspeed", "").isdigit():
-            # A tagged speed alone does not establish a high-speed classification.
-            if tags.get("highspeed") == "no" or int(tags["maxspeed"]) < 160:
-                category = "conventional"
+        elif tags.get("usage") in {"main", "branch"} or tags.get("highspeed") == "no":
+            category = "conventional"
         return "rail", category, status
     if rails_only:
         return None
@@ -42,7 +46,7 @@ def describe(tags, rails_only=False):
     if railway in {"station", "halt", "tram_stop"} or tags.get("public_transport") == "station":
         mode = "metro_station" if tags.get("station") in {"subway", "light_rail"} or tags.get("subway") == "yes" else "rail_station"
         return "station", mode, "unknown"
-    if railway in {"switch", "platform", "railway_crossing", "level_crossing"}:
+    if railway in TECHNICAL | OPERATING_SITES | {"platform"}:
         return "facility", railway, "unknown"
     if tags.get("public_transport") == "stop_area":
         return "facility", "station_area", "unknown"

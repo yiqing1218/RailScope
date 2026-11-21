@@ -30,6 +30,7 @@ pub struct Entity {
     pub verification: String,
     pub confidence: String,
     pub tags: Value,
+    pub semantics: crate::cartography::Semantics,
     pub memberships: Vec<Summary>,
     pub has_geometry: bool,
     pub has_edge: bool,
@@ -294,13 +295,22 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
     let memberships = statement
         .query_map([&base.id], summary)?
         .collect::<rusqlite::Result<_>>()?;
+    let tags = serde_json::from_str(&tags)?;
+    let semantics = crate::cartography::classify(
+        &tags,
+        &base.kind,
+        &base.class,
+        &base.status,
+        verification == "verified",
+    );
     Ok(Some(Entity {
         summary: base,
         source_ref,
         source_version,
         verification,
         confidence,
-        tags: serde_json::from_str(&tags)?,
+        tags,
+        semantics,
         memberships,
         has_geometry,
         has_edge,

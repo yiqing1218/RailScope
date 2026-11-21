@@ -17,7 +17,7 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import polygonize
 
 from build_pack import Canonical, checksum, json_text
-from osm_source import Source
+from osm_source import OPERATING_SITES, TECHNICAL, Source, describe
 
 SCHEMA = Path(__file__).with_name("source_v3.sql")
 MODE = {"subway", "light_rail", "tram", "monorail"}
@@ -36,9 +36,9 @@ def classify(tags):
     if tags.get("building") == "train_station":
         return "facility", "station_building"
     if tags.get("landuse") == "railway":
-        return "facility", "station_area"
-    if railway == "yard":
-        return "facility", "yard"
+        return "facility", "railway_land"
+    if railway in OPERATING_SITES | TECHNICAL:
+        return "facility", railway
     if railway == "monorail":
         return "metro", "monorail"
     if highway in {"services", "rest_area"}:
@@ -165,13 +165,20 @@ def add_nodes(db, osm, node_filter, stats):
          SELECT source_version,tags FROM source_node WHERE osm_id=CAST(substr(s.ref,10) AS INTEGER))
          WHERE s.ref LIKE 'osm:node:%' AND EXISTS(
          SELECT 1 FROM source_node WHERE osm_id=CAST(substr(s.ref,10) AS INTEGER))""")
-    for place in primitives(osm, osmium.osm.NODE, osmium.filter.TagFilter(
-            *[("place",x) for x in ("city","town","village","suburb","county","province","state")])):
+    place_types = [("place",x) for x in ("city","town","village","suburb","county","province","state")]
+    rail_types = [("railway",x) for x in sorted(OPERATING_SITES | TECHNICAL | {"platform"})]
+    store = Canonical(db)
+    for place in primitives(osm, osmium.osm.NODE, osmium.filter.TagFilter(*place_types, *rail_types)):
         if not place.location.valid(): continue
         tags=dict(place.tags)
-        if not (tags.get("name:zh") or tags.get("name")): continue
         record=Source(f"osm:node:{place.id}",place.version,tags)
-        insert_base(db,record,"base_place",tags["place"],Point(place.location.lon,place.location.lat))
+        point=Point(place.location.lon,place.location.lat)
+        kind=describe(tags)
+        if kind and kind[0] == "facility":
+            save_geometry(db,store,record,kind[:2],point)
+        elif tags.get("place") and (tags.get("name:zh") or tags.get("name")):
+            insert_base(db,record,"base_place",tags["place"],point)
+        else: continue
         db.execute("INSERT OR IGNORE INTO source_node VALUES(?,?,?,?,?)",
                    (place.id,place.version,place.location.lon,place.location.lat,json_text(tags)))
 

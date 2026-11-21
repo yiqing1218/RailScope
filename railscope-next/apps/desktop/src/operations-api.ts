@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { LineString } from 'geojson'
+import type { Geometry, LineString } from 'geojson'
 
 export type Provenance = {
   source_kind: 'demo' | 'user_defined' | 'publisher' | 'gtfs' | 'osm'
@@ -32,7 +32,11 @@ export type Corridor = {
   geometry?: LineString | null
   warnings?: string[]
   candidates?: { edge_ids: string[]; meters: number }[]
+  intent?: ControlStep[]
 }
+export type ControlStep = { node_id:string; line_id:string|null; via_edge?:string|null }
+export type ControlPoint = { id:string; name:string; point:[number,number]; meters?:number }
+export type CorridorPreview = { corridor:Corridor; geometry:Geometry; mode:'rail'|'metro' }
 
 export type Service = {
   id: string
@@ -81,10 +85,16 @@ export type Scenario = {
   delays: Record<string, number>
 }
 
+export type Cycle = {
+  id:string; name:string; outbound_id:string; outbound_version:number; return_id:string; return_version:number;
+  service_date:string; first_departure_s:number; end_s:number; turnaround_s:number; launch_gap_s:number; vehicles:number; trainsets:string[];
+}
+
 export type StockType = { id: string; name: string; series?: string; max_speed_kmh?: number; length_m?: number; provenance:Provenance }
 export type Trainset = { id: string; name: string; identifier?: string; stock_type_id?: string; provenance:Provenance }
 export type Assignment = { trainset_id: string; run_id: string }
 export type OperationList = {
+  cycles: Cycle[]
   corridors: Corridor[]
   services: Service[]
   runs: Run[]
@@ -152,6 +162,7 @@ export type Simulation = {
 }
 
 export type ScheduleFormat = 'json' | 'csv' | 'gtfs'
+export type LegacyIssue = {id:string;schema:string;reason:string}
 
 function operations<T>(snapshot: string, action: string, args: Record<string, unknown> = {}) {
   return invoke<T>('operations', { snapshot, request: { action, ...args } })
@@ -163,9 +174,19 @@ export const opsApi = {
     start_id: string; end_id: string; strict: boolean; name: string; waypoints?: string[]; line_ids?: string[]
   }) => operations<Corridor>(snapshot, 'resolve_corridor', args),
   saveCorridor: (snapshot: string, corridor: Corridor) => operations<Corridor>(snapshot, 'save_corridor', { corridor }),
+  archiveCorridor:(snapshot:string,id:string)=>operations<void>(snapshot,'archive_corridor',{id}),
+  cancelRun:(snapshot:string,run:Run)=>operations<Run>(snapshot,'cancel_run',{id:run.id,version:run.plan_version}),
+  generateCycle:(snapshot:string,cycle:Cycle)=>operations<{template:Cycle;runs:number}>(snapshot,'generate_cycle',{cycle}),
+  legacyIssues:(snapshot:string)=>operations<LegacyIssue[]>(snapshot,'legacy_issues'),
+  importLegacy:(snapshot:string,content:string,service_date:string,aliases:Record<string,string>)=>
+    operations<{corridors:number;runs:number;pending:boolean;issue?:string}>(snapshot,'import_legacy',{content,service_date,aliases}),
+  corridorQuery:<T>(snapshot:string,action:string,args:Record<string,unknown>,job=crypto.randomUUID())=>
+    invoke<T>('corridor_query',{snapshot,request:{action,...args},job}),
   saveService: (snapshot: string, service: Service) => operations<Service>(snapshot, 'save_service', { service }),
   saveRun: (snapshot: string, run: Run) => operations<Run>(snapshot, 'save_run', { run }),
   getRun: (snapshot: string, id: string) => operations<RunDetail>(snapshot, 'get_run', { id }),
+  previewRun: (snapshot: string, run: Run, time_s: number) =>
+    operations<TrainState>(snapshot, 'preview_run', { run, time_s }),
   saveScenario: (snapshot: string, scenario: Scenario) => operations<Scenario>(snapshot, 'save_scenario', { scenario }),
   simulate: (snapshot: string, run_ids: string[], time_s: number, level: Level, scenario?: Scenario, resources=false) =>
     operations<Simulation>(snapshot, 'simulate', { run_ids, time_s, level, scenario, resources }),

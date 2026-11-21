@@ -14,8 +14,13 @@ use std::{
 };
 use uuid::Uuid;
 
+mod corridors;
+mod cycles;
+mod legacy;
 mod schedule;
 mod sim;
+
+pub use corridors::query as corridor_query;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Provenance {
@@ -89,6 +94,8 @@ struct Corridor {
     warnings: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     candidates: Vec<Candidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    intent: Vec<corridors::ControlStep>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Candidate {
@@ -210,6 +217,23 @@ enum Request {
     SaveCorridor {
         corridor: Corridor,
     },
+    ArchiveCorridor {
+        id: String,
+    },
+    CancelRun {
+        id: String,
+        version: u32,
+    },
+    GenerateCycle {
+        cycle: cycles::Cycle,
+    },
+    ImportLegacy {
+        content: String,
+        service_date: String,
+        #[serde(default)]
+        aliases: BTreeMap<String, String>,
+    },
+    LegacyIssues,
     SaveService {
         service: Service,
     },
@@ -227,6 +251,10 @@ enum Request {
     },
     GetRun {
         id: String,
+    },
+    PreviewRun {
+        run: Run,
+        time_s: f64,
     },
     SaveScenario {
         scenario: Scenario,
@@ -615,6 +643,7 @@ fn solve(
         },
         warnings: vec!["依据显式接轨和方向的自动参考，实际调度进路需要独立核验".into()],
         candidates: alternatives,
+        intent: Vec::new(),
     };
     validate_corridor(canonical, &pack.manifest.snapshot, &mut corridor)?;
     Ok(corridor)
@@ -627,6 +656,45 @@ fn latest_run(db: &Connection, id: &str) -> Result<Run> {
         [id],
     )?
     .context("MISSING_TIMETABLE · 找不到运行实例")
+}
+
+fn scheduled_window(run: &Run) -> Result<(i64, i64)> {
+    let epoch = service_epoch(&run.service_date, &run.time_zone)?;
+    let start = run
+        .stops
+        .first()
+        .and_then(|s| s.arrival_time_s.or(s.departure_time_s))
+        .context("MISSING_TIMETABLE · 缺少起点时刻")?;
+    let end = run
+        .stops
+        .last()
+        .and_then(|s| s.departure_time_s.or(s.arrival_time_s))
+        .context("MISSING_TIMETABLE · 缺少终点时刻")?;
+    Ok((epoch + start, epoch + end))
+}
+
+fn validate_assignment(db: &Connection, run: &Run, trainset: &str) -> Result<()> {
+    if run.status == "cancelled" {
+        return Ok(());
+    }
+    let (first, last) = scheduled_window(run)?;
+    let mut stmt=db.prepare("SELECT r.payload FROM ops_assignment a JOIN ops_run r ON a.run_id=r.id AND a.run_version=r.version
+      WHERE a.trainset_id=? AND a.run_id!=? AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)")?;
+    let mut rows = stmt.query(params![trainset, run.id])?;
+    while let Some(row) = rows.next()? {
+        let other: Run = serde_json::from_str(&row.get::<_, String>(0)?)?;
+        if other.status == "cancelled" {
+            continue;
+        }
+        let (start, end) = scheduled_window(&other)?;
+        ensure!(
+            last <= start || end <= first,
+            "VEHICLE_OVERLAP · 车组与 {}（{}）的计划时段重叠",
+            other.train_number,
+            other.service_date
+        );
+    }
+    Ok(())
 }
 fn corridor_for(db: &Connection, run: &Run) -> Result<Option<Corridor>> {
     match (&run.corridor_id, run.corridor_version) {
@@ -785,6 +853,18 @@ fn save_run(db: &Connection, canonical: &Connection, snapshot: &str, mut run: Ru
         run.plan_version == current,
         "DATA_VERSION_CONFLICT · 运行实例已被编辑，请刷新"
     );
+    if current > 0 {
+        let assigned = db
+            .query_row(
+                "SELECT trainset_id FROM ops_assignment WHERE run_id=? AND run_version=?",
+                params![run.id, current],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(trainset) = assigned {
+            validate_assignment(db, &run, &trainset)?;
+        }
+    }
     run.plan_version = current + 1;
     db.execute(
         "INSERT INTO ops_run VALUES(?,?,?,?,?,?,?)",
@@ -813,6 +893,15 @@ fn save_corridor(
 ) -> Result<Corridor> {
     new_id(&mut corridor.id)?;
     validate_corridor(canonical, &pack.manifest.snapshot, &mut corridor)?;
+    corridors::validate_intent(canonical, &corridor)?;
+    ensure!(
+        !db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ops_corridor_archive WHERE id=?)",
+            [&corridor.id],
+            |r| r.get::<_, bool>(0)
+        )?,
+        "归档通道可复制为新通道"
+    );
     let current: u32 = db.query_row(
         "SELECT coalesce(max(version),0) FROM ops_corridor WHERE id=?",
         [&corridor.id],
@@ -856,6 +945,7 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
     match serde_json::from_value::<Request>(request)? {
         Request::List => {
             let corridors=all::<Corridor>(db,"SELECT payload FROM ops_corridor c WHERE version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
+                 AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id)
                  ORDER BY id LIMIT 1000")?;
             let services =
                 all::<Service>(db, "SELECT payload FROM ops_service ORDER BY id LIMIT 5000")?;
@@ -871,9 +961,11 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
                 all::<Scenario>(db, "SELECT payload FROM ops_scenario ORDER BY id LIMIT 100")?;
             let assignments=all::<Assignment>(db,"SELECT json_object('run_id',run_id,'trainset_id',trainset_id) FROM ops_assignment a
                      WHERE run_version=(SELECT max(version) FROM ops_run WHERE id=a.run_id) LIMIT 2000")?;
+            let cycles =
+                all::<cycles::Cycle>(db, "SELECT payload FROM ops_cycle ORDER BY id LIMIT 100")?;
             Ok(
                 json!({ "corridors":corridors,"services":services,"runs":runs,"stock_types":stock_types,
-                       "trainsets":trainsets,"scenarios":scenarios,"assignments":assignments }),
+                       "trainsets":trainsets,"scenarios":scenarios,"assignments":assignments,"cycles":cycles }),
             )
         }
         Request::ResolveCorridor {
@@ -889,7 +981,40 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
         Request::SaveCorridor { corridor } => Ok(serde_json::to_value(save_corridor(
             db, &canonical, pack, corridor,
         )?)?),
+        Request::ArchiveCorridor { id } => {
+            identifier(&id)?;
+            let exists = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM ops_corridor WHERE id=? AND snapshot=?)",
+                params![id, snapshot],
+                |r| r.get::<_, bool>(0),
+            )?;
+            ensure!(exists, "找不到当前快照的通道");
+            db.execute(
+                "INSERT OR IGNORE INTO ops_corridor_archive(id) VALUES(?)",
+                [id],
+            )?;
+            Ok(Value::Null)
+        }
+        Request::CancelRun { id, version } => {
+            let tx = db.transaction()?;
+            let mut run = latest_run(&tx, &id)?;
+            ensure!(
+                run.plan_version == version,
+                "DATA_VERSION_CONFLICT · 请刷新车次版本"
+            );
+            run.status = "cancelled".into();
+            let saved = save_run(&tx, &canonical, snapshot, run)?;
+            tx.commit()?;
+            Ok(serde_json::to_value(saved)?)
+        }
         Request::SaveService { service } => Ok(serde_json::to_value(save_service(db, service)?)?),
+        Request::GenerateCycle { cycle } => cycles::generate(db, &canonical, snapshot, cycle),
+        Request::ImportLegacy {
+            content,
+            service_date,
+            aliases,
+        } => legacy::import(db, &canonical, pack, &content, &service_date, &aliases),
+        Request::LegacyIssues => legacy::issues(db, snapshot),
         Request::SaveRun { run } => {
             let tx = db.transaction()?;
             let run = save_run(&tx, &canonical, snapshot, run)?;
@@ -927,11 +1052,15 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
         }
         Request::Assign { assignment } => {
             let latest = latest_run(db, &assignment.run_id)?;
+            validate_assignment(db, &latest, &assignment.trainset_id)?;
             db.execute("INSERT INTO ops_assignment VALUES(?,?,?) ON CONFLICT(run_id,run_version) DO UPDATE SET trainset_id=excluded.trainset_id",
                 params![assignment.run_id,latest.plan_version,assignment.trainset_id])?;
             Ok(serde_json::to_value(assignment)?)
         }
         Request::GetRun { id } => sim::details(db, &canonical, snapshot, &id),
+        Request::PreviewRun { run, time_s } => {
+            sim::preview_run(db, &canonical, snapshot, &run, time_s)
+        }
         Request::SaveScenario { mut scenario } => {
             scenario.validate()?;
             new_id(&mut scenario.id)?;
@@ -1026,6 +1155,12 @@ impl Clock {
             }
             "play" => self.playing = true,
             "pause" => self.playing = false,
+            "reset" => {
+                self.time_s = 28800.;
+                self.playing = false;
+                self.anchor = now;
+                return self.apply("get", None);
+            }
             "seek" if (0.0..=604800.0).contains(&value) => {}
             "rate" if (0.125..=128.0).contains(&value) => self.rate = value,
             _ => bail!("INVALID_CLOCK · 模拟时间或倍率无效"),

@@ -362,8 +362,9 @@ const METRO: &str = "SELECT l.id, COALESCE(NULLIF(json_extract(src.tags,'$.ref')
 pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
     let [west, south, east, north] = addr.bounds();
     let mut query=connection.prepare(
-        "SELECT e.id,e.render_id,e.kind,e.class,e.status,e.name,g.wgs84_wkb FROM spatial s
+        "SELECT e.id,e.render_id,e.kind,e.class,e.status,e.name,g.wgs84_wkb,src.tags,e.verification FROM spatial s
          CROSS JOIN geometry g ON g.rowid=s.rowid CROSS JOIN entity e ON e.id=g.entity_id
+         LEFT JOIN source_object src ON src.ref=e.source_ref AND e.kind IN ('rail','metro','station','facility')
          WHERE s.max_x>=?1 AND s.max_y>=?2 AND s.min_x<=?3 AND s.min_y<=?4 AND g.wgs84_wkb IS NOT NULL
          ORDER BY g.rowid",
     )?;
@@ -412,9 +413,56 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
         }
         let mut attrs = vec![
             ("rid", Value::UInt(id)),
-            ("class", Value::Text(category)),
-            ("status", Value::Text(status)),
+            ("class", Value::Text(category.clone())),
+            ("status", Value::Text(status.clone())),
         ];
+        if let Some(source) = row.get::<_, Option<String>>(7)? {
+            let tags = serde_json::from_str(&source)?;
+            let verified = row.get::<_, String>(8)? == "verified";
+            let facts = crate::cartography::classify(&tags, &kind, &category, &status, verified);
+            attrs.push(("symbol", Value::Text(facts.render_class.into())));
+            attrs.push(("life", Value::Text(facts.lifecycle.into())));
+            if matches!(kind.as_str(), "rail" | "metro") {
+                if let Some(limit) = facts.speed_kmh {
+                    attrs.push((
+                        "speed",
+                        Value::UInt(
+                            [80., 160., 250., 350.]
+                                .iter()
+                                .filter(|n| limit > **n)
+                                .count() as u64
+                                + 1,
+                        ),
+                    ));
+                }
+                if let Some(gauge) = facts.gauge_mm {
+                    attrs.push(("gauge", Value::UInt(u64::from(gauge))));
+                }
+                if let Some(power) = facts.electrification {
+                    attrs.push(("power", Value::Text(power.into())));
+                }
+            } else {
+                if let Some(business) = facts.business {
+                    let badge = match business {
+                        "passenger" => "客",
+                        "freight" => "货",
+                        _ => "客货",
+                    };
+                    attrs.push(("business", Value::Text(badge.into())));
+                }
+                if let Some(technical) = facts.technical {
+                    let badge = match technical {
+                        "marshalling" => "编",
+                        "district" => "区",
+                        _ => "中",
+                    };
+                    attrs.push(("technical", Value::Text(badge.into())));
+                }
+                if let Some(scale) = facts.grade {
+                    attrs.push(("size_pct", Value::UInt((scale * 100.).round() as u64)));
+                }
+            }
+        }
         if layer == "points" || layer == "base_place" {
             attrs.push(("label", Value::Text(name)));
         }
@@ -428,20 +476,23 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
                 if distinct.iter().any(|(existing, _, _)| existing == &label) {
                     continue;
                 }
-                if let Some(colour) = normalized_colour(&colour) {
-                    distinct.push((label, s.get::<_, String>(0)?, colour));
-                }
+                distinct.push((label, s.get::<_, String>(0)?, normalized_colour(&colour)));
             }
             let count = distinct.len();
-            if let Some((_, service, colour)) = distinct.first() {
-                attrs.push(("service1", Value::Text(service.clone())));
-                attrs.push(("metro_color", Value::Text(colour.clone())));
+            for ((key, color_key), (_, service, colour)) in [
+                ("service1", "metro_color"),
+                ("service2", "metro_secondary"),
+                ("service3", "metro_tertiary"),
+            ]
+            .into_iter()
+            .zip(distinct.iter())
+            {
+                attrs.push((key, Value::Text(service.clone())));
+                if let Some(colour) = colour {
+                    attrs.push((color_key, Value::Text(colour.clone())));
+                }
             }
-            if let Some((_, service, colour)) = distinct.get(1) {
-                attrs.push(("service2", Value::Text(service.clone())));
-                attrs.push(("metro_secondary", Value::Text(colour.clone())));
-            }
-            if count > 1 {
+            if count > 0 {
                 attrs.push(("service_count", Value::UInt(count as u64)));
             }
         }

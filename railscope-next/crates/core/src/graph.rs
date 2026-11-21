@@ -1,6 +1,6 @@
 use crate::pack::Pack;
 use anyhow::{Result, bail, ensure};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -117,33 +117,84 @@ pub(crate) fn route_options(
     if start_id == end_id {
         return deliver(vec![start_id.to_owned()], start_meters);
     }
+    let starts = [(to, forward), (from, reverse)]
+        .into_iter()
+        .filter_map(|(node, available)| available.then_some((node, start_meters)));
+    let end = |node: &str| (end_forward && node == end_from) || (end_reverse && node == end_to);
+    let visited = walk(
+        db,
+        starts,
+        end,
+        cancel,
+        [start_id, end_id, excluded],
+        kind,
+        lines,
+    )?;
+    let (mut edges, meters) = visited
+        .path()
+        .ok_or_else(|| anyhow::anyhow!("在当前数据包内未找到显式连通的运营路径"))?;
+    edges.insert(0, start_id.to_owned());
+    edges.push(end_id.to_owned());
+    deliver(edges, meters + end_meters)
+}
+
+struct Walk {
+    best: HashMap<String, f64>,
+    parents: HashMap<String, (String, String, bool)>,
+    destination: Option<(String, f64)>,
+}
+
+impl Walk {
+    fn directed_path(&self) -> Option<(Vec<(String, bool)>, f64)> {
+        let (node, meters) = self.destination.as_ref()?;
+        let mut current = node.as_str();
+        let mut edges = Vec::new();
+        while let Some((parent, edge, forward)) = self.parents.get(current) {
+            edges.push((edge.clone(), *forward));
+            current = parent;
+        }
+        edges.reverse();
+        Some((edges, *meters))
+    }
+    fn path(&self) -> Option<(Vec<String>, f64)> {
+        self.directed_path()
+            .map(|(edges, meters)| (edges.into_iter().map(|(id, _)| id).collect(), meters))
+    }
+}
+
+fn walk(
+    db: &Connection,
+    starts: impl IntoIterator<Item = (String, f64)>,
+    end: impl Fn(&str) -> bool,
+    cancel: &AtomicBool,
+    excluded: [&str; 3],
+    kind: Option<&str>,
+    lines: &str,
+) -> Result<Walk> {
     let mut queue = BinaryHeap::new();
     let mut best = HashMap::new();
-    for (node, available) in [(to, forward), (from, reverse)] {
-        if available && best.insert(node.clone(), start_meters).is_none() {
-            queue.push(Visit {
-                meters: start_meters,
-                node,
-            });
-        }
+    for (node, meters) in starts {
+        best.insert(node.clone(), meters);
+        queue.push(Visit { meters, node });
     }
-    let mut parents: HashMap<String, (String, String)> = HashMap::new();
+    let mut parents = HashMap::new();
     let mut is_diamond = db.prepare(
         "SELECT EXISTS(SELECT 1 FROM node JOIN source_object s ON s.ref=node.source_ref
          WHERE node.id=?1 AND node.network='rail' AND json_extract(s.tags,'$.railway')='railway_crossing')",
     )?;
     let mut neighbors = db.prepare(
-        "SELECT edge.id, to_node, meters FROM edge JOIN entity ON entity.id=edge.id
+        "SELECT edge.id, to_node, meters, 1 FROM edge JOIN entity ON entity.id=edge.id
          WHERE from_node=?1 AND forward=1 AND status='operating' AND class!='unknown'
            AND edge.id NOT IN (?2,?3,?4) AND (?5 IS NULL OR entity.kind=?5)
            AND (?6='[]' OR EXISTS(SELECT 1 FROM line_member m
              WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?6))))
          UNION ALL
-         SELECT edge.id, from_node, meters FROM edge JOIN entity ON entity.id=edge.id
+         SELECT edge.id, from_node, meters, 0 FROM edge JOIN entity ON entity.id=edge.id
          WHERE to_node=?1 AND reverse=1 AND status='operating' AND class!='unknown'
            AND edge.id NOT IN (?2,?3,?4) AND (?5 IS NULL OR entity.kind=?5)
            AND (?6='[]' OR EXISTS(SELECT 1 FROM line_member m
-             WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?6))))",
+             WHERE m.member_id=edge.id AND m.line_id IN (SELECT value FROM json_each(?6))))
+         ORDER BY 1, 4",
     )?;
     let mut visited = 0;
     while let Some(Visit { meters, node }) = queue.pop() {
@@ -155,27 +206,30 @@ pub(crate) fn route_options(
         if is_diamond.query_row([&node], |row| row.get::<_, bool>(0))? {
             continue;
         }
-        if (end_forward && node == end_from) || (end_reverse && node == end_to) {
-            let mut edges = vec![end_id.to_owned()];
-            let mut current = node.as_str();
-            while let Some((parent, edge)) = parents.get(current) {
-                edges.push(edge.clone());
-                current = parent;
-            }
-            edges.push(start_id.to_owned());
-            edges.reverse();
-            return deliver(edges, meters + end_meters);
+        if end(&node) {
+            return Ok(Walk {
+                best,
+                parents,
+                destination: Some((node, meters)),
+            });
         }
         visited += 1;
         ensure!(visited <= MAX_VISITS, "已达到路径搜索范围上限");
-        let mut rows = neighbors.query(params![node, start_id, end_id, excluded, kind, lines])?;
+        let mut rows = neighbors.query(params![
+            node,
+            excluded[0],
+            excluded[1],
+            excluded[2],
+            kind,
+            lines
+        ])?;
         while let Some(row) = rows.next()? {
             let edge: String = row.get(0)?;
             let to: String = row.get(1)?;
             let candidate = meters + row.get::<_, f64>(2)?;
             if best.get(&to).is_none_or(|old| candidate < *old) {
                 best.insert(to.clone(), candidate);
-                parents.insert(to.clone(), (node.clone(), edge));
+                parents.insert(to.clone(), (node.clone(), edge, row.get::<_, bool>(3)?));
                 queue.push(Visit {
                     meters: candidate,
                     node: to,
@@ -183,7 +237,42 @@ pub(crate) fn route_options(
             }
         }
     }
-    bail!("在当前数据包内未找到显式连通的运营路径")
+    Ok(Walk {
+        best,
+        parents,
+        destination: None,
+    })
+}
+
+pub(crate) fn from_node(
+    db: &Connection,
+    start: &str,
+    end: Option<&str>,
+    kind: &str,
+    line: &str,
+    excluded: &str,
+    cancel: &AtomicBool,
+) -> Result<(Vec<(String, bool)>, HashMap<String, f64>)> {
+    let lines = serde_json::to_string(&[line])?;
+    let result = walk(
+        db,
+        [(start.to_owned(), 0.)],
+        |node| end == Some(node),
+        cancel,
+        [excluded, "", ""],
+        Some(kind),
+        &lines,
+    )?;
+    let path = match end {
+        Some(_) => {
+            result
+                .directed_path()
+                .ok_or_else(|| anyhow::anyhow!("在当前数据包内未找到显式连通的运营路径"))?
+                .0
+        }
+        None => Vec::new(),
+    };
+    Ok((path, result.best))
 }
 
 #[cfg(test)]

@@ -1,22 +1,32 @@
 import { Activity, ArrowUpRight, Check, ChevronRight, Compass, Crosshair, Database, FileText, Map as MapIcon,
-  MapPin, Redo2, Route as RouteIcon, Save, TrainFront, Undo2, X } from 'lucide-react'
+  MapPin, Maximize2, PanelBottom, PanelLeft, PanelRight, Redo2, Route as RouteIcon, Save, TrainFront, Undo2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { api, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
 import { Catalog, PackMenu, className, kindNames, statusName } from './catalog'
 import { layerGroups, MapController, type LayerGroup, type MapTheme } from './map'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
+import { chinaDate, opsApi, type LegacyIssue } from './operations-api'
+import { facilityStyles, lifecycles, missingColor, sites, svgSymbol, symbolName, thematic, tracks, type RailView } from './cartography'
 
 const visibilityKey = 'railscope-next.layers'
-const defaults = { rail: true, metro: true, road: true, station: true, facility: true }
+const defaults: Record<LayerGroup, boolean> = { rail: true, metro: true, road: true, station: true, facility: true, labels:true, relics:false, signals:false }
 const themes:Record<MapTheme,string>={light:'专业浅色',color:'常规彩色',dark:'深色',transport:'纯交通'}
-function layoutPreference(){
+type Mode = 'detail' | 'operations' | 'analysis' | 'data'
+const modes: {id:Mode; title:string; icon:typeof MapIcon}[] = [
+  {id:'detail',title:'地图',icon:MapIcon},{id:'operations',title:'运行',icon:TrainFront},
+  {id:'analysis',title:'分析与诊断',icon:Activity},{id:'data',title:'数据',icon:Database},
+]
+const layoutDefaults = {left:310,right:343,bottom:320,hideLeft:false,hideRight:false,hideBottom:true,focusBottom:false}
+type Layout = typeof layoutDefaults
+function layoutPreferences(): Record<Mode,Layout> {
+  let saved:Record<string,Partial<Layout>> = {}
   try {
-    const data=JSON.parse(localStorage.getItem('railscope-next.layout-v3')??'{}')
-    return {left:Number.isFinite(data.left)?Math.min(390,Math.max(190,data.left)):279,
-      right:Number.isFinite(data.right)?Math.min(650,Math.max(285,data.right)):350,
-      hideLeft:data.hideLeft===true,hideRight:data.hideRight===true}
-  } catch {return {left:279,right:350,hideLeft:false,hideRight:false}}
+    saved = JSON.parse(localStorage.getItem('railscope-next.layout-v4')??'{}') ?? {}
+    if (!Object.keys(saved).length) saved.detail=JSON.parse(localStorage.getItem('railscope-next.layout-v3')??'{}')
+  } catch { /* Use defaults for invalid preferences. */ }
+  return Object.fromEntries(modes.map(({id})=>[id,{...layoutDefaults,...saved[id],focusBottom:false}])) as Record<Mode,Layout>
 }
 function loadVisibility() {
   try {
@@ -41,15 +51,29 @@ export function App() {
   const [detailError, setDetailError] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<ReturnType<MapController['view']>>()
-  const [mode, setMode] = useState<'detail' | 'route' | 'metrics' | 'operations'>('detail')
+  const [mode, setMode] = useState<Mode>('detail')
+  const [analysisTab,setAnalysisTab] = useState<'route'|'topology'|'conflicts'|'quality'|'metrics'>('route')
+  const [dataTab,setDataTab] = useState<'packs'|'source'|'review'|'import'>('packs')
   const [theme,setTheme]=useState<MapTheme>(()=>{
     const value=localStorage.getItem('railscope-next.theme') as MapTheme|null
     return value&&Object.hasOwn(themes,value)?value:'light'
   })
   const [overview,setOverview]=useState(()=>localStorage.getItem('railscope-next.overview')==='true')
-  const [layout,setLayout]=useState(layoutPreference)
+  const [layouts,setLayouts]=useState(layoutPreferences)
+  const layout=layouts[mode]
+  const setLayout=(update:(old:Layout)=>Layout)=>setLayouts(old=>({...old,[mode]:update(old[mode])}))
+  const [rightDock,setRightDock]=useState<HTMLDivElement|null>(null)
+  const [bottomDock,setBottomDock]=useState<HTMLDivElement|null>(null)
+  const [analysisDock,setAnalysisDock]=useState<HTMLDivElement|null>(null)
+  const [simulationPlaying,setSimulationPlaying]=useState(false)
+  const [operationsDirty,setOperationsDirty]=useState(false)
+  const [mapStyle,setMapStyle]=useState<RailView>(()=>{
+    const value=localStorage.getItem('railscope-next.rail-style') as RailView|null
+    return value && (value==='operations'||Object.hasOwn(thematic,value)) ? value : 'infrastructure'
+  })
   const operations=useRef<OperationsHandle>(null)
   const canvas = useRef<HTMLDivElement>(null)
+  const mapPanel = useRef<HTMLElement>(null)
   const controller = useRef<MapController | undefined>(undefined)
   const current = useRef<Pack | null>(null)
   const selection = useRef(0)
@@ -72,12 +96,13 @@ export function App() {
         void select(String(id))
       }, () => setView(controller.current?.view()), setMapError, id=>{
         setMode('operations')
-        setLayout(old=>old.hideRight?{...old,hideRight:false}:old)
-        operations.current?.selectRun(id)
+        if(id!=='draft-preview')operations.current?.selectRun(id)
       })
       controller.current = map
+      const observer=new ResizeObserver(()=>map.map.resize())
+      if(mapPanel.current)observer.observe(mapPanel.current)
       setView(map.view())
-      return () => { controller.current = undefined; map.destroy() }
+      return () => { observer.disconnect(); controller.current = undefined; map.destroy() }
     } catch (error) {
       setMapError(`地图初始化失败 · ${String(error)}`)
     }
@@ -107,18 +132,29 @@ export function App() {
     localStorage.setItem('railscope-next.theme',theme)
   },[theme])
   useEffect(()=>{
-    controller.current?.map.resize()
-    localStorage.setItem('railscope-next.layout-v3',JSON.stringify(layout))
-  },[layout])
+    localStorage.setItem('railscope-next.layout-v4',JSON.stringify(layouts))
+  },[layouts])
+  useEffect(()=>{
+    controller.current?.setRailView(mapStyle)
+    localStorage.setItem('railscope-next.rail-style',mapStyle)
+  },[mapStyle])
   useEffect(() => {
     for (const { id } of layerGroups) controller.current?.setLayer(id, visibility[id])
     localStorage.setItem(visibilityKey, JSON.stringify(visibility))
   }, [visibility])
   useEffect(() => {
-    const dismiss = (event: KeyboardEvent) => { if (event.key === 'Escape') clear() }
+    const dismiss = (event: KeyboardEvent) => {
+      if(event.key==='Escape') document.querySelectorAll<HTMLDetailsElement>('.map-tools details[open]').forEach(item=>{item.open=false})
+    }
     window.addEventListener('keydown', dismiss)
     return () => window.removeEventListener('keydown', dismiss)
   }, [])
+  useEffect(()=>{
+    if(!operationsDirty)return
+    const leave=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''}
+    window.addEventListener('beforeunload',leave)
+    return ()=>window.removeEventListener('beforeunload',leave)
+  },[operationsDirty])
 
   function clear() {
     selection.current++
@@ -154,6 +190,7 @@ export function App() {
 
   async function change(pack: Pack) {
     if (pack.snapshot === active?.snapshot) return
+    if (operationsDirty && !window.confirm('当前有未保存的运行草稿。切换数据包并放弃草稿？')) return
     setGlobalError('')
     setMapError('')
     setChanging(true)
@@ -200,16 +237,26 @@ export function App() {
       ? { ...value, workspace: update } : value)
   }
 
-  function resize(event:ReactPointerEvent<HTMLDivElement>,side:'left'|'right'){
+  function resize(event:ReactPointerEvent<HTMLDivElement>,side:'left'|'right'|'bottom'){
     event.preventDefault()
-    const start=event.clientX
+    const start=side==='bottom'?event.clientY:event.clientX
     const initial=layout[side]
     const node=event.currentTarget
     node.setPointerCapture(event.pointerId)
-    const move=(e:PointerEvent)=>setLayout(old=>({...old,[side]:Math.min(side==='left'?390:650,
-      Math.max(side==='left'?190:285,initial+(e.clientX-start)*(side==='left'?1:-1)))}))
+    const move=(e:PointerEvent)=>setLayout(old=>({...old,[side]:Math.min(side==='left'?420:side==='right'?480:Math.floor(window.innerHeight*.7),
+      Math.max(side==='left'?190:side==='right'?260:160,initial+((side==='bottom'?e.clientY:e.clientX)-start)*(side==='left'?1:-1)))}))
     node.addEventListener('pointermove',move)
     node.addEventListener('lostpointercapture',()=>node.removeEventListener('pointermove',move),{once:true})
+  }
+
+  function showOperations(start?:Summary,end?:Summary){
+    setMode('operations')
+    setLayouts(value=>({...value,operations:{...value.operations,hideLeft:false}}))
+    operations.current?.startCorridor(start,end)
+  }
+
+  function openBottom(){
+    setLayouts(old=>({...old,operations:{...old.operations,hideBottom:false}}))
   }
 
   const zoom=view?Math.floor(view.zoom):0
@@ -218,23 +265,59 @@ export function App() {
     <header className="top">
       <div className="brand"><div className="brand-icon"><TrainFront size={23} strokeWidth={1.7} /></div><strong>RailScope <span>Next</span></strong></div>
       <nav aria-label="工作台">
-        <button className={mode === 'detail' ? 'selected' : ''} onClick={() => setMode('detail')}><MapIcon size={17} />地图浏览</button>
-        <button className={mode === 'route' ? 'selected' : ''} onClick={() => setMode('route')}><RouteIcon size={17} />路径分析</button>
-        <button className={mode==='operations'?'selected':''} onClick={()=>{
-          setMode('operations');setLayout(old=>({...old,hideRight:false}))
-        }}><TrainFront size={17}/>运行</button>
-        <button className={mode === 'metrics' ? 'selected' : ''} onClick={() => setMode('metrics')}><Activity size={17} />诊断</button>
+        {modes.map(({id,title,icon:Icon})=><button key={id} className={mode===id?'selected':''} aria-current={mode===id?'page':undefined}
+          onClick={()=>setMode(id)}><Icon size={17}/>{title}</button>)}
       </nav>
-      <PackMenu packs={packs} active={active} changing={changing} change={change} conflicts={conflicts}
-        onInstalled={pack=>setPacks(items=>[pack,...items.filter(item=>item.snapshot!==pack.snapshot)])} />
+      <div className="workspace-tools">
+        <button className="icon" title="显隐任务面板" aria-label="任务面板" aria-pressed={!layout.hideLeft} onClick={()=>setLayout(old=>({...old,hideLeft:!old.hideLeft}))}><PanelLeft size={17}/></button>
+        <button className="icon" title="显隐对象面板" aria-label="对象面板" aria-pressed={!layout.hideRight} onClick={()=>setLayout(old=>({...old,hideRight:!old.hideRight}))}><PanelRight size={17}/></button>
+        <button className="icon" title="显隐底部工作区" aria-label="底部工作区" aria-pressed={!layout.hideBottom} onClick={()=>setLayout(old=>({...old,hideBottom:!old.hideBottom,focusBottom:false}))}><PanelBottom size={17}/></button>
+        <PackMenu packs={packs} active={active} changing={changing} change={change} conflicts={conflicts}
+          onInstalled={pack=>setPacks(items=>[pack,...items.filter(item=>item.snapshot!==pack.snapshot)])} />
+      </div>
     </header>
-    <main className={`workspace ${mode === 'detail' && !details && !busy ? 'inspector-idle' : ''}`}
-      style={{gridTemplateColumns:`${layout.hideLeft?'0px':`min(${layout.left}px, 27vw)`} minmax(220px, 1fr) ${layout.hideRight?'0px':`min(${layout.right}px, 46vw)`}`}}>
-      <div className="catalog-dock" hidden={layout.hideLeft}><Catalog pack={active} selected={details?.entity.id} onSelect={item => { void select(item.id, item) }}
+    <main className="workspace" data-mode={mode} data-left={!layout.hideLeft} data-right={!layout.hideRight}
+      style={{gridTemplateColumns:`${layout.hideLeft?'0px':`min(${layout.left}px, 32vw)`} minmax(0, 1fr) ${layout.hideRight?'0px':`min(${layout.right}px, 33vw)`}`,
+        gridTemplateRows:`minmax(${layout.focusBottom&&!layout.hideBottom?'115px':'0'},1fr) ${layout.hideBottom?'0px':layout.focusBottom?'min(67vh, 760px)':`min(${layout.bottom}px, 55vh)`}`}}>
+      <aside className="task-dock" aria-label="任务面板" hidden={layout.hideLeft}>
+      <div className="catalog-dock" hidden={mode!=='detail'}><Catalog pack={active} selected={details?.entity.id} onSelect={item => { void select(item.id, item) }}
         group={group} setGroup={setGroup} view={view?.bounds} visibility={visibility}
         workspaceChange={workspaceChange}
         onLayer={(id: LayerGroup, value: boolean) => setVisibility(old => ({ ...old, [id]: value }))} /></div>
-      <section className="map-panel" aria-label="离线交通地图">
+      <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
+        selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
+        inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
+        onPlaying={setSimulationPlaying} onDirty={setOperationsDirty}/>
+      <div className="task-pane" hidden={mode!=='analysis'}>
+        <div className="panel-title"><Activity size={17}/><h2>分析与诊断</h2></div>
+        <div className="task-menu">{([['route','路径分析'],['topology','拓扑与通道'],['conflicts','时刻与车辆冲突'],['quality','数据质量'],['metrics','系统性能']] as const).map(([id,label])=>
+          <button key={id} className={analysisTab===id?'active':''} aria-pressed={analysisTab===id} onClick={()=>setAnalysisTab(id)}>{label}</button>)}</div>
+        <div hidden={analysisTab!=='route'}><PathPanel key={active?.snapshot} pack={active} selection={details?.entity} transfer={showOperations}
+          show={geometry => controller.current?.setExact(geometry)} dock={analysisDock} visible={mode==='analysis'&&analysisTab==='route'}
+          reveal={() => setLayouts(old=>({...old,analysis:{...old.analysis,hideBottom:false}}))} /></div>
+        {analysisTab==='topology'&&<div className="property-content task-summary"><h3>物理连接</h3><p>路径分析按显式拓扑与运行方向查询。选择物理轨道可检查来源或打开通道工作区。</p>
+          <button className="secondary" disabled={!details?.entity.has_edge} onClick={()=>showOperations(details?.entity)}>在运行中检查轨道</button></div>}
+        {analysisTab==='conflicts'&&<div className="property-content task-summary"><p>资源分析使用已保存时刻、经过校验的通道和车组分配。</p>
+          <button className="secondary" onClick={()=>{setMode('operations');operations.current?.openScenario()}}>打开运行资源分析</button></div>}
+        {analysisTab==='quality'&&<div className="property-content task-summary"><p>{conflicts.length} 条快照迁移冲突</p>
+          <button className="secondary" onClick={()=>{setDataTab('review');setMode('data')}}>查看来源与冲突</button></div>}
+        {analysisTab==='metrics'&&<MetricsPanel pack={active}/>}
+      </div>
+      <div className="task-pane" hidden={mode!=='data'}>
+        <div className="panel-title"><Database size={17}/><h2>数据</h2></div>
+        <div className="task-menu">{([['packs','数据包'],['import','导入旧版计划'],['source','版本与来源'],['review','审校冲突']] as const).map(([id,label])=>
+          <button key={id} className={dataTab===id?'active':''} aria-pressed={dataTab===id} onClick={()=>setDataTab(id)}>{label}</button>)}</div>
+        {dataTab==='packs'&&<div className="property-content task-summary">{packs.map(pack=><button key={pack.snapshot} className="pack-choice" disabled={changing||pack.snapshot===active?.snapshot}
+          onClick={()=>void change(pack)}><span>{pack.region}<small>{pack.snapshot}</small></span><b>{pack.snapshot===active?.snapshot?'当前':'切换'}</b></button>)}</div>}
+        {dataTab==='source'&&<div className="property-content task-summary"><p>{active?.source ?? '未加载快照'}</p><p>{active?.source_file}</p><p>{active?.license}</p>
+          {active&&<dl>{Object.entries(active.source_objects??{}).map(([key,count])=><div className="source-count" key={key}><dt>{key}</dt><dd>{count.toLocaleString()}</dd></div>)}</dl>}</div>}
+        {dataTab==='review'&&<div className="property-content task-summary">{conflicts.length===0?<p>当前快照没有已记录的迁移冲突。</p>:
+          <ul className="conflicts">{conflicts.map(item=><li key={`${item.entity}-${item.source_snapshot}`}>
+            <span>{item.reason}</span><small>{item.source_snapshot} · {item.entity}</small></li>)}</ul>}</div>}
+        {active&&<LegacyData key={active.snapshot} snapshot={active.snapshot} tab={dataTab} onImported={()=>operations.current?.refresh()}/>}
+      </div>
+      </aside>
+      <section className="map-panel" ref={mapPanel} aria-label="离线交通地图">
         <div className="map-canvas" ref={canvas} />
         {!layout.hideLeft&&<div className="dock-resize left" aria-hidden="true" onPointerDown={e=>resize(e,'left')}/>}
         {!layout.hideRight&&<div className="dock-resize right" aria-hidden="true" onPointerDown={e=>resize(e,'right')}/>}
@@ -252,8 +335,6 @@ export function App() {
                 <option value="source">离线源精度 · 已安装对象</option><option value="overview">仅概览</option>
                 <option disabled value="remote">按需联网 · 无已配置来源</option>
               </select></label>
-              <label className="ops-inline"><input type="checkbox" checked={!layout.hideLeft} onChange={e=>setLayout({...layout,hideLeft:!e.target.checked})}/>目录</label>
-              <label className="ops-inline"><input type="checkbox" checked={!layout.hideRight} onChange={e=>setLayout({...layout,hideRight:!e.target.checked})}/>工作面板</label>
               <form className="coordinate-jump" onSubmit={event=>{
                 event.preventDefault()
                 const form=new FormData(event.currentTarget)
@@ -268,6 +349,15 @@ export function App() {
               </form>
             </div>
           </details>
+          <details className="view-settings"><summary>图层</summary><div>
+            <label>铁路主题<select aria-label="铁路主题" value={mapStyle} onChange={e=>setMapStyle(e.target.value as RailView)}>
+              <option value="infrastructure">基础设施</option><option value="operations">运营线路</option>
+              <optgroup label="专题属性">{Object.entries(thematic).map(([id,item])=><option key={id} value={id}>{item.name}</option>)}</optgroup>
+            </select></label>
+            {layerGroups.map(item=><label className="ops-inline" key={item.id}><input type="checkbox" checked={visibility[item.id]}
+              onChange={e=>setVisibility(old=>({...old,[item.id]:e.target.checked}))}/>{item.name}</label>)}
+            <details className="rail-legend"><summary>图例</summary><MapLegend mode={mapStyle}/></details>
+          </div></details>
         </div>
         {!active && !changing && !globalError && <div className="map-empty">
           <Database size={24} /><h2>尚未加载离线地图</h2><p>将数据包放入 packs 目录后重新启动。</p>
@@ -278,26 +368,37 @@ export function App() {
         {!globalError && changing && <div className="map-loading">正在校验本地数据包…</div>}
       </section>
       <aside className="inspector" aria-label="工作面板" hidden={layout.hideRight}>
-        {mode === 'detail' && <>
+        <div hidden={mode==='data'||(mode==='operations'&&!details)}>
           <div className="panel-title"><FileText size={16} /><h2>对象属性</h2>{details && <button className="icon" aria-label="清除选中" onClick={clear}><X size={17} /></button>}</div>
           {detailError && <p className="error-text" role="alert">{detailError}</p>}
           {busy ? <div className="blank">正在读取对象…</div> : details && active
             ? <Properties key={details.entity.id} inspection={details} pack={active} exact={exact}
-                showMembers={setGroup} update={(state, target) => applyWorkspace(state, target, active)}
+                showMembers={line=>{setGroup(line);setMode('detail')}} update={(state, target) => applyWorkspace(state, target, active)}
+                useForCorridor={()=>showOperations(details.entity)} useForAnalysis={()=>{setAnalysisTab('route');setMode('analysis')}}
                 zoomOverride={point => controller.current?.fit([point[0], point[1], point[0], point[1]])} />
             : <div className="blank"><MapPin size={24} /><strong>选择地图对象</strong><p>点击地图或打开搜索结果即可查看资料。</p></div>}
-        </>}
-        {mode === 'route' && <><PathPanel key={active?.snapshot} pack={active} selection={details?.entity}
-          show={geometry => controller.current?.setExact(geometry)} />
-          {active && <BusinessLines key={active.snapshot} snapshot={active.snapshot} selection={details?.entity}
-            openMember={item => { void select(item.id, item) }} />}</>}
-        {mode === 'metrics' && <MetricsPanel pack={active} />}
-        <OperationsWorkbench ref={operations} snapshot={active?.snapshot} visible={mode==='operations'} selection={details?.entity} map={operationsMap}/>
+        </div>
+        {mode==='detail'&&active&&<BusinessLines key={active.snapshot} snapshot={active.snapshot} selection={details?.entity}
+          openMember={item => { void select(item.id, item) }} />}
+        {mode==='data'&&<div className="property-content task-summary"><h3>{active?.snapshot??'快照详情'}</h3>
+          {active&&<><p>{active.source}</p><code>{active.source_sha256}</code><p>{active.bounds.join(' · ')}</p></>}</div>}
+        <div ref={setRightDock} hidden={mode!=='operations'}/>
       </aside>
+      <section className="bottom-dock" aria-label="底部工作区" hidden={layout.hideBottom}>
+        <div className="dock-resize bottom" aria-hidden="true" onPointerDown={e=>resize(e,'bottom')}/>
+        <div className="panel-title"><PanelBottom size={15}/><h2>{mode==='operations'?'时刻与运行图':mode==='analysis'?'分析结果':'底部工作区'}</h2>
+          <button className="icon" aria-label="聚焦底部工作区" aria-pressed={layout.focusBottom} onClick={()=>setLayout(old=>({...old,focusBottom:!old.focusBottom}))}><Maximize2 size={15}/></button>
+          <button className="icon" aria-label="收起底部工作区" onClick={()=>setLayout(old=>({...old,hideBottom:true,focusBottom:false}))}><X size={16}/></button>
+        </div>
+        <div ref={setBottomDock} className="bottom-content" hidden={mode!=='operations'}/>
+        <div ref={setAnalysisDock} className="bottom-content" hidden={mode!=='analysis'}/>
+      </section>
     </main>
     <footer className="statusbar">
       <span><span className={active ? 'dot online' : 'dot'} />{active ? '离线 · 本地快照' : '无活动快照'}</span>
       <span className="snapshot">{active?.snapshot}</span>
+      {simulationPlaying&&<button className="status-action" onClick={()=>{setMode('operations');operations.current?.pause()}}>计划仿真中 · 暂停</button>}
+      {operationsDirty&&<span>运行草稿未保存</span>}
       {active&&<span>{precise?'源几何 · 按视野生成':'概览瓦片'}{active.source_schema>=3?' · OSM 原始对象':''}</span>}
       <span className="coordinates">{view && `${view.center.lng.toFixed(4)}° E   ${view.center.lat.toFixed(4)}° N`}</span>
       <span className="zoom">{view ? `Z ${view.zoom.toFixed(1)}` : ''}</span>
@@ -305,12 +406,69 @@ export function App() {
   </div>
 }
 
-function Properties({ inspection, pack, exact, showMembers, update, zoomOverride }: {
+function LegacyData({snapshot,tab,onImported}:{snapshot:string;tab:string;onImported:()=>void}){
+  const [date,setDate]=useState(chinaDate)
+  const [aliases,setAliases]=useState('')
+  const [file,setFile]=useState<File>()
+  const [status,setStatus]=useState('')
+  const [error,setError]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [issues,setIssues]=useState<LegacyIssue[]>([])
+  useEffect(()=>{
+    if(tab!=='review')return
+    let mounted=true
+    void opsApi.legacyIssues(snapshot).then(items=>{if(mounted)setIssues(items)}).catch(cause=>{if(mounted)setError(String(cause))})
+    return ()=>{mounted=false}
+  },[snapshot,tab])
+  async function load(){
+    if(!file)return
+    setError('');setStatus('');setBusy(true)
+    try {
+      if(file.size>16*1024*1024)throw new Error('旧版文件超过 16 MiB。')
+      const mapping=aliases.trim()?JSON.parse(aliases):{}
+      const result=await opsApi.importLegacy(snapshot,(await file.text()).replace(/^\uFEFF/,''),date,mapping)
+      if(result.pending)setError(result.issue??'存在待修复引用，请在审校中查看。')
+      else {setStatus(`已导入 ${result.corridors} 条通道、${result.runs} 趟车次。`);onImported()}
+    }catch(cause){setError(String(cause))}finally{setBusy(false)}
+  }
+  return <>
+    <form hidden={tab!=='import'} className="property-content task-summary data-import" onSubmit={e=>{e.preventDefault();void load()}}>
+      <label>旧版 JSON<input type="file" accept=".json" onChange={e=>setFile(e.target.files?.[0])}/></label>
+      <label>文件未指定运营日时使用<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label>
+      <label>显式 ID 对照（JSON，可选）<textarea value={aliases} onChange={e=>setAliases(e.target.value)} rows={5}
+        placeholder={'{"line:旧线路编号":"现有 RailScope UUID"}'}/></label>
+      <button className="primary" disabled={busy||!file}>校验并导入</button>
+      {status&&<p role="status">{status}</p>}{error&&<p className="error-text" role="alert">{error}</p>}
+    </form>
+    {tab==='review'&&<div className="property-content task-summary"><h3>旧计划待修复</h3>
+      {issues.length===0?<p>暂无待修复旧计划。</p>:issues.map(item=><details key={item.id}><summary>{item.schema}</summary><p>{item.reason}</p></details>)}
+    </div>}
+  </>
+}
+
+function MapLegend({mode}:{mode:RailView}) {
+  const themed = mode!=='infrastructure' && mode!=='operations' ? thematic[mode] : undefined
+  const items: [string,string][] = themed?.entries.length ? [...themed.entries.map(([,name,color]):[string,string]=>[name,color]),['未知／缺失',missingColor]]
+    : mode==='operations' ? [['线路来源色／工作区覆盖',tracks.metro_track[1]],['其他铁路',missingColor]]
+    : Object.values(tracks).map(([name,color])=>[name,color])
+  return <ul className="map-legend-list">
+    {items.map(([name,color])=><li key={name}><i style={{backgroundColor:color}}/>{name}</li>)}
+    {mode==='lifecycle'&&Object.entries(lifecycles).map(([key,[name,opacity,,dash]])=><li key={key}>
+      <i style={{borderTop:`2px ${dash?'dashed':'solid'} currentColor`,opacity}}/>{name}</li>)}
+    {mode==='infrastructure'&&Object.values(sites).map(([name,,graphic])=><li key={name}><img alt="" src={svgSymbol(graphic)}/>{name}</li>)}
+    {mode==='infrastructure'&&Object.values(facilityStyles).map(item=><li key={item.name}><i style={{backgroundColor:item.fill,border:`1px solid ${item.outline}`}}/>{item.name}</li>)}
+  </ul>
+}
+
+function Properties({ inspection, pack, exact, showMembers, update, zoomOverride, useForCorridor, useForAnalysis }: {
   inspection: Inspection; pack: Pack; exact: () => void; showMembers: (line: Summary) => void
   update: (state: Workspace, target: Inspection) => void
   zoomOverride: (point: [number, number]) => void
+  useForCorridor: () => void
+  useForAnalysis: () => void
 }) {
   const { entity, workspace } = inspection
+  const meaning=entity.semantics
   const [tab, setTab] = useState<'attributes' | 'workspace'>('attributes')
   const [draft, setDraft] = useState<Override>(workspace.value)
   const [error, setError] = useState('')
@@ -362,7 +520,7 @@ function Properties({ inspection, pack, exact, showMembers, update, zoomOverride
     <div className="object-head">
       <span className="object-type">{kindNames[entity.kind]}</span>
       <h3>{workspace.value.name || entity.name}</h3>
-      <span>{className(entity.class)} · {statusName(entity.status)}</span>
+      <span>{symbolName(meaning.render_class)??className(entity.class)} · {lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status)}</span>
     </div>
     <div className="tabs property-tabs">
       <button className={tab === 'attributes' ? 'active' : ''} onClick={() => setTab('attributes')}>来源与关联</button>
@@ -375,11 +533,20 @@ function Properties({ inspection, pack, exact, showMembers, update, zoomOverride
         <dt>来源</dt><dd>{entity.source_ref} · v{entity.source_version}</dd>
         <dt>核验</dt><dd>{entity.verification === 'verified' ? '已核验' : '自动参考'} · {entity.confidence === 'low' ? '低' : '中'}置信度</dd>
         <dt>实体 ID</dt><dd className="monospace">{entity.id}</dd>
+        <dt>分类依据</dt><dd>{meaning.reason}</dd>
+        {entity.has_edge&&entity.kind!=='road'&&<><dt>速度／轨距</dt><dd>{meaning.speed_kmh==null?'未知':`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?'未知':`${meaning.gauge_mm} mm`}</dd>
+          <dt>供电／股道号</dt><dd>{{overhead:'接触网',third_rail:'第三轨',none:'无电气化'}[meaning.electrification??'']??'未知'} · {entity.tags['railway:track_ref']??'未知'}</dd></>}
+        {entity.kind==='station'&&<><dt>运输业务</dt><dd>{{passenger:'客运',freight:'货运',mixed:'客货运'}[meaning.business??'']??'待核验'}</dd>
+          <dt>技术类型</dt><dd>{{marshalling:'编组站',district:'区段站',intermediate:'中间站'}[meaning.technical??'']??'待核验'}</dd></>}
         {entity.kind==='line'&&<><dt>线路配色</dt><dd>{workspace.value.color?`工作区覆盖 ${workspace.value.color}`:entity.tags.colour?`OSM colour · ${entity.tags.colour}`:'制式默认色'}</dd></>}
       </dl>
       {entity.has_geometry && <button className="secondary" onClick={exact}><Crosshair size={15} />查看精确几何</button>}
       {workspace.value.point && <button className="secondary" onClick={() => zoomOverride(workspace.value.point!)}><MapPin size={15} />定位工作区坐标</button>}
       {entity.kind === 'line' && <button className="secondary" onClick={() => showMembers(entity)}><ChevronRight size={15} />浏览线路成员</button>}
+      <div className="ops-actions">
+        {(entity.kind==='station'||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
+        {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>用于路径分析</button>}
+      </div>
       {entity.memberships.length > 0 && <div className="members"><h4>所属线路</h4>{entity.memberships.map(line =>
         <button key={line.id} onClick={() => showMembers(line)}>{line.name}<ArrowUpRight size={14} /></button>)}</div>}
       <details><summary>原始 OSM 标签 · {Object.keys(entity.tags).length}</summary>
@@ -456,8 +623,10 @@ function SourceBrowser({snapshot,initial}:{snapshot:string;initial:string}){
   </details>
 }
 
-function PathPanel({ pack, selection, show }: {
+function PathPanel({ pack, selection, show, transfer, dock, visible, reveal }: {
   pack: Pack | null; selection?: Summary & { has_edge: boolean }; show: (geometry: Route['geometry']) => void
+  transfer: (start?:Summary,end?:Summary)=>void
+  dock: HTMLDivElement|null; visible: boolean; reveal: () => void
 }) {
   const [points, setPoints] = useState<{ start?: Summary; end?: Summary }>({})
   const [result, setResult] = useState<Route>()
@@ -481,6 +650,7 @@ function PathPanel({ pack, selection, show }: {
       if (job.current !== id) return
       setResult(route)
       show(route.geometry)
+      reveal()
     } catch (e) {
       if (job.current === id) setError(String(e))
     } finally {
@@ -504,9 +674,15 @@ function PathPanel({ pack, selection, show }: {
       <button className="primary" disabled={!points.start || !points.end || busy} onClick={() => void analyze()}><RouteIcon size={16} />计算连接路径</button>
       {busy && <button className="secondary" onClick={() => { if (job.current) void api.cancel(job.current) }}>取消</button>}
       {error && <p className="error-text" role="alert">{error}</p>}
-      {result && <div className="result-path"><strong>{(result.meters / 1000).toFixed(2)} km</strong><span>{result.edges.length} 个物理区段 · 自动参考</span>
-        {result.geometry && <button className="secondary compact" onClick={() => show(result.geometry)}>高亮路径</button>}</div>}
+      {result && <button className="secondary" onClick={reveal}>查看本次结果</button>}
     </div>
+    {result && dock && createPortal(<div className="property-content" hidden={!visible}>
+      <div className="result-path"><strong>{(result.meters / 1000).toFixed(2)} km</strong>
+        <span>{points.start?.name} → {points.end?.name}</span><span>{result.edges.length} 个物理区段 · 自动参考</span>
+        {points.start?.kind!=='road'&&<button className="secondary compact" onClick={()=>transfer(points.start,points.end)}>转到运行 · 新建通道</button>}
+        {result.geometry && <button className="secondary compact" onClick={() => show(result.geometry)}>高亮路径</button>}
+      </div>
+    </div>, dock)}
   </>
 }
 

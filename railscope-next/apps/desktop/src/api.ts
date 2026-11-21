@@ -34,6 +34,8 @@ export type Entity = Summary & {
   verification: string
   confidence: string
   tags: Record<string, string>
+  semantics: { render_class: string; lifecycle: string; reason: string; speed_kmh: number | null;
+    gauge_mm: number | null; electrification: string | null; business: string | null; technical: string | null; grade: number | null }
   memberships: Summary[]
   has_geometry: boolean
   has_edge: boolean

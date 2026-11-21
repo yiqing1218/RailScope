@@ -29,6 +29,7 @@ await new Promise((resolve, reject) => {
 })
 const pending = new Map()
 const remote = []
+const interceptionErrors = []
 const localRequest = url => /^https?:\/\/(?:tauri|ipc|railscope-tile)\.localhost(?:\/|$)|^http:\/\/127\.0\.0\.1:1420(?:\/|$)/.test(url)
 let commandId = 0
 socket.addEventListener('close', () => {
@@ -47,8 +48,11 @@ socket.addEventListener('message', ({ data }) => {
     if (/^https?:/.test(url) && !localRequest(url)) remote.push(url)
   } else if (message.method === 'Fetch.requestPaused') {
     const { requestId, request } = message.params
-    if (localRequest(request.url)) void send('Fetch.continueRequest', { requestId })
-    else void send('Fetch.failRequest', { requestId, errorReason: 'InternetDisconnected' })
+    const response = localRequest(request.url) ? send('Fetch.continueRequest', { requestId })
+      : send('Fetch.failRequest', { requestId, errorReason: 'InternetDisconnected' })
+    void response.catch(error => {
+      if (!error.message.includes('Invalid InterceptionId.')) interceptionErrors.push(error.message)
+    })
   }
 })
 
@@ -118,7 +122,8 @@ async function roam(snapshot, minutes) {
       viewport, visits, samples, errors, external_requests:remote.length},null,2)+'\n')
   }
   const probes = await send('Runtime.getIsolateId')
-  await click('诊断')
+  await click('分析与诊断')
+  await click('系统性能')
   let visits = 0
   do {
     const camera = cameras[visits % cameras.length]
@@ -159,7 +164,7 @@ async function verifyNationalSource(snapshot) {
     [116.9058643,36.2033374,21,'sample-z21'],
     [116.9058643,36.2033374,22,'sample-z22'],
   ]
-  await click('地图浏览')
+  await click('地图')
   const checks = []
   for (const [lon, lat, zoom, label] of cameras) {
     const first = (await invoke('diagnostics')).precise_tiles
@@ -176,6 +181,137 @@ async function verifyNationalSource(snapshot) {
   }
   assert.deepEqual(remote,[])
   return {snapshot,source_ref:ref,source_vertices:source.rows.length,checks,external_requests:remote.length}
+}
+
+async function verifyV4(snapshot) {
+  const corridor = (action, args) => invoke('corridor_query', {
+    snapshot, job: crypto.randomUUID(), request: { action, ...args },
+  })
+  const line = '408e1caa-58f5-5cc5-b0b5-48d0633616df'
+  const edge = '1aa9451a-b36f-508e-acbd-2510eb50a0a1'
+  const start = 'be352ca4-88d8-5c00-8fa3-f4f6dea2f4a7'
+  const end = 'b1a549cd-ee05-5c3f-aa3b-a1ef48563d27'
+  assert.deepEqual(new Set((await corridor('controls', { id: edge })).map(row => row.id)), new Set([start, end]))
+  assert.ok((await corridor('lines', { node: start, mode: 'metro' })).some(row => row.id === line))
+  assert.ok((await corridor('destinations', { node: start, line, mode: 'metro' })).some(row => row.id === end))
+  const preview = await corridor('resolve', { name: '编排验收 · 上海地铁', mode: 'metro', strict: true,
+    steps: [{ node_id: start, line_id: line, via_edge: edge }, { node_id: end, line_id: null }] })
+  assert.equal(preview.corridor.verification_status, 'automatic_reference')
+  assert.equal(preview.corridor.edge_refs.length, 1)
+  assert.equal(preview.corridor.edge_refs[0].edge_id, edge)
+  assert.equal(preview.geometry.type, 'GeometryCollection')
+  const reversed = await corridor('reverse', { corridor: preview.corridor })
+  assert.equal(reversed.corridor.origin_node_id, end)
+  assert.equal(reversed.corridor.edge_refs[0].forward, !preview.corridor.edge_refs[0].forward)
+  const first = '0a868143-39c9-5423-9424-60ee8b8deda3'
+  const second = '3841e3dc-0e96-5c86-9bcf-3a6cd8a6b5cf'
+  const crossing = await corridor('resolve',{name:'衔接线路验收',mode:'rail',strict:false,steps:[
+    {node_id:'6309e0d5-aac5-5809-81b8-4dcb7b1d8f53',line_id:'a659c2ba-0ee4-5995-986c-9fa614dc6104',via_edge:first},
+    {node_id:'7743cf3c-35e8-5ff9-88ef-29485f8c78ab',line_id:'5ebc4f61-5c04-5e14-b06b-9dee1cdb2e8b',via_edge:second},
+    {node_id:'197817ef-f174-504f-8982-93e4b8eee234',line_id:null},
+  ]})
+  assert.deepEqual(crossing.corridor.edge_refs.map(item=>item.edge_id),[first,second])
+  const ops = (action, args = {}) => invoke('operations', {snapshot, request: {action, ...args}})
+  const out = await ops('save_corridor', {corridor:preview.corridor})
+  const back = await ops('save_corridor', {corridor:reversed.corridor})
+  const provenance = {source_kind:'demo',source_url_or_reference:'合成时刻和停车锚点 · 上海地铁真实物理边'}
+  const stations = ['b94f34a1-c456-589d-bdc9-4bed8134f269','d2529f5c-6465-55d8-9999-227661dc1044']
+  async function template(path, stationIds, label) {
+    const service = await ops('save_service', {service:{id:'',train_code:label,mode:'metro',provenance}})
+    const stops = stationIds.map((station_id,sequence)=>({station_id,sequence,arrival_time_s:18000+90*sequence,
+      departure_time_s:18000+90*sequence,stop_edge_id:edge,stop_edge_sequence:0,
+      stop_offset_m:sequence===0?0:path.edge_refs[0].end_distance_m}))
+    return ops('save_run', {run:{id:'',service_id:service.id,train_number:label,service_date:'2026-11-20',
+      time_zone:'Asia/Shanghai',plan_version:0,status:'scheduled',corridor_id:path.id,corridor_version:path.version,stops,provenance}})
+  }
+  const outbound = await template(out,stations,'循环验收去程')
+  const inbound = await template(back,[...stations].reverse(),'循环验收返程')
+  const cycle = await ops('generate_cycle', {cycle:{id:'',name:'循环验收',outbound_id:outbound.id,outbound_version:1,
+    return_id:inbound.id,return_version:1,service_date:'2026-11-20',first_departure_s:36000,end_s:36400,
+    turnaround_s:60,launch_gap_s:90,vehicles:1}})
+  assert.equal(cycle.runs,3)
+  await ops('archive_corridor',{id:out.id})
+  assert.ok(!(await ops('list')).corridors.some(item=>item.id===out.id))
+  assert.equal((await ops('get_run',{id:outbound.id})).corridor.id,out.id)
+  const old = JSON.stringify({schema:'railscope.rail-corridors.v1',corridors:[{id:'legacy-test',name:'旧版迁移验收',
+    path:[{edge_id:'old-edge',direction:'forward'}]}]})
+  const issue = await ops('import_legacy',{content:old,service_date:'2026-11-20'})
+  assert.equal(issue.pending,true)
+  assert.ok((await ops('legacy_issues')).some(item=>item.reason===issue.issue))
+  const resolved = await ops('import_legacy',{content:old,service_date:'2026-11-20',aliases:{'edge:old-edge':edge}})
+  assert.equal(resolved.corridors,1)
+  assert.ok(!(await ops('legacy_issues')).some(item=>item.reason===issue.issue))
+
+  await click('地图')
+  await evaluate('window.__railCanvas = document.querySelector(".maplibregl-canvas")')
+  const sidebar = 'document.querySelector(".task-dock").hidden'
+  const initial = await evaluate(sidebar)
+  await click('任务面板')
+  assert.equal(await evaluate(sidebar), !initial)
+  for (const [label,mode] of [['运行','operations'],['分析与诊断','analysis'],['数据','data'],['地图','detail']]) {
+    await click(label)
+    await waitFor(() => evaluate(`document.querySelector(".workspace").dataset.mode===${JSON.stringify(mode)}`), label)
+    assert.equal(await evaluate('window.__railCanvas===document.querySelector(".maplibregl-canvas")'), true)
+    if (artifacts) {
+      const image = await send('Page.captureScreenshot', { format: 'png' })
+      await writeFile(join(artifacts, `mode-${mode}.png`), Buffer.from(image.data, 'base64'))
+    }
+  }
+  assert.equal(await evaluate(sidebar), !initial)
+  await click('任务面板')
+  const right = 'document.querySelector(".inspector").hidden'
+  await click('对象面板')
+  assert.equal(await evaluate(right), true)
+  assert.equal(await evaluate(sidebar), initial)
+  await click('任务面板')
+  assert.equal(await evaluate(sidebar), !initial)
+  assert.equal(await evaluate(right), true)
+  await click('任务面板')
+  await click('对象面板')
+  await send('Emulation.setDeviceMetricsOverride',{width:1040,height:760,deviceScaleFactor:2,mobile:false})
+  await waitFor(()=>evaluate('innerWidth===1040&&Math.abs(devicePixelRatio-2)<.01'),'compact high-DPI layout')
+  assert.ok(await evaluate('document.querySelector(".map-panel").getBoundingClientRect().width>250'))
+  assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth'))
+  await send('Emulation.clearDeviceMetricsOverride')
+  await select('[aria-label=铁路主题]', 'operations')
+  assert.equal(await evaluate('document.querySelector("[aria-label=铁路主题]").value'), 'operations')
+  await select('[aria-label=铁路主题]', 'infrastructure')
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".map-error")].map(e => e.textContent)'), [])
+  async function inspectEdge(id, source, pointIndex) {
+    const {entity} = await invoke('get_entity', {snapshot, id})
+    await click('地图')
+    await input('input[aria-label="搜索交通实体"]', source)
+    const findRow = `[...document.querySelectorAll(".result-row")].find(el=>el.textContent.includes(${JSON.stringify(entity.name)}))`
+    await waitFor(()=>evaluate(`Boolean(${findRow})`),'exact physical edge in catalogue')
+    await evaluate(`(${findRow}).click()`)
+    await waitFor(()=>evaluate(`document.querySelector(".object-head h3")?.textContent===${JSON.stringify(entity.name)}`),'edge inspector')
+    await click('分析与诊断')
+    await evaluate(`document.querySelectorAll(".path-point button")[${pointIndex}].click()`)
+  }
+  await inspectEdge(first,'osm:way:347270717',0)
+  await inspectEdge(second,'osm:way:252713497',1)
+  await click('计算连接路径')
+  await waitFor(()=>evaluate('!document.querySelector(".bottom-dock").hidden&&Boolean(document.querySelector(".bottom-dock .result-path"))'),
+    'cross-line analysis in bottom dock')
+  if (artifacts) {
+    const image = await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifacts,'analysis-result.png'),Buffer.from(image.data,'base64'))
+  }
+  await click('转到运行 · 新建通道')
+  await waitFor(()=>evaluate('document.querySelector(".workspace").dataset.mode==="operations"&&[...document.querySelectorAll(".corridor-form > label input")].some(el=>el.value.endsWith("出发"))'),
+    'analysis transfers into editable corridor')
+  await evaluate(`(() => {
+    const confirm = window.confirm;
+    try {
+      window.confirm = () => true;
+      [...document.querySelectorAll('.corridor-form button')].find(el=>el.textContent==='新建／清空草稿').click();
+    } finally {
+      window.confirm = confirm;
+    }
+  })()`)
+  await click('地图')
+  return { controls: [start, end], line, edge, cross_line_edges:[first,second],
+    modes: 4, canvas_preserved: true, cycle_runs:cycle.runs, legacy_retry:true, analysis_transfer:true }
 }
 
 async function verifyV3(snapshot, fixturePath) {
@@ -238,6 +374,18 @@ async function verifyV3(snapshot, fixturePath) {
   assert.equal(simulated.states.length,2)
   assert.ok(simulated.states.every(state=>state.status==='moving'&&Number.isFinite(state.lon)&&Number.isFinite(state.speed_mps)))
   assert.deepEqual((await ops('simulate',{run_ids,time_s:28875,level:'l2'})).states,simulated.states)
+  const run = (await ops('get_run', {id:run_ids[0]})).run
+  const draft = {...run, stops:run.stops.map(stop=>({...stop,
+    arrival_time_s:stop.arrival_time_s==null?null:stop.arrival_time_s+60,
+    departure_time_s:stop.departure_time_s==null?null:stop.departure_time_s+60,
+  }))}
+  const planned = (await ops('simulate',{run_ids:[run.id],time_s:28875,level:'l1'})).states[0]
+  const preview = await ops('preview_run',{run:draft,time_s:28875})
+  assert.ok(preview.distance_m<planned.distance_m)
+  assert.deepEqual((await ops('get_run',{id:run.id})).run,run)
+  const trainset = await ops('save_trainset',{trainset:{id:'',name:'验收车组',provenance:run.provenance}})
+  await ops('assign',{assignment:{run_id:run_ids[0],trainset_id:trainset.id}})
+  await assert.rejects(ops('assign',{assignment:{run_id:run_ids[1],trainset_id:trainset.id}}),/重叠|占用|VEHICLE/)
   const analysis=await ops('simulate',{run_ids,time_s:28875,level:'l3',resources:true})
   assert.ok(analysis.occupancies.length>=2&&analysis.conflicts.length>=1)
   assert.ok(analysis.diagnostics.some(note=>note.code==='UNVERIFIED_OPERATION_RULES'))
@@ -247,26 +395,64 @@ async function verifyV3(snapshot, fixturePath) {
   assert.ok(csv.content.includes('arrival_time_s'))
   const gtfs=await ops('export_timetable',{format:'gtfs',run_ids})
   assert.equal(Buffer.from(gtfs.content,'base64').subarray(0,2).toString(),'PK')
-  const received=await ops('import_timetable',{format:'gtfs',content:gtfs.content,service_date:'2026-11-21'})
-  assert.equal(received.runs,2)
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'workspace restart')
   await click('运行')
   await waitFor(()=>evaluate('document.querySelector(".ops-workbench")?.hidden===false'),'operations workbench')
-  await click('车次')
+  await click('车次与时刻')
   await input('[aria-label=运营日期]','2026-11-21')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".ops-list-inner button"))'),'dated run rows')
-  await evaluate('[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.textContent.includes("示例"))?.click()')
+  await evaluate('[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.textContent.includes("演示")&&el.querySelector("small")?.textContent==="08:00:00")?.click()')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".run-graph svg"))'),'time-distance graph')
   await click('跳到发车')
+  await click('模拟控制')
   await click('播放模拟')
   await waitFor(()=>evaluate('Boolean(document.querySelector("[aria-label=暂停模拟]"))'),'Rust playback clock')
+  await click('分析与诊断')
+  await waitFor(()=>evaluate('document.querySelector(".status-action")?.textContent.includes("暂停")'),'clock survives mode change')
   await sleep(750)
+  await click('运行')
   await click('暂停模拟')
+  await click('车次与时刻')
+  await click('编辑时刻')
+  await click('运行图')
+  await click('聚焦底部工作区')
+  const handle = await waitFor(()=>evaluate(`(() => {
+    const node = [...document.querySelectorAll('.time-handle')].at(-1);
+    if (!node) return null;
+    node.scrollIntoView({block:'nearest'});
+    const {x,y,width,height} = node.getBoundingClientRect();
+    const point = {x:x+width/2,y:y+height/2};
+    return document.elementFromPoint(point.x,point.y)===node?point:null;
+  })()`),'visible chart handle')
+  const readDeparture = () => evaluate('document.querySelector("input[name=depart-1]").value')
+  const beforeDrag = await readDeparture()
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',buttons:1,clickCount:1,...handle})
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',button:'left',buttons:1,x:handle.x+16,y:handle.y})
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',buttons:0,clickCount:1,x:handle.x+16,y:handle.y})
+  const afterDrag = await waitFor(async()=>{const value=await readDeparture();return value!==beforeDrag&&value},'chart updates timetable')
+  await click('撤销时刻修改')
+  await waitFor(async()=>await readDeparture()===beforeDrag,'chart undo')
+  await click('重做时刻修改')
+  await waitFor(async()=>await readDeparture()===afterDrag,'chart redo')
+  await click('时刻表')
+  await click('保存时刻')
+  await waitFor(()=>evaluate('[...document.querySelectorAll(".ops-message.success")].some(e=>e.textContent.includes("已保存计划版本"))'),
+    'save anchored timetable with full source precision')
+  assert.equal((await ops('get_run',{id:run.id})).run.plan_version,2)
+  await click('运行图')
+  await click('聚焦底部工作区')
   if(artifacts){
     const image=await send('Page.captureScreenshot',{format:'png'})
     await writeFile(join(artifacts,'operations.png'),Buffer.from(image.data,'base64'))
   }
+  await send('Page.reload',{ignoreCache:true})
+  await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'edited running plan restart')
+  const persistedRun = (await ops('get_run',{id:run.id})).run
+  assert.equal(persistedRun.plan_version,2)
+  assert.notEqual(persistedRun.stops.at(-1).departure_time_s,run.stops.at(-1).departure_time_s)
+  const received=await ops('import_timetable',{format:'gtfs',content:gtfs.content,service_date:'2026-11-21'})
+  assert.equal(received.runs,2)
   const stress=[]
   if(process.env.RAILSCOPE_STRESS==='1'){
     const bundle=JSON.parse(exported.content)
@@ -291,6 +477,7 @@ async function verifyV3(snapshot, fixturePath) {
 
 async function verifyHistoricalRun(path) {
   const fixture = JSON.parse(await readFile(path,'utf8'))
+  await waitFor(()=>evaluate('Boolean(window.__TAURI_INTERNALS__?.invoke)'),'native reference API')
   const snapshot = (await invoke('list_data_packs')).active.snapshot
   assert.equal(snapshot, fixture.corridor.snapshot_id)
   const ops = (action, args = {}) => invoke('operations', {snapshot, request: {action, ...args}})
@@ -322,7 +509,7 @@ async function captureReferenceRun(artifactFolder, result) {
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'reference snapshot')
   await click('运行')
-  await click('车次')
+  await click('车次与时刻')
   await input('[aria-label=运营日期]', result.historical_service_date)
   await waitFor(()=>evaluate(`Boolean([...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})))`),'reference run details')
   await evaluate(`[...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})).click()`)
@@ -430,6 +617,7 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
   const switchTo = process.env.RAILSCOPE_SMOKE_SWITCH
   let v3 = null
   let national = null
+  const v4 = process.env.RAILSCOPE_V4_WORKBENCH === '1' ? await verifyV4(snapshot) : null
   if(process.env.RAILSCOPE_V3_FIXTURE) v3=await verifyV3(snapshot,process.env.RAILSCOPE_V3_FIXTURE)
   if (switchTo) {
     const selected = listing.packs.find(pack => pack.snapshot === switchTo)
@@ -445,8 +633,8 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
     await activate(switchTo)
     assert.equal((await invoke('list_data_packs')).active.snapshot, switchTo)
     if (selected.region === '全国') {
-      await sleep(550)
-      await evaluate('document.querySelector(".maplibregl-ctrl-zoom-in").click()')
+      await click('地图')
+      await jump(106, 34, 4.2)
       await waitFor(() => evaluate('Number(document.querySelector(".zoom")?.textContent.slice(2)) >= 3.5'), 'national transport zoom')
     }
     await sleep(1750)
@@ -464,7 +652,8 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
     await activate(snapshot)
   }
   const summary = { snapshot, elapsed_search_ms: elapsed, tile_stats: await invoke('diagnostics'), remote_requests: remote.length,
-    workspace_exercised: sandbox, switched_pack: switchTo ?? null, v3, national }
+    workspace_exercised: sandbox, switched_pack: switchTo ?? null, v3, v4, national }
+  assert.deepEqual(interceptionErrors, [], 'offline request interception')
   console.log(JSON.stringify(summary, null, 2))
   if (artifacts) {
     await sleep(480)

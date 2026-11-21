@@ -1,4 +1,5 @@
 pub mod business_lines;
+pub mod cartography;
 pub mod catalog;
 pub mod graph;
 pub mod operations;

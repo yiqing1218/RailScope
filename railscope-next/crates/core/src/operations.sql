@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS ops_corridor (
  PRIMARY KEY(id,version)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS ops_corridor_snapshot ON ops_corridor(snapshot,id,version);
+CREATE TABLE IF NOT EXISTS ops_corridor_archive (id TEXT PRIMARY KEY) STRICT;
 CREATE TABLE IF NOT EXISTS ops_service (id TEXT PRIMARY KEY, payload TEXT NOT NULL) STRICT;
 CREATE TABLE IF NOT EXISTS ops_run (
  id TEXT NOT NULL, version INTEGER NOT NULL, service_id TEXT NOT NULL REFERENCES ops_service(id),
@@ -19,3 +20,9 @@ CREATE TABLE IF NOT EXISTS ops_assignment (
  PRIMARY KEY(run_id,run_version), FOREIGN KEY(run_id,run_version) REFERENCES ops_run(id,version)
 ) STRICT;
 CREATE TABLE IF NOT EXISTS ops_scenario (id TEXT PRIMARY KEY, payload TEXT NOT NULL) STRICT;
+CREATE TABLE IF NOT EXISTS ops_cycle (id TEXT PRIMARY KEY, payload TEXT NOT NULL) STRICT;
+CREATE TABLE IF NOT EXISTS ops_import_issue (
+ snapshot TEXT NOT NULL,id TEXT NOT NULL,schema TEXT NOT NULL,reason TEXT NOT NULL,
+ created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(snapshot,id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS ops_assignment_vehicle ON ops_assignment(trainset_id,run_id,run_version);

@@ -5,14 +5,17 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 import mapbox_vector_tile
 from pmtiles.reader import Reader
 from pmtiles.tile import TileType
+from shapely import from_wkb
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipelines"))
 from build_pack import build, checksum
+from enrich_pack import enrich
 
 OSM = """<osm version="0.6" generator="fixture">
   <node id="1" lat="31.20" lon="121.40" version="1"/>
@@ -28,6 +31,15 @@ OSM = """<osm version="0.6" generator="fixture">
     <tag k="railway" v="station"/><tag k="name" v="测试车站"/>
     <tag k="old_name" v="旧地名"/>
   </node>
+  <node id="21" lat="31.22" lon="121.47" version="2">
+    <tag k="railway" v="junction"/><tag k="ref" v="J-21"/>
+  </node>
+  <node id="22" lat="31.23" lon="121.47" version="3">
+    <tag k="railway" v="signal"/><tag k="railway:signal:direction" v="forward"/>
+  </node>
+  <node id="23" lat="31.24" lon="121.47" version="1">
+    <tag k="railway" v="subway_entrance"/>
+  </node>
   <way id="10" version="1">
     <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/>
     <tag k="railway" v="rail"/><tag k="highspeed" v="yes"/>
@@ -41,6 +53,17 @@ OSM = """<osm version="0.6" generator="fixture">
   </way>
   <way id="13" version="1">
     <nd ref="6"/><nd ref="7"/><tag k="highway" v="motorway"/><tag k="oneway" v="-1"/>
+  </way>
+  <way id="14" version="1">
+    <nd ref="3"/><nd ref="4"/><tag k="railway" v="platform"/>
+  </way>
+  <way id="15" version="1">
+    <nd ref="5"/><nd ref="6"/><nd ref="7"/><nd ref="5"/>
+    <tag k="landuse" v="railway"/>
+  </way>
+  <way id="16" version="1">
+    <nd ref="1"/><nd ref="2"/><nd ref="7"/><nd ref="1"/>
+    <tag k="building" v="train_station"/>
   </way>
   <relation id="20" version="1">
     <member type="way" ref="10" role=""/>
@@ -57,6 +80,7 @@ class PackTest(unittest.TestCase):
         root = Path(cls.temp.name)
         original = root / "fixture.osm"
         original.write_text(OSM, encoding="utf-8")
+        cls.original = original
         cls.pack = build(original, root / "packs", "Test", "fixture-v1", 9, "memory")
         cls.manifest = json.loads((cls.pack / "manifest.json").read_text(encoding="utf-8"))
         cls.db = sqlite3.connect(cls.pack / "canonical.sqlite")
@@ -105,6 +129,29 @@ class PackTest(unittest.TestCase):
             for feature in layer["features"]:
                 self.assertIn(feature["properties"]["rid"], ids)
                 self.assertNotIn("source_ref", feature["properties"])
+
+    def test_enrichment_keeps_facility_source_types_and_geometry(self):
+        enrich(self.pack, self.original, self.pack.parent, "fixture-enriched")
+        with closing(sqlite3.connect(self.pack.parent / "fixture-enriched" / "canonical.sqlite")) as enriched:
+            rows = enriched.execute("""
+                SELECT e.source_ref,e.class,g.wgs84_wkb,s.tags
+                FROM entity e JOIN source_object s ON s.ref=e.source_ref JOIN geometry g ON g.entity_id=e.id
+                WHERE e.kind='facility'
+            """).fetchall()
+            classes = {ref: (kind, from_wkb(geometry).geom_type, json.loads(tags))
+                       for ref, kind, geometry, tags in rows}
+            for ref, kind, shape in [
+                ("osm:node:21", "junction", "Point"),
+                ("osm:node:22", "signal", "Point"),
+                ("osm:node:23", "subway_entrance", "Point"),
+                ("osm:way:14", "platform", "LineString"),
+                ("osm:way:15", "railway_land", "Polygon"),
+                ("osm:way:16", "station_building", "Polygon"),
+            ]:
+                self.assertEqual(classes[ref][:2], (kind, shape))
+                self.assertEqual(sum(row[0] == ref for row in rows), 1)
+            self.assertEqual(classes["osm:node:21"][2]["ref"], "J-21")
+            self.assertEqual(classes["osm:node:22"][2]["railway:signal:direction"], "forward")
 
 
 if __name__ == "__main__":

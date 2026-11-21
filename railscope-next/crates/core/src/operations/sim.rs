@@ -236,6 +236,42 @@ fn timing(
     Ok(result)
 }
 
+pub(super) fn preview_run(
+    db: &Connection,
+    canonical: &Connection,
+    snapshot: &str,
+    run: &Run,
+    time: f64,
+) -> Result<Value> {
+    ensure!(
+        (2..=2500).contains(&run.stops.len()) && (0.0..=604800.0).contains(&time),
+        "时刻预览需要 2–2500 个停站及有效时间"
+    );
+    let path = prepare(db, canonical, snapshot, run)?;
+    let service = service_for(db, &run.service_id)?;
+    ensure!(
+        path.legs[0].track.kind == service.mode,
+        "运行制式与通道不一致"
+    );
+    let mut previous = 0;
+    for stop in &run.stops {
+        let arrival = stop
+            .arrival_time_s
+            .or(stop.departure_time_s)
+            .context("停站缺少时刻")?;
+        let departure = stop.departure_time_s.unwrap_or(arrival);
+        ensure!(
+            arrival >= previous
+                && (arrival..=604800).contains(&departure)
+                && (!stop.pass_through || arrival == departure),
+            "草稿时序有误"
+        );
+        previous = departure;
+    }
+    let stops = timing(&path, run, None, 0., false)?;
+    Ok(sample(run, &path, &stops, time, false))
+}
+
 fn sample(run: &Run, path: &Prepared, stops: &[Timing], now: f64, eased: bool) -> Value {
     let first = stops.first().unwrap();
     let last = stops.last().unwrap();

@@ -293,6 +293,32 @@ async fn replay_workspace(
 }
 
 #[tauri::command]
+async fn corridor_query(
+    snapshot: String,
+    request: Value,
+    job: String,
+    engine: Core<'_>,
+    routes: State<'_, Arc<Routes>>,
+) -> AppResult<Value> {
+    let engine = Arc::clone(engine.inner());
+    let routes = Arc::clone(routes.inner());
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut jobs = routes.0.lock().unwrap();
+        if jobs.len() >= 2 || jobs.contains_key(&job) || job.len() > 80 {
+            return Err("正在运行其他路径查询".into());
+        }
+        jobs.insert(job.clone(), cancel.clone());
+    }
+    let result = background(move || {
+        rail_ops::corridor_query(engine.for_snapshot(&snapshot)?.as_ref(), request, &cancel)
+    })
+    .await;
+    routes.0.lock().unwrap().remove(&job);
+    result
+}
+
+#[tauri::command]
 async fn query_path(
     snapshot: String,
     start: String,
@@ -448,6 +474,7 @@ fn main() {
             workspace_groups,
             workspace_group_members,
             query_path,
+            corridor_query,
             cancel_path,
             diagnostics,
             operations,

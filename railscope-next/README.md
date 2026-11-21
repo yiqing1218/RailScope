@@ -30,13 +30,13 @@ python railscope-next/pipelines/build_pack.py `
 
 全国概览可用 `china-latest.osm.pbf`，以及 `--region 全国 --snapshot china-osm-202609 --maxzoom 8 --location-index disk`。数据包使用新的快照标识发布，支持小写英文字母、数字、点、短横线和下划线。
 
-本机已生成全国源包 `china-osm-202609-v3` 和上海源包 `shanghai-osm-202609-v3`。全国源包含 1,881,112 个交通实体，配套 SQLite 和 PMTiles 合计约 9.84 GB。新工作区默认加载发现的最新全国源包，已有工作区可在数据包菜单选取。0.3.0 也可从原 `china-osm-202609-overview` 的 canonical 库读取其高缩放原几何。下例用匹配旧包 SHA-256 的 PBF 生成上海独立源包。
+0.4.0 可继续读取已有全国与上海快照，也支持重新抽取铁路设施生成独立快照。新工作区默认加载发现的最新全国源包，已有工作区可在「数据」或顶部数据包菜单切换。下例用匹配旧包 SHA-256 的 PBF 生成新的上海快照。
 
 ```powershell
 python railscope-next/pipelines/enrich_pack.py `
   data/processed/railscope-next/packs/shanghai-osm-202609-r3 `
   data/raw/osm/shanghai-latest.osm.pbf `
-  data/processed/railscope-next/packs shanghai-osm-202609-v3
+  data/processed/railscope-next/packs shanghai-osm-202609-v4
 ```
 
 全国源补全的命令与回滚方法见[迁移说明](../docs/next-v3/migration.md)。
@@ -49,10 +49,10 @@ python railscope-next/pipelines/enrich_pack.py `
 
 ## 使用
 
-- **地图与目录**提供四套底图主题，可按名称、拼音或 `osm:way:…` 搜索，支持当前视野筛选和完整几何高亮。
-- **对象与工作区**可查看来源和所属线路，原始对象有序浏览。保存颜色、线宽、透明度、名称、备注、分组和点位置，支持撤销、重做和安全跨版本重放。路径分析面板另提供工作区线路拆分与合并。
-- **路径和运行**区分物理边、参考通道、日期车次和车辆。提供 CSV、JSON、GTFS，L1 计划、L2 物理路径、L3 假设资源分析和运行图。地铁运行限定上海。经证据保存的核验状态随通道版本记录。
-- **诊断**显示 WebView 帧采样、属性读取和 Rust 瓦片缓存。日志位于应用本地数据目录。
+- **地图**可按名称、拼音或 `osm:way:…` 搜索。支持基础设施、运营线路和专题图层，右侧可读原始对象、查看精确几何和编辑工作区属性。
+- **运行**按端点、线路和方向编排共享通道。底部提供时刻表、运行图与仿真控制。CSV、JSON、GTFS 可从「车辆与交路」导入导出。地铁运行限定上海。
+- **分析与诊断**可执行临时路径查询、检查场景资源风险和查看系统性能。
+- **数据**可安装和切换快照、查看许可和来源、导入旧版计划及审校失败的引用。
 
 ## 校验
 
@@ -61,4 +61,4 @@ python -m unittest discover -s railscope-next/tests -p test_pipeline.py -v
 cargo test --locked --manifest-path railscope-next/Cargo.toml -p railscope-next-core
 ```
 
-Windows 桌面回归通过临时工作区和 WebView2 调试端口运行。详见[验收报告](../docs/next-v3/acceptance.md)。OSM 数据来源和许可证在应用及清单中保留。[OpenStreetMap 署名与许可](https://www.openstreetmap.org/copyright)
+Windows 桌面回归通过临时工作区和 WebView2 调试端口运行。详见[0.4.0 验收](../docs/next-v4/acceptance.md)及[架构与迁移](../docs/next-v4/architecture.md)。OSM 数据来源和许可证在应用及清单中保留。[OpenStreetMap 署名与许可](https://www.openstreetmap.org/copyright)
