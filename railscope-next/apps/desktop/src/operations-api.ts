@@ -103,6 +103,7 @@ export type OperationList = {
   services: Service[]
   runs: Run[]
   dates: string[]
+  dates_by_mode?: Partial<Record<Service['mode'],string[]>>
   stock_types: StockType[]
   trainsets: Trainset[]
   assignments: Assignment[]

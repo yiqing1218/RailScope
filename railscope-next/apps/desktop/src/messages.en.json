@@ -762,5 +762,22 @@
   "邻近轨道参考 {0} m": "Nearby track reference {0} m",
   "保存名称": "Save name",
   "运行详情": "Operations details",
-  "选择通道或车次查看走行径路与来源。": "Select a corridor or train to inspect its path and sources."
+  "选择通道或车次查看走行径路与来源。": "Select a corridor or train to inspect its path and sources.",
+  "运行目录": "Operations catalog",
+  "全部线路": "All lines",
+  "上海城市轨道": "Shanghai urban rail",
+  "{0} 趟车次 · {1} 条通道": "{0} train runs · {1} corridors",
+  "播放当日计划": "Play today's plan",
+  "查看最近计划 · {0}": "Open latest plan · {0}",
+  "通道编排": "Corridor editor",
+  "物理端点": "Physical endpoints",
+  "更多车次操作": "More train actions",
+  "仿真场景": "Simulation scenario",
+  "继续编辑草稿": "Resume draft",
+  "查看占用与冲突": "View occupation and conflicts",
+  "播放设置": "Playback settings",
+  "从已有车次创建运行实例": "Create a run from an existing train",
+  "占用与冲突": "Occupation & conflicts",
+  "选择车次查看逐站到发时刻。": "Select a run to view its stop times.",
+  "导入其他时刻计划时，请使用与当前快照匹配的文件。": "Use a file prepared for the active snapshot when importing more timetables."
 }

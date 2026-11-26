@@ -9,12 +9,12 @@ type Props={
   snapshot:string; mode:'rail'|'metro'; corridors:Corridor[]; selection?:Entity; prefill?:{start?:Summary;end?:Summary}; current?:Corridor;
   setCurrent:(corridor?:Corridor)=>void; execute:(task:()=>Promise<unknown>,message?:string,refresh?:boolean)=>Promise<void>;
   busy:boolean; dirty:(value:boolean)=>void; show:(shape:Geometry|null)=>void; locate:(point:[number,number])=>void;
-  dock:HTMLElement|null;visible:boolean;open:()=>void;
+  dock:HTMLElement|null;isDirty:boolean;
 }
 type Choice = {id:string;name:string}
 const row=():ControlStep=>({node_id:'',line_id:null,via_edge:null})
 
-export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,visible,open}:Props){
+export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,isDirty}:Props){
   const [name,setName]=useState('')
   const [catalogQuery,setCatalogQuery]=useState('')
   const [strict,setStrict]=useState(false)
@@ -48,9 +48,9 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
   },[prefill])
 
   function load(id:string){
+    if(isDirty&&!window.confirm(t("以所选对象替换通道草稿？")))return
     const found=corridors.find(item=>item.id===id)
     if(!found){reset();return}
-    open()
     void execute(async()=>{
       const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'preview',{corridor:found})
       setSteps(found.intent?.length?found.intent:[row(),row()]);setSource({});usePreview(value)
@@ -72,7 +72,7 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
     const a=document.createElement('a');a.href=href;a.download='railscope-corridor.json';a.click();window.setTimeout(()=>URL.revokeObjectURL(href),1000)
   }
 
-  const work=<div className="ops-pane corridor-form" hidden={!visible}>
+  const work=<div className="ops-pane corridor-form">
     <div className="corridor-work-title">
       <strong>{t("端点与线路编排")}</strong>
       <span>{current?.source_id.startsWith('legacy-import:')?current.source_id.slice(14):t("连续有向物理轨道")}</span>
@@ -141,7 +141,6 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
         [item.name,item.id,item.origin_node_id,item.destination_node_id,item.source_id].some(value=>value.toLowerCase().includes(catalogQuery.trim().toLowerCase())))
         .map(item=><option key={item.id} value={item.id}>{item.name} · v{item.version}</option>)}
     </select></label>
-    <button className="primary" onClick={open}>{t("打开通道编排")}</button>
     {dock&&createPortal(work,dock)}
   </div>
 }

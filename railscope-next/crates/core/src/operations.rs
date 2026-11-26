@@ -976,8 +976,21 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
                 }
                 corridors.push(corridor);
             }
-            let services =
-                all::<Service>(db, "SELECT payload FROM ops_service ORDER BY id LIMIT 5000")?;
+            let mut service_query = db.prepare(
+                "SELECT s.payload FROM ops_service s
+                 WHERE NOT EXISTS(SELECT 1 FROM ops_run r WHERE r.service_id=s.id)
+                    OR EXISTS(
+                        SELECT 1 FROM ops_run r
+                        LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+                        WHERE r.service_id=s.id AND (c.snapshot IS NULL OR c.snapshot=?1)
+                          AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)
+                    )
+                 ORDER BY s.id",
+            )?;
+            let services = service_query
+                .query_map([snapshot], |row| row.get::<_, String>(0))?
+                .map(|payload| Ok(serde_json::from_str::<Service>(&payload?)?))
+                .collect::<Result<Vec<_>>>()?;
             let mut runs_query = db.prepare(
                 "SELECT r.payload FROM ops_run r
                 LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
@@ -991,13 +1004,23 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             let runs = payloads
                 .map(|payload| Ok(serde_json::from_str::<Run>(&payload?)?))
                 .collect::<Result<Vec<_>>>()?;
-            let mut date_query = db.prepare("SELECT DISTINCT r.service_date FROM ops_run r
+            let mut date_query = db.prepare("SELECT DISTINCT r.service_date,json_extract(s.payload,'$.mode') FROM ops_run r
+                JOIN ops_service s ON s.id=r.service_id
                 LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
                 WHERE (c.snapshot IS NULL OR c.snapshot=?1) AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)
-                ORDER BY r.service_date DESC LIMIT 365")?;
-            let dates = date_query
-                .query_map([snapshot], |row| row.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
+                ORDER BY r.service_date DESC LIMIT 730")?;
+            let mut dates_by_mode = BTreeMap::<String, Vec<String>>::new();
+            let mut dates = Vec::<String>::new();
+            let rows = date_query.query_map([snapshot], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (date, mode) = row?;
+                if dates.last() != Some(&date) {
+                    dates.push(date.clone());
+                }
+                dates_by_mode.entry(mode).or_default().push(date);
+            }
             let stock_types =
                 all::<StockType>(db, "SELECT payload FROM ops_stock ORDER BY id LIMIT 1000")?;
             let trainsets = all::<Trainset>(
@@ -1011,7 +1034,7 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             let cycles =
                 all::<cycles::Cycle>(db, "SELECT payload FROM ops_cycle ORDER BY id LIMIT 100")?;
             Ok(
-                json!({ "corridors":corridors,"services":services,"runs":runs,"dates":dates,"stock_types":stock_types,
+                json!({ "corridors":corridors,"services":services,"runs":runs,"dates":dates,"dates_by_mode":dates_by_mode,"stock_types":stock_types,
                        "trainsets":trainsets,"scenarios":scenarios,"assignments":assignments,"cycles":cycles }),
             )
         }

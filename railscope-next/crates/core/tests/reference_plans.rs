@@ -19,6 +19,7 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
     let metro = "shanghai-osm-202609-v4";
     let rail = "china-osm-202609-v3";
     let shanghai = fs::read_to_string(inputs.join("shanghai-line7-reference.json"))?;
+    let national_metro = fs::read_to_string(inputs.join("shanghai-line7-national-reference.json"))?;
     let g1 = fs::read_to_string(inputs.join("g1-reference.json"))?;
     let import = |snapshot: &str, content: &str| {
         plans(
@@ -179,6 +180,43 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
     assert_eq!(
         suggested["run"]["stops"][0]["anchor_source"],
         "station_geometry_reference"
+    );
+    assert_eq!(import(rail, &national_metro)?["runs"], 2870);
+    let thursday = list(rail, "2026-11-26")?;
+    assert_eq!(
+        thursday["dates_by_mode"]["metro"].as_array().unwrap().len(),
+        7
+    );
+    assert_eq!(thursday["dates_by_mode"]["rail"], json!(["2026-09-17"]));
+    assert_eq!(list(rail, "2026-09-17")?["runs"][0]["train_number"], "G1");
+    let services = thursday["services"].as_array().unwrap();
+    assert_eq!(services.len(), 2871);
+    let trains = thursday["runs"].as_array().unwrap();
+    assert_eq!(trains.len(), 434);
+    assert!(trains.iter().all(|run| {
+        services
+            .iter()
+            .any(|service| service["id"] == run["service_id"])
+    }));
+    let first = &trains[0];
+    let start = first["stops"][0]["departure_time_s"]
+        .as_i64()
+        .context("national metro departure missing")?;
+    let playback = plans(
+        &engine,
+        rail,
+        "simulate",
+        json!({"run_ids":[first["id"]],"time_s":start+36,"level":"l2"}),
+    )?;
+    assert_eq!(playback["states"][0]["status"], "moving");
+    assert!(playback["states"][0]["lon"].as_f64().is_some());
+    engine.activate(metro)?;
+    assert_eq!(
+        list(metro, "2026-11-26")?["services"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2870
     );
     Ok(())
 }

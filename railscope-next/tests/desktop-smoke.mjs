@@ -468,7 +468,8 @@ async function verifyV3(snapshot, fixturePath) {
   await evaluate('[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.textContent.includes("演示")&&el.querySelector("small")?.textContent==="08:00:00")?.click()')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".run-graph svg"))'),'time-distance graph')
   await click('跳到发车')
-  await click('仿真')
+  await click('仿真场景')
+  await evaluate('document.querySelector(".operations-dialog header button").click()')
   await click('播放模拟')
   await waitFor(()=>evaluate('Boolean(document.querySelector("[aria-label=暂停模拟]"))'),'Rust playback clock')
   await click('分析与诊断')
@@ -648,7 +649,7 @@ async function verifyWorkbenchRefresh(planPath) {
   assert.equal(await evaluate('document.querySelector(".properties").closest("[hidden]")!==null'), true)
   await click('计划与车辆')
   const {root} = await send('DOM.getDocument')
-  const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:'.ops-workbench input[aria-label="选择时刻表文件"]'})
+  const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:'.operations-dialog input[aria-label="选择时刻表文件"]'})
   await send('DOM.setFileInputFiles', {nodeId,files:[planPath]})
   await click('导入')
   await waitFor(() => evaluate('document.querySelector("[aria-label=运营日期]")?.value==="2026-11-23"'), 'Line 7 plan imported in UI', 300)
@@ -665,7 +666,63 @@ async function verifyWorkbenchRefresh(planPath) {
   console.log(JSON.stringify({snapshot,station_link:true,workspace_rename:true,source_overflow:false,line7_import_and_play:true}))
 }
 
-if (process.env.RAILSCOPE_WORKBENCH_PLAN) {
+async function verifyNationalOperationsUI() {
+  const snapshot='china-osm-202609-v3'
+  await waitFor(()=>evaluate('Boolean(window.__TAURI_INTERNALS__ && document.querySelector(".snapshot"))'),'native workspace')
+  assert.equal((await invoke('list_data_packs')).active.snapshot,snapshot)
+  await select('.top .language-select select','zh')
+  await evaluate('document.querySelector(".welcome-dialog button[aria-label=退出介绍]")?.click()')
+  await click('运行')
+  await click('城市轨道')
+  await input('[aria-label=运营日期]','2026-11-26')
+  await waitFor(()=>evaluate('document.querySelector(".ops-summary").textContent.includes("434")'),'preloaded national metro plans')
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".ops-workbench [role=tab]")].map(button=>button.textContent)'), ['车次','通道'])
+  assert.equal(await evaluate('document.querySelector(".ops-workbench input[aria-label=选择时刻表文件]")'), null)
+  await click('仿真场景')
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog[open] input[type=number]"))'),'scenario settings dialog')
+  assert.equal(await evaluate('Boolean(document.querySelector(".ops-workbench input[type=number]"))'), false)
+  await evaluate('document.querySelector(".operations-dialog header button").click()')
+  await click('计划与车辆')
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog[open] input[type=file]"))'),'optional plans dialog')
+  await evaluate('document.querySelector(".operations-dialog header button").click()')
+  const trainLayer='document.querySelector(".map-tools input[aria-label=动态列车]")'
+  await evaluate(`if(${trainLayer}.checked)${trainLayer}.click()`)
+  await waitFor(()=>evaluate(`!${trainLayer}.checked`),'train layer turned off before playback')
+  await click('播放当日计划')
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".statusbar .status-action") && document.querySelector(".metro-plan.return"))'),
+    'national snapshot playback and both directions')
+  await waitFor(()=>evaluate(`${trainLayer}.checked`),'playback enables the train layer')
+  await waitFor(()=>evaluate('Number.parseFloat(document.querySelector(".coordinates").textContent)>120.6 && Number.parseFloat(document.querySelector(".coordinates").textContent)<122.3'),
+    'Playback locates Shanghai within the nationwide map')
+  await waitFor(()=>evaluate('document.querySelector(".ops-inspection").textContent.includes("运行中")'), 'Moving metro train status')
+  await evaluate(`${trainLayer}.click()`)
+  await waitFor(()=>evaluate(`!${trainLayer}.checked`),'train layer can be turned off during playback')
+  await click('定位列车')
+  await waitFor(()=>evaluate(`${trainLayer}.checked`),'locating the train enables its layer again')
+  assert.ok(await evaluate('Boolean(document.querySelector(".ops-bottom [aria-label=运行时钟]"))'))
+  if(artifacts){
+    await mkdir(artifacts,{recursive:true})
+    const image=await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifacts,'national-metro.png'),Buffer.from(image.data,'base64'))
+  }
+  await click('编辑时刻')
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog.map-editor[open] .ops-editor"))'),'floating timetable editor')
+  assert.equal(await evaluate('Boolean(document.querySelector(".ops-bottom .ops-editor"))'),false)
+  await evaluate('[...document.querySelectorAll(".operations-dialog .ops-editor button")].find(button=>button.textContent==="取消").click()')
+  await waitFor(()=>evaluate('!document.querySelector(".operations-dialog") && !document.querySelector(".ops-side-tools button:nth-child(3)")'),
+    'Timetable draft cancelled')
+  await evaluate('document.querySelector(".operation-modes button:first-child").click()')
+  await waitFor(()=>evaluate('document.querySelector(".ops-list").textContent.includes("G1")'),'preloaded G1 plan',60)
+  console.log(JSON.stringify({snapshot,metroRuns:434,timetableInDialog:true,metroPlayback:true,preloadedG1:true}))
+}
+
+if (process.env.RAILSCOPE_NATIONAL_OPERATIONS_UI === '1') {
+  try {
+    await verifyNationalOperationsUI()
+  } finally {
+    socket.close()
+  }
+} else if (process.env.RAILSCOPE_WORKBENCH_PLAN) {
   try {
     await verifyWorkbenchRefresh(process.env.RAILSCOPE_WORKBENCH_PLAN)
   } finally {

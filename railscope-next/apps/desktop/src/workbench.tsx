@@ -24,13 +24,19 @@ const modes: {id:Mode; title:string; description:string; icon:typeof MapIcon}[] 
 ]
 const layoutDefaults = {left:310,right:343,bottom:320,hideLeft:false,hideRight:false,hideBottom:true,focusBottom:false}
 type Layout = typeof layoutDefaults
+const defaultLayout = (mode:Mode):Layout => mode==='operations'?{...layoutDefaults,left:248,right:350}:layoutDefaults
 function layoutPreferences(): Record<Mode,Layout> {
   let saved:Record<string,Partial<Layout>> = {}
   try {
     saved = JSON.parse(localStorage.getItem('railscope-next.layout-v4')??'{}') ?? {}
     if (!Object.keys(saved).length) saved.detail=JSON.parse(localStorage.getItem('railscope-next.layout-v3')??'{}')
   } catch { /* Use defaults for invalid preferences. */ }
-  return Object.fromEntries(modes.map(({id})=>[id,{...layoutDefaults,...saved[id],focusBottom:false}])) as Record<Mode,Layout>
+  return Object.fromEntries(modes.map(({id})=>{
+    const previous=saved[id]
+    const layout={...defaultLayout(id),...previous,focusBottom:false}
+    if(id==='operations'&&previous?.left===layoutDefaults.left)layout.left=defaultLayout(id).left
+    return [id,layout]
+  })) as Record<Mode,Layout>
 }
 function loadVisibility() {
   try {
@@ -99,6 +105,7 @@ export function App() {
     showPath: (...args:Parameters<MapController['setTrainPath']>)=>controller.current?.setTrainPath(...args),
     showCorridor: (...args:Parameters<MapController['setCorridorPath']>)=>controller.current?.setCorridorPath(...args),
     focusTrain: (...args:Parameters<MapController['focusTrain']>)=>controller.current?.focusTrain(...args),
+    revealLayer: (layer:'trains'|'route')=>setVisibility(old=>old[layer]?old:{...old,[layer]:true}),
   }),[])
 
   useEffect(() => {
@@ -331,7 +338,7 @@ export function App() {
       visibility={visibility} onLayer={onLayer} onPreset={onPreset} mode={mode} layouts={layouts}
       onPanel={(target,panel,visible)=>setLayouts(old=>({...old,[target]:{...old[target],[panel]:!visible,
         focusBottom:panel==='hideBottom'&&!visible?false:old[target].focusBottom}}))}
-      resetLayout={target=>setLayouts(old=>({...old,[target]:layoutDefaults}))}
+      resetLayout={target=>setLayouts(old=>({...old,[target]:defaultLayout(target)}))}
       level={level} setLevel={setLevel} pack={active} onData={()=>{setSettingsOpen(false);openData()}}/>
     <Welcome open={welcomeOpen&&!changing} pack={active} onClose={closeWelcome}
       onMap={()=>{closeWelcome();setMode('detail')}}
