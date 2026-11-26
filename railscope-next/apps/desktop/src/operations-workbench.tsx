@@ -534,8 +534,9 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
       </div>
       <div hidden={bottomTab!=='chart'}><RunGraph detail={detail} editor={editor} corridors={corridorList} time={clock.time_s}
         distance={(editor?draftPosition:selectedState)?.distance_m??null} seek={time=>void control('seek',time)} edit={updateDraft}/></div>
-      {bottomTab==='metro'&&<MetroDiagram lineName={line?.name} detail={detail} axis={metroAxis} runs={lineRuns}
-        time={clock.time_s} playing={clock.playing} select={changeRun} seek={time=>void control('seek',time)} locate={inspectStop}/>}
+      {bottomTab==='metro'&&<MetroDiagram key={line?.id} lineName={line?.name} line7={line?.id==='metro:reference:shanghai-metro:7'}
+        detail={detail} axis={metroAxis} runs={lineRuns} date={date} dates={data.dates_by_mode?.metro??[]} onDate={chooseDate}
+        time={clock.time_s} select={changeRun} seek={time=>void control('seek',time)} locate={inspectStop} openTimetable={()=>setBottomTab('table')}/>}
       </div>,bottomDock)}
     </>}
   </div>

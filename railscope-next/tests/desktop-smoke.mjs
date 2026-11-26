@@ -676,6 +676,52 @@ async function verifyNationalOperationsUI() {
   await click('上海地铁7号线')
   await waitFor(()=>evaluate('document.querySelector(".metro-diagram .metro-plan.return")&&Boolean(document.querySelector(".metro-plan.short"))'),
     'Line 7 chart from the line with both directions and short workings')
+  assert.equal(await evaluate('document.querySelectorAll(".metro-plan").length'),434)
+  assert.deepEqual(await evaluate(`(() => {
+    const labels=[...document.querySelectorAll('.metro-station-link')]
+    return [labels.length,labels[0].textContent,labels.at(-1).textContent]
+  })()`),[33,'美兰湖','花木路'])
+  assert.equal(await evaluate('document.querySelectorAll(".metro-route-filters input").length'),3)
+  assert.ok(await evaluate('Boolean(document.querySelector(".metro-diagram [data-evidence=boundary]"))'))
+  await click('早高峰')
+  await waitFor(()=>evaluate('document.querySelector(".metro-zoom output").textContent.includes("07:00 – 10:00")'), 'morning peak time range')
+  assert.ok(await evaluate('document.querySelectorAll(".metro-plan").length < 434'))
+  await click('放大时间轴')
+  assert.ok(await evaluate('!document.querySelector(".metro-zoom output").textContent.includes("07:00 – 10:00")'))
+  await click('全天')
+  await select('[aria-label=运行图日期]','2026-11-27')
+  await waitFor(()=>evaluate('document.querySelectorAll(".metro-plan").length===402&&Boolean(document.querySelector(".metro-midnight"))'), 'Friday full timetable beyond midnight')
+  await evaluate('document.querySelector(".metro-route-filters label:last-child input").click()')
+  await waitFor(()=>evaluate('document.querySelectorAll(".metro-plan").length>0&&document.querySelectorAll(".metro-plan").length<402'), 'cross-midnight train filter')
+  await evaluate('document.querySelector(".metro-route-filters label:last-child input").click()')
+  await click('展开大图')
+  await waitFor(()=>evaluate('document.querySelector(".metro-dialog[open] .metro-station-link:last-child")!==null'), 'expanded diagram')
+  if(artifacts){
+    await mkdir(artifacts,{recursive:true})
+    const image=await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifacts,'line7-full-day.png'),Buffer.from(image.data,'base64'))
+  }
+  await click('早高峰')
+  const plottedPoint=await waitFor(()=>evaluate(`(() => {
+    for(const line of document.querySelectorAll('.metro-dialog .metro-hit')){
+      const at=line.getPointAtLength(line.getTotalLength()*.45)
+      const {x,y}=new DOMPoint(at.x,at.y).matrixTransform(line.getScreenCTM())
+      const hit=document.elementFromPoint(x,y)?.closest('.metro-hit')
+      if(hit)return {x,y,train:hit.getAttribute('aria-label').split(' · ')[0]}
+    }
+    return null
+  })()`),'pick a visible trace')
+  const {x,y,train}=plottedPoint
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y})
+  await waitFor(()=>evaluate(`document.querySelector('.metro-tooltip')?.textContent.includes(${JSON.stringify(train)})`),'hover trace tooltip')
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',buttons:1,clickCount:1,x,y})
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',buttons:0,clickCount:1,x,y})
+  await waitFor(()=>evaluate(`document.querySelector('.metro-selection strong')?.textContent===${JSON.stringify(train)}`),'click trace selects its real train')
+  await click('关闭大图')
+  await click('全天')
+  await select('[aria-label=运行图日期]','2026-11-26')
+  await waitFor(()=>evaluate('document.querySelectorAll(".metro-plan").length===434'),'restore Thursday all-day schedule')
+  await click('上海地铁7号线')
   assert.equal(await evaluate('document.querySelector(".ops-workbench input[aria-label=选择时刻表文件]")'), null)
   await click('仿真场景')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog[open] input[type=number]"))'),'scenario settings dialog')
