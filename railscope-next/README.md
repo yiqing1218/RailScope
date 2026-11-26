@@ -8,7 +8,7 @@ Windows x64 用户可从 [GitHub Releases](https://github.com/yiqing1218/RailSco
 
 For Windows x64, download the installer from [GitHub Releases](https://github.com/yiqing1218/RailScope/releases/latest) and launch RailScope Next from the Start menu. The Shanghai offline map is included. Use the globe menu to switch languages and the question mark to reopen Quick start.
 
-仓库中可双击 `Start-RailScope-Next.cmd`。启动脚本使用 `data/processed/railscope-next/packs` 中的本机数据包。
+仓库中可双击 `Start-RailScope.cmd`。启动脚本使用 `data/processed/railscope-next/packs` 中的本机数据包。
 
 从源码构建需要 Node.js 22.12+、Rust stable MSVC、Microsoft C++ Build Tools 和 WebView2。在仓库根目录运行以下命令。[Tauri Windows 构建环境](https://v2.tauri.app/start/prerequisites/)
 

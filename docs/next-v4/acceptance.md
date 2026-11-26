@@ -1,6 +1,6 @@
 # RailScope Next 0.4.0 交付与验收
 
-从仓库运行 `Start-RailScope-Next.cmd`，或使用 Tauri 生成的 Windows x64 安装包。安装器和源数据包分别发布。已有工作区可在顶部数据包菜单继续使用原活动快照。
+从仓库运行 `Start-RailScope.cmd`，或使用 Tauri 生成的 Windows x64 安装包。安装器和源数据包分别发布。已有工作区可在顶部数据包菜单继续使用原活动快照。
 
 ## 旧版功能在新版的位置
 
@@ -50,6 +50,6 @@
 | 切换到运行界面后的双帧耗时 | 15.5 ms | 15.8 ms |
 | Rust 主进程工作集 | 39.2 MiB | 41.1 MiB |
 
-可复现入口为 `railscope-next/tests/desktop-smoke.mjs`。本机测试的截图与 JSON 日志位于 `artifacts/next-v4/`，源数据和生成物独立保存。
+可复现入口为 `railscope-next/tests/desktop-smoke.mjs`。本机测试的截图与 JSON 日志位于 `data/logs/next-validation/next-v4/`，源数据和生成物独立保存。
 
 更多实现和迁移细节见[架构记录](architecture.md)。

@@ -20,7 +20,7 @@
 
 通道按“端点—线路—端点—线路—端点”定义，隐含未换线的中间端点。车站、站台与轨道共用基础设施编号；具体停靠站台和进出站股道属于车次，不属于通道。主线最短路径只用于几何仿真，不可声称是实际调度/联锁进路。
 
-Desktop SQLite 与 Backend/PostGIS 只能是同一 `railscope.domain` 契约的 Repository/DTO adapter，不得继续新增第二套独立业务模型。地铁和国铁共享领域 ID、路径不变量与模拟插值。
+RailScope Next 以 `railscope-next/crates/core` 中的领域契约为准，SQLite 与桌面接口通过 adapter 访问同一套模型。地铁和国铁共享领域 ID、路径不变量与模拟插值。
 
 自动推断必须保存 source、snapshot/version、verification_status/confidence。按用户要求，通道编辑默认采用自动参考模式：在所选车站、线路和运行方向内选取连续可运行路径，明确标记为自动参考、保存具体选择，并保留手工端点/区间调整；不得声称是已核验调度进路。严格唯一模式存在多条合法路径时保持 unresolved。正式 Corridor/TrainRun 默认禁止引用 construction、planned、disused 或 unknown edge。
 

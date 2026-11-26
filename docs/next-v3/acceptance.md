@@ -13,7 +13,7 @@
 
 ## 启动和操作
 
-双击仓库根目录 `Start-RailScope-Next.cmd`，或者通过 NSIS 安装后在数据包菜单导入本地快照。选全国包，放大自动获得源几何。「视图」可切主题和定位，「图层」可查看站台、道岔和站场。「目录」搜索对象，右侧查原始 OSM 和编辑。在「运行」中从源物理边建通道、录入日期车次、启动仿真并联动运行图。详见[工作台使用说明](gui-spec.md)和[迁移与回退](migration.md)。
+双击仓库根目录 `Start-RailScope.cmd`，或者通过 NSIS 安装后在数据包菜单导入本地快照。选全国包，放大自动获得源几何。「视图」可切主题和定位，「图层」可查看站台、道岔和站场。「目录」搜索对象，右侧查原始 OSM 和编辑。在「运行」中从源物理边建通道、录入日期车次、启动仿真并联动运行图。详见[工作台使用说明](gui-spec.md)和[迁移与回退](migration.md)。
 
 ## 验证命令
 
@@ -33,11 +33,11 @@ $env:RAILSCOPE_SMOKE_WRITABLE='1'
 $env:RAILSCOPE_V3_FIXTURE='railscope-next/tests/fixtures/shanghai-next-v3.json'
 $env:RAILSCOPE_STRESS='1'
 $env:RAILSCOPE_SMOKE_SWITCH='china-osm-202609-overview'
-node railscope-next/tests/desktop-smoke.mjs artifacts/next-v3/native
+node railscope-next/tests/desktop-smoke.mjs data/logs/next-validation/next-v3/native
 ```
 
 Rust 8 项、Python 管道 3 项、旧后端 72 项、Vite 生产构建及最终 Windows 原生端到端验证通过。旧全国包通过 30 分钟地图漫游，新全国源包通过 5 分钟抽查。安装器包含 WebView2 离线安装载荷，大小 288.21 MiB，SHA-256 为 `166c63021b62b49008988e109e633b66ae2ab3d65c6e40a875f4180f34b1ab6b`。独立安装环境未验证。原生测试使用 WebView2 拦截外部 HTTP(S) 请求并关闭浏览器缓存。若要复测漫游，在独立测试进程设 `RAILSCOPE_ROAM_MINUTES=30`、`RAILSCOPE_TEST_PID`，并将 `RAILSCOPE_SMOKE_SWITCH` 指向待测全国快照。用例与性能边界见[基准](benchmark.md)。
 
 ## 证据文件
 
-`artifacts/next-v3/` 保存精度原始/渲染 GeoJSON、解码瓦片、源设施与共线配色核查、桌面截图及测试 JSON。`g1-reference/` 和 `shanghai-line1-reference/` 保存两个历史或重建参考案例。运行 `railscope-next/tests/prepare_g1_reference.py <本地包> <输出 JSON>` 可重建 G1。上海重建需加 `--metro-line1 RailScope_Shanghai_Line1_Reconstruction/line1_public_reconstruction_spec.json`。令 `RAILSCOPE_REFERENCE_FIXTURE` 指向生成文件，再运行同一个原生桌面脚本可复核径路、时刻和 L2 位置，可选设置 `RAILSCOPE_REFERENCE_UI=1` 保存界面。配置来源、出图责任以及仿真层级详见[底图](basemap-style.md)、[精度](precision-report.md)及[运行模型](operations-model.md)。
+`data/logs/next-validation/next-v3/` 保存精度原始/渲染 GeoJSON、解码瓦片、源设施与共线配色核查、桌面截图及测试 JSON。`g1-reference/` 和 `shanghai-line1-reference/` 保存两个历史或重建参考案例。运行 `railscope-next/tests/prepare_g1_reference.py <本地包> <输出 JSON>` 可重建 G1。上海重建需加 `--metro-line1 examples/shanghai-metro/line1_public_reconstruction_spec.json`。令 `RAILSCOPE_REFERENCE_FIXTURE` 指向生成文件，再运行同一个原生桌面脚本可复核径路、时刻和 L2 位置，可选设置 `RAILSCOPE_REFERENCE_UI=1` 保存界面。配置来源、出图责任以及仿真层级详见[底图](basemap-style.md)、[精度](precision-report.md)及[运行模型](operations-model.md)。

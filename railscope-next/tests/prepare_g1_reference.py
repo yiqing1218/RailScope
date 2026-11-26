@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pack", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--examples", type=Path, default=Path("desktop/examples"))
+    parser.add_argument("--examples", type=Path, default=Path(__file__).resolve().parents[2] / "examples" / "rail")
     parser.add_argument("--metro-line1", type=Path, help="Use the repository’s Line 1 public reconstruction specification")
     args = parser.parse_args()
     result = prepare_metro(args.pack, args.metro_line1) if args.metro_line1 else prepare(args.pack, args.examples)
