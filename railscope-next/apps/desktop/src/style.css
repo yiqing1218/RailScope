@@ -359,6 +359,9 @@ summary { cursor: pointer; color: #3b575c; }
 .data-import label { display:grid;gap:5px; min-width:0; }
 .data-import :is(input,textarea,select) { border:1px solid #a8bdb2;border-radius:4px;padding:6px;width:100%;background:white;color:var(--ink); }
 .external-data .import-templates { display:grid; gap:5px; margin-top:8px; }
+.external-data .exchange-fields:not([hidden]) { display:grid; gap:9px; }
+.external-data .exchange-checkbox { display:flex; align-items:center; }
+.external-data .exchange-checkbox input { width:auto; }
 .external-data details p { margin:8px 0; }
 .external-data details ul { padding-left:18px; }
 .import-profile dl > div { display:contents; }

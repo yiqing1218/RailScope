@@ -253,6 +253,59 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
         .context("archived version used by G1 is missing from directory")?;
     assert_eq!(pinned["version"], dated["runs"][0]["corridor_version"]);
     assert_eq!(pinned["current_version"], false);
+    let export = plans(
+        &engine,
+        rail,
+        "export_external_plan",
+        json!({"format":"json","scope":"runs","service_date":"2026-09-17"}),
+    )?;
+    assert_eq!(export["count"], 1);
+    let mut workbook: Value = serde_json::from_str(export["content"].as_str().unwrap())?;
+    assert!(
+        workbook["station_names"]
+            .as_object()
+            .is_some_and(|names| names.len() == 7)
+    );
+    let apply = |workbook: &Value, preview| {
+        plans(
+            &engine,
+            rail,
+            "import_external_plan",
+            json!({"format":"json","content":workbook.to_string(),"preview":preview}),
+        )
+    };
+    assert_eq!(apply(&workbook, false)?["changed"], 0);
+    workbook["services"][0]["operator"] = json!("往返测试");
+    workbook["runs"][0]["stops"][0]["departure_time_s"] = json!(
+        workbook["runs"][0]["stops"][0]["departure_time_s"]
+            .as_i64()
+            .unwrap()
+            + 1
+    );
+    assert_eq!(apply(&workbook, true)?["changed"], 2);
+    assert_eq!(apply(&workbook, false)?["changed"], 2);
+    let updated = list(rail, "2026-09-17")?;
+    assert_eq!(updated["runs"][0]["id"], dated["runs"][0]["id"]);
+    assert_eq!(
+        updated["runs"][0]["plan_version"].as_u64(),
+        dated["runs"][0]["plan_version"].as_u64().map(|v| v + 1)
+    );
+    assert_eq!(updated["runs"][0]["corridor_version"], pinned["version"]);
+    assert_eq!(apply(&workbook, false)?["changed"], 0);
+    for format in ["csv", "gtfs"] {
+        let result = plans(
+            &engine,
+            rail,
+            "export_external_plan",
+            json!({"format":format,"scope":"runs","service_date":"2026-09-17"}),
+        )?;
+        assert_eq!(result["count"], 1);
+        assert!(
+            result["content"]
+                .as_str()
+                .is_some_and(|content| !content.is_empty())
+        );
+    }
     let services = thursday["services"].as_array().unwrap();
     assert_eq!(services.len(), 2871);
     let trains = thursday["runs"].as_array().unwrap();

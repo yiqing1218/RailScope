@@ -84,6 +84,46 @@ fn external_files_import_atomically_into_the_workspace() -> Result<()> {
             .import_sources
             .contains_key("profile.other_names")
     );
+    let export = |kind: &str, query: &str, cursor, parent| {
+        engine.with_workspace(snapshot, |db, pack| {
+            external_data::export(
+                db,
+                pack,
+                external_data::ExportFilter {
+                    kind: kind.into(),
+                    query: query.into(),
+                    cursor,
+                    parent,
+                },
+            )
+        })
+    };
+    let exported = export("station", station, None, None)?;
+    assert_eq!(exported.count, 1);
+    let mut editable: Value = serde_json::from_str(&exported.content)?;
+    assert_eq!(editable["records"][0]["entity_id"], station);
+    assert_eq!(editable["records"][0]["changes"]["name"], "虹桥导入测试");
+    assert!(editable["records"][0]["changes"]["profile"]["other_names"].is_null());
+    assert_eq!(import(&editable, false)?["changed"], 0);
+    let mut stale = editable.clone();
+    editable["records"][0]["changes"]["profile"]["other_names"] = json!(["外部回填别名"]);
+    assert_eq!(import(&editable, false)?["changed"], 1);
+    assert_eq!(import(&editable, false)?["changed"], 0);
+    stale["records"][0]["changes"]["profile"]["other_names"] = json!(["过期修改"]);
+    assert!(import(&stale, false).is_err());
+    assert_eq!(station_state()?.value.profile.other_names, ["外部回填别名"]);
+    let first = export("station", "", None, None)?;
+    let second = export("station", "", first.next, None)?;
+    let first: Value = serde_json::from_str(&first.content)?;
+    let second: Value = serde_json::from_str(&second.content)?;
+    assert_ne!(
+        first["records"][0]["entity_id"],
+        second["records"][0]["entity_id"]
+    );
+    let inventory = export("metro", "", None, Some(line.into()))?;
+    let inventory: Value = serde_json::from_str(&inventory.content)?;
+    assert!(inventory["records"][0]["reference"]["track"]["from_node_id"].is_string());
+    assert_eq!(import(&inventory, false)?["changed"], 0);
 
     let mut plan = json!({
         "schema_version":1, "snapshot_id":snapshot, "corridor_intents":[{
@@ -106,6 +146,28 @@ fn external_files_import_atomically_into_the_workspace() -> Result<()> {
     let saved = import_plan(&plan, false)?;
     assert!(saved["corridor_ids"]["section-test"]["id"].is_string());
     assert_eq!(import_plan(&plan, false)?["duplicate"], true);
+    let export_plan = |scope| {
+        engine.with_workspace(snapshot, |db, pack| {
+            operations::execute(
+                db,
+                pack,
+                json!({
+                    "action":"export_external_plan","scope":scope,"format":"json"
+                }),
+            )
+        })
+    };
+    let exported = export_plan("corridors")?;
+    let mut editable: Value = serde_json::from_str(exported["content"].as_str().unwrap())?;
+    assert_eq!(
+        editable["corridors"][0]["id"],
+        saved["corridor_ids"]["section-test"]["id"]
+    );
+    assert_eq!(import_plan(&editable, false)?["changed"], 0);
+    editable["corridors"][0]["name"] = json!("回填后的通道名");
+    assert_eq!(import_plan(&editable, true)?["changed"], 1);
+    assert_eq!(import_plan(&editable, false)?["changed"], 1);
+    assert_eq!(import_plan(&editable, false)?["changed"], 0);
     plan["snapshot_id"] = json!("other-snapshot");
     assert!(import_plan(&plan, false).is_err());
     drop(engine);
@@ -121,6 +183,8 @@ fn external_files_import_atomically_into_the_workspace() -> Result<()> {
             catalog["corridors"][0]["verification_status"],
             "automatic_reference"
         );
+        assert_eq!(catalog["corridors"][0]["name"], "回填后的通道名");
+        assert_eq!(catalog["corridors"][0]["version"], 2);
         assert_eq!(
             workspace::state(db, snapshot, station)?.value.name,
             "虹桥导入测试"

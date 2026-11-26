@@ -26,9 +26,10 @@ const templates = [
 ] as const
 
 type ImportFormat = 'metadata' | ScheduleFormat
+type ExportKind = 'station' | 'line' | 'rail' | 'metro' | 'corridors' | 'runs'
 
-function download(filename:string, content:string) {
-  const url = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}))
+function download(filename:string, content:BlobPart, type='text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([content], {type}))
   const link = document.createElement('a')
   link.href = url
   link.download = filename
@@ -53,6 +54,7 @@ function templateContent(content:string, filename:string, pack:Pack|null, select
 export function ExternalData({pack, selected, onMetadata, onPlan}:{
   pack:Pack|null; selected?:Entity; onMetadata:()=>void; onPlan:(date?:string)=>void
 }) {
+  const [tab, setTab] = useState<'export'|'import'>('export')
   const [format, setFormat] = useState<ImportFormat>('metadata')
   const [date, setDate] = useState(chinaDate)
   const [stopMap, setStopMap] = useState('')
@@ -84,7 +86,7 @@ export function ExternalData({pack, selected, onMetadata, onPlan}:{
       } else {
         const mapping = format==='gtfs' && stopMap.trim() ? JSON.parse(stopMap) : undefined
         const result = await opsApi.importExternal(pack.snapshot, format, content, preview, format==='gtfs'?date:undefined, mapping)
-        setMessage(result.duplicate ? t("相同的运行计划已导入。") :
+        setMessage(result.duplicate ? t("相同的运行计划已导入。") : result.changed===0 ? t("没有需要更新的记录。") :
           t("{0} · {1} 条通道，{2} 个车次，{3} 条运行实例", prefix, result.corridors, result.services, result.runs))
         if (!preview) {
           setCorridorIds(result.corridor_ids)
@@ -98,20 +100,14 @@ export function ExternalData({pack, selected, onMetadata, onPlan}:{
     }
   }
 
-  async function exportTrackIndex() {
-    if (!pack || selected?.kind !== 'line') return
-    try {
-      const tracks = await api.lineTracks(pack.snapshot, selected.id)
-      download(`line-tracks-${selected.id}.json`, JSON.stringify({
-        snapshot_id:pack.snapshot, line_id:selected.id, tracks,
-      }, null, 2) + '\n')
-    } catch (cause) {
-      setError(String(cause))
-    }
-  }
-
   return <div className="property-content task-summary data-import external-data">
     <p>{pack ? t("目标快照 · {0}", pack.snapshot) : t("先加载数据包，再导入资料。")}</p>
+    <div className="tabs" role="group" aria-label={t("导入与导出")}>
+      <button type="button" className={tab==='export'?'active':''} aria-pressed={tab==='export'} onClick={()=>setTab('export')}>{t("导出")}</button>
+      <button type="button" className={tab==='import'?'active':''} aria-pressed={tab==='import'} onClick={()=>setTab('import')}>{t("导入")}</button>
+    </div>
+    <div hidden={tab!=='export'}><ExportData pack={pack} selected={selected}/></div>
+    <div hidden={tab!=='import'} className="exchange-fields">
     <label>{t("文件格式")}<select value={format} disabled={busy} onChange={event=>{
       setFormat(event.target.value as ImportFormat)
       setFile(undefined)
@@ -140,6 +136,7 @@ export function ExternalData({pack, selected, onMetadata, onPlan}:{
       <summary>{t("已保存通道 ID")}</summary>
       <ul>{Object.entries(corridorIds).map(([key, {id,version}])=><li key={key}>{key} · <code>{id}</code> · v{version}</li>)}</ul>
     </details>}
+    </div>
     <details open={!pack || undefined}>
       <summary>{t("模板与导入手册")}</summary>
       <p>{t("对象属性的「来源」页提供实体 ID。模板会填入当前快照和匹配的所选对象。")}</p>
@@ -147,11 +144,106 @@ export function ExternalData({pack, selected, onMetadata, onPlan}:{
         {templates.map(([filename,label,content])=><button key={filename} className="secondary compact"
           onClick={()=>download(filename,templateContent(content,filename,pack,selected))}><Download size={14}/>{t(label)}</button>)}
         <button className="secondary compact" onClick={()=>download('RailScope-导入手册.md',manual)}><Download size={14}/>{t("导入手册")}</button>
-        {pack&&selected?.kind==='line'&&<button className="secondary compact" disabled={busy} onClick={()=>void exportTrackIndex()}>
-          <Download size={14}/>{t("导出所选线路轨道索引")}
-        </button>}
       </div>
     </details>
+  </div>
+}
+
+const exportKinds = [
+  ['station','车站资料'],['line','线路与分期'],['rail','国铁轨道资料'],
+  ['metro','城轨轨道资料'],['corridors','连续通道'],['runs','运行计划与时刻表'],
+] as const
+
+function ExportData({pack, selected}:{pack:Pack|null;selected?:Entity}) {
+  const [kind, setKind] = useState<ExportKind>(
+    exportKinds.find(([key])=>key===selected?.kind)?.[0]??'station',
+  )
+  const [query,setQuery] = useState('')
+  const [serviceDate,setServiceDate] = useState('')
+  const [format,setFormat] = useState<ScheduleFormat>('json')
+  const [onlyLine,setOnlyLine] = useState(false)
+  const [page,setPage] = useState<{next:string; batch:number}>()
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+  const [message,setMessage] = useState('')
+  const operation = kind==='corridors'||kind==='runs'
+  const selectedLine = (kind==='rail'||kind==='metro')&&selected?.kind==='line' ? selected : undefined
+
+  function reset() {
+    setPage(undefined)
+    setError('')
+    setMessage('')
+  }
+
+  async function save(next=false, id?:string) {
+    if (!pack||busy) return
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const cursor = next ? page?.next : undefined
+      const batch = next&&page ? page.batch+1 : 1
+      const fileFormat = kind==='runs' ? format : 'json'
+      const result = operation
+        ? await opsApi.exportExternal(pack.snapshot,kind,fileFormat,serviceDate||undefined,cursor)
+        : await api.exportMetadata(pack.snapshot,{
+            kind,query:id??query.trim(),cursor,parent:!id&&onlyLine?selectedLine?.id:undefined,
+          })
+      const filename = `railscope-${kind}-${pack.snapshot}-${batch}.${fileFormat==='gtfs'?'zip':fileFormat}`
+      if (fileFormat==='gtfs') {
+        download(filename, Uint8Array.from(atob(result.content),c=>c.charCodeAt(0)), 'application/zip')
+      } else {
+        download(filename,result.content)
+      }
+      setPage(result.next?{next:result.next,batch}:undefined)
+      setMessage(t("已导出 {0} 条。",result.count))
+    } catch(cause) {
+      setError(operation?describeError(cause):String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function exportTrackIndex() {
+    if (!pack||selected?.kind!=='line') return
+    setError('')
+    try {
+      const tracks = await api.lineTracks(pack.snapshot, selected.id)
+      download(`line-tracks-${selected.id}.json`, JSON.stringify({
+        snapshot_id:pack.snapshot, line_id:selected.id, tracks,
+      }, null, 2) + '\n')
+    } catch(cause) {
+      setError(String(cause))
+    }
+  }
+
+  return <div className="exchange-fields">
+    <label>{t("导出内容")}<select value={kind} disabled={busy} onChange={event=>{setKind(event.target.value as ExportKind);reset()}}>
+      {exportKinds.map(([key,label])=><option key={key} value={key}>{t(label)}</option>)}
+    </select></label>
+    {!operation&&<label>{t("名称或实体 ID")}<input value={query} maxLength={128} disabled={busy}
+      onChange={event=>{setQuery(event.target.value);reset()}}/></label>}
+    {selectedLine&&<label className="exchange-checkbox"><input type="checkbox" checked={onlyLine} disabled={busy}
+      onChange={event=>{setOnlyLine(event.target.checked);reset()}}/>{t("仅导出所选线路的轨道")}</label>}
+    {kind==='runs'&&<>
+      <label>{t("运营日期（可选）")}<input type="date" value={serviceDate} disabled={busy}
+        onChange={event=>{setServiceDate(event.target.value);reset()}}/></label>
+      <label>{t("文件格式")}<select value={format} disabled={busy} onChange={event=>{setFormat(event.target.value as ScheduleFormat);reset()}}>
+        <option value="json">{t("可回填的 RailScope JSON")}</option><option value="csv">CSV</option><option value="gtfs">GTFS ZIP</option>
+      </select></label>
+    </>}
+    <p className="muted">{!operation?t("在 JSON 的 changes 中填空项或修改已有值，保存后到「导入」页回填。"):
+      kind==='runs'&&format!=='json'?t("CSV 和 GTFS 可与其他工具交换时刻。回填现有版本请选择 RailScope JSON。"):
+      t("JSON 保留稳定 ID 和版本，可编辑后导回同一工作区。")}</p>
+    <div className="ops-actions">
+      <button className="primary compact" disabled={busy||!pack} onClick={()=>void save()}><Download size={15}/>{t("导出资料")}</button>
+      {page&&<button className="secondary compact" disabled={busy} onClick={()=>void save(true)}>{t("导出下一批")}</button>}
+      {pack&&selected?.kind===kind&&<button className="secondary compact" disabled={busy} onClick={()=>void save(false,selected.id)}>{t("导出所选对象")}</button>}
+      {pack&&selected?.kind==='line'&&<button className="secondary compact" disabled={busy} onClick={()=>void exportTrackIndex()}>{t("导出所选线路轨道索引")}</button>}
+    </div>
+    {busy&&<p role="status">{t("正在导出资料…")}</p>}
+    {error&&<p className="error-text" role="alert">{error}</p>}
+    {message&&<p role="status">{message}</p>}
   </div>
 }
 

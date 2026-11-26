@@ -207,8 +207,11 @@ export const opsApi = {
     operations<{services:number;runs:number;corridors:number;first_date:string;duplicate?:boolean}>(snapshot, 'import_timetable', { format, content, service_date, stop_map }),
   importExternal:(snapshot:string,format:ScheduleFormat,content:string,preview:boolean,service_date?:string,stop_map?:Record<string,string>)=>
     operations<{services:number;runs:number;corridors:number;first_date:string;duplicate?:boolean;
-      corridor_ids?:Record<string,{id:string;version:number}>}>(
+      changed?:number;corridor_ids?:Record<string,{id:string;version:number}>}>(
         snapshot,'import_external_plan',{ format,content,service_date,stop_map,preview }),
+  exportExternal:(snapshot:string,scope:'corridors'|'runs',format:ScheduleFormat,service_date?:string,cursor?:string)=>
+    operations<{format:ScheduleFormat;content:string;count:number;next:string|null}>(
+      snapshot,'export_external_plan',{scope,format,service_date,cursor}),
   export: (snapshot: string, format: ScheduleFormat, run_ids?: string[]) =>
     operations<{ content: string; format: ScheduleFormat }>(snapshot, 'export_timetable', { format, run_ids }),
   demo: (snapshot:string,corridor:Corridor,origin_station_id:string,destination_station_id:string,service_date:string)=>

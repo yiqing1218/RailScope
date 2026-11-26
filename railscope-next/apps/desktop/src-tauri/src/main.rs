@@ -105,6 +105,21 @@ async fn import_external_data(
 }
 
 #[tauri::command]
+async fn export_external_data(
+    snapshot: String,
+    filter: external_data::ExportFilter,
+    engine: Core<'_>,
+) -> AppResult<external_data::Export> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        engine.with_workspace(&snapshot, |db, pack| {
+            external_data::export(db, pack, filter)
+        })
+    })
+    .await
+}
+
+#[tauri::command]
 async fn external_line_tracks(
     snapshot: String,
     id: String,
@@ -550,6 +565,7 @@ fn main() {
             diagnostics,
             operations,
             import_external_data,
+            export_external_data,
             external_line_tracks,
             edit_business_line,
             operations_clock,

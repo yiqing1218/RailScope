@@ -88,6 +88,8 @@ export const api = {
   rawSource:(snapshot:string,reference:string,offset=0)=>invoke<RawSource>('get_osm_source',{snapshot,reference,offset}),
   importMetadata: (snapshot:string,content:string,preview:boolean)=>
     invoke<{records:number;changed:number;preview:boolean}>('import_external_data',{snapshot,content,preview}),
+  exportMetadata: (snapshot:string,filter:{kind:string;query?:string;cursor?:string;parent?:string})=>
+    invoke<{content:string;count:number;next:string|null}>('export_external_data',{snapshot,filter}),
   lineTracks: (snapshot:string,id:string)=>invoke<unknown[]>('external_line_tracks',{snapshot,id}),
   lineEdit: <T>(snapshot: string, request: LineEditRequest) => invoke<T>('edit_business_line', {snapshot, request}),
   update: (snapshot: string, id: string, expected: number, value: Override) =>

@@ -296,6 +296,12 @@ enum Request {
         format: String,
         run_ids: Option<Vec<String>>,
     },
+    ExportExternalPlan {
+        format: String,
+        scope: String,
+        service_date: Option<String>,
+        cursor: Option<String>,
+    },
     SeedDemo {
         corridor_id: String,
         version: u32,
@@ -1288,6 +1294,20 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
         Request::ExportTimetable { format, run_ids } => {
             schedule::export(db, &canonical, &format, run_ids.as_deref())
         }
+        Request::ExportExternalPlan {
+            format,
+            scope,
+            service_date,
+            cursor,
+        } => schedule::export_external(
+            db,
+            &canonical,
+            snapshot,
+            &format,
+            &scope,
+            service_date.as_deref(),
+            cursor.as_deref(),
+        ),
         Request::SeedDemo {
             corridor_id,
             version,

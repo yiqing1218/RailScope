@@ -6,12 +6,23 @@ use std::io::{Cursor, Read, Write};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 const LIMIT: usize = 16 * 1024 * 1024;
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct Bundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     schema_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     snapshot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    edit_existing: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    original_services: BTreeMap<String, Service>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    station_names: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     corridors: Vec<Corridor>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -383,14 +394,23 @@ pub(super) fn import(
         && bundle.services.is_empty()
         && corridor_count > 0;
     ensure!(
-        (!bundle.runs.is_empty() || corridor_only)
+        (!bundle.runs.is_empty() || corridor_only || bundle.edit_existing && corridor_count > 0)
             && bundle.runs.len() <= 5000
             && bundle.services.len() <= 5000
             && corridor_count <= 64,
         "IMPORT_BUDGET · 无可导入运行实例或数量超限"
     );
+    ensure!(
+        !bundle.edit_existing
+            || (external_preview.is_some()
+                && bundle.snapshot_id.as_deref() == Some(snapshot)
+                && bundle.corridor_intents.is_empty()),
+        "DATA_VERSION_CONFLICT · 回填文件须使用导出时的快照和连续通道"
+    );
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let digest = if corridor_count > 0 {
+    let digest = if bundle.edit_existing {
+        Some(format!("edit:{:x}", Sha256::digest(content.as_bytes())))
+    } else if corridor_count > 0 {
         Some(format!("{:x}", Sha256::digest(content.as_bytes())))
     } else if external_preview.is_some() {
         let key = serde_json::to_vec(&(format, content, service_date, stop_map))?;
@@ -409,11 +429,28 @@ pub(super) fn import(
         if let Some(previous) = previous {
             let mut result: Value = serde_json::from_str(&previous)?;
             result["duplicate"] = json!(true);
+            if bundle.edit_existing {
+                result["changed"] = json!(0);
+            }
             if let Some(preview) = external_preview {
                 result["preview"] = json!(preview);
             }
             return Ok(result);
         }
+    }
+    if bundle.edit_existing {
+        let preview = external_preview.unwrap();
+        let result = apply_exported(&tx, canonical, pack, bundle, preview)?;
+        if !preview {
+            if result["changed"] != 0 {
+                tx.execute(
+                    "INSERT INTO ops_timetable_import VALUES(?,?,?)",
+                    params![snapshot, digest, serde_json::to_string(&result)?],
+                )?;
+            }
+            tx.commit()?;
+        }
+        return Ok(result);
     }
     for intent in bundle.corridor_intents.drain(..) {
         ensure!(external_preview.is_some(), "请通过外部资料入口导入控制端点");
@@ -505,6 +542,128 @@ pub(super) fn import(
         }
     }
     Ok(result)
+}
+
+fn same<T: Serialize>(old: &T, new: &T) -> Result<bool> {
+    Ok(serde_json::to_value(old)? == serde_json::to_value(new)?)
+}
+
+fn run_in_snapshot(canonical: &Connection, run: &Run) -> Result<bool> {
+    let mut station = canonical
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM entity WHERE id=? AND kind='station')")?;
+    for stop in &run.stops {
+        if !station.query_row([&stop.station_id], |r| r.get::<_, bool>(0))? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn apply_exported(
+    db: &Connection,
+    canonical: &Connection,
+    pack: &Pack,
+    bundle: Bundle,
+    preview: bool,
+) -> Result<Value> {
+    let snapshot = &pack.manifest.snapshot;
+    let mut changed_corridors = BTreeMap::new();
+    let mut seen = HashSet::new();
+    for corridor in bundle.corridors {
+        ensure!(
+            seen.insert(corridor.id.clone()),
+            "INVALID_TIMETABLE · 通道 ID 重复"
+        );
+        let old: Corridor = from_row(
+            db,
+            "SELECT payload FROM ops_corridor WHERE snapshot=? AND id=? AND version=?",
+            params![snapshot, corridor.id, corridor.version],
+        )?
+        .context("DATA_VERSION_CONFLICT · 找不到导出时的通道版本")?;
+        if !same(&old, &corridor)? {
+            let id = corridor.id.clone();
+            let saved = save_corridor(db, canonical, pack, corridor)
+                .map_err(|error| anyhow::anyhow!("{error:#} · 通道 {id}"))?;
+            changed_corridors.insert(id, json!({"id":saved.id,"version":saved.version}));
+        }
+    }
+    let mut runs = Vec::new();
+    let mut eligible_services = HashSet::new();
+    seen.clear();
+    for run in bundle.runs {
+        ensure!(
+            seen.insert(run.id.clone()),
+            "INVALID_TIMETABLE · 运行实例 ID 重复"
+        );
+        let old: Run = from_row(db,
+            "SELECT r.payload FROM ops_run r LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+             WHERE r.id=?1 AND r.version=?2 AND (r.corridor_id IS NULL OR c.snapshot=?3)",
+            params![run.id, run.plan_version, snapshot],
+        )?.context("DATA_VERSION_CONFLICT · 找不到导出时的运行实例版本")?;
+        ensure!(
+            run_in_snapshot(canonical, &old)?,
+            "DATA_VERSION_CONFLICT · 车站与当前快照不匹配"
+        );
+        eligible_services.insert(old.service_id.clone());
+        let changed = !same(&old, &run)?;
+        runs.push((run, changed));
+    }
+    seen.clear();
+    let mut services = 0;
+    let mut changed_train_codes = HashSet::new();
+    for service in bundle.services {
+        ensure!(
+            seen.insert(service.id.clone()),
+            "INVALID_TIMETABLE · 车次服务 ID 重复"
+        );
+        let original = bundle
+            .original_services
+            .get(&service.id)
+            .context("DATA_VERSION_CONFLICT · 缺少导出时的车次服务基准")?;
+        if same(original, &service)? {
+            continue;
+        }
+        ensure!(
+            eligible_services.contains(&service.id),
+            "DATA_VERSION_CONFLICT · 车次服务不在本批运行实例中"
+        );
+        let current = service_for(db, &service.id)?;
+        if !same(&current, &service)? {
+            ensure!(
+                same(original, &current)?,
+                "DATA_VERSION_CONFLICT · 车次服务已被编辑，请重新导出"
+            );
+            for id in [&service.origin_station_id, &service.destination_station_id]
+                .into_iter()
+                .flatten()
+            {
+                station(canonical, id)?;
+            }
+            if current.train_code != service.train_code {
+                changed_train_codes.insert(service.id.clone());
+            }
+            save_service(db, service)?;
+            services += 1;
+        }
+    }
+    runs.retain(|(run, changed)| *changed || changed_train_codes.contains(&run.service_id));
+    let first_date = runs
+        .iter()
+        .map(|(run, _)| run.service_date.as_str())
+        .min()
+        .unwrap_or_default()
+        .to_owned();
+    let count = runs.len();
+    for (run, _) in runs {
+        let id = run.id.clone();
+        save_run(db, canonical, snapshot, run)
+            .map_err(|error| anyhow::anyhow!("{error:#} · 运行实例 {id}"))?;
+    }
+    let corridors = changed_corridors.len();
+    Ok(
+        json!({"changed":corridors+services+count,"corridors":corridors,"services":services,"runs":count,
+        "first_date":first_date,"preview":preview,"corridor_ids":if preview { BTreeMap::new() } else { changed_corridors }}),
+    )
 }
 
 fn csv_bytes<T: Serialize>(rows: impl IntoIterator<Item = T>) -> Result<Vec<u8>> {
@@ -635,6 +794,10 @@ pub(super) fn export(
         runs,
         ..Bundle::default()
     };
+    encode_bundle(&bundle, canonical, format)
+}
+
+fn encode_bundle(bundle: &Bundle, canonical: &Connection, format: &str) -> Result<Value> {
     let content = match format {
         "json" => serde_json::to_string_pretty(&bundle)?,
         "csv" => {
@@ -666,11 +829,125 @@ pub(super) fn export(
             });
             String::from_utf8(csv_bytes(rows)?)?
         }
-        "gtfs" => STANDARD.encode(gtfs(&bundle, canonical)?),
+        "gtfs" => STANDARD.encode(gtfs(bundle, canonical)?),
         _ => bail!("INVALID_FORMAT · 支持 JSON、CSV 和 GTFS ZIP"),
     };
     ensure!(content.len() <= LIMIT * 2, "EXPORT_BUDGET · 导出超出容量");
     Ok(json!({"format":format,"content":content}))
+}
+
+pub(super) fn export_external(
+    db: &Connection,
+    canonical: &Connection,
+    snapshot: &str,
+    format: &str,
+    scope: &str,
+    date: Option<&str>,
+    cursor: Option<&str>,
+) -> Result<Value> {
+    if let Some(cursor) = cursor {
+        identifier(cursor)?;
+    }
+    let mut bundle = Bundle::default();
+    if format == "json" {
+        bundle.edit_existing = true;
+        bundle.schema_version = Some(1);
+        bundle.snapshot_id = Some(snapshot.into());
+    }
+    let (count, next) = match scope {
+        "corridors" => {
+            ensure!(format == "json", "INVALID_FORMAT · 通道导出须使用 JSON");
+            let mut statement = db.prepare(
+                "SELECT c.payload FROM ops_corridor c WHERE c.snapshot=?1 AND c.id>coalesce(?2,'')
+                   AND c.version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
+                   AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id)
+                 ORDER BY c.id LIMIT 17",
+            )?;
+            let mut edges = 0;
+            let mut more = false;
+            for row in statement.query_map(params![snapshot, cursor], |r| r.get::<_, String>(0))? {
+                let corridor: Corridor = serde_json::from_str(&row?)?;
+                if bundle.corridors.len() == 16 || edges + corridor.edge_refs.len() > 50_000 {
+                    more = true;
+                    break;
+                }
+                edges += corridor.edge_refs.len();
+                bundle.corridors.push(corridor);
+            }
+            (
+                bundle.corridors.len(),
+                more.then(|| bundle.corridors.last().unwrap().id.clone()),
+            )
+        }
+        "runs" => {
+            if let Some(date) = date {
+                NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+            }
+            let mut statement = db.prepare(
+                "SELECT r.payload FROM ops_run r LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+                 WHERE (r.corridor_id IS NULL OR c.snapshot=?1) AND r.id>coalesce(?2,'')
+                   AND (?3 IS NULL OR r.service_date=?3)
+                   AND (?4!='gtfs' OR json_extract(r.payload,'$.status')='scheduled')
+                   AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)
+                 ORDER BY r.id",
+            )?;
+            let mut rows = statement.query(params![snapshot, cursor, date, format])?;
+            let mut more = false;
+            let mut services = BTreeMap::new();
+            let mut stops = 0;
+            while let Some(row) = rows.next()? {
+                let run: Run = serde_json::from_str(&row.get::<_, String>(0)?)?;
+                if !run_in_snapshot(canonical, &run)? {
+                    continue;
+                }
+                if bundle.runs.len() == 100 || stops + run.stops.len() > 8_000 {
+                    more = true;
+                    break;
+                }
+                stops += run.stops.len();
+                if !services.contains_key(&run.service_id) {
+                    services.insert(run.service_id.clone(), service_for(db, &run.service_id)?);
+                }
+                if format == "json" {
+                    for stop in &run.stops {
+                        if !bundle.station_names.contains_key(&stop.station_id) {
+                            let name: String = canonical.query_row(
+                                "SELECT name FROM entity WHERE id=?",
+                                [&stop.station_id],
+                                |r| r.get(0),
+                            )?;
+                            let renamed: Option<String> = db.query_row(
+                                "SELECT nullif(json_extract(payload,'$.name'),'') FROM overrides
+                                 WHERE snapshot=? AND entity=?",
+                                params![snapshot,stop.station_id], |r| r.get::<_,Option<String>>(0),
+                            ).optional()?.flatten();
+                            bundle
+                                .station_names
+                                .insert(stop.station_id.clone(), renamed.unwrap_or(name));
+                        }
+                    }
+                }
+                bundle.runs.push(run);
+            }
+            bundle.services = services.values().cloned().collect();
+            if format == "json" {
+                bundle.original_services = services;
+            }
+            (
+                bundle.runs.len(),
+                more.then(|| bundle.runs.last().unwrap().id.clone()),
+            )
+        }
+        _ => bail!("INVALID_FORMAT · 未知的运行资料类型"),
+    };
+    ensure!(
+        count > 0,
+        "MISSING_TIMETABLE · 当前范围没有可导出的运行资料"
+    );
+    let mut result = encode_bundle(&bundle, canonical, format)?;
+    result["count"] = json!(count);
+    result["next"] = json!(next);
+    Ok(result)
 }
 pub(super) fn demo(
     db: &mut Connection,

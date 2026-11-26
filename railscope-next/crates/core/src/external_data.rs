@@ -1,10 +1,10 @@
 //! Versioned, snapshot-bound metadata imports for the workspace database.
-use crate::{pack::Pack, workspace};
+use crate::{cartography, catalog, pack::Pack, workspace};
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashSet};
 
 pub const MAX_BYTES: usize = 16 * 1024 * 1024;
@@ -307,7 +307,7 @@ impl Profile {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Document {
     schema_version: u32,
@@ -316,13 +316,223 @@ struct Document {
     records: Vec<Record>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Record {
     entity_id: String,
     kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<Source>,
     changes: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original: Option<Map<String, Value>>,
+}
+
+#[derive(Deserialize)]
+pub struct ExportFilter {
+    pub kind: String,
+    #[serde(default)]
+    pub query: String,
+    pub cursor: Option<String>,
+    pub parent: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Export {
+    pub content: String,
+    pub count: usize,
+    pub next: Option<String>,
+}
+
+const COMMON_FIELDS: &[&str] = &[
+    "name",
+    "designation",
+    "operator",
+    "category",
+    "group",
+    "note",
+];
+
+pub fn export(db: &Connection, pack: &Pack, filter: ExportFilter) -> Result<Export> {
+    ensure!(
+        matches!(filter.kind.as_str(), "station" | "line" | "rail" | "metro"),
+        "不支持的对象资料类型"
+    );
+    let snapshot = &pack.manifest.snapshot;
+    let canonical = pack.connection()?;
+    let mut page = catalog::list(
+        pack,
+        catalog::Filter {
+            kind: Some(filter.kind.clone()),
+            query: filter.query,
+            cursor: filter.cursor,
+            parent: filter.parent,
+            limit: 100,
+            ..Default::default()
+        },
+    )?;
+    ensure!(!page.items.is_empty(), "没有匹配的对象可导出");
+    let mut document = Document {
+        schema_version: 1,
+        snapshot_id: snapshot.clone(),
+        source: Source {
+            reference: "RailScope 导出后人工回填".into(),
+            version: snapshot.clone(),
+            verification_status: "user_asserted".into(),
+            confidence: None,
+        },
+        records: Vec::new(),
+    };
+    for item in &page.items {
+        let stored = get_override(db, snapshot, &item.id)?;
+        let (changes, reference) = editable_fields(&canonical, &item.id, &item.kind, &stored)?;
+        document.records.push(Record {
+            entity_id: item.id.clone(),
+            kind: item.kind.clone(),
+            reference: Some(reference),
+            source: None,
+            original: Some(changes.clone()),
+            changes,
+        });
+    }
+    loop {
+        let content = serde_json::to_string_pretty(&document)?;
+        if content.len() <= MAX_BYTES {
+            return Ok(Export {
+                content,
+                count: document.records.len(),
+                next: page.next,
+            });
+        }
+        ensure!(document.records.len() > 1, "单条对象资料超过导出大小限制");
+        document.records.truncate(document.records.len() / 2);
+        page.next = document
+            .records
+            .last()
+            .map(|record| record.entity_id.clone());
+    }
+}
+
+fn get_override(db: &Connection, snapshot: &str, id: &str) -> Result<workspace::Override> {
+    Ok(workspace::payload(db, snapshot, id)?
+        .map(|payload| serde_json::from_str(&payload))
+        .transpose()?
+        .unwrap_or_default())
+}
+
+fn editable_fields(
+    canonical: &Connection,
+    id: &str,
+    kind: &str,
+    stored: &workspace::Override,
+) -> Result<(Map<String, Value>, Value)> {
+    let (name, class, status, tags, verified): (String, String, String, String, bool) = canonical
+        .query_row(
+        "SELECT e.name,e.class,e.status,s.tags,e.verification='verified'
+         FROM entity e JOIN source_object s ON s.ref=e.source_ref WHERE e.id=?",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    )?;
+    let tags: Value = serde_json::from_str(&tags)?;
+    let mut reference = json!({"name":name,"class":class,"status":status});
+    if !stored.import_sources.is_empty() {
+        reference["field_sources"] = json!(stored.import_sources);
+    }
+    let value = serde_json::to_value(stored)?;
+    let populated = |value: &Value| match value {
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(items) => !items.is_empty(),
+        value => !value.is_null(),
+    };
+    let prefer = |stored: &Value, suggested: &Value| {
+        [stored, suggested]
+            .into_iter()
+            .find(|value| populated(value))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let mut fields = Map::new();
+    for &key in COMMON_FIELDS {
+        let suggested = match key {
+            "name" => &reference["name"],
+            "designation" => &tags["ref"],
+            "operator" => &tags["operator"],
+            _ => &Value::Null,
+        };
+        fields.insert(key.into(), prefer(&value[key], suggested));
+    }
+    let mut profile = Map::new();
+    let mut keys = vec!["former_names", "other_names", "city", "opened_on", "extra"];
+    let semantics = serde_json::to_value(cartography::classify(
+        &tags, kind, &class, &status, verified,
+    ))?;
+    if kind == "station" {
+        keys.extend(["business", "technical", "station_grade", "urban_system"]);
+        fields.insert(
+            "associated_lines".into(),
+            prefer(&value["associated_lines"], &Value::Null),
+        );
+    } else {
+        keys.extend(["speed_kmh", "gauge_mm", "electrification", "urban_system"]);
+    }
+    if kind == "line" {
+        keys.extend(["rail_type", "railway_grade", "sections"]);
+    }
+    if matches!(kind, "rail" | "metro") {
+        keys.push("track_type");
+        let track: Option<Value> = canonical.query_row(
+            "SELECT from_node,to_node,forward,reverse,meters FROM edge WHERE id=?", [id],
+            |r| Ok(json!({"from_node_id":r.get::<_,String>(0)?,"to_node_id":r.get::<_,String>(1)?,
+                "forward":r.get::<_,bool>(2)?,"reverse":r.get::<_,bool>(3)?,"meters":r.get::<_,f64>(4)?})),
+        ).optional()?;
+        reference["track"] = json!(track);
+    }
+    for key in keys {
+        profile.insert(key.into(), prefer(&value["profile"][key], &semantics[key]));
+    }
+    fields.insert("profile".into(), json!(profile));
+    Ok((fields, reference))
+}
+
+fn edited_fields(
+    original: &Map<String, Value>,
+    changes: &Map<String, Value>,
+    current: &Map<String, Value>,
+) -> Result<Map<String, Value>> {
+    let mut result = Map::new();
+    for (key, input) in changes {
+        let before = original
+            .get(key)
+            .context(format!("导出基准缺少字段 {key}"))?;
+        if before == input {
+            continue;
+        }
+        if let (Some(before), Some(input), Some(current)) = (
+            before.as_object(),
+            input.as_object(),
+            current.get(key).and_then(Value::as_object),
+        ) {
+            // Profile fields are independent; each array or custom-property object is one field.
+            if key == "profile" {
+                let edits = edited_fields(before, input, current)?;
+                if !edits.is_empty() {
+                    result.insert(key.clone(), json!(edits));
+                }
+                continue;
+            }
+        }
+        let now = current
+            .get(key)
+            .with_context(|| format!("未识别的导出字段 {key}"))?;
+        if now != input {
+            ensure!(now == before, "资料字段 {key} 已修改，请重新导出后回填");
+            result.insert(key.clone(), input.clone());
+        }
+    }
+    Ok(result)
 }
 
 #[derive(Serialize)]
@@ -365,13 +575,24 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
                     && matches!(kind.as_str(), "station" | "line" | "rail" | "metro"),
                 "对象类型与资料记录不符"
             );
-            let old = workspace::payload(&tx, snapshot, id)?
-                .map(|payload| serde_json::from_str::<workspace::Override>(&payload))
-                .transpose()?
-                .unwrap_or_default();
+            let old = get_override(&tx, snapshot, id)?;
+            let mut edits = None;
+            if let Some(original) = &record.original {
+                let (current, _) = editable_fields(&canonical, id, &kind, &old)?;
+                let fields = edited_fields(original, &record.changes, &current)?;
+                if fields.is_empty() {
+                    return Ok(false);
+                }
+                edits = Some(fields);
+            }
             let mut value = serde_json::to_value(&old)?;
             let mut sources = old.import_sources;
-            apply_changes(value.as_object_mut().unwrap(), &mut sources, record, source)?;
+            apply_changes(
+                value.as_object_mut().unwrap(),
+                &mut sources,
+                edits.as_ref().unwrap_or(&record.changes),
+                source,
+            )?;
             let mut merged: workspace::Override = serde_json::from_value(value)?;
             merged.import_sources = sources;
             merged.validate_associations(&canonical, &kind)?;
@@ -400,10 +621,10 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
 fn apply_changes(
     value: &mut Map<String, Value>,
     sources: &mut BTreeMap<String, Source>,
-    record: &Record,
+    changes: &Map<String, Value>,
     source: &Source,
 ) -> Result<()> {
-    ensure!(!record.changes.is_empty(), "changes 至少需要一个字段");
+    ensure!(!changes.is_empty(), "changes 至少需要一个字段");
     let patch = |target: &mut Map<String, Value>,
                  key: &str,
                  field: String,
@@ -417,7 +638,7 @@ fn apply_changes(
             sources.insert(field, source.clone());
         }
     };
-    for (key, input) in &record.changes {
+    for (key, input) in changes {
         match key.as_str() {
             "name" | "note" | "group" | "designation" | "operator" | "category"
             | "associated_lines" => {
