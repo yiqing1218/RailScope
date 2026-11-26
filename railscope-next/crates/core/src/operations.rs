@@ -283,6 +283,15 @@ enum Request {
         #[serde(default)]
         stop_map: BTreeMap<String, String>,
     },
+    ImportExternalPlan {
+        format: String,
+        content: String,
+        service_date: Option<String>,
+        #[serde(default)]
+        stop_map: BTreeMap<String, String>,
+        #[serde(default)]
+        preview: bool,
+    },
     ExportTimetable {
         format: String,
         run_ids: Option<Vec<String>>,
@@ -1258,6 +1267,23 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             &content,
             service_date.as_deref(),
             &stop_map,
+            None,
+        ),
+        Request::ImportExternalPlan {
+            format,
+            content,
+            service_date,
+            stop_map,
+            preview,
+        } => schedule::import(
+            db,
+            &canonical,
+            pack,
+            &format,
+            &content,
+            service_date.as_deref(),
+            &stop_map,
+            Some(preview),
         ),
         Request::ExportTimetable { format, run_ids } => {
             schedule::export(db, &canonical, &format, run_ids.as_deref())

@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result, ensure};
-use railscope_next_core::{Engine, catalog, graph, operations as rail_ops, pack, workspace};
+use railscope_next_core::{
+    Engine, catalog, external_data, graph, operations as rail_ops, pack, workspace,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -80,6 +82,38 @@ async fn operations(snapshot: String, request: Value, engine: Core<'_>) -> AppRe
     let engine = Arc::clone(engine.inner());
     background(move || {
         engine.with_workspace(&snapshot, |db, pack| rail_ops::execute(db, pack, request))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn import_external_data(
+    snapshot: String,
+    content: String,
+    preview: bool,
+    engine: Core<'_>,
+) -> AppResult<external_data::Report> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        engine
+            .with_workspace(&snapshot, |db, pack| {
+                external_data::import(db, pack, &content, preview)
+            })
+            .map_err(|error| anyhow::anyhow!("{error:#}"))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn external_line_tracks(
+    snapshot: String,
+    id: String,
+    engine: Core<'_>,
+) -> AppResult<Vec<external_data::LineTrack>> {
+    let engine = Arc::clone(engine.inner());
+    background(move || {
+        let pack = engine.for_snapshot(&snapshot)?;
+        external_data::line_tracks(&pack, &id)
     })
     .await
 }
@@ -515,6 +549,8 @@ fn main() {
             cancel_path,
             diagnostics,
             operations,
+            import_external_data,
+            external_line_tracks,
             edit_business_line,
             operations_clock,
         ])

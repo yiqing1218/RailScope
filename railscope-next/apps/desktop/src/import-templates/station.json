@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "填写当前数据包标识",
+  "source": { "reference": "填写发布方链接或资料名称", "version": "填写资料版本或发布日期", "verification_status": "user_asserted" },
+  "records": [
+    {
+      "entity_id": "填写 RailScope 车站 ID",
+      "kind": "station",
+      "changes": {
+        "name": "填写工作区显示名",
+        "category": "填写目录分类",
+        "profile": {
+          "former_names": ["填写有来源的曾用名"],
+          "other_names": ["填写其他用名"],
+          "business": "passenger",
+          "extra": { "填写自定义属性名": "填写资料值" }
+        }
+      }
+    }
+  ]
+}

@@ -419,7 +419,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
     let mut station_links=connection.prepare_cached(
         "SELECT count(DISTINCT m.line_id), group_concat(DISTINCT l.render_id) FROM line_member m JOIN entity l ON l.id=m.line_id
          WHERE m.member_id=? AND l.status NOT IN ('construction','planned','disused') AND l.class IN ('railway','subway','light_rail','tram','train')")?;
-    let mut names: BTreeMap<(&'static str, String), (BusinessLabel, u64, f64, Vec<u8>)> =
+    let mut names: BTreeMap<(&'static str, bool, String), (BusinessLabel, u64, f64, Vec<u8>)> =
         BTreeMap::new();
     let mut relation_cache = HashMap::<String, Vec<BusinessLabel>>::new();
     let mut rows = query.query(params![west, south, east, north])?;
@@ -619,7 +619,8 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
                 {
                     continue;
                 }
-                let key = (label.layer, label.key.clone());
+                let construction = layer != "road" && status == "construction";
+                let key = (label.layer, construction, label.key.clone());
                 if names.get(&key).is_none_or(|(_, rank, length, _)| {
                     rail_priority < *rank || (rail_priority == *rank && weight > *length)
                 }) {
@@ -738,7 +739,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             );
         }
     }
-    for ((layer, _), (label, rank, _, geometry)) in names {
+    for ((layer, construction, _), (label, rank, _, geometry)) in names {
         layers.entry(layer).or_default().push(
             label.id,
             2,
@@ -746,6 +747,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
                 ("rid", Value::UInt(label.id)),
                 ("label", Value::Text(label.text)),
                 ("rank", Value::UInt(rank)),
+                ("construction", Value::UInt(u64::from(construction))),
             ],
             geometry,
         );

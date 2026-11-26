@@ -15,7 +15,7 @@ import {
   type ScheduleFormat,type Service,type Simulation,type Stop,type TrainState,
 } from './operations-api'
 
-export type OperationsHandle={selectRun:(id:string)=>void;startCorridor:(start?:Summary,end?:Summary)=>void;openScenario:()=>void;pause:()=>void;releaseCamera:()=>void;refresh:()=>void}
+export type OperationsHandle={selectRun:(id:string)=>void;startCorridor:(start?:Summary,end?:Summary)=>void;openScenario:()=>void;pause:()=>void;releaseCamera:()=>void;refresh:(day?:string)=>void}
 export type OperationsMap={
   setTrains:(trains:MapTrain[],selected?:string)=>void
   showPath:(shape:Geometry|null)=>void
@@ -80,7 +80,10 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     openScenario:()=>setPopup('scenario'),
     pause:()=>void control('pause'),
     releaseCamera:()=>setFollow(false),
-    refresh:()=>void reload().catch(error=>setError(describeError(error))),
+    refresh:day=>{
+      if(day&&day!==date)chooseDate(day)
+      else void reload().catch(error=>setError(describeError(error)))
+    },
   }))
   const byRun=useMemo(()=>new Map(data.runs.map(run=>[run.id,run])),[data.runs])
   const byService=useMemo(()=>new Map(data.services.map(service=>[service.id,service])),[data.services])

@@ -15,6 +15,8 @@ const selection = '#3178C6'
 type SelectableKind = Exclude<Kind, 'line'>
 
 const trackLayers = (kind: 'rail' | 'metro') => Object.keys(lifecycles).map(life=>`${kind}-${life}`)
+const constructionNames = ['rail-construction-names','metro-construction-names']
+const lineLabels = ['rail-line-names','metro-line-names',...constructionNames]
 const facilityLayers = Object.keys(facilityStyles).flatMap(key=>[`area-${key}`,`line-${key}`])
 const stripes = ['metro-service-1','metro-service-2','metro-service-3']
 const editId = 'workspace-points'
@@ -22,7 +24,7 @@ const contextGeography=['base-green','base-water','base-water-line','base-road']
 const contextCities=['city-core','place-labels']
 const contextIds=[...contextGeography,'base-admin',...contextCities].map(id=>`context-${id}`)
 const baseLayers=['land','base-green','base-water','base-water-line','base-buildings','base-admin','base-road','city-core','place-labels','minor-places','local-road-names',...contextIds]
-const labelLayers = ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','poi-labels','business-badges','technical-badges','city-core','place-labels','minor-places','local-road-names']
+const labelLayers = [...lineLabels,'road-names','rail-station-names','metro-station-names','facility-labels','poi-labels','business-badges','technical-badges','city-core','place-labels','minor-places','local-road-names']
 const trainKinds=['rail','metro'] as const
 const trainMarkers=trainKinds.map(mode=>`${mode}-train-marker`)
 const trainLabels=trainKinds.map(mode=>`${mode}-train-label`)
@@ -31,10 +33,11 @@ const layerIds: Record<LayerGroup, string[]> = {
   geography:['land','base-green','base-water','base-water-line','base-buildings','base-road',...contextGeography.map(id=>`context-${id}`)],
   boundaries:['base-admin','context-base-admin'],
   cities:[...contextCities,...contextCities.map(id=>`context-${id}`)], villages:['minor-places'],localNames:['local-road-names'],localPoi:['poi-labels'],
-  rail:trackLayers('rail'),railNames:['rail-line-names'],station:['rail-stations'],railStationNames:['rail-station-names','business-badges'],
+  rail:trackLayers('rail').filter(id=>id!=='rail-construction'),railNames:['rail-line-names'],station:['rail-stations'],railStationNames:['rail-station-names','business-badges'],
   facility:[...facilityLayers,'facility-points','national-site-fill','national-site-outline','operating-site-fill','operating-site-outline'],
   technical:['facility-symbols','facility-labels','operating-site-symbols','operating-site-labels','technical-badges'],signals:['signal-symbols'],relics:[],
-  metro:[...trackLayers('metro'),...stripes],metroNames:['metro-line-names'],metroStations:['metro-stations'],metroStationNames:['metro-station-names'],
+  metro:[...trackLayers('metro').filter(id=>id!=='metro-construction'),...stripes],metroNames:['metro-line-names'],metroStations:['metro-stations'],metroStationNames:['metro-station-names'],
+  railConstruction:['rail-construction',constructionNames[0]],metroConstruction:['metro-construction',constructionNames[1]],
   interchanges:['metro-interchanges'],metroFacilities:['metro-entrances','metro-site-fill','metro-site-outline'],
   road:['road-plan','road'],roadNames:['road-names'],roadSites:['poi','poi-area'],
   route:['train-route'],corridor:['corridor-route'],railTrains:[trainMarkers[0],trainLabels[0]],metroTrains:[trainMarkers[1],trainLabels[1]],edit:['exact-point','exact-line','exact-area',editId],
@@ -338,18 +341,21 @@ export class MapController {
   }
 
   private addBusinessLabels(){
-    for(const [id,layer,minzoom] of [['rail-line-names','rail_names',8],['metro-line-names','metro_names',10],['road-names','road_names',10]] as const){
+    for(const [id,layer,minzoom] of [['rail-line-names','rail_names',8],['metro-line-names','metro_names',10],
+      [constructionNames[0],'rail_names',8],[constructionNames[1],'metro_names',10],['road-names','road_names',10]] as const){
+      const construction = constructionNames.includes(id)
       this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom,
+        ...(layer!=='road_names'?{filter:['==',['coalesce',['get','construction'],0],Number(construction)] as ExpressionSpecification}:{}),
         layout:{'symbol-placement':'line-center','text-field':businessLabel,'text-font':['Microsoft YaHei UI'],
           'text-size':id==='rail-line-names'?12:11,'text-max-angle':35,'text-padding':11,'text-offset':[0,-.4],
           'text-keep-upright':true,'symbol-sort-key':['coalesce',['get','rank'],3]},
-        paint:{'text-color':'#263e53','text-halo-color':'#f9fcfc','text-halo-width':1.75}})
+        paint:{'text-color':construction?'#805425':'#263e53','text-halo-color':'#f9fcfc','text-halo-width':1.75}})
     }
   }
 
   setFocusLine(renderId?:number){
     this.focusLine=renderId
-    for(const id of ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names']){
+    for(const id of [...lineLabels,'road-names','rail-station-names','metro-station-names']){
       if(!this.map.getLayer(id))continue
       const associated:ExpressionSpecification=id.includes('station')
         ?['>=',['index-of',`,${renderId},`,['coalesce',['get','line_rids'],'']],0]
@@ -522,9 +528,9 @@ export class MapController {
       if(this.map.getLayer(id)) this.map.setPaintProperty(id,'line-color',color(this.metroColor(`service${index+1}`,['metro_color','metro_secondary','metro_tertiary'][index])))
     })
     const names=this.visualState.filter(item=>item.value.name)
-    for(const id of ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','operating-site-labels','poi-labels']){
+    for(const id of [...lineLabels,'road-names','rail-station-names','metro-station-names','facility-labels','operating-site-labels','poi-labels']){
       if(!this.map.getLayer(id))continue
-      const fallback:ExpressionSpecification=id.endsWith('line-names')||id==='road-names'?businessLabel:['get','label']
+      const fallback:ExpressionSpecification=lineLabels.includes(id)||id==='road-names'?businessLabel:['get','label']
       this.map.setLayoutProperty(id,'text-field',names.length?['match',['get','rid'],...names.flatMap(item=>[item.render_id,item.value.name]),fallback]:fallback)
     }
     this.updateEdits()

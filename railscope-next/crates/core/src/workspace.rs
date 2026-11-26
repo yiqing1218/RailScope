@@ -24,6 +24,10 @@ pub struct Override {
     pub category: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub associated_lines: Vec<String>,
+    #[serde(skip_serializing_if = "crate::external_data::Profile::is_empty")]
+    pub profile: crate::external_data::Profile,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub import_sources: std::collections::BTreeMap<String, crate::external_data::Source>,
 }
 
 impl Override {
@@ -137,7 +141,7 @@ fn revision(db: &Connection) -> Result<i64> {
     Ok(db.query_row("SELECT revision FROM settings", [], |r| r.get(0))?)
 }
 
-fn payload(db: &Connection, snapshot: &str, entity: &str) -> Result<Option<String>> {
+pub(crate) fn payload(db: &Connection, snapshot: &str, entity: &str) -> Result<Option<String>> {
     Ok(db
         .query_row(
             "SELECT payload FROM overrides WHERE snapshot=? AND entity=?",
@@ -206,6 +210,12 @@ fn migrate(db: &Connection, old: &Pack, new: &Pack) -> Result<()> {
             .is_err()
         {
             "车站关联线路已移除或变更"
+        } else if overrides
+            .profile
+            .validate(&new_db, &id, &after.as_ref().unwrap().0)
+            .is_err()
+        {
+            "外部资料引用的线路区段已移除或变更"
         } else if let Some(existing) = payload(db, to, &id)? {
             if existing == value {
                 continue;
@@ -420,12 +430,15 @@ pub fn catalog_overrides(
         && filter.cursor.is_none()
         && filter.parent.is_none()
         && !term.starts_with("osm:")
+        && uuid::Uuid::parse_str(term).is_err()
     {
         let mut matches = db.prepare(
             "SELECT entity FROM overrides WHERE snapshot=?1 AND
              (instr(lower(coalesce(json_extract(payload,'$.name'),'')),lower(?2))>0
               OR instr(lower(coalesce(json_extract(payload,'$.designation'),'')),lower(?2))>0
-              OR instr(lower(coalesce(json_extract(payload,'$.category'),'')),lower(?2))>0)
+              OR instr(lower(coalesce(json_extract(payload,'$.category'),'')),lower(?2))>0
+              OR EXISTS(SELECT 1 FROM json_each(payload,'$.profile.former_names') WHERE instr(lower(value),lower(?2))>0)
+              OR EXISTS(SELECT 1 FROM json_each(payload,'$.profile.other_names') WHERE instr(lower(value),lower(?2))>0))
              ORDER BY entity LIMIT 100",
         )?;
         let ids = matches.query_map(params![snapshot, term], |row| row.get::<_, String>(0))?;
@@ -491,12 +504,35 @@ pub fn apply(
     snapshot: &str,
     entity: &str,
     expected: i64,
-    value: Override,
+    mut value: Override,
 ) -> Result<State> {
-    value.validate()?;
     let tx = transaction(db, expected)?;
+    let before: Override = payload(&tx, snapshot, entity)?
+        .map(|payload| serde_json::from_str(&payload))
+        .transpose()?
+        .unwrap_or_default();
+    value.profile = before.profile.clone();
+    let prior = serde_json::to_value(&before)?;
+    let next = serde_json::to_value(&value)?;
+    value.import_sources = before.import_sources;
+    value
+        .import_sources
+        .retain(|field, _| field.starts_with("profile.") || prior.get(field) == next.get(field));
+    record(&tx, snapshot, entity, &value, "apply")?;
+    tx.commit()?;
+    state(db, snapshot, entity)
+}
+
+pub(crate) fn record(
+    tx: &Transaction<'_>,
+    snapshot: &str,
+    entity: &str,
+    value: &Override,
+    action: &str,
+) -> Result<bool> {
+    value.validate()?;
     let old =
-        payload(&tx, snapshot, entity)?.unwrap_or(serde_json::to_string(&Override::default())?);
+        payload(tx, snapshot, entity)?.unwrap_or(serde_json::to_string(&Override::default())?);
     let new = serde_json::to_string(&value)?;
     if old != new {
         tx.execute(
@@ -506,11 +542,10 @@ pub fn apply(
         tx.execute("INSERT INTO history(snapshot,entity,before_value,after_value,applied) VALUES(?,?,?,?,1)",
                    [snapshot, entity, &old, &new])?;
         let command = tx.last_insert_rowid();
-        write(&tx, snapshot, entity, &new)?;
-        audit(&tx, command, "apply")?;
+        write(tx, snapshot, entity, &new)?;
+        audit(tx, command, action)?;
     }
-    tx.commit()?;
-    state(db, snapshot, entity)
+    Ok(old != new)
 }
 
 pub fn replay(

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "填写当前数据包标识",
+  "services": [
+    { "id": "example-service", "train_code": "EX01", "mode": "rail", "provenance": { "source_kind": "user_defined", "source_url_or_reference": "填写时刻资料来源" } }
+  ],
+  "runs": [
+    {
+      "id": "example-run",
+      "service_id": "example-service",
+      "train_number": "EX01",
+      "service_date": "2026-01-01",
+      "time_zone": "Asia/Shanghai",
+      "plan_version": 0,
+      "status": "scheduled",
+      "corridor_id": "填写已保存的 RailScope 通道 ID",
+      "corridor_version": 1,
+      "stops": [
+        { "station_id": "填写起点 RailScope 车站 ID", "sequence": 0, "departure_time_s": 28800 },
+        { "station_id": "填写终点 RailScope 车站 ID", "sequence": 1, "arrival_time_s": 30600 }
+      ],
+      "provenance": { "source_kind": "user_defined", "source_url_or_reference": "填写时刻资料来源" }
+    }
+  ]
+}

@@ -8,12 +8,30 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 const LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Default, Serialize, Deserialize)]
 struct Bundle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     corridors: Vec<Corridor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    corridor_intents: Vec<CorridorIntent>,
     #[serde(default)]
     services: Vec<Service>,
     #[serde(default)]
     runs: Vec<Run>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CorridorIntent {
+    id: String,
+    name: String,
+    mode: String,
+    #[serde(default)]
+    strict: bool,
+    steps: Vec<corridors::ControlStep>,
+    provenance: Provenance,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct CsvRow {
@@ -333,13 +351,15 @@ pub(super) fn import(
     content: &str,
     service_date: Option<&str>,
     stop_map: &BTreeMap<String, String>,
+    external_preview: Option<bool>,
 ) -> Result<Value> {
     let snapshot = pack.manifest.snapshot.as_str();
     ensure!(
         content.len() <= LIMIT * 2 && stop_map.len() <= 50000,
         "IMPORT_BUDGET · 导入内容超出容量"
     );
-    let mut bundle = match format {
+    let content = content.trim_start_matches('\u{feff}');
+    let mut bundle: Bundle = match format {
         "json" => serde_json::from_str(content)?,
         "csv" => parse_csv(content)?,
         "gtfs" => read_gtfs(
@@ -350,15 +370,34 @@ pub(super) fn import(
         _ => bail!("INVALID_FORMAT · 支持 JSON、CSV 和 GTFS ZIP"),
     };
     ensure!(
-        !bundle.runs.is_empty()
+        bundle.schema_version.is_none_or(|version| version == 1)
+            && bundle
+                .snapshot_id
+                .as_deref()
+                .is_none_or(|id| id == snapshot),
+        "DATA_VERSION_CONFLICT · 运行计划格式版本或数据包快照不匹配"
+    );
+    let corridor_count = bundle.corridors.len() + bundle.corridor_intents.len();
+    let corridor_only = external_preview.is_some()
+        && bundle.runs.is_empty()
+        && bundle.services.is_empty()
+        && corridor_count > 0;
+    ensure!(
+        (!bundle.runs.is_empty() || corridor_only)
             && bundle.runs.len() <= 5000
             && bundle.services.len() <= 5000
-            && bundle.corridors.len() <= 64,
+            && corridor_count <= 64,
         "IMPORT_BUDGET · 无可导入运行实例或数量超限"
     );
-    let tx = db.transaction()?;
-    let digest =
-        (!bundle.corridors.is_empty()).then(|| format!("{:x}", Sha256::digest(content.as_bytes())));
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let digest = if corridor_count > 0 {
+        Some(format!("{:x}", Sha256::digest(content.as_bytes())))
+    } else if external_preview.is_some() {
+        let key = serde_json::to_vec(&(format, content, service_date, stop_map))?;
+        Some(format!("{:x}", Sha256::digest(key)))
+    } else {
+        None
+    };
     if let Some(digest) = &digest {
         let previous: Option<String> = tx
             .query_row(
@@ -370,10 +409,35 @@ pub(super) fn import(
         if let Some(previous) = previous {
             let mut result: Value = serde_json::from_str(&previous)?;
             result["duplicate"] = json!(true);
+            if let Some(preview) = external_preview {
+                result["preview"] = json!(preview);
+            }
             return Ok(result);
         }
     }
-    let mut corridors = HashMap::new();
+    for intent in bundle.corridor_intents.drain(..) {
+        ensure!(external_preview.is_some(), "请通过外部资料入口导入控制端点");
+        intent.provenance.validate()?;
+        ensure!(
+            intent.provenance.confidence.is_some(),
+            "自动参考通道需要填写可信度"
+        );
+        let key = intent.id;
+        let mut corridor = corridors::resolve_path(
+            pack,
+            canonical,
+            intent.name,
+            &intent.mode,
+            intent.steps,
+            intent.strict,
+            &AtomicBool::new(false),
+        )
+        .map_err(|error| anyhow::anyhow!("{error:#} · 通道 {key}"))?;
+        corridor.id = key;
+        corridor.provenance = intent.provenance;
+        bundle.corridors.push(corridor);
+    }
+    let mut corridors = BTreeMap::new();
     for mut corridor in bundle.corridors.drain(..) {
         let key = std::mem::take(&mut corridor.id);
         ensure!(
@@ -381,7 +445,8 @@ pub(super) fn import(
             "INVALID_TIMETABLE · 通道引用缺失或重复"
         );
         corridor.version = 0;
-        let saved = save_corridor(&tx, canonical, pack, corridor)?;
+        let saved = save_corridor(&tx, canonical, pack, corridor)
+            .map_err(|error| anyhow::anyhow!("{error:#} · 通道 {key}"))?;
         corridors.insert(key, (saved.id, saved.version));
     }
     let mut service_ids = HashMap::new();
@@ -418,16 +483,27 @@ pub(super) fn import(
         }
         run.id.clear();
         run.plan_version = 0;
-        save_run(&tx, canonical, snapshot, run)?;
+        let label = format!("车次 {} · {}", run.train_number, run.service_date);
+        save_run(&tx, canonical, snapshot, run)
+            .map_err(|error| anyhow::anyhow!("{error:#} · {label}"))?;
     }
-    let result = json!({"services":service_ids.len(),"runs":inserted,"corridors":corridors.len(),"first_date":first_date});
+    let mut result = json!({"services":service_ids.len(),"runs":inserted,"corridors":corridors.len(),"first_date":first_date,
+        "corridor_ids":corridors.iter().map(|(key,(id,version))| (key,json!({"id":id,"version":version}))).collect::<BTreeMap<_,_>>()});
     if let Some(digest) = &digest {
         tx.execute(
             "INSERT INTO ops_timetable_import VALUES(?,?,?)",
             params![snapshot, digest, serde_json::to_string(&result)?],
         )?;
     }
-    tx.commit()?;
+    if external_preview != Some(true) {
+        tx.commit()?;
+    }
+    if let Some(preview) = external_preview {
+        result["preview"] = json!(preview);
+        if preview {
+            result.as_object_mut().unwrap().remove("corridor_ids");
+        }
+    }
     Ok(result)
 }
 

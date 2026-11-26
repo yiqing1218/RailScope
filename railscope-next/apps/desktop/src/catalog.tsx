@@ -252,7 +252,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
       <div className="sidebar-base"><Database size={14} /> {pack ? t("{0} 个对象", Object.values(pack.counts).reduce((a, b) => a + b, 0).toLocaleString('zh-CN')) : t("等待安装离线数据")}</div>
     </> : <>
       <div className="sidebar-heading"><span className="small-label">{t("地图显示")}</span><h1>{t("交通图层")}</h1></div>
-      <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
+      <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset} includeConstruction/>
     </>}
   </aside>
 }

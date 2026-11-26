@@ -157,6 +157,19 @@ pub(super) fn resolve(
     strict: bool,
     cancel: &AtomicBool,
 ) -> Result<Value> {
+    let mut corridor = resolve_path(pack, db, name, mode, steps, strict, cancel)?;
+    preview(db, &pack.manifest.snapshot, &mut corridor)
+}
+
+pub(super) fn resolve_path(
+    pack: &Pack,
+    db: &Connection,
+    name: String,
+    mode: &str,
+    steps: Vec<ControlStep>,
+    strict: bool,
+    cancel: &AtomicBool,
+) -> Result<Corridor> {
     text(&name, 120)?;
     ensure!(
         (2..=18).contains(&steps.len()) && matches!(mode, "rail" | "metro"),
@@ -240,7 +253,7 @@ pub(super) fn resolve(
         };
         edges.extend(path);
     }
-    let mut corridor = Corridor {
+    Ok(Corridor {
         id: String::new(),
         version: 0,
         name,
@@ -276,8 +289,7 @@ pub(super) fn resolve(
         warnings: vec!["当前为显式接轨的拓扑参考径路".into()],
         candidates: Vec::new(),
         intent: steps,
-    };
-    preview(db, &pack.manifest.snapshot, &mut corridor)
+    })
 }
 
 pub(super) fn preview(db: &Connection, snapshot: &str, corridor: &mut Corridor) -> Result<Value> {

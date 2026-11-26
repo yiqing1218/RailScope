@@ -6,13 +6,14 @@ import { createPortal } from 'react-dom'
 import { api, type Bounds, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
 import { Catalog, PackInstall, PackMenu, className, kindNames, statusName } from './catalog'
 import { MapController, type MapTheme } from './map'
-import { LayerTree, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
+import { LayerPreset, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
 import { chinaDate, opsApi, type ControlPoint, type LegacyIssue, type Level } from './operations-api'
 import { facilityStyles, lifecycles, missingColor, nonRailStationNames, readTrackViews, siteAreaNames, siteRoleNames, sites, svgSymbol, symbolName, thematic, tracks, type TrackViews } from './cartography'
 import { Settings, themes, type SettingsSection } from './settings'
 import { LanguageSelect, Welcome } from './welcome'
+import { ExternalData, ProfileDetails } from './external-data'
 
 const visibilityKey = 'railscope-next.layers'
 type Mode = 'detail' | 'operations' | 'analysis' | 'data'
@@ -76,7 +77,7 @@ export function App() {
   const [view, setView] = useState<ReturnType<MapController['view']>>()
   const [mode, setMode] = useState<Mode>('detail')
   const [analysisTab,setAnalysisTab] = useState<'route'|'topology'|'conflicts'|'quality'|'metrics'>('route')
-  const [dataTab,setDataTab] = useState<'packs'|'source'|'review'|'import'>('packs')
+  const [dataTab,setDataTab] = useState<'packs'|'source'|'review'|'import'|'external'>('packs')
   const [theme,setTheme]=useState<MapTheme>(()=>{
     const value=localStorage.getItem('railscope-next.theme') as MapTheme|null
     return value&&Object.hasOwn(themes,value)?value:'light'
@@ -317,6 +318,11 @@ export function App() {
     setLayouts(old=>({...old,data:{...old.data,hideLeft:false}}))
   }
 
+  function openExternal() {
+    openData()
+    setDataTab('external')
+  }
+
   const zoom=view?Math.floor(view.zoom):0
   const precise=!overview && active && (zoom>=15||zoom>active.max_zoom||(active.source_schema>=3&&zoom>=9))
   return <div className="app" data-theme={theme} data-language={language}>
@@ -348,6 +354,7 @@ export function App() {
     <Welcome open={welcomeOpen&&!changing} pack={active} onClose={closeWelcome}
       onMap={()=>{closeWelcome();setMode('detail')}}
       onOperations={()=>{closeWelcome();setMode('operations')}}
+      onExternal={()=>{closeWelcome();openExternal()}}
       onData={()=>{closeWelcome();openData()}}/>
     <main className="workspace" data-mode={mode} data-left={!layout.hideLeft} data-right={!layout.hideRight}
       style={{gridTemplateColumns:`${layout.hideLeft?'0px':`min(${layout.left}px, 32vw)`} minmax(0, 1fr) ${layout.hideRight?'0px':`min(${layout.right}px, 33vw)`}`,
@@ -380,8 +387,16 @@ export function App() {
       </div>
       <div className="task-pane" hidden={mode!=='data'}>
         <div className="panel-title"><Database size={17}/><h2>{t("数据")}</h2></div>
-        <div className="task-menu">{([['packs',t("数据包")],['import',t("导入旧版计划")],['source',t("版本与来源")],['review',t("审校冲突")]] as const).map(([id,label])=>
+        <div className="task-menu">{([['packs',t("数据包")],['external',t("外部资料导入")],['import',t("导入旧版计划")],['source',t("版本与来源")],['review',t("审校冲突")]] as const).map(([id,label])=>
           <button key={id} className={dataTab===id?'active':''} aria-pressed={dataTab===id} onClick={()=>setDataTab(id)}>{label}</button>)}</div>
+        {dataTab==='external'&&<ExternalData key={active?.snapshot} pack={active} selected={details?.entity}
+          onMetadata={()=>{
+            if (!active || current.current?.snapshot !== active.snapshot) return
+            setWorkspaceChange(value=>value+1)
+            void refreshVisuals(active).catch(error=>setMapError(String(error)))
+            if(details)void select(details.entity.id)
+            operations.current?.refresh()
+          }} onPlan={day=>{if(current.current?.snapshot===active?.snapshot)operations.current?.refresh(day)}}/>}
         {dataTab==='packs'&&<div className="property-content task-summary">
           {packs.map(pack=><button key={pack.snapshot} className="pack-choice" disabled={changing||pack.snapshot===active?.snapshot}
             onClick={()=>void change(pack)}><span>{t(pack.region)}<small>{pack.snapshot}</small></span><b>{pack.snapshot===active?.snapshot?t("当前"):t("切换")}</b></button>)}
@@ -421,8 +436,7 @@ export function App() {
             </div>
           </details>
           <details className="view-settings"><summary>{t("图层")}</summary><div>
-            <button className="secondary compact" onClick={()=>{setSettingsSection('tracks');setSettingsOpen(true)}}>{t("轨道配色设置")}</button>
-            <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
+            <LayerPreset onPreset={onPreset}/>
             <details className="rail-legend"><summary>{t("图例")}</summary><MapLegend views={trackViews}/></details>
           </div></details>
         </div>
@@ -444,6 +458,7 @@ export function App() {
             ? <Properties key={details.entity.id} inspection={details} pack={active} exact={exact}
                 showMembers={line=>{setGroup(line);setMode('detail')}} update={(state, target) => applyWorkspace(state, target, active)}
                 openLine={item=>{if(details.entity.kind==='station')setBackStation(details.entity);else if(item.kind==='station')setBackStation(undefined);void select(item.id,item)}}
+                openEdge={id=>{void api.entity(active.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}}
                 useForCorridor={()=>showOperations(details.entity)} useForAnalysis={()=>{setAnalysisTab('route');setMode('analysis')}}
                 zoomOverride={point => controller.current?.fit([point[0], point[1], point[0], point[1]])} />
             : <div className="blank"><MapPin size={24} /><strong>{t("选择地图对象")}</strong><p>{t("点击地图或打开搜索结果即可查看资料。")}</p></div>}
@@ -532,9 +547,10 @@ function MapLegend({views}:{views:TrackViews}) {
   </ul>
 }
 
-function Properties({ inspection, pack, exact, showMembers, openLine, update, zoomOverride, useForCorridor, useForAnalysis }: {
+function Properties({ inspection, pack, exact, showMembers, openLine, openEdge, update, zoomOverride, useForCorridor, useForAnalysis }: {
   inspection: Inspection; pack: Pack; exact: () => void; showMembers: (line: Summary) => void
   openLine:(line:Summary)=>void
+  openEdge:(id:string)=>void
   update: (state: Workspace, target: Inspection) => void
   zoomOverride: (point: [number, number]) => void
   useForCorridor: () => void
@@ -542,6 +558,9 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
 }) {
   const { entity, workspace } = inspection
   const meaning=entity.semantics
+  const profile=workspace.value.profile
+  const speed=profile?.speed_kmh??meaning.speed_kmh
+  const gauge=profile?.gauge_mm??meaning.gauge_mm
   const [tab, setTab] = useState<'overview' | 'lines' | 'attributes' | 'workspace'>('overview')
   const [draft, setDraft] = useState<Override>(workspace.value)
   const [error, setError] = useState('')
@@ -624,20 +643,21 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
     {tab==='overview' ? <div className="property-content site-overview">
       <dl>
         <dt>{t("对象类别")}</dt><dd>{t(entity.site?siteRoleNames[entity.site.role]:className(entity.class))}</dd>
-        {(station || line)&&<>
+        {(station || line || entity.has_edge&&entity.kind!=='road')&&<>
           <dt>{t("编号")}</dt><dd>{workspace.value.designation || entity.tags.ref || missing}</dd>
           <dt>{t("运营管理")}</dt><dd>{workspace.value.operator || entity.tags.operator || missing}</dd>
           <dt>{t("目录分类")}</dt><dd>{workspace.value.category || missing}</dd>
           <dt>{t("工作区分组")}</dt><dd>{workspace.value.group || missing}</dd>
         </>}
-        {station&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??missing}</dd>
-          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??missing}</dd></>}
+        {station&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运"),non_business:t("非营业站")}[profile?.business??meaning.business??'']??missing}</dd>
+          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[profile?.technical??meaning.technical??'']??missing}</dd></>}
         {(line || entity.has_edge&&entity.kind!=='road')&&<>
-          <dt>{t("速度／轨距")}</dt><dd>{meaning.speed_kmh==null?missing:`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?missing:`${meaning.gauge_mm} mm`}</dd>
-          <dt>{t("供电／股道号")}</dt><dd>{{overhead:t("接触网"),third_rail:t("第三轨"),none:t("无电气化")}[meaning.electrification??'']??missing} · {entity.tags['railway:track_ref']??missing}</dd>
+          <dt>{t("速度／轨距")}</dt><dd>{speed==null?missing:`${speed.toFixed(1)} km/h`} · {gauge==null?missing:`${gauge} mm`}</dd>
+          <dt>{t("供电／股道号")}</dt><dd>{{overhead:t("接触网"),third_rail:t("第三轨"),none:t("无电气化"),other:t("其他")}[profile?.electrification??meaning.electrification??'']??missing} · {entity.tags['railway:track_ref']??missing}</dd>
         </>}
         {workspace.value.note&&<><dt>{t("备注")}</dt><dd>{workspace.value.note}</dd></>}
       </dl>
+      <ProfileDetails value={workspace.value} openEdge={openEdge}/>
       {entity.site&&<div className="site-coverage">
         <h4>{t("地图范围")}</h4>
         {entity.site.areas.length?<ul>{entity.site.areas.map(area=><li key={area.object.id}><strong>{t(siteAreaNames[area.kind])}</strong>

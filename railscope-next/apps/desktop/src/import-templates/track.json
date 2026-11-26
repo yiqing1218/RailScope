@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "填写当前数据包标识",
+  "source": { "reference": "填写发布方链接或资料名称", "version": "填写资料版本或发布日期", "verification_status": "user_asserted" },
+  "records": [
+    {
+      "entity_id": "填写 RailScope 物理轨道 ID",
+      "kind": "rail",
+      "changes": {
+        "designation": "填写区间或股道编号",
+        "profile": { "track_type": "main", "speed_kmh": 160, "gauge_mm": 1435, "electrification": "overhead" }
+      }
+    }
+  ]
+}

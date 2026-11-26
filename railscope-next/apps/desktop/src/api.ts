@@ -50,7 +50,15 @@ export type Entity = Summary & {
   has_edge: boolean
 }
 export type Override = { name: string; note: string; color: string; point: [number, number] | null; group: string;
-  width?:number|null;opacity?:number|null;designation?:string;operator?:string;category?:string;associated_lines?:string[] }
+  width?:number|null;opacity?:number|null;designation?:string;operator?:string;category?:string;associated_lines?:string[];
+  profile?:ObjectProfile;import_sources?:Record<string,ImportSource> }
+export type ImportSource = { reference:string;version:string;verification_status:string;confidence:number|null }
+export type ObjectProfile = {
+  former_names:string[];other_names:string[];business:string|null;technical:string|null;station_grade:string|null;
+  rail_type:string|null;railway_grade:string|null;urban_system:string|null;city:string|null;opened_on:string|null;
+  speed_kmh:number|null;gauge_mm:number|null;electrification:string|null;track_type:string|null;
+  sections:{code:string;name:string;status:string;opened_on:string|null;edge_ids:string[]}[];extra:Record<string,string>
+}
 export type Workspace = { revision: number; value: Override; can_undo: boolean; can_redo: boolean }
 export type Inspection = { entity: Entity; workspace: Workspace; workspace_stations?:Summary[] }
 export type Page = { items: Summary[]; next: string | null }
@@ -78,6 +86,9 @@ export const api = {
   entity: (snapshot: string, id: string) => invoke<Inspection>('get_entity', { snapshot, id }),
   geometry: (snapshot: string, id: string) => invoke<Geometry | null>('get_geometry', { snapshot, id }),
   rawSource:(snapshot:string,reference:string,offset=0)=>invoke<RawSource>('get_osm_source',{snapshot,reference,offset}),
+  importMetadata: (snapshot:string,content:string,preview:boolean)=>
+    invoke<{records:number;changed:number;preview:boolean}>('import_external_data',{snapshot,content,preview}),
+  lineTracks: (snapshot:string,id:string)=>invoke<unknown[]>('external_line_tracks',{snapshot,id}),
   lineEdit: <T>(snapshot: string, request: LineEditRequest) => invoke<T>('edit_business_line', {snapshot, request}),
   update: (snapshot: string, id: string, expected: number, value: Override) =>
     invoke<Workspace>('update_workspace', { snapshot, id, expected, value }),

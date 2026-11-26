@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "填写当前数据包标识",
+  "corridor_intents": [
+    {
+      "id": "example-corridor",
+      "name": "填写通道名称和方向",
+      "mode": "rail",
+      "strict": false,
+      "steps": [
+        { "node_id": "填写起点 RailScope 物理端点 ID", "line_id": "填写驶向下一端点的 RailScope 线路 ID" },
+        { "node_id": "填写终点 RailScope 物理端点 ID" }
+      ],
+      "provenance": { "source_kind": "user_defined", "source_url_or_reference": "填写控制端点与线路的资料来源", "confidence": 0.5 }
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { Database, Layers, Map, PanelLeft, RotateCcw, Search, SlidersHorizontal,
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Pack } from './api'
 import { defaultTrackViews, thematic, type TrackViews } from './cartography'
-import { defaultLayers, layerGroups, LayerTree, type LayerGroup, type Visibility } from './layers'
+import { presetDefaults, layerGroups, LayerPreset, LayerTree, type LayerGroup, type Visibility } from './layers'
 import type { MapTheme } from './map'
 import type { Level } from './operations-api'
 import { LanguageSelect } from './welcome'
@@ -82,7 +82,7 @@ export function Settings(props:SettingsProps){
       </>},
     {id:'layers',title:t("图层与标注"),icon:Layers,description:t("选择地图上显示的线路、站点、名称和运行叠加。"),
       keywords:`地图预设 ${t("地图预设")} ${layerGroups.flatMap(group=>[group.name,...group.items.map(([,label])=>label)]).flatMap(label=>[label,t(label)]).join(' ')}`,
-      reset:()=>onPreset(defaultLayers),content:<LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>},
+      reset:()=>onPreset(presetDefaults),content:<><LayerPreset onPreset={onPreset}/><LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/></>},
     {id:'layout',title:t("工作台布局"),icon:PanelLeft,description:t("地图、运行、分析与数据工作台各自保存面板的尺寸和显示状态。"),
       keywords:'三栏 面板 尺寸 宽度 高度 左侧 右侧 底部 任务面板 对象面板 底部工作区',
       reset:()=>resetLayout(layoutMode),content:<>

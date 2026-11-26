@@ -235,7 +235,7 @@ impl Pack {
                 let style_version = if mode == TileMode::Context {
                     "v6-context"
                 } else {
-                    "v7-sites"
+                    "v8-construction-labels"
                 };
                 let cache_key = format!(
                     "{style_version}:{}:{z}/{x}/{y}",

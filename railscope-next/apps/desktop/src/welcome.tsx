@@ -1,4 +1,4 @@
-import { ArrowRight, Database, Globe, Map, TrainFront, X } from 'lucide-react'
+import { ArrowRight, Database, Globe, Map, TrainFront, Upload, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { Pack } from './api'
 import { setLanguage, t, useLanguage, type Language } from './i18n'
@@ -14,8 +14,8 @@ export function LanguageSelect() {
   </label>
 }
 
-export function Welcome({open,pack,onClose,onMap,onOperations,onData}:{
-  open:boolean;pack:Pack|null;onClose:()=>void;onMap:()=>void;onOperations:()=>void;onData:()=>void
+export function Welcome({open,pack,onClose,onMap,onOperations,onData,onExternal}:{
+  open:boolean;pack:Pack|null;onClose:()=>void;onMap:()=>void;onOperations:()=>void;onData:()=>void;onExternal:()=>void
 }) {
   const dialog=useRef<HTMLDialogElement>(null)
   useEffect(()=>{
@@ -38,6 +38,7 @@ export function Welcome({open,pack,onClose,onMap,onOperations,onData}:{
           {icon:Map,title:t("打开地图"),description:t("地图上可点击线路和车站，或从目录搜索。"),action:onMap,enabled:!!pack},
           {icon:TrainFront,title:t("打开运行工作台"),description:t("创建共享通道、编辑时刻并查看运行图。"),action:onOperations,enabled:!!pack},
           {icon:Database,title:t("管理离线数据"),description:t("查看随附上海数据，安装或切换本地快照。"),action:onData,enabled:true},
+          {icon:Upload,title:t("外部资料导入"),description:t("下载模板和手册，导入对象资料、通道与运行计划。"),action:onExternal,enabled:true},
         ].map(({icon:Icon,title,description,action,enabled},index)=>
           <button key={index} className={index===0?'welcome-action welcome-primary':'welcome-action'} disabled={!enabled} onClick={action}>
             <Icon size={20}/><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/>

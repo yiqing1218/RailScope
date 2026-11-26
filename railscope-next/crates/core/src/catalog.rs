@@ -94,6 +94,9 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     ensure!(filter.bbox.is_none_or(valid_bounds), "无效的查询范围");
     let connection = pack.connection()?;
     let fts = filter.query.nfkc().collect::<String>().to_lowercase();
+    let entity_id = uuid::Uuid::parse_str(fts.trim())
+        .ok()
+        .map(|id| id.to_string());
     let source_ref = fts.trim().strip_prefix("osm:").and_then(|ref_| {
         let (kind, id) = ref_.split_once(':')?;
         (matches!(kind, "node" | "way" | "relation") && id.parse::<i64>().is_ok())
@@ -117,7 +120,7 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
         filter.limit.min(150)
     };
     let mut sql = format!("SELECT {SUMMARY} FROM {ENTITY} ");
-    if !query.is_empty() && source_ref.is_none() {
+    if !query.is_empty() && source_ref.is_none() && entity_id.is_none() {
         sql.push_str("JOIN entity_search ON entity_search.entity_id = e.id ");
     }
     if filter.bbox.is_some() {
@@ -134,6 +137,8 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     }
     if source_ref.is_some() {
         sql.push_str("AND e.source_ref=:source_ref ");
+    } else if entity_id.is_some() {
+        sql.push_str("AND e.id=:entity_id ");
     } else if !query.is_empty() {
         sql.push_str("AND entity_search MATCH :query ");
     }
@@ -164,6 +169,9 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
             statement.parameter_index(":source_ref")?.unwrap(),
             source_ref,
         )?;
+    } else if let Some(entity_id) = entity_id {
+        statement
+            .raw_bind_parameter(statement.parameter_index(":entity_id")?.unwrap(), entity_id)?;
     } else if !query.is_empty() {
         statement.raw_bind_parameter(statement.parameter_index(":query")?.unwrap(), query)?;
     }

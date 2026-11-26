@@ -105,9 +105,31 @@ try {
     await writeFile(join(output,`${view.name}.png`),Buffer.from(image.data,'base64'))
   }
   if(!baseline){
-    await evaluate('document.querySelectorAll(".map-tools > .view-settings")[1].open=true')
-    const key=name=>`.map-tools input[aria-label="${name}"]`
+    const topLayers='.map-tools > .view-settings:nth-last-child(1)'
+    await evaluate(`document.querySelector('${topLayers}').open=true`)
+    assert.equal(await evaluate(`document.querySelector('${topLayers} input')===null`),true)
+    assert.ok(await evaluate(`document.querySelector('${topLayers} .layer-preset select').options.length>1`))
+    assert.equal(await evaluate(`Boolean(document.querySelector('${topLayers} .rail-legend'))`),true)
+    const sidebarTab=label=>evaluate(`[...document.querySelectorAll('.catalog-dock .sidebar > .tabs > button')]
+      .find(button=>button.textContent.trim()===${JSON.stringify(label)}).click()`)
+    await sidebarTab('图层')
+    const key=name=>`.catalog-dock .layer-controls input[aria-label="${name}"]`
     const checked=name=>evaluate(`document.querySelector(${JSON.stringify(key(name))}).checked`)
+    for (const [name,group] of [['国铁在建线路','国家铁路'],['城轨在建线路','城市轨道交通']]){
+      const parent=await evaluate(`document.querySelector(${JSON.stringify(key(name))}).closest('details').querySelector('summary').textContent.trim()`)
+      assert.equal(parent,group)
+      assert.equal(await checked(name),false)
+    }
+    await click(key('国铁在建线路'))
+    assert.equal(await checked('国铁在建线路'),true)
+    assert.equal(await checked('城轨在建线路'),false)
+    await evaluate(`(() => {
+      const preset=document.querySelector('${topLayers} select')
+      preset.value='默认交通地图'
+      preset.dispatchEvent(new Event('change',{bubbles:true}))
+    })()`)
+    assert.equal(await checked('国铁在建线路'),true)
+    await click(key('国铁在建线路'))
     assert.equal(await checked('乡镇与村庄名'),false)
     await click(key('铁路线路名称'))
     assert.equal(await checked('铁路线'),true)
@@ -122,6 +144,7 @@ try {
     await nav('地图')
     await click(key('铁路线路名称'))
     await click(key('城轨车站名称'))
+    await sidebarTab('目录')
     const station=(await invoke('catalog_page',{snapshot,filter:{query:'上海虹桥',kind:'station',limit:8}})).items[0]
     const detail=(await invoke('get_entity',{snapshot,id:station.id})).entity
     assert.ok(detail.station_links.length)
@@ -140,7 +163,7 @@ try {
       assert.equal((await invoke('get_entity',{snapshot,id:row.id})).entity.semantics.render_class,classification)
     }
 
-    await evaluate('document.querySelectorAll(".map-tools > .view-settings")[1].open=false')
+    await evaluate(`document.querySelector('${topLayers}').open=false`)
     await nav('设置')
     await wait(()=>evaluate('document.querySelector(".settings-dialog").open'),'Settings did not open')
     const settingsClick=label=>evaluate(`[...document.querySelectorAll(".settings-dialog button")].find(node=>node.textContent.trim()===${JSON.stringify(label)}).click()`)
@@ -161,6 +184,7 @@ try {
     assert.equal(await evaluate('window.savedCanvas===document.querySelector(".maplibregl-canvas")'),true)
     await send('Page.reload')
     await wait(()=>evaluate('document.querySelector(".snapshot")?.textContent'),'Reload did not select pack')
+    await sidebarTab('图层')
     await nav('设置')
     await settingsClick('轨道配色')
     assert.equal(await evaluate('document.querySelector(".settings-dialog select[aria-label=国铁配色]").value'),'speed')
@@ -183,6 +207,7 @@ try {
     await nav('运行')
     assert.equal(await evaluate('document.querySelector(".ops-bottom [aria-label=仿真层级]").value'),'l1')
     await nav('地图')
+    await sidebarTab('目录')
 
     for(const [reference,role] of [
       ['osm:node:4610023440','station'],

@@ -1,0 +1,3 @@
+train_code,service_date,mode,station_id,sequence,arrival_time_s,departure_time_s,run_ref,pass_through,platform_id,corridor_id,corridor_version
+EX01,2026-01-01,rail,填写起点RailScope车站ID,0,,28800,example-run,false,,填写RailScope通道ID,1
+EX01,2026-01-01,rail,填写终点RailScope车站ID,1,30600,,example-run,false,,填写RailScope通道ID,1
