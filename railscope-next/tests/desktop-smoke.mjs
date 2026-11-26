@@ -272,7 +272,7 @@ async function verifyV4(snapshot) {
     turnaround_s:60,launch_gap_s:90,vehicles:1}})
   assert.equal(cycle.runs,3)
   await ops('archive_corridor',{id:out.id})
-  assert.ok(!(await ops('list')).corridors.some(item=>item.id===out.id))
+  assert.equal((await ops('list')).corridors.find(item=>item.id===out.id).current_version,false)
   assert.equal((await ops('get_run',{id:outbound.id})).corridor.id,out.id)
   const old = JSON.stringify({schema:'railscope.rail-corridors.v1',corridors:[{id:'legacy-test',name:'旧版迁移验收',
     path:[{edge_id:'old-edge',direction:'forward'}]}]})
@@ -286,10 +286,9 @@ async function verifyV4(snapshot) {
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('Boolean(document.querySelector(".snapshot")?.textContent)'),'cycle workspace reloaded')
   await click('运行')
-  await click('城市轨道')
-  await click('车次')
   await input('[aria-label=运营日期]','2026-11-20')
-  const metroDeparture='[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.querySelector("small")?.textContent==="10:00:00")'
+  await input('[aria-label=搜索运行目录]','循环验收')
+  const metroDeparture='[...document.querySelectorAll(".ops-tree-run")].find(el=>el.querySelector("small")?.textContent==="10:00:00")'
   await waitFor(()=>evaluate(`Boolean(${metroDeparture})`),'Shanghai cycle departures')
   await evaluate(`(${metroDeparture}).click()`)
   await waitFor(()=>evaluate('document.querySelectorAll(".metro-plan").length===3&&Boolean(document.querySelector(".metro-plan.return"))'),
@@ -462,10 +461,10 @@ async function verifyV3(snapshot, fixturePath) {
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'workspace restart')
   await click('运行')
   await waitFor(()=>evaluate('document.querySelector(".ops-workbench")?.hidden===false'),'operations workbench')
-  await click('车次')
   await input('[aria-label=运营日期]','2026-11-21')
-  await waitFor(()=>evaluate('Boolean(document.querySelector(".ops-list-inner button"))'),'dated run rows')
-  await evaluate('[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.textContent.includes("演示")&&el.querySelector("small")?.textContent==="08:00:00")?.click()')
+  await input('[aria-label=搜索运行目录]','演示')
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".ops-tree-run"))'),'dated run rows')
+  await evaluate('[...document.querySelectorAll(".ops-tree-run")].find(el=>el.textContent.includes("演示")&&el.querySelector("small")?.textContent==="08:00:00")?.click()')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".run-graph svg"))'),'time-distance graph')
   await click('跳到发车')
   await click('仿真场景')
@@ -477,7 +476,6 @@ async function verifyV3(snapshot, fixturePath) {
   await sleep(750)
   await click('运行')
   await click('暂停模拟')
-  await click('车次')
   await click('编辑时刻')
   await click('运行图')
   await click('聚焦底部工作区')
@@ -573,11 +571,10 @@ async function captureReferenceRun(artifactFolder, result) {
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'reference snapshot')
   await click('运行')
-  if (result.run.includes('地铁')) await click('城市轨道')
-  await click('车次')
   await input('[aria-label=运营日期]', result.historical_service_date)
-  await waitFor(()=>evaluate(`Boolean([...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})))`),'reference run details')
-  await evaluate(`[...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})).click()`)
+  await input('[aria-label=搜索运行目录]', result.run)
+  await waitFor(()=>evaluate('Boolean(document.querySelector(".ops-tree-run"))'),'reference run details')
+  await evaluate('document.querySelector(".ops-tree-run").click()')
   if(result.run.includes('地铁')){
     await waitFor(()=>evaluate('Boolean(document.querySelector(".metro-diagram svg .metro-plan"))'),'Shanghai metro diagram')
     const metro=await send('Page.captureScreenshot',{format:'png'})
@@ -645,7 +642,6 @@ async function verifyWorkbenchRefresh(planPath) {
   assert.ok((await invoke('workspace_groups', {snapshot})).some(group=>group.name==='上海城市轨道测试分组'))
 
   await click('运行')
-  await click('城市轨道')
   assert.equal(await evaluate('document.querySelector(".properties").closest("[hidden]")!==null'), true)
   await click('计划与车辆')
   const {root} = await send('DOM.getDocument')
@@ -653,8 +649,9 @@ async function verifyWorkbenchRefresh(planPath) {
   await send('DOM.setFileInputFiles', {nodeId,files:[planPath]})
   await click('导入')
   await waitFor(() => evaluate('document.querySelector("[aria-label=运营日期]")?.value==="2026-11-23"'), 'Line 7 plan imported in UI', 300)
-  await waitFor(() => evaluate('Boolean(document.querySelector(".ops-list-inner button"))'), 'Line 7 run list')
-  await evaluate('document.querySelector(".ops-list-inner button").click()')
+  await input('[aria-label=搜索运行目录]','上海地铁7号线')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".ops-tree-run"))'), 'Line 7 run list')
+  await evaluate('document.querySelector(".ops-tree-run").click()')
   await waitFor(() => evaluate('Boolean(document.querySelector(".metro-plan.return"))'), 'Both Line 7 directions on a shared station axis')
   await waitFor(() => evaluate('Boolean([...document.querySelectorAll(".ops-inspection button")].find(button=>button.innerText.includes("从发车开始模拟")&&!button.disabled))'), 'Line 7 run detail')
   await click('从发车开始模拟')
@@ -673,10 +670,12 @@ async function verifyNationalOperationsUI() {
   await select('.top .language-select select','zh')
   await evaluate('document.querySelector(".welcome-dialog button[aria-label=退出介绍]")?.click()')
   await click('运行')
-  await click('城市轨道')
   await input('[aria-label=运营日期]','2026-11-26')
   await waitFor(()=>evaluate('document.querySelector(".ops-summary").textContent.includes("434")'),'preloaded national metro plans')
-  assert.deepEqual(await evaluate('[...document.querySelectorAll(".ops-workbench [role=tab]")].map(button=>button.textContent)'), ['车次','通道'])
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".ops-tree > ul > li > button span")].map(label=>label.textContent)'), ['国铁','城市轨道'])
+  await click('上海地铁7号线')
+  await waitFor(()=>evaluate('document.querySelector(".metro-diagram .metro-plan.return")&&Boolean(document.querySelector(".metro-plan.short"))'),
+    'Line 7 chart from the line with both directions and short workings')
   assert.equal(await evaluate('document.querySelector(".ops-workbench input[aria-label=选择时刻表文件]")'), null)
   await click('仿真场景')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog[open] input[type=number]"))'),'scenario settings dialog')
@@ -685,20 +684,37 @@ async function verifyNationalOperationsUI() {
   await click('计划与车辆')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog[open] input[type=file]"))'),'optional plans dialog')
   await evaluate('document.querySelector(".operations-dialog header button").click()')
-  const trainLayer='document.querySelector(".map-tools input[aria-label=动态列车]")'
-  await evaluate(`if(${trainLayer}.checked)${trainLayer}.click()`)
-  await waitFor(()=>evaluate(`!${trainLayer}.checked`),'train layer turned off before playback')
-  await click('播放当日计划')
+  const railLayer='document.querySelector(".ops-train-layers label:first-child input")'
+  const trainLayer='document.querySelector(".ops-train-layers label:nth-child(2) input")'
+  await evaluate(`for(const layer of [${railLayer},${trainLayer}])if(layer.checked)layer.click()`)
+  await waitFor(()=>evaluate(`!${trainLayer}.checked&&!${railLayer}.checked`),'both train layers turned off before playback')
+  await click('从此线路开始播放')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".statusbar .status-action") && document.querySelector(".metro-plan.return"))'),
     'national snapshot playback and both directions')
-  await waitFor(()=>evaluate(`${trainLayer}.checked`),'playback enables the train layer')
+  await waitFor(()=>evaluate(`${trainLayer}.checked&&!${railLayer}.checked`),'metro playback enables only the metro layer')
   await waitFor(()=>evaluate('Number.parseFloat(document.querySelector(".coordinates").textContent)>120.6 && Number.parseFloat(document.querySelector(".coordinates").textContent)<122.3'),
     'Playback locates Shanghai within the nationwide map')
   await waitFor(()=>evaluate('document.querySelector(".ops-inspection").textContent.includes("运行中")'), 'Moving metro train status')
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".ops-relationship dt")].map(label=>label.textContent)'),['线路','通道','车次','担当车组'])
+  assert.equal(await evaluate('document.querySelector(".ops-follow").getAttribute("aria-pressed")'), 'false')
   await evaluate(`${trainLayer}.click()`)
   await waitFor(()=>evaluate(`!${trainLayer}.checked`),'train layer can be turned off during playback')
   await click('定位列车')
   await waitFor(()=>evaluate(`${trainLayer}.checked`),'locating the train enables its layer again')
+  await click('跟随列车')
+  await waitFor(()=>evaluate('document.querySelector(".ops-map-controls").textContent.includes("随车视角")'),'camera follows the selected train')
+  await evaluate('document.querySelector(".ops-follow").click()')
+  await waitFor(()=>evaluate('document.querySelector(".ops-map-controls").textContent.includes("自由视角")'),'explicitly stop following')
+  await click('跟随列车')
+  const mapPoint=await evaluate(`(() => {
+    const {x,y,width,height}=document.querySelector('.maplibregl-canvas').getBoundingClientRect()
+    return {x:x+width/2,y:y+height/2}
+  })()`)
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',buttons:1,clickCount:1,...mapPoint})
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',button:'left',buttons:1,x:mapPoint.x+80,y:mapPoint.y+16})
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',buttons:0,clickCount:1,x:mapPoint.x+80,y:mapPoint.y+16})
+  await waitFor(()=>evaluate('document.querySelector(".ops-map-controls").textContent.includes("自由视角")'),'manual pan releases following')
+  await click('定位列车')
   assert.ok(await evaluate('Boolean(document.querySelector(".ops-bottom [aria-label=运行时钟]"))'))
   if(artifacts){
     await mkdir(artifacts,{recursive:true})
@@ -709,11 +725,39 @@ async function verifyNationalOperationsUI() {
   await waitFor(()=>evaluate('Boolean(document.querySelector(".operations-dialog.map-editor[open] .ops-editor"))'),'floating timetable editor')
   assert.equal(await evaluate('Boolean(document.querySelector(".ops-bottom .ops-editor"))'),false)
   await evaluate('[...document.querySelectorAll(".operations-dialog .ops-editor button")].find(button=>button.textContent==="取消").click()')
-  await waitFor(()=>evaluate('!document.querySelector(".operations-dialog") && !document.querySelector(".ops-side-tools button:nth-child(3)")'),
-    'Timetable draft cancelled')
-  await evaluate('document.querySelector(".operation-modes button:first-child").click()')
-  await waitFor(()=>evaluate('document.querySelector(".ops-list").textContent.includes("G1")'),'preloaded G1 plan',60)
-  console.log(JSON.stringify({snapshot,metroRuns:434,timetableInDialog:true,metroPlayback:true,preloadedG1:true}))
+  await waitFor(()=>evaluate('!document.querySelector(".operations-dialog")'),'Timetable draft cancelled')
+  await click('查看最近计划 · 2026-09-17')
+  await input('[aria-label=搜索运行目录]','G1')
+  await waitFor(()=>evaluate('document.querySelector(".ops-tree-run")?.textContent.includes("G1")'),'preloaded G1 under its rail corridor',60)
+  await evaluate('document.querySelector(".ops-tree-run").click()')
+  await waitFor(()=>evaluate('document.querySelector(".ops-relationship")?.textContent.includes("京沪")'),'G1 line and corridor relationship')
+  if (process.env.RAILSCOPE_MIXED_OPERATIONS_TEST === '1') {
+    assert.ok(process.env.RAILSCOPE_NEXT_PROFILE,'mixed-day test needs an isolated workspace')
+    const ops=(action,args={})=>invoke('operations',{snapshot,request:{action,...args}})
+    const {runs:[g1]}=await ops('list',{service_date:'2026-09-17'})
+    const provenance={source_kind:'demo',source_url_or_reference:'国铁与城轨同日图层验收'}
+    const rail=await ops('save_run',{run:{...g1,id:'',plan_version:0,service_date:'2026-11-26',provenance}})
+    const stock=await ops('save_stock',{stock:{id:'',name:'验收车型',provenance}})
+    const vehicle=await ops('save_trainset',{trainset:{id:'',name:'验收车组',stock_type_id:stock.id,provenance}})
+    await ops('assign',{assignment:{run_id:rail.id,trainset_id:vehicle.id}})
+    const request={snapshot,request:{action:'list',service_date:'2026-11-26'}}
+    const mixedIds=await evaluate(`window.__TAURI_INTERNALS__.invoke('operations',${JSON.stringify(request)}).then(plan=>plan.runs.map(run=>run.id))`)
+    assert.equal(mixedIds.length,435)
+    const time_s=rail.stops[0].departure_time_s+600
+    const {states}=await ops('simulate',{run_ids:mixedIds,time_s,level:'l2'})
+    assert.equal(states.find(item=>item.run_id===rail.id)?.status,'moving')
+    assert.ok(states.some(item=>item.run_id!==rail.id&&item.status==='moving'))
+    await input('[aria-label=运营日期]','2026-11-26')
+    await waitFor(()=>evaluate('document.querySelector(".ops-tree-run")?.textContent.includes("G1")'),'mixed-day G1 row')
+    await evaluate('document.querySelector(".ops-tree-run").click()')
+    await waitFor(()=>evaluate('document.querySelector(".ops-relationship")?.textContent.includes("验收车组")'),'assigned vehicle in hierarchy')
+    await click('验收车组')
+    await waitFor(()=>evaluate('document.querySelector(".operations-dialog")?.textContent.includes("当日担当车次") && document.querySelector(".operations-dialog").textContent.includes("G1")'),
+      'vehicle details link back to the assigned run')
+    await evaluate('document.querySelector(".operations-dialog header button").click()')
+  }
+  console.log(JSON.stringify({snapshot,metroRuns:434,timetableInDialog:true,metroPlayback:true,independentLayer:true,manualCamera:true,preloadedG1:true,
+    mixedDayAndVehicle:process.env.RAILSCOPE_MIXED_OPERATIONS_TEST==='1'}))
 }
 
 if (process.env.RAILSCOPE_NATIONAL_OPERATIONS_UI === '1') {

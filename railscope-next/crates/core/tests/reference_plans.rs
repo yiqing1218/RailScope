@@ -31,6 +31,29 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
     };
 
     engine.activate(metro)?;
+    let shanghai_pack = engine.for_snapshot(metro)?;
+    let control = AtomicBool::new(false);
+    let station_a = "be352ca4-88d8-5c00-8fa3-f4f6dea2f4a7";
+    let station_b = "b1a549cd-ee05-5c3f-aa3b-a1ef48563d27";
+    let metro_line = "408e1caa-58f5-5cc5-b0b5-48d0633616df";
+    let out = operations::corridor_query(
+        &shanghai_pack,
+        json!({
+            "action":"resolve","name":"上海双向线路关系测试","mode":"metro","strict":true,
+            "steps":[{"node_id":station_a,"line_id":metro_line,"via_edge":"1aa9451a-b36f-508e-acbd-2510eb50a0a1"},{"node_id":station_b,"line_id":null}]
+        }),
+        &control,
+    )?;
+    let returned = operations::corridor_query(
+        &shanghai_pack,
+        json!({
+            "action":"reverse", "corridor":out["corridor"]
+        }),
+        &control,
+    )?;
+    assert_eq!(returned["corridor"]["intent"][0]["node_id"], station_b);
+    assert_eq!(returned["corridor"]["intent"][0]["line_id"], metro_line);
+    assert_eq!(returned["corridor"]["intent"][1]["node_id"], station_a);
     assert!(import(metro, &g1).is_err());
     let list =
         |snapshot: &str, date: &str| plans(&engine, snapshot, "list", json!({"service_date":date}));
@@ -188,7 +211,48 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
         7
     );
     assert_eq!(thursday["dates_by_mode"]["rail"], json!(["2026-09-17"]));
-    assert_eq!(list(rail, "2026-09-17")?["runs"][0]["train_number"], "G1");
+    let g1_entries = list(rail, "2026-09-17")?;
+    assert_eq!(g1_entries["runs"][0]["train_number"], "G1");
+    let g1_path = g1_entries["corridors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|corridor| corridor["id"] == g1_entries["runs"][0]["corridor_id"])
+        .context("G1 corridor missing from directory")?;
+    assert_eq!(g1_path["mode"], "rail");
+    assert_eq!(g1_path["lines"][0]["id"], line.id);
+    assert!(
+        thursday["corridors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["mode"] == "metro")
+            .all(|item| item["lines"][0]["id"].as_str().is_some())
+    );
+    let mut next_version = g1_path.clone();
+    next_version["name"] = json!("G1 通道版本测试");
+    let next = plans(
+        &engine,
+        rail,
+        "save_corridor",
+        json!({"corridor":next_version}),
+    )?;
+    assert_eq!(next["version"], g1_path["version"].as_u64().unwrap() + 1);
+    plans(
+        &engine,
+        rail,
+        "archive_corridor",
+        json!({"id":g1_path["id"]}),
+    )?;
+    let dated = list(rail, "2026-09-17")?;
+    let pinned = dated["corridors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|corridor| corridor["id"] == g1_path["id"])
+        .context("archived version used by G1 is missing from directory")?;
+    assert_eq!(pinned["version"], dated["runs"][0]["corridor_version"]);
+    assert_eq!(pinned["current_version"], false);
     let services = thursday["services"].as_array().unwrap();
     assert_eq!(services.len(), 2871);
     let trains = thursday["runs"].as_array().unwrap();

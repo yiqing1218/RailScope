@@ -41,6 +41,10 @@ function layoutPreferences(): Record<Mode,Layout> {
 function loadVisibility() {
   try {
     const saved = JSON.parse(localStorage.getItem(visibilityKey) ?? '{}')
+    if(typeof saved.trains==='boolean'){
+      saved.railTrains??=saved.trains
+      saved.metroTrains??=saved.trains
+    }
     return Object.fromEntries(Object.entries(defaults).map(([id, value])=>[id,typeof saved[id]==='boolean'?saved[id]:value])) as Visibility
   } catch {
     return defaults
@@ -105,7 +109,8 @@ export function App() {
     showPath: (...args:Parameters<MapController['setTrainPath']>)=>controller.current?.setTrainPath(...args),
     showCorridor: (...args:Parameters<MapController['setCorridorPath']>)=>controller.current?.setCorridorPath(...args),
     focusTrain: (...args:Parameters<MapController['focusTrain']>)=>controller.current?.focusTrain(...args),
-    revealLayer: (layer:'trains'|'route')=>setVisibility(old=>old[layer]?old:{...old,[layer]:true}),
+    revealLayer: (layer:'railTrains'|'metroTrains'|'route'|'corridor')=>setVisibility(old=>old[layer]?old:{...old,[layer]:true}),
+    stopFollowing:()=>controller.current?.stopFollowing(),
   }),[])
 
   useEffect(() => {
@@ -121,7 +126,7 @@ export function App() {
       }, () => setView(controller.current?.view()), setMapError, id=>{
         setMode('operations')
         if(id!=='draft-preview')operations.current?.selectRun(id)
-      })
+      },()=>operations.current?.releaseCamera())
       controller.current = map
       const observer=new ResizeObserver(()=>map.map.resize())
       if(mapPanel.current)observer.observe(mapPanel.current)
@@ -354,6 +359,8 @@ export function App() {
         onLayer={onLayer} onPreset={onPreset} /></div>
       <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
         selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
+        trainLayers={{rail:visibility.railTrains,metro:visibility.metroTrains}}
+        onTrainLayer={(network,value)=>onLayer(network==='rail'?'railTrains':'metroTrains',value)}
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
         onPlaying={setSimulationPlaying} onDirty={setOperationsDirty} level={level} setLevel={setLevel}/>
       <div className="task-pane" hidden={mode!=='analysis'}>

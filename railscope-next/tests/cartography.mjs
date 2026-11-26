@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
-import { defaultTrackViews, facilityStyles, lifecycles, missingColor, railPaint, readTrackViews, sites, tracks } from '../apps/desktop/src/cartography.ts'
+import { defaultTrackViews, facilityStyles, lifecycles, missingColor, railPaint, readTrackViews, sites, siteSymbol, tracks } from '../apps/desktop/src/cartography.ts'
 
 test('default railway colors, Z14 widths and lifecycle patterns', () => {
   assert.deepEqual(tracks.rail_main.slice(1), ['#D58A28', 3, 5])
@@ -20,6 +20,9 @@ test('station symbols and source-geometry layers have independent display rules'
   assert.match(sites.metro_interchange[2], /r="9.5".*r="3.5"/)
   assert.match(sites.rail_yard_site[2], /width="22" height="16".*M5 9 H19 M5 12 H19 M5 15 H19/)
   assert.match(sites.rail_crossover_site[2], /M5 5 L19 19 M19 5 L5 19.*#806C58/)
+  assert.match(sites.switch_detail[2], /^<circle /)
+  assert.match(sites.level_crossing_detail[2], /<rect .*<path /)
+  assert.deepEqual(siteSymbol.slice(0,3), ['case',['==',['get','class'],'level_crossing'],'level_crossing_detail'])
   assert.deepEqual(facilityStyles.platform, {name:'站台',fill:'#E6BF72',outline:'#BC853E',opacity:.55,zoom:14})
   assert.equal(facilityStyles.station_area.zoom, 13)
   assert.equal(facilityStyles.station_building.zoom, 14)

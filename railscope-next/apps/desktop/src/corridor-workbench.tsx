@@ -1,20 +1,19 @@
 import { t } from './i18n'
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 import type { Geometry } from 'geojson'
 import { api, type Entity, type Summary } from './api'
-import { describeError, opsApi, type ControlPoint, type ControlStep, type Corridor, type CorridorPreview } from './operations-api'
+import { corridorKey, describeError, opsApi, type ControlPoint, type ControlStep, type Corridor, type CorridorPreview } from './operations-api'
 
 type Props={
   snapshot:string; mode:'rail'|'metro'; corridors:Corridor[]; selection?:Entity; prefill?:{start?:Summary;end?:Summary}; current?:Corridor;
   setCurrent:(corridor?:Corridor)=>void; execute:(task:()=>Promise<unknown>,message?:string,refresh?:boolean)=>Promise<void>;
   busy:boolean; dirty:(value:boolean)=>void; show:(shape:Geometry|null)=>void; locate:(point:[number,number])=>void;
-  dock:HTMLElement|null;isDirty:boolean;
+  isDirty:boolean;
 }
 type Choice = {id:string;name:string}
 const row=():ControlStep=>({node_id:'',line_id:null,via_edge:null})
 
-export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,isDirty}:Props){
+export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,isDirty}:Props){
   const [name,setName]=useState('')
   const [catalogQuery,setCatalogQuery]=useState('')
   const [strict,setStrict]=useState(false)
@@ -34,7 +33,7 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
     setSource({});setSteps(next.map((step,i)=>i===next.length-1?{...step,line_id:null,via_edge:null}:step));invalidate()
   }
   function usePreview(value:CorridorPreview, existing?:Corridor){
-    const plan=existing?.id?{...value.corridor,id:existing.id,version:existing.version}:value.corridor
+    const plan=existing?.id?{...value.corridor,id:existing.id,version:existing.version,current_version:existing.current_version}:value.corridor
     setCurrent(plan);setPreview({...value,corridor:plan});setName(plan.name);show(value.geometry)
   }
   function reset(){setName('');setSteps([row(),row()]);setSource({});setPreview(undefined);setCurrent(undefined);show(null);dirty(false)}
@@ -47,13 +46,15 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
     if(start){setName(t("{0}出发", start.name));dirty(true)}
   },[prefill])
 
-  function load(id:string){
+  useEffect(()=>{if(current?.id&&!prefill)load(corridorKey(current))},[])
+
+  function load(key:string){
     if(isDirty&&!window.confirm(t("以所选对象替换通道草稿？")))return
-    const found=corridors.find(item=>item.id===id)
+    const found=corridors.find(item=>corridorKey(item)===key)??(current&&corridorKey(current)===key?current:undefined)
     if(!found){reset();return}
     void execute(async()=>{
       const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'preview',{corridor:found})
-      setSteps(found.intent?.length?found.intent:[row(),row()]);setSource({});usePreview(value)
+      setSteps(found.intent?.length?found.intent:[row(),row()]);setSource({});usePreview(value,found)
       setStrict(found.resolution_mode==='strict_unique');dirty(false)
     },undefined,false)
   }
@@ -81,11 +82,11 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
       <button className="secondary compact" onClick={()=>{if(window.confirm(t("清除当前通道草稿？")))reset()}}>{t("新建／清空草稿")}</button>
       <button className="secondary compact" disabled={!preview||busy} onClick={()=>{
         if(!preview)return
-        usePreview({...preview,corridor:{...preview.corridor,id:'',version:0,name:t("{0} · 副本", name)}});dirty(true)
+        usePreview({...preview,corridor:{...preview.corridor,id:'',version:0,current_version:undefined,name:t("{0} · 副本", name)}});dirty(true)
       }}>{t("复制")}</button>
       <button className="secondary compact" disabled={!preview||busy} onClick={()=>void execute(async()=>{
         const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'reverse',{corridor:preview!.corridor})
-        setSteps([row(),row()]);usePreview(value);dirty(true)
+        setSteps(value.corridor.intent?.length?value.corridor.intent:[row(),row()]);setSource({});usePreview(value);dirty(true)
       },t("反向候选通过方向与连通性校验"),false)}>{t("反向候选")}</button>
     </div>
     <label>{t("通道名称")}<input value={name} onChange={e=>{setName(e.target.value);dirty(true)}}/></label>
@@ -116,8 +117,8 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
         const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'resolve',{name,mode,steps,strict})
         usePreview(value,current);dirty(true)
       },t("已显示校验通过的拓扑参考路径"),false)}>{t("校验并预览")}</button>
-      <button className="primary" disabled={!preview||busy||!name.trim()} onClick={save}>{t("保存通道版本")}</button>
-      <button className="secondary compact" disabled={!current?.id||busy} onClick={()=>{
+      <button className="primary" disabled={!preview||busy||!name.trim()||current?.current_version===false} onClick={save}>{t("保存通道版本")}</button>
+      <button className="secondary compact" disabled={!current?.id||busy||current.current_version===false} onClick={()=>{
         if(current?.id&&window.confirm(t("归档此通道？已引用它的车次将保留现有版本。")))void execute(async()=>{await opsApi.archiveCorridor(snapshot,current.id);reset()},t("已归档通道"))
       }}>{t("归档")}</button>
     </div>
@@ -136,12 +137,12 @@ export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill
   </div>
   return <div className="ops-pane corridor-library">
     <label>{t("检索共享通道")}<input value={catalogQuery} onChange={e=>setCatalogQuery(e.target.value)} placeholder={t("名称、端点或通道 ID")}/></label>
-    <label>{t("当前通道")}<select value={current?.id??''} onChange={e=>load(e.target.value)}>
+    <label>{t("当前通道")}<select value={current?.id?corridorKey(current):''} onChange={e=>load(e.target.value)}>
       <option value="">{t("新建通道")}</option>{corridors.filter(item=>item.id===current?.id||
         [item.name,item.id,item.origin_node_id,item.destination_node_id,item.source_id].some(value=>value.toLowerCase().includes(catalogQuery.trim().toLowerCase())))
-        .map(item=><option key={item.id} value={item.id}>{item.name} · v{item.version}</option>)}
+        .map(item=><option key={corridorKey(item)} value={corridorKey(item)}>{item.name} · v{item.version}</option>)}
     </select></label>
-    {dock&&createPortal(work,dock)}
+    {work}
   </div>
 }
 

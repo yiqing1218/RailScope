@@ -18,7 +18,7 @@ export const layerGroups = [
     ['road','高速公路线路'],['roadNames','公路编号与名称'],['roadSites','服务区与交通设施'],
   ]},
   {name:'专业叠加', items:[
-    ['route','所选车次走行路径'],['corridor','共享通道'],['trains','动态列车'],['edit','编辑节点与分析结果'],
+    ['route','所选车次走行路径'],['corridor','共享通道'],['railTrains','国铁列车'],['metroTrains','城轨列车'],['edit','编辑节点与分析结果'],
   ]},
 ] as const
 

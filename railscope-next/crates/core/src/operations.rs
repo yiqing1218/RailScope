@@ -962,18 +962,94 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             if let Some(date) = service_date.as_deref() {
                 NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
             }
-            let mut statement = db.prepare("SELECT payload FROM ops_corridor c WHERE snapshot=? AND version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
-                  AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id) ORDER BY id LIMIT 1000")?;
-            let payloads = statement.query_map([snapshot], |row| row.get::<_, String>(0))?;
+            let mut statement = db.prepare("SELECT payload,
+                  version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
+                    AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id) AS current_version
+                  FROM ops_corridor c WHERE snapshot=?1 AND (
+                  current_version OR EXISTS(SELECT 1 FROM ops_run r WHERE r.corridor_id=c.id AND r.corridor_version=c.version
+                    AND (?2 IS NULL OR r.service_date=?2) AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id))
+                ) ORDER BY id,version DESC")?;
+            let payloads = statement.query_map(params![snapshot, service_date], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+            })?;
             let mut corridors = Vec::new();
             let mut classify = canonical.prepare("SELECT kind FROM entity WHERE id=?")?;
+            let mut find_line = canonical
+                .prepare("SELECT id,name FROM entity WHERE kind='line' AND id=? LIMIT 1")?;
+            let mut find_source_line = canonical
+                .prepare("SELECT id,name FROM entity WHERE kind='line' AND source_ref=? LIMIT 1")?;
+            let mut find_covering_lines = canonical.prepare(
+                "WITH path(id) AS (SELECT DISTINCT value FROM json_each(?1))
+                 SELECT l.id,l.name FROM path
+                 CROSS JOIN line_member m ON m.member_id=path.id
+                 CROSS JOIN entity l ON l.id=m.line_id AND l.kind='line'
+                 GROUP BY l.id HAVING count(DISTINCT path.id)=(SELECT count(*) FROM path) LIMIT 2",
+            )?;
+            let mut line_override = db.prepare("SELECT json_extract(payload,'$.name') FROM overrides WHERE snapshot=? AND entity=?")?;
             for payload in payloads {
-                let mut corridor: Value = serde_json::from_str(&payload?)?;
-                if let Some(edge) = corridor["edge_refs"][0]["edge_id"].as_str() {
-                    let kind: Option<String> =
-                        classify.query_row([edge], |row| row.get(0)).optional()?;
+                let (payload, current_version) = payload?;
+                let plan: Corridor = serde_json::from_str(&payload)?;
+                let mut corridor = serde_json::to_value(&plan)?;
+                corridor["current_version"] = json!(current_version);
+                if let Some(edge) = plan.edge_refs.first() {
+                    let kind: Option<String> = classify
+                        .query_row([&edge.edge_id], |row| row.get(0))
+                        .optional()?;
                     corridor["mode"] = json!(kind);
                 }
+                let mut lines = Vec::new();
+                let mut add_line = |key: &str, is_source: bool| -> Result<()> {
+                    let query = if is_source {
+                        &mut find_source_line
+                    } else {
+                        &mut find_line
+                    };
+                    let line: Option<(String, String)> = query
+                        .query_row([key], |row| Ok((row.get(0)?, row.get(1)?)))
+                        .optional()?;
+                    if let Some(line) = line {
+                        lines.push(line);
+                    }
+                    Ok(())
+                };
+                for line in plan
+                    .intent
+                    .iter()
+                    .filter_map(|step| step.line_id.as_deref())
+                {
+                    add_line(line, false)?;
+                }
+                if plan.intent.is_empty()
+                    && plan
+                        .provenance
+                        .source_url_or_reference
+                        .starts_with("osm:relation:")
+                {
+                    add_line(&plan.provenance.source_url_or_reference, true)?;
+                }
+                if lines.is_empty() && !plan.edge_refs.is_empty() {
+                    let edges: Vec<_> = plan.edge_refs.iter().map(|edge| &edge.edge_id).collect();
+                    let matches = find_covering_lines
+                        .query_map([serde_json::to_string(&edges)?], |row| {
+                            Ok((row.get(0)?, row.get(1)?))
+                        })?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    if matches.len() == 1 {
+                        lines = matches;
+                    }
+                }
+                let lines = lines
+                    .into_iter()
+                    .map(|(id, name)| -> Result<Value> {
+                        let name = line_override
+                            .query_row([snapshot, &id], |row| row.get::<_, Option<String>>(0))
+                            .optional()?
+                            .flatten()
+                            .unwrap_or(name);
+                        Ok(json!({"id":id,"name":name}))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                corridor["lines"] = json!(lines);
                 corridors.push(corridor);
             }
             let mut service_query = db.prepare(
@@ -1029,8 +1105,21 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             )?;
             let scenarios =
                 all::<Scenario>(db, "SELECT payload FROM ops_scenario ORDER BY id LIMIT 100")?;
-            let assignments=all::<Assignment>(db,"SELECT json_object('run_id',run_id,'trainset_id',trainset_id) FROM ops_assignment a
-                     WHERE run_version=(SELECT max(version) FROM ops_run WHERE id=a.run_id) LIMIT 2000")?;
+            let mut assignments_query = db.prepare(
+                "SELECT a.run_id,a.trainset_id FROM ops_assignment a
+                JOIN ops_run r ON r.id=a.run_id AND r.version=a.run_version
+                LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+                WHERE (?1 IS NULL OR r.service_date=?1) AND (c.snapshot IS NULL OR c.snapshot=?2)
+                  AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)",
+            )?;
+            let assignments = assignments_query
+                .query_map(params![service_date, snapshot], |row| {
+                    Ok(Assignment {
+                        run_id: row.get(0)?,
+                        trainset_id: row.get(1)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             let cycles =
                 all::<cycles::Cycle>(db, "SELECT payload FROM ops_cycle ORDER BY id LIMIT 100")?;
             Ok(

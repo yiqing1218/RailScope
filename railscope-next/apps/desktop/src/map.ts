@@ -23,7 +23,10 @@ const contextCities=['city-core','place-labels']
 const contextIds=[...contextGeography,'base-admin',...contextCities].map(id=>`context-${id}`)
 const baseLayers=['land','base-green','base-water','base-water-line','base-buildings','base-admin','base-road','city-core','place-labels','minor-places','local-road-names',...contextIds]
 const labelLayers = ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','poi-labels','business-badges','technical-badges','city-core','place-labels','minor-places','local-road-names']
-const overlays=['train-marker','train-label','train-route','corridor-route','exact-point','exact-line','exact-area',editId]
+const trainKinds=['rail','metro'] as const
+const trainMarkers=trainKinds.map(mode=>`${mode}-train-marker`)
+const trainLabels=trainKinds.map(mode=>`${mode}-train-label`)
+const overlays=[...trainMarkers,...trainLabels,'train-route','corridor-route','exact-point','exact-line','exact-area',editId]
 const layerIds: Record<LayerGroup, string[]> = {
   geography:['land','base-green','base-water','base-water-line','base-buildings','base-road',...contextGeography.map(id=>`context-${id}`)],
   boundaries:['base-admin','context-base-admin'],
@@ -34,7 +37,7 @@ const layerIds: Record<LayerGroup, string[]> = {
   metro:[...trackLayers('metro'),...stripes],metroNames:['metro-line-names'],metroStations:['metro-stations'],metroStationNames:['metro-station-names'],
   interchanges:['metro-interchanges'],metroFacilities:['metro-entrances','metro-site-fill','metro-site-outline'],
   road:['road-plan','road'],roadNames:['road-names'],roadSites:['poi','poi-area'],
-  route:['train-route'],corridor:['corridor-route'],trains:['train-marker','train-label'],edit:['exact-point','exact-line','exact-area',editId],
+  route:['train-route'],corridor:['corridor-route'],railTrains:[trainMarkers[0],trainLabels[0]],metroTrains:[trainMarkers[1],trainLabels[1]],edit:['exact-point','exact-line','exact-area',editId],
 }
 const interactiveLayers = [editId,...Object.values(layerIds).flat().filter(id=>!baseLayers.includes(id)&&!overlays.includes(id)&&id!=='poi-labels').reverse()]
 const siteSymbols=['rail-stations','metro-stations','metro-interchanges','operating-site-symbols','operating-site-labels']
@@ -66,9 +69,10 @@ export class MapController {
   private trackViews: TrackViews = defaultTrackViews
   private filterZoom = -1
   private packId?: string
+  private following = false
 
   constructor(element: HTMLElement, onPick: (id: number | null) => void, onMove: () => void, onError: (error: string) => void,
-    onTrainPick?: (id: string) => void) {
+    onTrainPick?: (id: string) => void, onManualMove?:()=>void) {
     this.map = new maplibre.Map({
       container: element, center: [106, 33], zoom: 3.7, maxZoom: 22,
       dragRotate: false, pitchWithRotate: false, renderWorldCopies: false,
@@ -101,8 +105,9 @@ export class MapController {
     this.map.addControl(new maplibre.ScaleControl({ unit: 'metric' }), 'bottom-left')
     this.map.on('click', event => {
       const { x, y } = event.point
-      if (this.map.getLayer('train-marker')) {
-        const train = this.map.queryRenderedFeatures([[x-6,y-6],[x+6,y+6]], {layers:['train-marker']})[0]
+      const trainLayers=trainMarkers.filter(id=>this.map.getLayer(id))
+      if (trainLayers.length) {
+        const train = this.map.queryRenderedFeatures([[x-6,y-6],[x+6,y+6]], {layers:trainLayers})[0]
         if (typeof train?.properties.run === 'string') {onTrainPick?.(train.properties.run); return}
       }
       const hits = this.map.queryRenderedFeatures([[x - 5, y - 5], [x + 5, y + 5]], {
@@ -115,6 +120,15 @@ export class MapController {
       onPick(typeof picked?.id === 'number' ? picked.id : null)
     })
     this.map.on('moveend', onMove)
+    this.map.on('movestart',event=>{
+      if(!event.originalEvent)return
+      this.following=false
+      onManualMove?.()
+    })
+    this.map.on('dragstart',()=>{
+      this.following=false
+      onManualMove?.()
+    })
     this.map.on('error', event => onError(event.error.message))
   }
 
@@ -197,13 +211,17 @@ export class MapController {
     this.map.addLayer({id:'corridor-route',source:'corridor-path',type:'line',
       layout:{'line-cap':'round','line-join':'round'},
       paint:{'line-color':'#26798c','line-width':4.25,'line-opacity':.83}})
-    this.map.addLayer({id:'train-marker',source:'trains',type:'circle',paint:{
-      'circle-radius':['case',['boolean',['get','selected'],false],7,4.5],
-      'circle-color':['case',['==',['get','kind'],'metro'],'#00ad8e','#7553cc'],
-      'circle-stroke-color':'#fff','circle-stroke-width':1.5}})
-    this.map.addLayer({id:'train-label',source:'trains',type:'symbol',minzoom:8,layout:{
-      'text-field':['get','label'],'text-font':['Microsoft YaHei UI'],'text-size':12,'text-offset':[0,1.15]},
-      paint:{'text-color':'#322359','text-halo-color':'#fff','text-halo-width':1.1}})
+    for(const [i,mode] of trainKinds.entries()){
+      const filter:ExpressionSpecification=['==',['get','kind'],mode]
+      this.map.addLayer({id:trainMarkers[i],source:'trains',type:'circle',filter,
+        layout:{'circle-sort-key':['case',['boolean',['get','selected'],false],1,0]},paint:{
+          'circle-radius':['case',['boolean',['get','selected'],false],7,4.5],
+          'circle-color':mode==='metro'?'#008573':'#7553cc','circle-stroke-color':'#fff','circle-stroke-width':1.5}})
+      this.map.addLayer({id:trainLabels[i],source:'trains',type:'symbol',minzoom:8,filter,layout:{
+        'text-field':['get','label'],'text-font':['Microsoft YaHei UI'],'text-size':12,'text-offset':[0,1.15],
+        'symbol-sort-key':['case',['boolean',['get','selected'],false],0,1]},
+        paint:{'text-color':mode==='metro'?'#174740':'#322359','text-halo-color':'#fff','text-halo-width':1.1}})
+    }
     this.setTheme(this.theme)
     this.setTrackViews(this.trackViews)
     this.refreshVisibility()
@@ -423,7 +441,15 @@ export class MapController {
   }
 
   focusTrain(point:[number,number], follow:boolean) {
-    this.map.easeTo({center:point,zoom:follow?this.map.getZoom():Math.max(this.map.getZoom(),11),duration:follow?230:500})
+    this.following=follow
+    if(follow&&this.map.project(point).dist(this.map.project(this.map.getCenter()))<0.5)return
+    this.map.easeTo({center:point,zoom:follow?this.map.getZoom():Math.max(this.map.getZoom(),11),
+      duration:follow?210:500,...(follow?{easeId:'train-follow'}:{})})
+  }
+
+  stopFollowing(){
+    if(this.following)this.map.stop()
+    this.following=false
   }
 
   fit(bounds: Bounds, maxZoom = 15) {

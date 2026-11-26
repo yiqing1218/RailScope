@@ -382,7 +382,24 @@ pub fn query(pack: &Pack, request: Value, cancel: &AtomicBool) -> Result<Value> 
         Query::Reverse { mut corridor } => {
             corridor.id.clear();
             corridor.version = 0;
-            corridor.intent.clear();
+            if let Some(first) = corridor.intent.first() {
+                let last = ControlStep {
+                    node_id: first.node_id.clone(),
+                    line_id: None,
+                    via_edge: None,
+                };
+                corridor.intent = corridor
+                    .intent
+                    .windows(2)
+                    .rev()
+                    .map(|leg| ControlStep {
+                        node_id: leg[1].node_id.clone(),
+                        line_id: leg[0].line_id.clone(),
+                        via_edge: leg[0].via_edge.clone(),
+                    })
+                    .chain(std::iter::once(last))
+                    .collect();
+            }
             corridor.name = format!("{} · 反向", corridor.name);
             corridor.verification_status = "automatic_reference".into();
             corridor.resolution_mode = "manual".into();

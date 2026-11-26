@@ -35,7 +35,11 @@ export type Corridor = {
   candidates?: { edge_ids: string[]; meters: number }[]
   intent?: ControlStep[]
   mode?: 'rail' | 'metro'
+  lines?: { id:string; name:string }[]
+  current_version?: boolean
 }
+export const corridorKey=(corridor:{id:string;version:number})=>`${corridor.id}:${corridor.version}`
+export const runCorridorKey=(run:Run)=>run.corridor_id&&run.corridor_version!=null?`${run.corridor_id}:${run.corridor_version}`:''
 export type ControlStep = { node_id:string; line_id:string|null; via_edge?:string|null }
 export type ControlPoint = { id:string; name:string; point:[number,number]; meters?:number; evidence?:string }
 export type CorridorPreview = { corridor:Corridor; geometry:Geometry; mode:'rail'|'metro' }

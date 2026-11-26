@@ -179,6 +179,9 @@ pub fn classify(
             ("halt", _) => ("rail_halt", "OSM railway=halt"),
             ("tram_stop", _) => ("tram_stop", "OSM railway=tram_stop"),
             ("switch", _) => ("switch_detail", "OSM railway=switch"),
+            ("level_crossing", _) | (_, "level_crossing") => {
+                ("level_crossing_detail", "OSM railway=level_crossing")
+            }
             ("railway_crossing", _) => ("railway_crossing_detail", "OSM railway=railway_crossing"),
             ("signal", _) => ("signal_detail", "OSM railway=signal"),
             ("subway_entrance", _) => ("subway_entrance", "OSM railway=subway_entrance"),
@@ -361,6 +364,12 @@ mod tests {
                 "facility",
                 "platform",
                 "platform",
+            ),
+            (
+                json!({"railway":"level_crossing"}),
+                "facility",
+                "level_crossing",
+                "level_crossing_detail",
             ),
             (
                 json!({"building":"train_station"}),
