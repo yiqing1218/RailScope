@@ -107,6 +107,16 @@ pub fn classify(
                 ("metro_interchange", "已核验实际换乘关系")
             }
             (_, "metro_station") => ("metro_station", "OSM 城市轨道站"),
+            (_, "rail_station") if raw != "station" && tag("train") != "yes" => {
+                if tag("bus") == "yes"
+                    || tag("highway") == "bus_stop"
+                    || tag("amenity") == "bus_station"
+                {
+                    ("bus_station", "OSM 公交场站或站点")
+                } else {
+                    ("unclassified_transport_station", "缺少铁路车站来源证据")
+                }
+            }
             (_, "rail_station") if tag("passenger") == "yes" => {
                 ("rail_station_passenger", "OSM passenger=yes")
             }
@@ -230,6 +240,24 @@ mod tests {
                 "station",
                 "rail_station",
                 "rail_halt",
+            ),
+            (
+                json!({"public_transport":"station","bus":"yes","name":"龙江小区"}),
+                "station",
+                "rail_station",
+                "bus_station",
+            ),
+            (
+                json!({"public_transport":"station"}),
+                "station",
+                "rail_station",
+                "unclassified_transport_station",
+            ),
+            (
+                json!({"public_transport":"station","bus":"yes","train":"yes"}),
+                "station",
+                "rail_station",
+                "rail_station_unknown",
             ),
             (
                 json!({"railway":"crossover"}),

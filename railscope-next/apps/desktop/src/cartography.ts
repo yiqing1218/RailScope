@@ -27,8 +27,8 @@ export const lifecycles = {
 } as const
 
 export const sites = {
-  rail_station_passenger: ['铁路客运站', 9, `<rect x="5" y="5" width="14" height="14" rx="1" fill="#314C65" stroke="#FFFFFF" stroke-width="1"/>`],
-  rail_station_unknown: ['铁路车站（未分类）', 9, `<rect x="5" y="5" width="14" height="14" rx="1" fill="none" stroke="#314C65" stroke-width="2"/>`],
+  rail_station_passenger: ['铁路客运站', 9, `<circle cx="12" cy="12" r="4.5" fill="#314C65" stroke="#FFFFFF" stroke-width="1.2"/>`],
+  rail_station_unknown: ['铁路车站（未分类）', 9, `<circle cx="12" cy="12" r="4" fill="#F9FCFC" stroke="#314C65" stroke-width="1.6"/>`],
   metro_station: ['地铁站', 9, `<circle cx="12" cy="12" r="6.5" fill="#169CA0" stroke="#FFFFFF" stroke-width="1"/>`],
   metro_interchange: ['地铁换乘站', 7, `<circle cx="12" cy="12" r="9.5" fill="none" stroke="#169CA0" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="#169CA0"/>`],
   rail_halt: ['乘降所', 11, `<circle cx="12" cy="12" r="3.5" fill="#62758B"/>`],
@@ -52,7 +52,22 @@ export const thematic = {
   technical: { name:'车站技术作业类型', entries:[] },
 } as const
 
-export type RailView = 'infrastructure' | 'operations' | keyof typeof thematic
+export type RailView = 'infrastructure' | keyof typeof thematic
+export type MetroView = 'lines' | 'infrastructure'
+export type TrackViews = { rail: RailView; metro: MetroView }
+export const defaultTrackViews: TrackViews = { rail:'infrastructure', metro:'lines' }
+export const nationalStationSymbols=['rail_station_passenger','rail_station_unknown','rail_halt']
+export const metroStationSymbols=['metro_station','metro_interchange','tram_stop']
+export const nonRailStationNames = { bus_station:'公交场站', unclassified_transport_station:'未分类公共交通站' }
+
+export function readTrackViews(storage: Pick<Storage,'getItem'>): TrackViews {
+  const rail=storage.getItem('railscope-next.rail-style')
+  const metro=storage.getItem('railscope-next.metro-style')
+  return {
+    rail:rail&&Object.hasOwn(thematic,rail)?rail as keyof typeof thematic:defaultTrackViews.rail,
+    metro:metro==='infrastructure'?'infrastructure':defaultTrackViews.metro,
+  }
+}
 export const missingColor = '#ADB4BD'
 export const metroColor = tracks.metro_track[1]
 
@@ -65,7 +80,7 @@ export const facilityStyles = {
 
 export function symbolName(symbol: string) {
   return tracks[symbol as keyof typeof tracks]?.[0] ?? sites[symbol as keyof typeof sites]?.[0]
-    ?? facilityStyles[symbol as keyof typeof facilityStyles]?.name
+    ?? facilityStyles[symbol as keyof typeof facilityStyles]?.name ?? nonRailStationNames[symbol as keyof typeof nonRailStationNames]
 }
 
 // Existing PMTiles store only the earlier class field. Exact tiles carry the audit-derived symbol.
@@ -87,7 +102,6 @@ export function trackProperty(index: 1 | 2 | 3): ExpressionSpecification {
 }
 
 export function railPaint(view: RailView): ExpressionSpecification {
-  if (view === 'operations') return ['literal', missingColor]
   if (view === 'infrastructure' || view === 'lifecycle' || view === 'technical') return trackProperty(1)
   const gauge: ExpressionSpecification = ['case',['!', ['has','gauge']],-1, ['<',['to-number',['get','gauge']],1435],0,
     ['==',['get','gauge'],1435],1,2]

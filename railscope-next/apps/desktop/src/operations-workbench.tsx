@@ -7,6 +7,7 @@ import type { Entity, Summary } from './api'
 import type { MapTrain } from './map'
 import { ControlCorridorEditor } from './corridor-workbench'
 import { MetroDiagram } from './metro-diagram'
+import { simulationLevels } from './settings'
 import {
   chinaDate,datedRunLabel,describeError,formatTime,opsApi,parseTime,sourceLabel,stateLabel,trustLabel,
   type Clock,type Corridor,type Cycle,type Level,type OperationList,type Provenance,type Run,type RunDetail,type Scenario,
@@ -21,17 +22,14 @@ export type OperationsMap={
   focusTrain:(point:[number,number],follow:boolean)=>void
 }
 type Props={snapshot?:string; visible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
-  openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void}
+  openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void;
+  level:Level;setLevel:(level:Level)=>void}
 const blank:OperationList={corridors:[],services:[],runs:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
 const userSource:Provenance={source_kind:'user_defined',source_url_or_reference:'工作区人工录入'}
 const initialScenario:Scenario={id:'',name:'假设性场景',headway_s:120,turnaround_s:900,delays:{}}
-const storedLevel=():Level=>{
-  const value=localStorage.getItem('railscope.ops.level')
-  return value==='l1'||value==='l3'?value:'l2'
-}
 
 export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function OperationsWorkbench(
-  {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty},ref
+  {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,level,setLevel},ref
 ){
   const [tab,setTab]=useState<'corridor'|'trains'|'data'|'scenario'>(()=>{
     const value=localStorage.getItem('railscope.ops.tab')
@@ -42,7 +40,6 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [editor,setEditor]=useState<Run>()
   const [detail,setDetail]=useState<RunDetail>()
   const [clock,setClock]=useState<Clock>({time_s:28800,rate:1,playing:false})
-  const [level,setLevel]=useState<Level>(storedLevel)
   const [scenario,setScenario]=useState(initialScenario)
   const [simulation,setSimulation]=useState<Simulation>()
   const [draftPosition,setDraftPosition]=useState<TrainState>()
@@ -127,7 +124,6 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     }).catch(e=>setError(describeError(e)))
     return ()=>{requestEpoch.current++}
   },[snapshot,selected,data])
-  useEffect(()=>{localStorage.setItem('railscope.ops.level',level)},[level])
   useEffect(()=>{localStorage.setItem('railscope.ops.tab',tab)},[tab])
   useEffect(()=>{onPlaying(clock.playing)},[clock.playing,onPlaying])
   useEffect(()=>{onDirty(corridorDirty||!!editor)},[corridorDirty,editor,onDirty])
@@ -317,7 +313,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             {[.25,.5,1,2,5,10,30,60].map(r=><option key={r} value={r}>{r}×</option>)}
           </select>
           <select aria-label="仿真层级" value={level} onChange={e=>setLevel(e.target.value as Level)}>
-            <option value="l1">L1 计划</option><option value="l2">L2 径路</option><option value="l3">L3 场景</option>
+            {Object.entries(simulationLevels).map(([id,name])=><option key={id} value={id}>{name}</option>)}
           </select>
           <button className="secondary compact" onClick={()=>void control('reset')}>重置</button>
         </div>

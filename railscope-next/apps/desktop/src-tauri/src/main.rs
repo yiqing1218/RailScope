@@ -364,6 +364,13 @@ fn diagnostics(engine: Core<'_>) -> Option<pack::TileStats> {
 
 fn tile(engine: &Engine, path: &str) -> Result<(Arc<[u8]>, &'static str)> {
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+    if let [snapshot, z, x, y, "context"] = parts.as_slice() {
+        let pack = engine.for_tile(snapshot).context("inactive snapshot")?;
+        return Ok((
+            pack.context_tile(z.parse()?, x.parse()?, y.parse()?)?,
+            "overview_context",
+        ));
+    }
     let (snapshot, z, x, y, archive) = match parts.as_slice() {
         [snapshot, z, x, y] => (snapshot, z, x, y, false),
         [snapshot, z, x, y, "archive"] => (snapshot, z, x, y, true),

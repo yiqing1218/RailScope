@@ -18,7 +18,13 @@ use std::{
 
 const TILE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_TILE: usize = 8 * 1024 * 1024;
-type TileKey = (u8, u32, u32, bool);
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum TileMode {
+    Archive,
+    Detail,
+    Context,
+}
+type TileKey = (u8, u32, u32, TileMode);
 type Tile = Arc<[u8]>;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -190,9 +196,25 @@ impl Pack {
     }
 
     pub fn tile_mode(&self, z: u8, x: u32, y: u32, archive_only: bool) -> Result<Tile> {
+        let mode = if !archive_only && self.is_precise(z) {
+            TileMode::Detail
+        } else {
+            TileMode::Archive
+        };
+        self.cached_tile(z, x, y, mode)
+    }
+
+    pub fn context_tile(&self, z: u8, x: u32, y: u32) -> Result<Tile> {
+        ensure!((3..=8).contains(&z), "无效底图概览级别");
+        if self.manifest.source_schema < 3 {
+            return Ok(Arc::from([]));
+        }
+        self.cached_tile(z, x, y, TileMode::Context)
+    }
+
+    fn cached_tile(&self, z: u8, x: u32, y: u32, mode: TileMode) -> Result<Tile> {
         let coord = TileCoord::new(z, x, y)?;
-        let detail = !archive_only && self.is_precise(z);
-        let key = (z, x, y, detail);
+        let key = (z, x, y, mode);
         let _work = self.work
             [((x as usize).wrapping_mul(31) ^ y as usize ^ z as usize) % self.work.len()]
         .lock()
@@ -208,10 +230,15 @@ impl Pack {
         }
         let start = Instant::now();
         let mut disk_hit = false;
-        let result: Result<Tile> = if detail {
+        let result: Result<Tile> = if mode != TileMode::Archive {
             (|| {
+                let style_version = if mode == TileMode::Context {
+                    "v6-context"
+                } else {
+                    "v6-stations"
+                };
                 let cache_key = format!(
-                    "v5-labels:{}:{z}/{x}/{y}",
+                    "{style_version}:{}:{z}/{x}/{y}",
                     self.manifest.files["canonical.sqlite"]
                 );
                 if let Some(disk) = &self.disk
@@ -220,8 +247,13 @@ impl Pack {
                     disk_hit = true;
                     return Ok(Arc::from(tile));
                 }
-                let data =
-                    precision::generate(&self.connection()?, precision::Address::new(z, x, y)?)?;
+                let db = self.connection()?;
+                let address = precision::Address::new(z, x, y)?;
+                let data = if mode == TileMode::Context {
+                    precision::generate_context(&db, address)?
+                } else {
+                    precision::generate(&db, address)?
+                };
                 if let Some(disk) = &self.disk
                     && let Err(error) = disk.put(&cache_key, &data)
                 {
@@ -239,7 +271,7 @@ impl Pack {
         if disk_hit {
             cache.stats.disk_hits += 1;
         }
-        if detail && !disk_hit && result.is_ok() {
+        if mode == TileMode::Detail && !disk_hit && result.is_ok() {
             cache.stats.precise_tiles += 1;
             cache.stats.precise_micros += elapsed;
         }

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
-import { facilityStyles, lifecycles, missingColor, railPaint, sites, tracks } from '../apps/desktop/src/cartography.ts'
+import { defaultTrackViews, facilityStyles, lifecycles, missingColor, railPaint, readTrackViews, sites, tracks } from '../apps/desktop/src/cartography.ts'
 
 test('default railway colors, Z14 widths and lifecycle patterns', () => {
   assert.deepEqual(tracks.rail_main.slice(1), ['#D58A28', 3, 5])
@@ -14,7 +14,7 @@ test('default railway colors, Z14 widths and lifecycle patterns', () => {
 })
 
 test('station symbols and source-geometry layers have independent display rules', () => {
-  assert.match(sites.rail_station_unknown[2], /width="14" height="14".*fill="none" stroke="#314C65"/)
+  assert.match(sites.rail_station_unknown[2], /^<circle .*stroke="#314C65"/)
   assert.match(sites.rail_station_passenger[2], /fill="#314C65"/)
   assert.match(sites.rail_halt[2], /r="3.5" fill="#62758B"/)
   assert.match(sites.metro_interchange[2], /r="9.5".*r="3.5"/)
@@ -24,4 +24,14 @@ test('station symbols and source-geometry layers have independent display rules'
   assert.equal(facilityStyles.station_area.zoom, 13)
   assert.equal(facilityStyles.station_building.zoom, 14)
   assert.notEqual(facilityStyles.railway_land.fill, facilityStyles.station_area.fill)
+})
+
+test('migrates old rail theme and stores rail and metro paint independently', () => {
+  const preferences = new Map([['railscope-next.rail-style', 'operations']])
+  const storage = { getItem: key => preferences.get(key) ?? null }
+  assert.deepEqual(readTrackViews(storage), defaultTrackViews)
+  preferences.set('railscope-next.rail-style', 'speed')
+  assert.deepEqual(readTrackViews(storage), {rail:'speed', metro:'lines'})
+  preferences.set('railscope-next.metro-style', 'infrastructure')
+  assert.deepEqual(readTrackViews(storage), {rail:'speed', metro:'infrastructure'})
 })

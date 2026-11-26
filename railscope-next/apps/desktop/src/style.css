@@ -179,6 +179,42 @@ summary { cursor: pointer; color: #3b575c; }
 .dock-resize:hover { background:#3b8b6e55; }
 .view-settings { pointer-events:auto; position:relative; margin:0; border:1px solid #98aeb0; border-radius:5px; padding:0; background:var(--paper); color:var(--ink); }
 .view-settings summary { padding:8px 10px; color:inherit; }
+.settings-dialog { width:min(850px, calc(100vw - 48px)); height:min(590px, calc(100vh - 72px)); max-width:none; max-height:none; padding:0; color:var(--ink); background:var(--paper); border:1px solid #a8b9b1; border-radius:12px; box-shadow:0 20px 65px #071a2350; }
+.settings-dialog[open] { display:grid; grid-template-rows:auto minmax(0,1fr) auto; }
+.settings-dialog::backdrop { background:#14282f52; }
+.settings-header { display:grid; grid-template-columns:148px minmax(0,1fr) auto; gap:20px; align-items:center; padding:16px 22px; border-bottom:1px solid #d8e0da; }
+.settings-header h2 { font-size:21px; letter-spacing:.02em; }
+.settings-search { display:flex; align-items:center; gap:8px; max-width:415px; padding:0 9px; border:1px solid #b7c8c1; border-radius:6px; background:white; color:var(--muted); }
+.settings-search:focus-within { outline:2px solid #3687dc; outline-offset:1px; }
+.settings-search input { flex:1; width:0; color:var(--ink); border:0; background:transparent; padding:8px 0; outline:none; }
+.settings-search input:focus-visible { outline:none; }
+.settings-main { display:grid; grid-template-columns:180px minmax(0,1fr); min-height:0; }
+.settings-nav { display:flex; flex-direction:column; align-items:stretch; gap:4px; overflow:auto; padding:16px 10px; background:#eef3ee; border-right:1px solid #d8e0da; }
+.settings-nav button { display:flex; gap:9px; align-items:center; width:100%; padding:9px 10px; text-align:left; background:none; border:1px solid transparent; border-radius:6px; color:var(--muted); }
+.settings-nav button:hover { background:#e5eee8; }
+.settings-nav button[aria-current] { color:#194d39; background:#dcece1; border-color:#cadfd1; font-weight:650; }
+.settings-content { min-width:0; overflow:auto; padding:22px 25px; }
+.settings-section-header { display:flex; gap:14px; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #d8e0da; padding:0 0 16px; }
+.settings-section-header h3 { font-size:19px; }
+.settings-section-header p, .setting-row small { display:block; margin-top:5px; color:var(--muted); line-height:1.5; }
+.settings-section-header button { flex:none; }
+.setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(120px, 39%); align-items:center; column-gap:18px; padding:17px 0; border-bottom:1px solid #dfe6df; }
+.setting-row strong { font-size:13px; }
+.setting-row select, .settings-content .layer-preset select { min-width:0; width:100%; color:var(--ink); background:#fff; border:1px solid #aec0b8; border-radius:5px; padding:7px 8px; font:inherit; }
+.setting-row input[type=checkbox] { justify-self:end; }
+.settings-content input[type=checkbox] { width:16px; height:16px; accent-color:var(--primary); }
+.settings-content .layer-controls { padding:10px 0 0; }
+.settings-content .layer-section, .settings-content .layer-control { border-color:#d8e0da; }
+.settings-content .layer-section summary { color:var(--ink); }
+.settings-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:11px 22px; border-top:1px solid #d8e0da; color:var(--muted); font-size:12px; }
+@media (max-width:650px) {
+  .settings-dialog { width:calc(100vw - 20px); height:calc(100vh - 30px); }
+  .settings-header { grid-template-columns:auto minmax(0,1fr) auto; gap:12px; padding:12px; }
+  .settings-main { grid-template-columns:135px minmax(0,1fr); }
+  .settings-content { padding:16px 12px; }
+  .settings-section-header { flex-wrap:wrap; }
+  .setting-row { grid-template-columns:1fr; row-gap:8px; }
+}
 .view-settings > div { position:absolute; top:37px; left:0; display:grid; gap:9px; width:255px; background:var(--paper); color:var(--ink); padding:12px; border:1px solid #a8b9b1; border-radius:5px; box-shadow:0 5px 16px #132a3233; }
 .view-settings label, .ops-pane label, .ops-editor label { display:grid; gap:4px; min-width:0; color:var(--muted); }
 .view-settings select, .view-settings input:not([type=checkbox]), .ops-workbench input:not([type=checkbox]), .ops-workbench select, .ops-workbench textarea { width:100%; min-width:0; color:var(--ink); background:var(--paper); border:1px solid #829fa2; border-radius:4px; padding:6px; font:inherit; }

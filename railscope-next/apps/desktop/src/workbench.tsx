@@ -1,5 +1,5 @@
 import { Activity, ArrowUpRight, Check, ChevronRight, Compass, Crosshair, Database, FileText, Map as MapIcon,
-  MapPin, Maximize2, PanelBottom, PanelLeft, PanelRight, Redo2, Route as RouteIcon, Save, TrainFront, Undo2, X } from 'lucide-react'
+  MapPin, Maximize2, PanelBottom, PanelLeft, PanelRight, Redo2, Route as RouteIcon, Save, Settings as SettingsIcon, TrainFront, Undo2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { api, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
@@ -8,11 +8,11 @@ import { MapController, type MapTheme } from './map'
 import { LayerTree, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
-import { chinaDate, opsApi, type ControlPoint, type LegacyIssue } from './operations-api'
-import { facilityStyles, lifecycles, missingColor, sites, svgSymbol, symbolName, thematic, tracks, type RailView } from './cartography'
+import { chinaDate, opsApi, type ControlPoint, type LegacyIssue, type Level } from './operations-api'
+import { facilityStyles, lifecycles, missingColor, nonRailStationNames, readTrackViews, sites, svgSymbol, symbolName, thematic, tracks, type TrackViews } from './cartography'
+import { Settings, themes, type SettingsSection } from './settings'
 
 const visibilityKey = 'railscope-next.layers'
-const themes:Record<MapTheme,string>={light:'专业浅色',color:'常规彩色',dark:'深色',transport:'纯交通'}
 type Mode = 'detail' | 'operations' | 'analysis' | 'data'
 const modes: {id:Mode; title:string; icon:typeof MapIcon}[] = [
   {id:'detail',title:'地图',icon:MapIcon},{id:'operations',title:'运行',icon:TrainFront},
@@ -70,9 +70,12 @@ export function App() {
   const [analysisDock,setAnalysisDock]=useState<HTMLDivElement|null>(null)
   const [simulationPlaying,setSimulationPlaying]=useState(false)
   const [operationsDirty,setOperationsDirty]=useState(false)
-  const [mapStyle,setMapStyle]=useState<RailView>(()=>{
-    const value=localStorage.getItem('railscope-next.rail-style') as RailView|null
-    return value && (value==='operations'||Object.hasOwn(thematic,value)) ? value : 'infrastructure'
+  const [trackViews,setTrackViews]=useState(()=>readTrackViews(localStorage))
+  const [settingsOpen,setSettingsOpen]=useState(false)
+  const [settingsSection,setSettingsSection]=useState<SettingsSection>('map')
+  const [level,setLevel]=useState<Level>(()=>{
+    const value=localStorage.getItem('railscope.ops.level')
+    return value==='l1'||value==='l3'?value:'l2'
   })
   const operations=useRef<OperationsHandle>(null)
   const canvas = useRef<HTMLDivElement>(null)
@@ -139,9 +142,11 @@ export function App() {
     localStorage.setItem('railscope-next.layout-v4',JSON.stringify(layouts))
   },[layouts])
   useEffect(()=>{
-    controller.current?.setRailView(mapStyle)
-    localStorage.setItem('railscope-next.rail-style',mapStyle)
-  },[mapStyle])
+    controller.current?.setTrackViews(trackViews)
+    localStorage.setItem('railscope-next.rail-style',trackViews.rail)
+    localStorage.setItem('railscope-next.metro-style',trackViews.metro)
+  },[trackViews])
+  useEffect(()=>{localStorage.setItem('railscope.ops.level',level)},[level])
   useEffect(() => {
     controller.current?.setLayers(visibility)
     localStorage.setItem(visibilityKey, JSON.stringify(visibility))
@@ -149,6 +154,7 @@ export function App() {
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
       if(event.key==='Escape') document.querySelectorAll<HTMLDetailsElement>('.map-tools details[open]').forEach(item=>{item.open=false})
+      if(event.ctrlKey&&event.key===','){event.preventDefault();setSettingsOpen(true)}
     }
     window.addEventListener('keydown', dismiss)
     return () => window.removeEventListener('keydown', dismiss)
@@ -276,6 +282,7 @@ export function App() {
       <nav aria-label="工作台">
         {modes.map(({id,title,icon:Icon})=><button key={id} className={mode===id?'selected':''} aria-current={mode===id?'page':undefined}
           onClick={()=>setMode(id)}><Icon size={17}/>{title}</button>)}
+        <button aria-haspopup="dialog" title="设置 (Ctrl+,)" onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>设置</button>
       </nav>
       <div className="workspace-tools">
         <button className="icon" title="显隐任务面板" aria-label="任务面板" aria-pressed={!layout.hideLeft} onClick={()=>setLayout(old=>({...old,hideLeft:!old.hideLeft}))}><PanelLeft size={17}/></button>
@@ -285,6 +292,14 @@ export function App() {
           onInstalled={pack=>setPacks(items=>[pack,...items.filter(item=>item.snapshot!==pack.snapshot)])} />
       </div>
     </header>
+    <Settings open={settingsOpen} section={settingsSection} onSection={setSettingsSection} onClose={()=>setSettingsOpen(false)}
+      theme={theme} setTheme={setTheme} overview={overview} setOverview={setOverview} trackViews={trackViews} setTrackViews={setTrackViews}
+      visibility={visibility} onLayer={onLayer} onPreset={onPreset} mode={mode} layouts={layouts}
+      onPanel={(target,panel,visible)=>setLayouts(old=>({...old,[target]:{...old[target],[panel]:!visible,
+        focusBottom:panel==='hideBottom'&&!visible?false:old[target].focusBottom}}))}
+      resetLayout={target=>setLayouts(old=>({...old,[target]:layoutDefaults}))}
+      level={level} setLevel={setLevel} pack={active} onData={()=>{setSettingsOpen(false);setMode('data');setDataTab('packs');
+        setLayouts(old=>({...old,data:{...old.data,hideLeft:false}}))}}/>
     <main className="workspace" data-mode={mode} data-left={!layout.hideLeft} data-right={!layout.hideRight}
       style={{gridTemplateColumns:`${layout.hideLeft?'0px':`min(${layout.left}px, 32vw)`} minmax(0, 1fr) ${layout.hideRight?'0px':`min(${layout.right}px, 33vw)`}`,
         gridTemplateRows:`minmax(${layout.focusBottom&&!layout.hideBottom?'115px':'0'},1fr) ${layout.hideBottom?'0px':layout.focusBottom?'min(67vh, 760px)':`min(${layout.bottom}px, 55vh)`}`}}>
@@ -296,7 +311,7 @@ export function App() {
       <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
         selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
-        onPlaying={setSimulationPlaying} onDirty={setOperationsDirty}/>
+        onPlaying={setSimulationPlaying} onDirty={setOperationsDirty} level={level} setLevel={setLevel}/>
       <div className="task-pane" hidden={mode!=='analysis'}>
         <div className="panel-title"><Activity size={17}/><h2>分析与诊断</h2></div>
         <div className="task-menu">{([['route','路径分析'],['topology','拓扑与通道'],['conflicts','时刻与车辆冲突'],['quality','数据质量'],['metrics','系统性能']] as const).map(([id,label])=>
@@ -336,14 +351,6 @@ export function App() {
           <details className="view-settings">
             <summary>视图</summary>
             <div>
-              <label>底图<select aria-label="底图主题" value={theme} onChange={e=>setTheme(e.target.value as MapTheme)}>
-                {Object.entries(themes).map(([key,label])=><option key={key} value={key}>{label}</option>)}
-                <option disabled value="satellite">卫星 · 无授权影像包</option>
-              </select></label>
-              <label>地图精度<select aria-label="地图精度" value={overview?'overview':'source'} onChange={e=>setOverview(e.target.value==='overview')}>
-                <option value="source">离线源精度 · 已安装对象</option><option value="overview">仅概览</option>
-                <option disabled value="remote">按需联网 · 无已配置来源</option>
-              </select></label>
               <form className="coordinate-jump" onSubmit={event=>{
                 event.preventDefault()
                 const form=new FormData(event.currentTarget)
@@ -356,15 +363,13 @@ export function App() {
                 <input name="zoom" required type="number" step="any" aria-label="跳转缩放" placeholder="Z"/>
                 <button className="secondary compact">定位</button>
               </form>
+              <button className="secondary compact" onClick={()=>{setSettingsSection('map');setSettingsOpen(true)}}>地图与底图设置</button>
             </div>
           </details>
           <details className="view-settings"><summary>图层</summary><div>
-            <label>铁路主题<select aria-label="铁路主题" value={mapStyle} onChange={e=>setMapStyle(e.target.value as RailView)}>
-              <option value="infrastructure">基础设施</option><option value="operations">运营线路</option>
-              <optgroup label="专题属性">{Object.entries(thematic).map(([id,item])=><option key={id} value={id}>{item.name}</option>)}</optgroup>
-            </select></label>
+            <button className="secondary compact" onClick={()=>{setSettingsSection('tracks');setSettingsOpen(true)}}>轨道配色设置</button>
             <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
-            <details className="rail-legend"><summary>图例</summary><MapLegend mode={mapStyle}/></details>
+            <details className="rail-legend"><summary>图例</summary><MapLegend views={trackViews}/></details>
           </div></details>
         </div>
         {!active && !changing && !globalError && <div className="map-empty">
@@ -456,17 +461,19 @@ function LegacyData({snapshot,tab,onImported}:{snapshot:string;tab:string;onImpo
   </>
 }
 
-function MapLegend({mode}:{mode:RailView}) {
-  const themed = mode!=='infrastructure' && mode!=='operations' ? thematic[mode] : undefined
+function MapLegend({views}:{views:TrackViews}) {
+  const themed = views.rail!=='infrastructure' ? thematic[views.rail] : undefined
   const items: [string,string][] = themed?.entries.length ? [...themed.entries.map(([,name,color]):[string,string]=>[name,color]),['未知／缺失',missingColor]]
-    : mode==='operations' ? [['线路来源色／工作区覆盖',tracks.metro_track[1]],['其他铁路',missingColor]]
-    : Object.values(tracks).map(([name,color])=>[name,color])
+    : Object.entries(tracks).filter(([key])=>key.startsWith('rail_')||key.startsWith('track_')).map(([, [name,color]])=>[name,color])
   return <ul className="map-legend-list">
     {items.map(([name,color])=><li key={name}><i style={{backgroundColor:color}}/>{name}</li>)}
-    {mode==='lifecycle'&&Object.entries(lifecycles).map(([key,[name,opacity,,dash]])=><li key={key}>
+    {views.rail==='lifecycle'&&Object.entries(lifecycles).map(([key,[name,opacity,,dash]])=><li key={key}>
       <i style={{borderTop:`2px ${dash?'dashed':'solid'} currentColor`,opacity}}/>{name}</li>)}
-    {mode==='infrastructure'&&Object.values(sites).map(([name,,graphic])=><li key={name}><img alt="" src={svgSymbol(graphic)}/>{name}</li>)}
-    {mode==='infrastructure'&&Object.values(facilityStyles).map(item=><li key={item.name}><i style={{backgroundColor:item.fill,border:`1px solid ${item.outline}`}}/>{item.name}</li>)}
+    {views.metro==='lines'&&<li>城市轨道 · 按运营线路色显示</li>}
+    {Object.entries(tracks).filter(([key])=>['metro_track','light_rail_track','tram_track','monorail_track'].includes(key))
+      .map(([, [name,color]])=><li key={name}><i style={{backgroundColor:color}}/>{name}</li>)}
+    {Object.values(sites).map(([name,,graphic])=><li key={name}><img alt="" src={svgSymbol(graphic)}/>{name}</li>)}
+    {Object.values(facilityStyles).map(item=><li key={item.name}><i style={{backgroundColor:item.fill,border:`1px solid ${item.outline}`}}/>{item.name}</li>)}
   </ul>
 }
 
@@ -556,7 +563,7 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
       {workspace.value.point && <button className="secondary" onClick={() => zoomOverride(workspace.value.point!)}><MapPin size={15} />定位工作区坐标</button>}
       {entity.kind === 'line' && <button className="secondary" onClick={() => showMembers(entity)}><ChevronRight size={15} />浏览线路成员</button>}
       <div className="ops-actions">
-        {(entity.kind==='station'||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
+        {(entity.kind==='station'&&!Object.hasOwn(nonRailStationNames,meaning?.render_class??'')||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
         {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>用于路径分析</button>}
       </div>
       {entity.kind!=='station'&&entity.memberships.length > 0 && <div className="members"><h4>所属线路</h4>{entity.memberships.map(line =>

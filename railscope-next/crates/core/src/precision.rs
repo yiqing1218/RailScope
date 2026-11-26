@@ -476,6 +476,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             ("status", Value::Text(status.clone())),
         ];
         let source = row.get::<_, Option<String>>(7)?;
+        let mut point_label = name.as_str();
         if let Some(source) = &source {
             let tags = serde_json::from_str(source)?;
             let verified = row.get::<_, String>(8)? == "verified";
@@ -483,6 +484,15 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             attrs.push(("symbol", Value::Text(facts.render_class.into())));
             attrs.push(("life", Value::Text(facts.lifecycle.into())));
             if kind == "station" {
+                if !tags["name:zh"]
+                    .as_str()
+                    .is_some_and(|s| !s.trim().is_empty())
+                    && !tags["name"].as_str().is_some_and(|s| !s.trim().is_empty())
+                    && !tags["ref"].as_str().is_some_and(|s| !s.trim().is_empty())
+                {
+                    // Retain an empty label slot so a workspace name can still be rendered.
+                    point_label = "";
+                }
                 let (links, line_ids): (u32, Option<String>) = station_links
                     .query_row([row.get::<_, String>(0)?], |r| Ok((r.get(0)?, r.get(1)?)))?;
                 if let Some(ids) = line_ids.filter(|ids| ids.len() <= 480) {
@@ -550,7 +560,7 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             }
         }
         if layer == "points" || layer == "base_place" {
-            attrs.push(("label", Value::Text(name.clone())));
+            attrs.push(("label", Value::Text(point_label.to_owned())));
         }
         // One representative physical segment per business identity in each visible tile.
         if weight >= 272. {
@@ -738,6 +748,71 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
         "高精度瓦片超过资源预算，当前区域需继续放大"
     );
     Ok(tile)
+}
+
+/// Sparse geographic context for the archived transport overview.
+pub fn generate_context(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
+    let [west, south, east, north] = addr.bounds();
+    let extent = east - west;
+    let mut statement = connection.prepare(
+        "WITH picked AS MATERIALIZED (
+         SELECT f.id FROM base_spatial s
+         CROSS JOIN base_feature f ON f.id=s.id
+         WHERE s.max_x>=?1 AND s.max_y>=?2 AND s.min_x<=?3 AND s.min_y<=?4
+           AND (max(s.max_x-s.min_x,s.max_y-s.min_y)>=?8
+                OR max(s.max_x-s.min_x,s.max_y-s.min_y)<0.0001)
+           AND (
+             (f.kind='base_place' AND f.class IN ('city','province','state','county')
+                AND (?5>=7 OR f.class!='county'))
+             OR (f.kind='base_admin' AND CAST(f.class AS INTEGER) BETWEEN 2 AND CASE WHEN ?5>=7 THEN 6 ELSE 4 END)
+             OR (f.kind='base_water' AND max(s.max_x-s.min_x,s.max_y-s.min_y)>=?6)
+             OR (f.kind='base_green' AND max(s.max_x-s.min_x,s.max_y-s.min_y)>=?7)
+             OR (f.kind='base_road' AND (f.class IN ('trunk','primary') OR (?5>=8 AND f.class='secondary'))
+                AND max(s.max_x-s.min_x,s.max_y-s.min_y)>=?8)
+           )
+         ORDER BY CASE f.kind WHEN 'base_place' THEN 0 WHEN 'base_water' THEN 1
+             WHEN 'base_admin' THEN 2 WHEN 'base_green' THEN 3 ELSE 4 END,
+             max(s.max_x-s.min_x,s.max_y-s.min_y) DESC, f.id
+         LIMIT 2400)
+         SELECT f.id,f.kind,f.class,f.name,f.wkb
+         FROM picked CROSS JOIN base_feature f ON f.id=picked.id",
+    )?;
+    let min_linear_extent = extent / if addr.z >= 7 { 225. } else { 110. };
+    let mut rows = statement.query(params![
+        west,
+        south,
+        east,
+        north,
+        addr.z,
+        extent / 38.,
+        extent / 28.,
+        min_linear_extent
+    ])?;
+    let mut layers = BTreeMap::<String, Layer>::new();
+    let mut used = 0;
+    while let Some(row) = rows.next()? {
+        let id = row.get::<_, i64>(0)? as u64;
+        let layer: String = row.get(1)?;
+        let class: String = row.get(2)?;
+        let name: String = row.get(3)?;
+        let wkb: Vec<u8> = row.get(4)?;
+        let (kind, commands) = geometry(Wkb(wkb).to_geo()?, addr);
+        used += commands.len() + name.len() + class.len() + 64;
+        if used > LIMIT / 2 {
+            break;
+        }
+        layers.entry(layer).or_default().push(
+            id,
+            kind,
+            vec![("class", Value::Text(class)), ("label", Value::Text(name))],
+            commands,
+        );
+    }
+    let mut result = Vec::new();
+    for (layer, features) in layers {
+        field(&mut result, 3, &features.encode(&layer));
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
