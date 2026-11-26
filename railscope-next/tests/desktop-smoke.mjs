@@ -286,7 +286,8 @@ async function verifyV4(snapshot) {
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('Boolean(document.querySelector(".snapshot")?.textContent)'),'cycle workspace reloaded')
   await click('运行')
-  await click('车次与时刻')
+  await click('城市轨道')
+  await click('车次')
   await input('[aria-label=运营日期]','2026-11-20')
   const metroDeparture='[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.querySelector("small")?.textContent==="10:00:00")'
   await waitFor(()=>evaluate(`Boolean(${metroDeparture})`),'Shanghai cycle departures')
@@ -461,13 +462,13 @@ async function verifyV3(snapshot, fixturePath) {
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'workspace restart')
   await click('运行')
   await waitFor(()=>evaluate('document.querySelector(".ops-workbench")?.hidden===false'),'operations workbench')
-  await click('车次与时刻')
+  await click('车次')
   await input('[aria-label=运营日期]','2026-11-21')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".ops-list-inner button"))'),'dated run rows')
   await evaluate('[...document.querySelectorAll(".ops-list-inner button")].find(el=>el.textContent.includes("演示")&&el.querySelector("small")?.textContent==="08:00:00")?.click()')
   await waitFor(()=>evaluate('Boolean(document.querySelector(".run-graph svg"))'),'time-distance graph')
   await click('跳到发车')
-  await click('模拟控制')
+  await click('仿真')
   await click('播放模拟')
   await waitFor(()=>evaluate('Boolean(document.querySelector("[aria-label=暂停模拟]"))'),'Rust playback clock')
   await click('分析与诊断')
@@ -475,7 +476,7 @@ async function verifyV3(snapshot, fixturePath) {
   await sleep(750)
   await click('运行')
   await click('暂停模拟')
-  await click('车次与时刻')
+  await click('车次')
   await click('编辑时刻')
   await click('运行图')
   await click('聚焦底部工作区')
@@ -571,7 +572,8 @@ async function captureReferenceRun(artifactFolder, result) {
   await send('Page.reload',{ignoreCache:true})
   await waitFor(()=>evaluate('document.querySelector(".snapshot")?.textContent.length>0'),'reference snapshot')
   await click('运行')
-  await click('车次与时刻')
+  if (result.run.includes('地铁')) await click('城市轨道')
+  await click('车次')
   await input('[aria-label=运营日期]', result.historical_service_date)
   await waitFor(()=>evaluate(`Boolean([...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})))`),'reference run details')
   await evaluate(`[...document.querySelectorAll('.ops-list-inner button')].find(row=>row.textContent.includes(${JSON.stringify(result.run)})).click()`)
@@ -594,7 +596,82 @@ async function captureReferenceRun(artifactFolder, result) {
   await writeFile(join(artifactFolder,'reference-run.png'),Buffer.from(image.data,'base64'))
 }
 
-if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
+async function verifyWorkbenchRefresh(planPath) {
+  const snapshot = 'shanghai-osm-202609-v4'
+  await waitFor(() => evaluate('Boolean(window.__TAURI_INTERNALS__?.invoke)'), 'Workbench API')
+  await invoke('activate_data_pack', {snapshot})
+  await send('Page.reload', {ignoreCache:true})
+  await waitFor(() => evaluate('Boolean(document.querySelector(".snapshot")?.textContent.includes("shanghai-osm-202609-v4"))'), 'Shanghai snapshot')
+  await select('.top .language-select select', 'zh')
+  await evaluate('document.querySelector(".welcome-dialog button[aria-label=退出介绍]")?.click()')
+
+  await evaluate('[...document.querySelectorAll(".categories button")].find(button=>button.querySelector("span")?.textContent==="车站").click()')
+  await click('地铁车站')
+  assert.ok(await evaluate('document.querySelector(".catalog-subtypes [aria-pressed=true]").textContent==="地铁车站"'))
+  await input('input[aria-label="搜索交通实体"]', '美兰湖')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".result-row strong")?.textContent.includes("美兰湖"))'), 'Station directory result')
+  await evaluate('document.querySelector(".result-row").click()')
+  await waitFor(() => evaluate('document.querySelector(".object-head h3")?.textContent==="美兰湖"'), 'Station overview')
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".property-tabs button")].map(button=>button.innerText)'), ['概览','关联','来源','编辑'])
+  await click('来源')
+  await evaluate('document.querySelector(".properties details").open=true')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".raw-source-tags > div"))'), 'Raw tags')
+  assert.ok(await evaluate('document.querySelector(".inspector").scrollWidth<=document.querySelector(".inspector").clientWidth+1'))
+  await click('关联')
+  await input('.manual-links input', '7号线')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".manual-links > button"))'), 'Line search for station association')
+  await evaluate('document.querySelector(".manual-links > button").click()')
+  await click('保存工作区关联')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".properties .success"))'), 'Station association saved')
+  const station = (await invoke('catalog_page', {snapshot,filter:{kind:'station',classes:['metro_station'],query:'美兰湖'}})).items[0]
+  const relation = (await invoke('get_entity', {snapshot,id:station.id})).workspace.value.associated_lines[0]
+  const linked = await invoke('get_entity', {snapshot,id:relation})
+  assert.ok(linked.workspace_stations.some(item => item.id===station.id))
+  if (artifacts) {
+    await mkdir(artifacts, {recursive:true})
+    const image = await send('Page.captureScreenshot', {format:'png'})
+    await writeFile(join(artifacts,'inspector.png'), Buffer.from(image.data,'base64'))
+  }
+  await evaluate('document.querySelector(".manual-link .station-link").click()')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".object-head h3")?.textContent.includes("7号线"))'), 'Open linked line')
+  await click('编辑')
+  await input('.edit-form input', '7号线测试工作区名称')
+  await input('.edit-form input[list="workspace-group-names"]', '上海城市轨道测试分组')
+  await evaluate('document.querySelector(".edit-actions .primary").click()')
+  await waitFor(() => evaluate('document.querySelector(".object-head h3")?.textContent==="7号线测试工作区名称"'), 'Workspace line rename')
+  const renamed = await invoke('catalog_page', {snapshot,filter:{kind:'line',query:'测试工作区名称'}})
+  assert.equal(renamed.items[0].id, relation)
+  assert.ok((await invoke('workspace_groups', {snapshot})).some(group=>group.name==='上海城市轨道测试分组'))
+
+  await click('运行')
+  await click('城市轨道')
+  assert.equal(await evaluate('document.querySelector(".properties").closest("[hidden]")!==null'), true)
+  await click('计划与车辆')
+  const {root} = await send('DOM.getDocument')
+  const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:'.ops-workbench input[aria-label="选择时刻表文件"]'})
+  await send('DOM.setFileInputFiles', {nodeId,files:[planPath]})
+  await click('导入')
+  await waitFor(() => evaluate('document.querySelector("[aria-label=运营日期]")?.value==="2026-11-23"'), 'Line 7 plan imported in UI', 300)
+  await waitFor(() => evaluate('Boolean(document.querySelector(".ops-list-inner button"))'), 'Line 7 run list')
+  await evaluate('document.querySelector(".ops-list-inner button").click()')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".metro-plan.return"))'), 'Both Line 7 directions on a shared station axis')
+  await waitFor(() => evaluate('Boolean([...document.querySelectorAll(".ops-inspection button")].find(button=>button.innerText.includes("从发车开始模拟")&&!button.disabled))'), 'Line 7 run detail')
+  await click('从发车开始模拟')
+  await waitFor(() => evaluate('Boolean(document.querySelector(".statusbar .status-action"))'), 'Line 7 clock running')
+  if (artifacts) {
+    const image = await send('Page.captureScreenshot', {format:'png'})
+    await writeFile(join(artifacts,'shanghai-operations.png'), Buffer.from(image.data,'base64'))
+  }
+  console.log(JSON.stringify({snapshot,station_link:true,workspace_rename:true,source_overflow:false,line7_import_and_play:true}))
+}
+
+if (process.env.RAILSCOPE_WORKBENCH_PLAN) {
+  try {
+    await verifyWorkbenchRefresh(process.env.RAILSCOPE_WORKBENCH_PLAN)
+  } finally {
+    socket.close()
+  }
+} else if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
   try {
     const result = await verifyHistoricalRun(process.env.RAILSCOPE_REFERENCE_FIXTURE)
     if (artifacts) {
@@ -662,7 +739,7 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
   await waitFor(() => evaluate('document.querySelector(".object-head h3")?.textContent.includes("虹桥")'), 'inspector')
   await click('查看精确几何')
   if (sandbox) {
-    await click('工作区')
+    await click('编辑')
     await input('.edit-form textarea', '离线工作区验收')
     await input('.edit-form input[placeholder=留空则移出分组]', '验收分组')
     await click('保存')

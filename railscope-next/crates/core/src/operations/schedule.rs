@@ -1,12 +1,15 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::Datelike;
+use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 const LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Default, Serialize, Deserialize)]
 struct Bundle {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    corridors: Vec<Corridor>,
     #[serde(default)]
     services: Vec<Service>,
     #[serde(default)]
@@ -37,6 +40,10 @@ struct CsvRow {
     stop_edge_sequence: Option<usize>,
     #[serde(default)]
     stop_offset_m: Option<f64>,
+    #[serde(default)]
+    timing_evidence: Option<String>,
+    #[serde(default)]
+    anchor_source: Option<String>,
 }
 fn stop(row: &CsvRow) -> Stop {
     Stop {
@@ -51,6 +58,8 @@ fn stop(row: &CsvRow) -> Stop {
         stop_edge_id: row.stop_edge_id.clone(),
         stop_edge_sequence: row.stop_edge_sequence,
         stop_offset_m: row.stop_offset_m,
+        timing_evidence: row.timing_evidence.clone(),
+        anchor_source: row.anchor_source.clone(),
     }
 }
 fn provenance(kind: &str, reference: &str) -> Provenance {
@@ -273,6 +282,8 @@ fn read_gtfs(
             pass_through: false,
             platform_id: None,
             station_route_id: None,
+            timing_evidence: None,
+            anchor_source: None,
             station_track_id: None,
             stop_edge_id: None,
             stop_edge_sequence: None,
@@ -317,12 +328,13 @@ fn read_gtfs(
 pub(super) fn import(
     db: &mut Connection,
     canonical: &Connection,
-    snapshot: &str,
+    pack: &Pack,
     format: &str,
     content: &str,
     service_date: Option<&str>,
     stop_map: &BTreeMap<String, String>,
 ) -> Result<Value> {
+    let snapshot = pack.manifest.snapshot.as_str();
     ensure!(
         content.len() <= LIMIT * 2 && stop_map.len() <= 50000,
         "IMPORT_BUDGET · 导入内容超出容量"
@@ -338,14 +350,57 @@ pub(super) fn import(
         _ => bail!("INVALID_FORMAT · 支持 JSON、CSV 和 GTFS ZIP"),
     };
     ensure!(
-        !bundle.runs.is_empty() && bundle.runs.len() <= 5000 && bundle.services.len() <= 5000,
+        !bundle.runs.is_empty()
+            && bundle.runs.len() <= 5000
+            && bundle.services.len() <= 5000
+            && bundle.corridors.len() <= 64,
         "IMPORT_BUDGET · 无可导入运行实例或数量超限"
     );
     let tx = db.transaction()?;
+    let digest =
+        (!bundle.corridors.is_empty()).then(|| format!("{:x}", Sha256::digest(content.as_bytes())));
+    if let Some(digest) = &digest {
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT result FROM ops_timetable_import WHERE snapshot=? AND digest=?",
+                params![snapshot, digest],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(previous) = previous {
+            let mut result: Value = serde_json::from_str(&previous)?;
+            result["duplicate"] = json!(true);
+            return Ok(result);
+        }
+    }
+    let mut corridors = HashMap::new();
+    for mut corridor in bundle.corridors.drain(..) {
+        let key = std::mem::take(&mut corridor.id);
+        ensure!(
+            !key.is_empty() && !corridors.contains_key(&key),
+            "INVALID_TIMETABLE · 通道引用缺失或重复"
+        );
+        corridor.version = 0;
+        let saved = save_corridor(&tx, canonical, pack, corridor)?;
+        corridors.insert(key, (saved.id, saved.version));
+    }
     let mut service_ids = HashMap::new();
     let inserted = bundle.runs.len();
+    let first_date = bundle
+        .runs
+        .iter()
+        .map(|run| run.service_date.as_str())
+        .min()
+        .unwrap_or_default()
+        .to_owned();
     for mut svc in bundle.services.drain(..) {
         let original = svc.id.clone();
+        if digest.is_some() {
+            ensure!(
+                !original.is_empty() && !service_ids.contains_key(&original),
+                "INVALID_TIMETABLE · 车次引用缺失或重复"
+            );
+        }
         // Imports create independent versions with new RailScope IDs.
         svc.id.clear();
         let saved = save_service(&tx, svc)?;
@@ -355,13 +410,25 @@ pub(super) fn import(
         if let Some(id) = service_ids.get(&run.service_id) {
             run.service_id = id.clone();
         }
+        if let Some(key) = run.corridor_id.as_ref() {
+            if let Some((id, version)) = corridors.get(key) {
+                run.corridor_id = Some(id.clone());
+                run.corridor_version = Some(*version);
+            }
+        }
         run.id.clear();
         run.plan_version = 0;
         save_run(&tx, canonical, snapshot, run)?;
     }
-    let services = service_ids.len();
+    let result = json!({"services":service_ids.len(),"runs":inserted,"corridors":corridors.len(),"first_date":first_date});
+    if let Some(digest) = &digest {
+        tx.execute(
+            "INSERT INTO ops_timetable_import VALUES(?,?,?)",
+            params![snapshot, digest, serde_json::to_string(&result)?],
+        )?;
+    }
     tx.commit()?;
-    Ok(json!({"services":services,"runs":inserted}))
+    Ok(result)
 }
 
 fn csv_bytes<T: Serialize>(rows: impl IntoIterator<Item = T>) -> Result<Vec<u8>> {
@@ -487,7 +554,11 @@ pub(super) fn export(
         .into_iter()
         .map(|id| service_for(db, id))
         .collect::<Result<Vec<_>>>()?;
-    let bundle = Bundle { services, runs };
+    let bundle = Bundle {
+        services,
+        runs,
+        ..Bundle::default()
+    };
     let content = match format {
         "json" => serde_json::to_string_pretty(&bundle)?,
         "csv" => {
@@ -513,6 +584,8 @@ pub(super) fn export(
                     stop_edge_id: s.stop_edge_id.clone(),
                     stop_edge_sequence: s.stop_edge_sequence,
                     stop_offset_m: s.stop_offset_m,
+                    timing_evidence: s.timing_evidence.clone(),
+                    anchor_source: s.anchor_source.clone(),
                 })
             });
             String::from_utf8(csv_bytes(rows)?)?
@@ -562,6 +635,8 @@ pub(super) fn demo(
             stop_edge_id: Some(edge.edge_id.clone()),
             stop_edge_sequence: Some(edge.sequence),
             stop_offset_m: Some(offset),
+            timing_evidence: None,
+            anchor_source: None,
         };
         let mut run = run(
             &svc,

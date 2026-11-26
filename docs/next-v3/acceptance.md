@@ -40,4 +40,4 @@ Rust 8 项、Python 管道 3 项、旧后端 72 项、Vite 生产构建及最终
 
 ## 证据文件
 
-`data/logs/next-validation/next-v3/` 保存精度原始/渲染 GeoJSON、解码瓦片、源设施与共线配色核查、桌面截图及测试 JSON。`g1-reference/` 和 `shanghai-line1-reference/` 保存两个历史或重建参考案例。运行 `railscope-next/tests/prepare_g1_reference.py <本地包> <输出 JSON>` 可重建 G1。上海重建需加 `--metro-line1 examples/shanghai-metro/line1_public_reconstruction_spec.json`。令 `RAILSCOPE_REFERENCE_FIXTURE` 指向生成文件，再运行同一个原生桌面脚本可复核径路、时刻和 L2 位置，可选设置 `RAILSCOPE_REFERENCE_UI=1` 保存界面。配置来源、出图责任以及仿真层级详见[底图](basemap-style.md)、[精度](precision-report.md)及[运行模型](operations-model.md)。
+`data/logs/next-validation/next-v3/` 保存精度原始/渲染 GeoJSON、解码瓦片、源设施与共线配色核查、桌面截图及测试 JSON。`g1-reference/` 和 `shanghai-line1-reference/` 保存两个历史或重建参考案例。运行 `railscope-next/pipelines/prepare_reference_plan.py <本地包> <输出 JSON>` 可重建 G1。上海重建需加 `--metro-line1 examples/shanghai-metro/line1_public_reconstruction_spec.json`。令 `RAILSCOPE_REFERENCE_FIXTURE` 指向生成文件，再运行同一个原生桌面脚本可复核径路、时刻和 L2 位置，可选设置 `RAILSCOPE_REFERENCE_UI=1` 保存界面。配置来源、出图责任以及仿真层级详见[底图](basemap-style.md)、[精度](precision-report.md)及[运行模型](operations-model.md)。

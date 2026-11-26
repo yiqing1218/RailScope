@@ -31,6 +31,21 @@ const types: { id: Kind; icon: typeof TrainFront }[] = [
   { id: 'facility', icon: Building2 }, { id: 'poi', icon: LocateFixed },
 ]
 
+const directorySections: { title:string; kinds:Kind[] }[] = [
+  {title:'线路与车站',kinds:['line','station']},
+  {title:'物理基础设施',kinds:['rail','metro','facility']},
+  {title:'道路与其他设施',kinds:['road','poi']},
+]
+const metroLineClasses = ['subway','light_rail','tram','monorail']
+const lineTypes = [
+  {id:'rail',label:'铁路线路',classes:['railway','high_speed','conventional','freight','train']},
+  {id:'metro',label:'城市轨道线路',classes:metroLineClasses},
+]
+const stationTypes = [
+  {id:'rail',label:'铁路车站',classes:['rail_station']},
+  {id:'metro',label:'地铁车站',classes:['metro_station']},
+]
+
 export function PackMenu({ packs, active, changing, change, conflicts, onManage }: {
   packs: Pack[]; active: Pack | null; changing: boolean; change: (pack: Pack) => void; conflicts: Conflict[]
   onManage:()=>void
@@ -102,6 +117,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
   const [tab, setTab] = useState<'catalog' | 'layers'>('catalog')
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind>()
+  const [subtype, setSubtype] = useState('')
   const [groups, setGroups] = useState<Group[]>([])
   const [workGroup, setWorkGroup] = useState<string>()
   const [nearby, setNearby] = useState(false)
@@ -117,8 +133,11 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
     count: result.items.length, getScrollElement: () => list.current, estimateSize: () => 57, overscan: 6,
   })
 
+  const subtypes = !group && kind==='line' ? lineTypes : !group && kind==='station' ? stationTypes : []
+
   function filter(cursor?: string): Filter {
-    return { query: query.trim(), kind: group ? undefined : kind, parent: group?.id, bbox, cursor }
+    const classes = subtypes.find(option=>option.id===subtype)?.classes
+    return { query: query.trim(), kind: group ? undefined : kind, parent: group?.id, bbox, cursor, classes }
   }
 
   useEffect(() => {
@@ -146,7 +165,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
       .catch(e => { if (request.current === version) setError(String(e)) })
       .finally(() => { if (request.current === version) setPending(false) }), query.trim() ? 180 : 0)
     return () => { window.clearTimeout(timer); request.current++ }
-  }, [snapshot, query, kind, group?.id, bbox, browse, workGroup, workspaceChange])
+  }, [snapshot, query, kind, subtype, group?.id, bbox, browse, workGroup, workspaceChange])
 
   async function more() {
     if (!result.next || pending || !snapshot) return
@@ -154,7 +173,10 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
     setPending(true)
     try {
       const page = await fetchPage(snapshot, result.next)
-      if (version === request.current) setResult({ items: [...result.items, ...page.items], next: page.next })
+      if (version === request.current) {
+        const seen = new Set(result.items.map(item=>item.id))
+        setResult({ items: [...result.items, ...page.items.filter(item=>!seen.has(item.id))], next: page.next })
+      }
     } catch (e) {
       if (version === request.current) setError(String(e))
     } finally {
@@ -164,6 +186,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
 
   function overview() {
     setKind(undefined)
+    setSubtype('')
     setGroup(undefined)
     setWorkGroup(undefined)
     setQuery('')
@@ -172,8 +195,8 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
 
   return <aside className="sidebar" aria-label={t("数据浏览")}>
     <div className="tabs">
-      <button className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}><Database size={15} />{t("目录")}</button>
-      <button className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}><Layers3 size={15} />{t("图层")}</button>
+      <button title={t("查找并定位线路、车站与设施。")} className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}><Database size={15} />{t("目录")}</button>
+      <button title={t("控制地图上的线、站名和设施显示。")} className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}><Layers3 size={15} />{t("图层")}</button>
     </div>
     {tab === 'catalog' ? <>
       <div className="sidebar-heading">
@@ -191,11 +214,18 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
         <button className={nearby ? 'nearby on' : 'nearby'} aria-pressed={nearby} disabled={!pack || !!workGroup} title={t("限制在当前视野")}
           onClick={() => setNearby(!nearby)}><LocateFixed size={15} />{t("当前视野")}</button>
       </div>
+      {!!subtypes.length&&<div className="catalog-subtypes" role="group" aria-label={t("目录分类")}>
+        {[{id:'',label:'全部'},...subtypes].map(option=><button key={option.id} aria-pressed={subtype===option.id}
+          onClick={()=>setSubtype(option.id)}>{t(option.label)}</button>)}
+      </div>}
       {!browse ? <div className="categories">
-        {types.map(({ id, icon: Icon }) => <button key={id} disabled={!pack} onClick={() => setKind(id)}>
+        {directorySections.map(section=><section key={section.title}>
+          <h2 className="group-label">{t(section.title)}</h2>
+          {types.filter(type=>section.kinds.includes(type.id)).map(({ id, icon: Icon }) => <button key={id} disabled={!pack} onClick={() => {setSubtype('');setKind(id)}}>
           <Icon size={18} /><span>{t(kindNames[id])}</span><small>{(pack?.counts[id] ?? 0).toLocaleString(document.documentElement.lang)}</small>
           <ChevronRight size={15} />
-        </button>)}
+          </button>)}
+        </section>)}
         {groups.length > 0 && <div className="group-label">{t("工作区分组")}</div>}
         {groups.map(item => <button key={item.name} onClick={() => setWorkGroup(item.name)}>
           <Folder size={18} /><span className="group-name">{item.name}</span><small>{item.count}</small><ChevronRight size={15} />
@@ -211,7 +241,7 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
               return <button key={item.id} className={selected === item.id ? 'result-row current' : 'result-row'}
                 style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
                 onClick={() => onSelect(item)}>
-                <Icon size={17} /><span><strong>{item.name}</strong><small>{className(item.class)} · {statusName(item.status)}</small></span>
+                <Icon size={17} /><span><strong>{item.name || t("未命名对象")}</strong><small>{item.workspace_category || className(item.class)} · {statusName(item.status)}</small></span>
                 <ChevronRight size={15} />
               </button>
             })}

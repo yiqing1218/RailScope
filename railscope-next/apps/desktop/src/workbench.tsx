@@ -16,9 +16,11 @@ import { LanguageSelect, Welcome } from './welcome'
 
 const visibilityKey = 'railscope-next.layers'
 type Mode = 'detail' | 'operations' | 'analysis' | 'data'
-const modes: {id:Mode; title:string; icon:typeof MapIcon}[] = [
-  {id:'detail',title:'地图',icon:MapIcon},{id:'operations',title:'运行',icon:TrainFront},
-  {id:'analysis',title:'分析与诊断',icon:Activity},{id:'data',title:'数据',icon:Database},
+const modes: {id:Mode; title:string; description:string; icon:typeof MapIcon}[] = [
+  {id:'detail',title:'地图',description:'浏览目录、地图和对象属性。',icon:MapIcon},
+  {id:'operations',title:'运行',description:'编排通道、时刻与列车仿真。',icon:TrainFront},
+  {id:'analysis',title:'分析与诊断',description:'查询轨道连通性和数据诊断。',icon:Activity},
+  {id:'data',title:'数据',description:'管理离线快照、来源与迁移。',icon:Database},
 ]
 const layoutDefaults = {left:310,right:343,bottom:320,hideLeft:false,hideRight:false,hideBottom:true,focusBottom:false}
 type Layout = typeof layoutDefaults
@@ -309,8 +311,8 @@ export function App() {
     <header className="top">
       <div className="brand"><div className="brand-icon"><TrainFront size={23} strokeWidth={1.7} /></div><strong>RailScope <span>Next</span></strong></div>
       <nav aria-label={t("工作台")}>
-        {modes.map(({id,title,icon:Icon})=><button key={id} className={mode===id?'selected':''} aria-current={mode===id?'page':undefined}
-          aria-label={t(title)} title={t(title)} onClick={()=>setMode(id)}><Icon size={17}/><span>{t(title)}</span></button>)}
+        {modes.map(({id,title,description,icon:Icon})=><button key={id} className={mode===id?'selected':''} aria-current={mode===id?'page':undefined}
+          aria-label={t(title)} title={t(description)} onClick={()=>setMode(id)}><Icon size={17}/><span>{t(title)}</span></button>)}
         <button aria-haspopup="dialog" title={t("设置 (Ctrl+,)")} onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>{t("设置")}</button>
       </nav>
       <div className="workspace-tools">
@@ -420,19 +422,19 @@ export function App() {
         {!globalError && changing && <div className="map-loading">{t("正在校验本地数据包…")}</div>}
       </section>
       <aside className="inspector" aria-label={t("工作面板")} hidden={layout.hideRight}>
-        <div hidden={mode==='data'||(mode==='operations'&&!details)}>
+        <div hidden={mode==='data'||mode==='operations'}>
           <div className="panel-title"><FileText size={16} /><h2>{t("对象属性")}</h2>{details && <button className="icon" aria-label={t("清除选中")} onClick={clear}><X size={17} /></button>}</div>
           {backStation&&details?.entity.kind==='line'&&<button className="secondary compact" onClick={()=>{void select(backStation.id,backStation);setBackStation(undefined)}}>{t("返回")} {backStation.name}</button>}
           {detailError && <p className="error-text" role="alert">{detailError}</p>}
           {busy ? <div className="blank">{t("正在读取对象…")}</div> : details && active
             ? <Properties key={details.entity.id} inspection={details} pack={active} exact={exact}
                 showMembers={line=>{setGroup(line);setMode('detail')}} update={(state, target) => applyWorkspace(state, target, active)}
-                openLine={line=>{setBackStation(details.entity);void select(line.id,line)}}
+                openLine={item=>{if(details.entity.kind==='station')setBackStation(details.entity);else if(item.kind==='station')setBackStation(undefined);void select(item.id,item)}}
                 useForCorridor={()=>showOperations(details.entity)} useForAnalysis={()=>{setAnalysisTab('route');setMode('analysis')}}
                 zoomOverride={point => controller.current?.fit([point[0], point[1], point[0], point[1]])} />
             : <div className="blank"><MapPin size={24} /><strong>{t("选择地图对象")}</strong><p>{t("点击地图或打开搜索结果即可查看资料。")}</p></div>}
         </div>
-        {mode==='detail'&&active&&<BusinessLines key={active.snapshot} snapshot={active.snapshot} selection={details?.entity}
+        {mode==='detail'&&active&&details?.entity.kind==='line'&&<BusinessLines key={active.snapshot} snapshot={active.snapshot} selection={details?.entity}
           openMember={item => { void select(item.id, item) }} />}
         {mode==='data'&&<div className="property-content task-summary"><h3>{active?.snapshot??t("快照详情")}</h3>
           {active&&<><p>{active.source}</p><code>{active.source_sha256}</code><p>{active.bounds.join(' · ')}</p></>}</div>}
@@ -526,19 +528,32 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
 }) {
   const { entity, workspace } = inspection
   const meaning=entity.semantics
-  const [tab, setTab] = useState<'overview' | 'lines' | 'attributes' | 'workspace'>(entity.site?'overview':'attributes')
+  const [tab, setTab] = useState<'overview' | 'lines' | 'attributes' | 'workspace'>('overview')
   const [draft, setDraft] = useState<Override>(workspace.value)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmation, setConfirmation] = useState('')
   const [coordinates, setCoordinates] = useState<[string, string]>(['', ''])
+  const [groups,setGroups]=useState<string[]>([])
+  useEffect(()=>{
+    if(tab!=='workspace')return
+    let active=true
+    void api.groups(pack.snapshot).then(items=>{if(active)setGroups(items.map(item=>item.name))}).catch(()=>{})
+    return ()=>{active=false}
+  },[tab,pack.snapshot])
   useEffect(() => {
     setDraft(workspace.value)
     setCoordinates(workspace.value.point ? [String(workspace.value.point[0]), String(workspace.value.point[1])] : ['', ''])
   }, [workspace])
   const pointEntity = entity.has_geometry && !entity.has_edge
     && entity.bounds[0] === entity.bounds[2] && entity.bounds[1] === entity.bounds[3]
-  const edited = draft.name !== workspace.value.name || draft.note !== workspace.value.note || draft.color !== workspace.value.color
+  const station = entity.kind === 'station'
+  const line = entity.kind === 'line'
+  const missing = t("待补充")
+  const edited = draft.designation !== workspace.value.designation || draft.operator !== workspace.value.operator
+    || draft.category !== workspace.value.category
+    || JSON.stringify(draft.associated_lines ?? []) !== JSON.stringify(workspace.value.associated_lines ?? [])
+    || draft.name !== workspace.value.name || draft.note !== workspace.value.note || draft.color !== workspace.value.color
     || draft.group !== workspace.value.group
     || draft.width!==workspace.value.width || draft.opacity!==workspace.value.opacity
     || coordinates.some((coordinate, i) => coordinate !== String(workspace.value.point?.[i] ?? ''))
@@ -577,34 +592,67 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
     <div className="object-head">
       <span className="object-type">{t(entity.site?siteRoleNames[entity.site.role]:kindNames[entity.kind])}</span>
       <h3>{workspace.value.name || entity.name}</h3>
-      <span>{t(entity.site?.evidence ?? symbolName(meaning.render_class) ?? className(entity.class))} · {t(lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status))}</span>
+      <span>{!entity.site&&<>{t(symbolName(meaning.render_class)??className(entity.class))} · </>}{t(lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status))}</span>
     </div>
     <div className="tabs property-tabs" role="group" aria-label={t("对象选项卡")}>
-      {entity.site&&<>
-        <button className={tab==='overview'?'active':''} aria-pressed={tab==='overview'} onClick={()=>setTab('overview')}>{t("概览")}</button>
-        <button className={tab==='lines'?'active':''} aria-pressed={tab==='lines'} onClick={()=>setTab('lines')}>{t("关联线路")}</button>
-      </>}
-      <button className={tab === 'attributes' ? 'active' : ''} aria-pressed={tab==='attributes'} onClick={() => setTab('attributes')}>{entity.site?t("来源"):t("来源与关联")}</button>
-      <button className={tab === 'workspace' ? 'active' : ''} aria-pressed={tab==='workspace'} onClick={() => setTab('workspace')}>{t("工作区")}</button>
+      {([
+        ['overview', "概览", "查看常用属性和地图位置。"],
+        ['lines', "关联", "查看所属线路、线路成员或车站关联。"],
+        ['attributes', "来源", "核对快照、原始 OSM 对象和核验状态。"],
+        ['workspace', "编辑", "在工作区保存名称、分类、属性和显示设置。"],
+      ] as const).map(([id,label,description])=><button key={id} className={tab===id?'active':''}
+        aria-pressed={tab===id} title={t(description)} onClick={()=>setTab(id)}>{t(label)}</button>)}
     </div>
-    {tab==='overview'&&entity.site ? <div className="property-content site-overview">
+    <p className="property-tab-help">{t({
+      overview:"查看常用属性和地图位置。",lines:"查看所属线路、线路成员或车站关联。",
+      attributes:"核对快照、原始 OSM 对象和核验状态。",workspace:"在工作区保存名称、分类、属性和显示设置。",
+    }[tab])}</p>
+    {tab==='overview' ? <div className="property-content site-overview">
       <dl>
-        <dt>{t("场站类别")}</dt><dd>{t(siteRoleNames[entity.site.role])}</dd>
-        {entity.tags.ref&&<><dt>{t("站码／编号")}</dt><dd>{entity.tags.ref}</dd></>}
-        {entity.tags.operator&&<><dt>{t("运营管理")}</dt><dd>{entity.tags.operator}</dd></>}
-        {entity.kind==='station'&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??t("待核验")}</dd>
-          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??t("待核验")}</dd></>}
-        <dt>{t("来源核验")}</dt><dd>{entity.verification==='verified'?t("已核验"):t("自动参考")}</dd>
+        <dt>{t("对象类别")}</dt><dd>{t(entity.site?siteRoleNames[entity.site.role]:className(entity.class))}</dd>
+        {(station || line)&&<>
+          <dt>{t("编号")}</dt><dd>{workspace.value.designation || entity.tags.ref || missing}</dd>
+          <dt>{t("运营管理")}</dt><dd>{workspace.value.operator || entity.tags.operator || missing}</dd>
+          <dt>{t("目录分类")}</dt><dd>{workspace.value.category || missing}</dd>
+          <dt>{t("工作区分组")}</dt><dd>{workspace.value.group || missing}</dd>
+        </>}
+        {station&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??missing}</dd>
+          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??missing}</dd></>}
+        {(line || entity.has_edge&&entity.kind!=='road')&&<>
+          <dt>{t("速度／轨距")}</dt><dd>{meaning.speed_kmh==null?missing:`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?missing:`${meaning.gauge_mm} mm`}</dd>
+          <dt>{t("供电／股道号")}</dt><dd>{{overhead:t("接触网"),third_rail:t("第三轨"),none:t("无电气化")}[meaning.electrification??'']??missing} · {entity.tags['railway:track_ref']??missing}</dd>
+        </>}
+        {workspace.value.note&&<><dt>{t("备注")}</dt><dd>{workspace.value.note}</dd></>}
       </dl>
-      <div className="site-coverage">
+      {entity.site&&<div className="site-coverage">
         <h4>{t("地图范围")}</h4>
         {entity.site.areas.length?<ul>{entity.site.areas.map(area=><li key={area.object.id}><strong>{t(siteAreaNames[area.kind])}</strong>
           <span>{area.object.name} · {t(area.evidence)}</span></li>)}</ul>:<p className="muted">{t("当前快照未关联面状轮廓。")}</p>}
+      </div>}
+      <div className="ops-actions">
         {entity.has_geometry&&<button className="secondary compact" onClick={exact}><Crosshair size={15}/>{t("查看精确几何")}</button>}
+        {workspace.value.point&&<button className="secondary compact" onClick={()=>zoomOverride(workspace.value.point!)}>{t("定位工作区坐标")}</button>}
+        {(station&&!Object.hasOwn(nonRailStationNames,meaning.render_class)||entity.has_edge&&entity.kind!=='road')&&
+          <button className="secondary compact" onClick={useForCorridor}>{t("作为通道起点")}</button>}
+        {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>{t("用于路径分析")}</button>}
       </div>
-      {entity.kind==='station'&&<button className="secondary compact" onClick={useForCorridor}>{t("作为通道起点")}</button>}
-    </div> : tab==='lines' ? <div className="property-content"><StationLinks entity={entity} pack={pack} openLine={openLine}/></div>
-    : tab === 'attributes' ? <div className="property-content">
+    </div> : tab==='lines' ? <div className="property-content">
+      {station?<><StationLinks entity={entity} pack={pack} openLine={openLine}/>
+        <StationLineEditor snapshot={pack.snapshot} value={draft.associated_lines??[]} openLine={openLine}
+          change={associated_lines=>setDraft({...draft,associated_lines})}/>
+        <button className="primary compact" disabled={saving||!edited} onClick={()=>void change('apply')}>{t("保存工作区关联")}</button>
+        {error&&<p className="error-text" role="alert">{error}</p>}
+        {confirmation&&<p className="success" role="status">{confirmation}</p>}
+      </>:<div className="members">
+        {line&&<button onClick={()=>showMembers(entity)}>{t("浏览线路成员")}<ChevronRight size={15}/></button>}
+        {line&&!!inspection.workspace_stations?.length&&<><h4>{t("工作区关联车站")}</h4>
+          {inspection.workspace_stations.map(item=><button key={item.id} onClick={()=>openLine(item)}>
+            {item.name}<ArrowUpRight size={14}/></button>)}</>}
+        {!!entity.memberships.length&&<><h4>{t("所属线路")}</h4>{entity.memberships.map(member=>
+          <button key={member.id} onClick={()=>openLine(member)}>{member.name || t("未命名线路")}<ArrowUpRight size={14}/></button>)}</>}
+        {!line&&!entity.memberships.length&&<p className="muted">{t("当前快照没有线路关联。")}</p>}
+      </div>}
+    </div> : tab === 'attributes' ? <div className="property-content">
       <dl>
         {workspace.value.name && <><dt>{t("原始名称")}</dt><dd>{entity.name}</dd></>}
         <dt>{t("快照")}</dt><dd>{pack.snapshot}</dd>
@@ -612,29 +660,22 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
         <dt>{t("核验")}</dt><dd>{entity.verification === 'verified' ? t("已核验") : t("自动参考")} · {entity.confidence === 'low' ? t("低") : t("中")}{t("置信度")}</dd>
         <dt>{t("实体 ID")}</dt><dd className="monospace">{entity.id}</dd>
         <dt>{t("分类依据")}</dt><dd>{t(meaning.reason)}</dd>
-        {entity.has_edge&&entity.kind!=='road'&&<><dt>{t("速度／轨距")}</dt><dd>{meaning.speed_kmh==null?t("未知"):`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?t("未知"):`${meaning.gauge_mm} mm`}</dd>
-          <dt>{t("供电／股道号")}</dt><dd>{{overhead:t("接触网"),third_rail:t("第三轨"),none:t("无电气化")}[meaning.electrification??'']??t("未知")} · {entity.tags['railway:track_ref']??t("未知")}</dd></>}
-        {entity.kind==='station'&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??t("待核验")}</dd>
-          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??t("待核验")}</dd></>}
-        {entity.kind==='line'&&<><dt>{t("线路配色")}</dt><dd>{workspace.value.color?t("工作区覆盖 {0}", workspace.value.color):entity.tags.colour?`OSM colour · ${entity.tags.colour}`:t("制式默认色")}</dd></>}
       </dl>
-      {entity.has_geometry && <button className="secondary" onClick={exact}><Crosshair size={15} />{t("查看精确几何")}</button>}
-      {workspace.value.point && <button className="secondary" onClick={() => zoomOverride(workspace.value.point!)}><MapPin size={15} />{t("定位工作区坐标")}</button>}
-      {entity.kind === 'line' && <button className="secondary" onClick={() => showMembers(entity)}><ChevronRight size={15} />{t("浏览线路成员")}</button>}
-      <div className="ops-actions">
-        {(entity.kind==='station'&&!Object.hasOwn(nonRailStationNames,meaning?.render_class??'')||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>{t("作为通道起点")}</button>}
-        {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>{t("用于路径分析")}</button>}
-      </div>
-      {entity.kind!=='station'&&entity.memberships.length > 0 && <div className="members"><h4>{t("所属线路")}</h4>{entity.memberships.map(line =>
-        <button key={line.id} onClick={() => openLine(line)}>{line.name}<ArrowUpRight size={14} /></button>)}</div>}
-      <details><summary>{t("原始 OSM 标签 ·")} {Object.keys(entity.tags).length}</summary>
-        <dl className="tags">{Object.entries(entity.tags).flatMap(([k, v]) => [<dt key={`k-${k}`}>{k}</dt>, <dd key={`v-${k}`}>{v}</dd>])}</dl>
-      </details>
       <SourceBrowser snapshot={pack.snapshot} initial={entity.source_ref}/>
     </div> : <form className="property-content edit-form" onSubmit={e => { e.preventDefault(); void change('apply') }}>
       <label>{t("工作区名称")}<input value={draft.name} placeholder={entity.name} maxLength={120} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
-      <label>{t("工作区分组")}<input value={draft.group} placeholder={t("留空则移出分组")} maxLength={80}
+      <label>{t("工作区分组")}<input value={draft.group} list="workspace-group-names" placeholder={t("留空则移出分组")} maxLength={80}
         onChange={e => setDraft({ ...draft, group: e.target.value })} /></label>
+      <datalist id="workspace-group-names">{groups.map(name=><option key={name} value={name}/>)}</datalist>
+      {line&&<p className="muted">{t("让多条线路使用同一个分组名，即可在目录中一起浏览。")}</p>}
+      {(station||line)&&<>
+        <label>{t("目录分类")}<input value={draft.category??''} placeholder={t("例如：高速铁路、城市轨道、客运站")} maxLength={120}
+          onChange={e=>setDraft({...draft,category:e.target.value})}/></label>
+        <label>{t("编号")}<input value={draft.designation??''} placeholder={entity.tags.ref??missing} maxLength={120}
+          onChange={e=>setDraft({...draft,designation:e.target.value})}/></label>
+        <label>{t("运营管理")}<input value={draft.operator??''} placeholder={entity.tags.operator??missing} maxLength={120}
+          onChange={e=>setDraft({...draft,operator:e.target.value})}/></label>
+      </>}
       <label>{t("备注")}<textarea value={draft.note} rows={5} maxLength={4000} onChange={e => setDraft({ ...draft, note: e.target.value })} /></label>
       {(entity.kind !== 'line'||['subway','light_rail','tram','monorail'].includes(entity.class)) && <label>{t("地图颜色")}<span className="color-row">
         <input type="color" value={draft.color || '#176ce0'} onChange={e => setDraft({ ...draft, color: e.target.value })} />
@@ -699,6 +740,44 @@ function SourceBrowser({snapshot,initial}:{snapshot:string;initial:string}){
       </div>
     </>}
   </details>
+}
+
+function StationLineEditor({snapshot,value,change,openLine}:{snapshot:string;value:string[];change:(ids:string[])=>void;openLine:(line:Summary)=>void}){
+  const [query,setQuery]=useState('')
+  const [matches,setMatches]=useState<Summary[]>([])
+  const [chosen,setChosen]=useState<Summary[]>([])
+  const [error,setError]=useState('')
+  const key=value.join(',')
+  useEffect(()=>{
+    let active=true
+    const ids=key?key.split(','):[]
+    void Promise.all(ids.map(id=>api.entity(snapshot,id).then(result=>result.entity))).then(results=>{
+      if(active)setChosen(results)
+    }).catch(cause=>{if(active)setError(String(cause))})
+    return ()=>{active=false}
+  },[snapshot,key])
+  useEffect(()=>{
+    let active=true
+    setMatches([]);setError('')
+    if(!query.trim())return
+    const timer=window.setTimeout(()=>void api.page(snapshot,{kind:'line',query:query.trim()}).then(page=>{
+      if(active)setMatches(page.items.slice(0,12))
+    }).catch(cause=>{if(active)setError(String(cause))}),200)
+    return ()=>{active=false;window.clearTimeout(timer)}
+  },[snapshot,query])
+  return <section className="manual-links">
+    <h4>{t("手工关联线路")}</h4>
+    <p className="muted">{t("记录工作区关联。自动关系、接轨证据和物理拓扑独立保留。")}</p>
+    {value.map(id=><div className="manual-link" key={id}>
+      <button type="button" className="station-link" disabled={!chosen.some(line=>line.id===id)}
+        onClick={()=>{const line=chosen.find(item=>item.id===id);if(line)openLine(line)}}>{chosen.find(line=>line.id===id)?.name || id}</button>
+      <button type="button" className="secondary compact" onClick={()=>change(value.filter(item=>item!==id))}>{t("移除")}</button>
+    </div>)}
+    <label>{t("查找线路")}<input value={query} maxLength={128} onChange={e=>setQuery(e.target.value)}/></label>
+    {matches.filter(line=>!value.includes(line.id)).map(line=><button key={line.id} type="button" className="secondary compact"
+      disabled={value.length>=32} onClick={()=>{change([...value,line.id]);setQuery('')}}>{t("关联 {0}",line.name || t("未命名线路"))}</button>)}
+    {error&&<p className="error-text" role="alert">{error}</p>}
+  </section>
 }
 
 function StationLinks({entity,pack,openLine}:{entity:Inspection['entity'];pack:Pack;openLine:(line:Summary)=>void}){
@@ -807,6 +886,7 @@ function BusinessLines({ snapshot, selection, openMember }: {
   const [sources, setSources] = useState<Summary[]>([])
   const [name, setName] = useState('')
   const [split, setSplit] = useState('')
+  const [rename,setRename]=useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [page, setPage] = useState<{id: string; offset: number; members: Summary[]; next: number | null}>()
@@ -861,8 +941,18 @@ function BusinessLines({ snapshot, selection, openMember }: {
     </form>
     {error && <p className="error-text" role="alert">{error}</p>}
     {history?.lines.map(line => <div key={line.id} className="ops-row">
-      <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, 0)}>{line.name} · {line.member_count} {t("个成员")}</button>
+      <button className="secondary compact" disabled={busy} onClick={() => {setRename(line.name);void open(line.id, 0)}}>{line.name} · {line.member_count} {t("个成员")}</button>
       {page?.id === line.id && <>
+        <form onSubmit={event=>{
+          event.preventDefault()
+          void perform(async()=>{
+            await api.lineEdit(snapshot,{action:'rename',id:line.id,name:rename})
+            await refresh()
+          })
+        }}>
+          <label>{t("工作区名称")}<input required value={rename} maxLength={100} onChange={event=>setRename(event.target.value)}/></label>
+          <button className="secondary compact" disabled={busy||!rename.trim()||rename.trim()===line.name}>{t("保存名称")}</button>
+        </form>
         <ol className="raw-source-members" start={page.offset + 1}>{page.members.map((item, index) => <li key={`${item.id}-${index}`}>
           <button className="secondary compact" onClick={() => openMember(item)}>{item.name}</button></li>)}</ol>
         <div className="ops-actions">

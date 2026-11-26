@@ -2,22 +2,23 @@ import { t } from './i18n'
 import { useMemo, useState } from 'react'
 import { formatTime, type Run, type RunDetail } from './operations-api'
 
-type Props={detail?:RunDetail;runs:Run[];time:number;select:(id:string)=>void;seek:(time:number)=>void;locate:(id:string)=>void}
+type Props={detail?:RunDetail;axis?:RunDetail;runs:Run[];time:number;select:(id:string)=>void;seek:(time:number)=>void;locate:(id:string)=>void}
 
-export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
+export function MetroDiagram({detail,axis,runs,time,select,seek,locate}:Props){
   const [scale,setScale]=useState<'station'|'distance'>('station')
   const [direction,setDirection]=useState<'all'|'out'|'back'>('all')
   const [span,setSpan]=useState(90)
   const [follow,setFollow]=useState(false)
   const base=detail?.service?.mode==='metro'?detail:undefined
+  const chart=axis?.chart??base?.chart
   const rows=useMemo(()=>{
     const known=new Set<string>()
-    return (base?.chart??[]).filter(stop=>{
+    return (chart??[]).filter(stop=>{
       if(known.has(stop.station_id))return false
       known.add(stop.station_id)
       return true
     })
-  },[base])
+  },[chart])
   const indices=useMemo(()=>new Map(rows.map((stop,index)=>[stop.station_id,index])),[rows])
   const plans=useMemo(()=>runs.flatMap(run=>{
     if(run.status==='cancelled')return []
@@ -35,13 +36,14 @@ export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
   const anchor=base.chart[0]?.departure_time_s??base.chart[0]?.arrival_time_s??time
   const start=Math.max(0,Math.floor(((follow?time:anchor)-span*15)/300)*300)
   const end=start+span*60
-  const maxDist=rows.at(-1)?.distance_m??0
+  const firstDist=rows[0].distance_m??0
+  const maxDist=(rows.at(-1)?.distance_m??0)-firstDist
   const byDistance=scale==='distance'&&maxDist>0&&rows.every(stop=>stop.distance_m!=null)
   const width=960
   const label=126
   const height=Math.max(220,rows.length*23+58)
   const x=(t:number)=>label+(t-start)/(end-start)*(width-label-22)
-  const y=(i:number)=>32+(byDistance?rows[i].distance_m!/maxDist:i/(rows.length-1))*(height-58)
+  const y=(i:number)=>32+(byDistance?(rows[i].distance_m!-firstDist)/maxDist:i/(rows.length-1))*(height-58)
   const shown=plans.filter(({stops,reverse})=>stops[0].arrive<=end&&stops.at(-1)!.depart>=start&&
     (direction==='all'||(direction==='back')===reverse)).sort((a,b)=>Number(b.run.id===base.run.id)-Number(a.run.id===base.run.id)).slice(0,240)
   const ticks=Array.from({length:1+span/15},(_,i)=>start+i*900)

@@ -16,9 +16,37 @@ pub struct Override {
     pub group: String,
     pub width: Option<f64>,
     pub opacity: Option<f64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub designation: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub operator: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub category: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub associated_lines: Vec<String>,
 }
 
 impl Override {
+    pub fn validate_associations(&self, canonical: &Connection, kind: &str) -> Result<()> {
+        if self.associated_lines.is_empty() {
+            return Ok(());
+        }
+        ensure!(
+            kind == "station" && self.associated_lines.len() <= 32,
+            "仅车站可关联最多 32 条线路"
+        );
+        let mut ids = std::collections::HashSet::new();
+        let mut line =
+            canonical.prepare("SELECT EXISTS(SELECT 1 FROM entity WHERE id=? AND kind='line')")?;
+        for id in &self.associated_lines {
+            ensure!(
+                ids.insert(id) && line.query_row([id], |row| row.get::<_, bool>(0))?,
+                "关联线路重复、已移除或不属于当前快照"
+            );
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<()> {
         ensure!(
             self.name.chars().count() <= 120 && self.note.chars().count() <= 4000,
@@ -27,6 +55,12 @@ impl Override {
         ensure!(
             self.group.chars().count() <= 80 && self.group.trim() == self.group,
             "分组名称无效"
+        );
+        ensure!(
+            [&self.designation, &self.operator, &self.category]
+                .iter()
+                .all(|value| value.chars().count() <= 120),
+            "编号、运营方或分类过长"
         );
         ensure!(
             self.color.is_empty()
@@ -160,12 +194,18 @@ fn migrate(db: &Connection, old: &Pack, new: &Pack) -> Result<()> {
         if value == serde_json::to_string(&Override::default())? {
             continue;
         }
+        let overrides: Override = serde_json::from_str(&value)?;
         let before = old_signature.query_row([&id], read).optional()?;
         let after = new_signature.query_row([&id], read).optional()?;
         let reason = if after.is_none() {
             "实体已移除或拆分"
         } else if before != after {
             "原始实体已变更"
+        } else if overrides
+            .validate_associations(&new_db, &after.as_ref().unwrap().0)
+            .is_err()
+        {
+            "车站关联线路已移除或变更"
         } else if let Some(existing) = payload(db, to, &id)? {
             if existing == value {
                 continue;
@@ -299,16 +339,44 @@ pub fn group_members(
         let id: String = row.get(0)?;
         let payload: String = row.get(1)?;
         if let Some(mut item) = catalog::by_id(&canonical, &id)? {
-            let value: Override = serde_json::from_str(&payload)?;
-            if !value.name.is_empty() {
-                item.name = value.name;
-            }
+            apply_summary(&mut item, serde_json::from_str(&payload)?);
             items.push(item);
         }
         cursor = Some(id);
         count += 1;
     }
     Ok(catalog::Page { items, next })
+}
+
+pub fn stations_for_line(
+    db: &Connection,
+    canonical: &Connection,
+    snapshot: &str,
+    id: &str,
+) -> Result<Vec<catalog::Summary>> {
+    let mut query = db.prepare(
+        "SELECT entity, json_extract(payload,'$.name') FROM overrides
+         WHERE snapshot=?1 AND EXISTS(SELECT 1 FROM json_each(payload,'$.associated_lines') WHERE value=?2)
+         ORDER BY entity LIMIT 150",
+    )?;
+    let mut rows = query.query(params![snapshot, id])?;
+    let mut stations = Vec::new();
+    while let Some(row) = rows.next()? {
+        let station: String = row.get(0)?;
+        if let Some(mut item) =
+            catalog::by_id(canonical, &station)?.filter(|item| item.kind == "station")
+        {
+            if let Some(name) = row
+                .get::<_, Option<String>>(1)?
+                .filter(|name| !name.is_empty())
+            {
+                item.name = name;
+            }
+            stations.push(item);
+        }
+    }
+    stations.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+    Ok(stations)
 }
 
 pub fn state(db: &Connection, snapshot: &str, entity: &str) -> Result<State> {
@@ -329,6 +397,72 @@ pub fn state(db: &Connection, snapshot: &str, entity: &str) -> Result<State> {
         can_undo: status(true)?,
         can_redo: status(false)?,
     })
+}
+
+fn apply_summary(item: &mut catalog::Summary, value: Override) {
+    if !value.name.is_empty() {
+        item.name = value.name;
+    }
+    if !value.category.is_empty() {
+        item.workspace_category = Some(value.category);
+    }
+}
+
+pub fn catalog_overrides(
+    db: &Connection,
+    pack: &Pack,
+    filter: &catalog::Filter,
+    page: &mut catalog::Page,
+) -> Result<()> {
+    let snapshot = &pack.manifest.snapshot;
+    let term = filter.query.trim();
+    if !term.is_empty()
+        && filter.cursor.is_none()
+        && filter.parent.is_none()
+        && !term.starts_with("osm:")
+    {
+        let mut matches = db.prepare(
+            "SELECT entity FROM overrides WHERE snapshot=?1 AND
+             (instr(lower(coalesce(json_extract(payload,'$.name'),'')),lower(?2))>0
+              OR instr(lower(coalesce(json_extract(payload,'$.designation'),'')),lower(?2))>0
+              OR instr(lower(coalesce(json_extract(payload,'$.category'),'')),lower(?2))>0)
+             ORDER BY entity LIMIT 100",
+        )?;
+        let ids = matches.query_map(params![snapshot, term], |row| row.get::<_, String>(0))?;
+        let canonical = pack.connection()?;
+        let mut extra = Vec::new();
+        for id in ids {
+            let id = id?;
+            if page.items.iter().any(|item| item.id == id) {
+                continue;
+            }
+            if let Some(item) = catalog::by_id(&canonical, &id)?.filter(|item| {
+                filter.kind.as_ref().is_none_or(|kind| item.kind == *kind)
+                    && (filter.classes.is_empty() || filter.classes.contains(&item.class))
+                    && filter.bbox.is_none_or(|[w, s, e, n]| {
+                        let [x1, y1, x2, y2] = item.bounds;
+                        x2 >= w && y2 >= s && x1 <= e && y1 <= n
+                    })
+            }) {
+                extra.push(item);
+                if extra.len() == 20 {
+                    break;
+                }
+            }
+        }
+        page.items.splice(0..0, extra);
+    }
+    let mut lookup =
+        db.prepare_cached("SELECT payload FROM overrides WHERE snapshot=? AND entity=?")?;
+    for item in &mut page.items {
+        let value: Option<String> = lookup
+            .query_row(params![snapshot, item.id], |row| row.get(0))
+            .optional()?;
+        if let Some(value) = value {
+            apply_summary(item, serde_json::from_str(&value)?);
+        }
+    }
+    Ok(())
 }
 
 fn transaction(db: &mut Connection, expected: i64) -> Result<Transaction<'_>> {

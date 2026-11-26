@@ -41,6 +41,64 @@ pub(super) fn controls(db: &Connection, entity_id: &str) -> Result<Value> {
             Ok(json!({"id":id,"name":label(&id,row.get(3)?),"point":[row.get::<_,f64>(1)?,row.get::<_,f64>(2)?]}))
         })?.collect::<rusqlite::Result<Vec<_>>>()?;
     }
+    if values.is_empty() {
+        if let Some(station) = catalog::by_id(db, entity_id)?.filter(|item| {
+            item.kind == "station"
+                && matches!(item.class.as_str(), "rail_station" | "metro_station")
+        }) {
+            let [w, s, e, n] = station.bounds;
+            let (x, y) = ((w + e) / 2., (s + n) / 2.);
+            let xscale = 111200. * y.to_radians().cos().abs().max(0.1);
+            let radius = if station.class == "metro_station" {
+                250.
+            } else {
+                450.
+            };
+            let mode = if station.class == "metro_station" {
+                "metro"
+            } else {
+                "rail"
+            };
+            let mut statement = db.prepare(
+                "WITH nearby AS (
+              SELECT edge.from_node,edge.to_node FROM spatial s JOIN geometry g ON g.rowid=s.rowid
+              JOIN entity e ON e.id=g.entity_id JOIN edge ON edge.id=e.id
+              WHERE s.max_x>=?1 AND s.min_x<=?2 AND s.max_y>=?3 AND s.min_y<=?4
+                AND e.kind=?5 AND e.status='operating' AND e.class!='unknown'
+              ), ids AS (SELECT from_node id FROM nearby UNION SELECT to_node FROM nearby)
+              SELECT node.id,node.longitude,node.latitude FROM ids JOIN node ON node.id=ids.id",
+            )?;
+            let mut candidates = statement
+                .query_map(
+                    params![
+                        x - radius / xscale,
+                        x + radius / xscale,
+                        y - radius / 111200.,
+                        y + radius / 111200.,
+                        mode
+                    ],
+                    |row| {
+                        let lon: f64 = row.get(1)?;
+                        let lat: f64 = row.get(2)?;
+                        Ok((
+                            ((lon - x) * xscale).hypot((lat - y) * 111200.),
+                            row.get::<_, String>(0)?,
+                            lon,
+                            lat,
+                        ))
+                    },
+                )?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            candidates.retain(|entry| entry.0 <= radius);
+            candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            values.extend(candidates.into_iter().take(24).map(|(meters, id, x, y)| {
+                json!({
+                    "id":id,"name":station.name,"point":[x,y],"meters":meters,
+                    "evidence":"nearby_track_reference","verification_status":"automatic_reference"
+                })
+            }));
+        }
+    }
     Ok(json!(values))
 }
 

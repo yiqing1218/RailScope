@@ -156,13 +156,21 @@ async fn catalog_page(
     engine: Core<'_>,
 ) -> AppResult<catalog::Page> {
     let engine = Arc::clone(engine.inner());
-    background(move || catalog::list(engine.for_snapshot(&snapshot)?.as_ref(), filter)).await
+    background(move || {
+        let mut page = catalog::list(engine.for_snapshot(&snapshot)?.as_ref(), filter.clone())?;
+        engine.with_workspace(&snapshot, |db, pack| {
+            workspace::catalog_overrides(db, pack, &filter, &mut page)?;
+            Ok(page)
+        })
+    })
+    .await
 }
 
 #[derive(Serialize)]
 struct Inspection {
     entity: catalog::Entity,
     workspace: workspace::State,
+    workspace_stations: Vec<catalog::Summary>,
 }
 
 #[tauri::command]
@@ -172,7 +180,21 @@ async fn get_entity(snapshot: String, id: String, engine: Core<'_>) -> AppResult
         engine.with_workspace(&snapshot, |db, pack| {
             let entity = catalog::get(pack, &id)?.context("当前快照没有该对象")?;
             let workspace = workspace::state(db, &snapshot, &entity.summary.id)?;
-            Ok(Inspection { entity, workspace })
+            let workspace_stations = if entity.summary.kind == "line" {
+                workspace::stations_for_line(
+                    db,
+                    &pack.connection()?,
+                    &snapshot,
+                    &entity.summary.id,
+                )?
+            } else {
+                Vec::new()
+            };
+            Ok(Inspection {
+                entity,
+                workspace,
+                workspace_stations,
+            })
         })
     })
     .await
@@ -210,8 +232,10 @@ async fn update_workspace(
     background(move || {
         engine.with_workspace(&snapshot, |db, pack| {
             let entity = catalog::get(pack, &id)?.context("当前快照没有该对象")?;
+            let canonical = pack.connection()?;
+            value.validate_associations(&canonical, &entity.summary.kind)?;
             if value.point.is_some() {
-                let geometry = catalog::geometry(&pack.connection()?, &entity.summary.id)?;
+                let geometry = catalog::geometry(&canonical, &entity.summary.id)?;
                 ensure!(
                     !entity.has_edge
                         && geometry.as_ref().and_then(|geom| geom["type"].as_str())

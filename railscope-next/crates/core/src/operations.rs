@@ -143,6 +143,10 @@ struct Stop {
     stop_edge_id: Option<String>,
     stop_edge_sequence: Option<usize>,
     stop_offset_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timing_evidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor_source: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct StockType {
@@ -203,7 +207,9 @@ impl Scenario {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum Request {
-    List,
+    List {
+        service_date: Option<String>,
+    },
     ResolveCorridor {
         start_id: String,
         end_id: String,
@@ -255,6 +261,9 @@ enum Request {
     PreviewRun {
         run: Run,
         time_s: f64,
+    },
+    SuggestAnchors {
+        run: Run,
     },
     SaveScenario {
         scenario: Scenario,
@@ -806,6 +815,12 @@ fn save_run(db: &Connection, canonical: &Connection, snapshot: &str, mut run: Ru
             .or(stop.departure_time_s)
             .context("MISSING_TIMETABLE · 停站缺少时间")?;
         let departure = stop.departure_time_s.unwrap_or(arrival);
+        if let Some(evidence) = &stop.timing_evidence {
+            text(evidence, 240)?;
+        }
+        if let Some(source) = &stop.anchor_source {
+            text(source, 120)?;
+        }
         ensure!(
             arrival >= last_time
                 && (0..=7 * 86400).contains(&arrival)
@@ -943,14 +958,46 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
     let canonical = pack.connection()?;
     let snapshot = pack.manifest.snapshot.as_str();
     match serde_json::from_value::<Request>(request)? {
-        Request::List => {
-            let corridors=all::<Corridor>(db,"SELECT payload FROM ops_corridor c WHERE version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
-                 AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id)
-                 ORDER BY id LIMIT 1000")?;
+        Request::List { service_date } => {
+            if let Some(date) = service_date.as_deref() {
+                NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+            }
+            let mut statement = db.prepare("SELECT payload FROM ops_corridor c WHERE snapshot=? AND version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
+                  AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id) ORDER BY id LIMIT 1000")?;
+            let payloads = statement.query_map([snapshot], |row| row.get::<_, String>(0))?;
+            let mut corridors = Vec::new();
+            let mut classify = canonical.prepare("SELECT kind FROM entity WHERE id=?")?;
+            for payload in payloads {
+                let mut corridor: Value = serde_json::from_str(&payload?)?;
+                if let Some(edge) = corridor["edge_refs"][0]["edge_id"].as_str() {
+                    let kind: Option<String> =
+                        classify.query_row([edge], |row| row.get(0)).optional()?;
+                    corridor["mode"] = json!(kind);
+                }
+                corridors.push(corridor);
+            }
             let services =
                 all::<Service>(db, "SELECT payload FROM ops_service ORDER BY id LIMIT 5000")?;
-            let runs=all::<Run>(db,"SELECT payload FROM ops_run r WHERE version=(SELECT max(version) FROM ops_run WHERE id=r.id)
-                ORDER BY service_date DESC,id LIMIT 2000")?;
+            let mut runs_query = db.prepare(
+                "SELECT r.payload FROM ops_run r
+                LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+                WHERE (?1 IS NULL OR r.service_date=?1) AND (c.snapshot IS NULL OR c.snapshot=?2)
+                 AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)
+                ORDER BY r.service_date DESC,r.id LIMIT 2000",
+            )?;
+            let payloads = runs_query.query_map(params![service_date, snapshot], |row| {
+                row.get::<_, String>(0)
+            })?;
+            let runs = payloads
+                .map(|payload| Ok(serde_json::from_str::<Run>(&payload?)?))
+                .collect::<Result<Vec<_>>>()?;
+            let mut date_query = db.prepare("SELECT DISTINCT r.service_date FROM ops_run r
+                LEFT JOIN ops_corridor c ON c.id=r.corridor_id AND c.version=r.corridor_version
+                WHERE (c.snapshot IS NULL OR c.snapshot=?1) AND r.version=(SELECT max(version) FROM ops_run WHERE id=r.id)
+                ORDER BY r.service_date DESC LIMIT 365")?;
+            let dates = date_query
+                .query_map([snapshot], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             let stock_types =
                 all::<StockType>(db, "SELECT payload FROM ops_stock ORDER BY id LIMIT 1000")?;
             let trainsets = all::<Trainset>(
@@ -964,7 +1011,7 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             let cycles =
                 all::<cycles::Cycle>(db, "SELECT payload FROM ops_cycle ORDER BY id LIMIT 100")?;
             Ok(
-                json!({ "corridors":corridors,"services":services,"runs":runs,"stock_types":stock_types,
+                json!({ "corridors":corridors,"services":services,"runs":runs,"dates":dates,"stock_types":stock_types,
                        "trainsets":trainsets,"scenarios":scenarios,"assignments":assignments,"cycles":cycles }),
             )
         }
@@ -1061,6 +1108,7 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
         Request::PreviewRun { run, time_s } => {
             sim::preview_run(db, &canonical, snapshot, &run, time_s)
         }
+        Request::SuggestAnchors { run } => sim::suggest_anchors(db, &canonical, snapshot, run),
         Request::SaveScenario { mut scenario } => {
             scenario.validate()?;
             new_id(&mut scenario.id)?;
@@ -1093,7 +1141,7 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
         } => schedule::import(
             db,
             &canonical,
-            snapshot,
+            pack,
             &format,
             &content,
             service_date.as_deref(),

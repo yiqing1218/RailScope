@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowRight, Crosshair, Download, GitBranch, Pause, Play, Plus, RotateCcw, TrainFront, Upload } from 'lucide-react'
 import type { Geometry } from 'geojson'
-import type { Entity, Summary } from './api'
+import { api, type Entity, type Summary } from './api'
 import type { MapTrain } from './map'
 import { ControlCorridorEditor } from './corridor-workbench'
 import { MetroDiagram } from './metro-diagram'
@@ -25,9 +25,10 @@ export type OperationsMap={
 type Props={snapshot?:string; visible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
   openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void;
   level:Level;setLevel:(level:Level)=>void}
-const blank:OperationList={corridors:[],services:[],runs:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
+const blank:OperationList={corridors:[],services:[],runs:[],dates:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
 const userSource:Provenance={source_kind:'user_defined',source_url_or_reference:'工作区人工录入'}
 const initialScenario:Scenario={id:'',name:'假设性场景',headway_s:120,turnaround_s:900,delays:{}}
+const departure=(run:Run)=>run.stops[0]?.departure_time_s??run.stops[0]?.arrival_time_s??Infinity
 
 export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function OperationsWorkbench(
   {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,level,setLevel},ref
@@ -40,6 +41,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [selected,setSelected]=useState('')
   const [editor,setEditor]=useState<Run>()
   const [detail,setDetail]=useState<RunDetail>()
+  const [metroAxis,setMetroAxis]=useState<RunDetail>()
   const [clock,setClock]=useState<Clock>({time_s:28800,rate:1,playing:false})
   const [scenario,setScenario]=useState(initialScenario)
   const [simulation,setSimulation]=useState<Simulation>()
@@ -57,7 +59,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [corridorDirty,setCorridorDirty]=useState(false)
   const [corridorFilter,setCorridorFilter]=useState('')
   const [onlySelected,setOnlySelected]=useState(false)
-  const [trainMode,setTrainMode]=useState<'all'|'rail'|'metro'>('all')
+  const [trainMode,setTrainMode]=useState<'rail'|'metro'>('rail')
   const [bottomTab,setBottomTab]=useState<'table'|'chart'|'metro'>('chart')
   const [past,setPast]=useState<Run[]>([])
   const [future,setFuture]=useState<Run[]>([])
@@ -65,13 +67,17 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const propsMap=useRef(map)
   propsMap.current=map
   const requestEpoch=useRef(0)
+  const dateRef=useRef(date)
+  dateRef.current=date
   const snapshotRef=useRef(snapshot)
   snapshotRef.current=snapshot
 
   useImperativeHandle(ref,()=>({
-    selectRun:id=>{setSelected(id);setTab('trains');openBottom()},
-    startCorridor:(start,end)=>{setTab('corridor');if(!corridorDirty||window.confirm(t("以所选对象替换通道草稿？"))){
-      setCorridor(undefined);setPrefill({start,end});openBottom()
+    selectRun:id=>selectRun(id),
+    startCorridor:(start,end)=>{if(!corridorDirty||window.confirm(t("以所选对象替换通道草稿？"))){
+      const target=start?.kind==='metro'||start?.class==='metro_station'?'metro':'rail'
+      if(target!==trainMode&&!switchMode(target))return
+      setTab('corridor');setCorridor(undefined);setPrefill({start,end});openBottom(true)
     }},
     openScenario:()=>{setTab('scenario');openBottom()},
     pause:()=>void control('pause'),
@@ -79,11 +85,11 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   }))
   const byRun=useMemo(()=>new Map(data.runs.map(run=>[run.id,run])),[data.runs])
   const byService=useMemo(()=>new Map(data.services.map(service=>[service.id,service])),[data.services])
-  const selectionDate=data.runs.find(run=>run.id===selected)?.service_date
-  const filterDate=selectionDate ?? date
-  const filtered=data.runs.filter(run=>run.service_date===filterDate && run.train_number.toLowerCase().includes(search.trim().toLowerCase())&&
-    (!corridorFilter||run.corridor_id===corridorFilter)&&(trainMode==='all'||byService.get(run.service_id)?.mode===trainMode))
-  const available=data.runs.filter(run=>run.service_date===filterDate)
+  const filterDate=date
+  const services=data.services.filter(service=>service.mode===trainMode)
+  const available=useMemo(()=>data.runs.filter(run=>run.service_date===date && byService.get(run.service_id)?.mode===trainMode),[data.runs,date,byService,trainMode])
+  const filtered=available.filter(run=>run.train_number.toLowerCase().includes(search.trim().toLowerCase())&&
+    (!corridorFilter||run.corridor_id===corridorFilter)).sort((a,b)=>departure(a)-departure(b)||a.train_number.localeCompare(b.train_number))
   const runIds=available.map(run=>run.id)
   const batchKey=runIds.join(',')
   const virtual=useVirtualizer({count:filtered.length,getScrollElement:()=>list.current,estimateSize:()=>36,overscan:6})
@@ -91,8 +97,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
 
   async function reload() {
     if(!snapshot) return
-    const next=await opsApi.list(snapshot)
-    if (snapshotRef.current===snapshot) setData(next)
+    const next=await opsApi.list(snapshot,date)
+    if (snapshotRef.current===snapshot&&dateRef.current===date) setData(next)
     return next
   }
 
@@ -112,8 +118,10 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     setSelected('');setEditor(undefined);setDetail(undefined);setCorridor(undefined);setSimulation(undefined)
     setData(blank)
     propsMap.current.setTrains([]);propsMap.current.showPath(null);propsMap.current.showCorridor(null)
-    void reload().catch(e=>setError(describeError(e)))
   },[snapshot])
+  useEffect(()=>{
+    void reload().catch(e=>setError(describeError(e)))
+  },[snapshot,date])
   useEffect(()=>{
     if(!snapshot || !selected){setDetail(undefined);propsMap.current.showPath(null);return}
     const epoch=++requestEpoch.current
@@ -125,6 +133,21 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     }).catch(e=>setError(describeError(e)))
     return ()=>{requestEpoch.current++}
   },[snapshot,selected,data])
+  const metroAxisId=useMemo(()=>{
+    const group=detail?.corridor?.source_id
+    if(!group?.startsWith('reference:shanghai-metro:')||!detail)return
+    const corridorIds=new Set(data.corridors.filter(item=>item.source_id===group).map(item=>item.id))
+    return available.reduce<Run|undefined>((best,run)=>run.corridor_id&&corridorIds.has(run.corridor_id)
+      &&run.stops.length>(best?.stops.length??detail.run.stops.length)?run:best,undefined)?.id
+  },[detail,data.corridors,available])
+  useEffect(()=>{
+    setMetroAxis(undefined)
+    if(!snapshot||!metroAxisId)return
+    let active=true
+    void opsApi.getRun(snapshot,metroAxisId).then(value=>{if(active)setMetroAxis(value)})
+      .catch(cause=>{if(active)setError(describeError(cause))})
+    return ()=>{active=false}
+  },[snapshot,metroAxisId])
   useEffect(()=>{localStorage.setItem('railscope.ops.tab',tab)},[tab])
   useEffect(()=>{onPlaying(clock.playing)},[clock.playing,onPlaying])
   useEffect(()=>{onDirty(corridorDirty||!!editor)},[corridorDirty,editor,onDirty])
@@ -176,14 +199,38 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     return ()=>{closed=true;if(timer!=null)window.clearTimeout(timer)}
   },[snapshot,batchKey,selected,level,scenario,byRun,byService,follow,onlySelected,editor,clock.playing,clock.playing?null:clock.time_s,clock.rate])
 
-  const changeRun=(id:string)=>{
+  function switchMode(value:'rail'|'metro') {
+    if(value===trainMode)return true
+    if((editor||corridorDirty)&&!window.confirm(t("切换制式会关闭当前草稿。继续？")))return false
+    setEditor(undefined);setCorridorDirty(false);setCorridor(undefined);setPrefill(undefined)
+    setSelected('');setFollow(false);setSearch('');setCorridorFilter('');setAnalysis(undefined)
+    propsMap.current.showCorridor(null);propsMap.current.showPath(null)
+    setTrainMode(value);setTab('trains');setBottomTab('chart')
+    void control('pause')
+    return true
+  }
+  async function selectRun(id:string) {
+    if(!snapshot)return
+    const fromList=byRun.get(id)
+    try {
+      const result=fromList?undefined:await opsApi.getRun(snapshot,id)
+      if(snapshotRef.current!==snapshot)return
+      const run=result?.run??fromList
+      if(!run)return
+      const mode=result?.service?.mode??byService.get(run.service_id)?.mode
+      if(mode&&!switchMode(mode))return
+      setDate(run.service_date)
+      changeRun(run.id,mode)
+    }catch(error){setError(describeError(error))}
+  }
+  const changeRun=(id:string,mode?:'rail'|'metro')=>{
     const run=byRun.get(id)
-    const metro=!!run&&byService.get(run.service_id)?.mode==='metro'
-    setSelected(id);setTab('trains');openBottom(metro)
+    const metro=(mode??(run&&byService.get(run.service_id)?.mode))==='metro'
+    setSelected(id);setTab('trains');openBottom()
     if(!editor)setBottomTab(metro?'metro':'chart')
   }
   const beginEdit=(run:Run)=>{if(!editor||window.confirm(t("以所选车次替换时刻草稿？"))){
-    setEditor(run);setPast([]);setFuture([]);setBottomTab('table');openBottom()
+    setEditor(run);setPast([]);setFuture([]);setBottomTab('table');openBottom(true)
   }}
   const updateDraft=(run:Run)=>{if(editor){setPast(old=>[...old.slice(-59),editor]);setFuture([])}setEditor(run)}
   const replayDraft=(redo:boolean)=>{
@@ -195,20 +242,27 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     setEditor(target)
   }
   const selectClockStart=()=>void control('seek',detail?.chart[0]?.departure_time_s??detail?.chart[0]?.arrival_time_s??28800)
-  const corridorList=data.corridors.filter(item=>item.snapshot_id===snapshot)
+  const corridorList=data.corridors.filter(item=>item.snapshot_id===snapshot&&(!item.mode||item.mode===trainMode))
   return <div className="ops-workbench" hidden={!visible}>
     <div className="panel-title"><TrainFront size={17}/><h2>{t("运行工作台")}</h2></div>
+    <div className="operation-modes" role="group" aria-label={t("运行制式")}>
+      <button aria-pressed={trainMode==='rail'} onClick={()=>switchMode('rail')}>{t("国铁")}</button>
+      <button aria-pressed={trainMode==='metro'} onClick={()=>switchMode('metro')}>{t("城市轨道")}</button>
+    </div>
+    <p className="ops-context">{trainMode==='rail'?t("按端点与业务线路编排通道，定义高铁或普速车次。"):
+      t("上海城市轨道。查看交路、导入到发时刻并播放列车。")}</p>
     <div className="ops-tabs" role="tablist" aria-label={t("运行工作台")}>
-      {([['corridor',t("共享通道")],['trains',t("车次与时刻")],['data',t("车辆与交路")],['scenario',t("模拟控制")]] as const).map(([key,label])=>
-        <button key={key} type="button" role="tab" aria-selected={tab===key} onClick={()=>{setTab(key);if(key==='scenario')openBottom()}}>{label}</button>)}
+      {([['corridor','通道','按端点选择接轨线路和可达终点。'],['trains','车次','按运营日期新建或编辑车次。'],
+        ['data','计划与车辆','导入计划、登记车型车组和交路。'],['scenario','仿真','播放列车并分析计划占用。']] as const).map(([key,label,description])=>
+        <button key={key} type="button" role="tab" title={t(description)} aria-selected={tab===key} onClick={()=>{setTab(key);if(key==='scenario')openBottom()}}>{t(label)}</button>)}
     </div>
     {error&&<p role="alert" className="error-text ops-message">{error}</p>}
     {notice&&<p role="status" className="success ops-message">{notice}</p>}
     {!snapshot?<p className="ops-message">{t("请先加载交通数据包。")}</p>:<>
       <div hidden={tab!=='corridor'}>
-        <ControlCorridorEditor snapshot={snapshot} corridors={corridorList} selection={selection} prefill={prefill} current={corridor}
+        <ControlCorridorEditor key={trainMode} mode={trainMode} snapshot={snapshot} corridors={corridorList} selection={selection} prefill={prefill} current={corridor}
           setCurrent={setCorridor} execute={execute} busy={busy} dirty={setCorridorDirty} show={propsMap.current.showCorridor}
-          locate={point=>propsMap.current.focusTrain(point,false)} dock={bottomDock} visible={visible&&tab==='corridor'} open={openBottom}/>
+          locate={point=>propsMap.current.focusTrain(point,false)} dock={bottomDock} visible={visible&&tab==='corridor'} open={()=>openBottom(true)}/>
         <details className="advanced-corridor"><summary>{t("高级物理边与示例")}</summary><CorridorEditor snapshot={snapshot} corridors={corridorList} selection={selection}
           current={corridor} setCurrent={setCorridor} execute={execute} busy={busy}
           demoReady={runs=>{if(runs[0]){setSelected(runs[0].id);setDate(runs[0].service_date);setTab('trains');openBottom();void control('seek',28800)}}}/></details>
@@ -219,9 +273,11 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             onChange={e=>{setSelected('');setDate(e.target.value)}}/></label>
           <label>{t("车次查询")}<input value={search} placeholder={t("车次号")} onChange={e=>setSearch(e.target.value)}/></label>
         </div>
-        <label>{t("制式")}<select value={trainMode} onChange={e=>setTrainMode(e.target.value as typeof trainMode)}>
-          <option value="all">{t("全部")}</option><option value="rail">{t("国铁")}</option><option value="metro">{t("上海地铁")}</option>
-        </select></label>
+        {!!data.dates?.length&&<label>{t("已有计划日期")}<select aria-label={t("已有计划日期")} value={data.dates.includes(date)?date:''}
+          onChange={e=>{if(e.target.value){setSelected('');setDate(e.target.value)}}}>
+          <option value="">{t("选择计划日期…")}</option>{data.dates.map(value=><option key={value}>{value}</option>)}
+        </select></label>}
+        {trainMode==='metro'&&available.length===0&&<button className="secondary" onClick={()=>setTab('data')}>{t("导入上海地铁运行计划")}</button>}
         {corridorFilter&&<button className="secondary compact" onClick={()=>setCorridorFilter('')}>{t("取消通道筛选")}</button>}
         <div className="ops-list" ref={list} aria-label={t("车次列表")}>
           {filtered.length===0&&<p className="muted">{t("当日暂无匹配车次。")}</p>}
@@ -235,21 +291,37 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             })}
           </div>
         </div>
+        <details className="create-service"><summary>{t("定义新车次")}</summary>
+          <form onSubmit={event=>{
+            event.preventDefault()
+            const code=String(new FormData(event.currentTarget).get('trainCode')??'').trim()
+            if(!code)return
+            void execute(async()=>{
+              const service=await opsApi.saveService(snapshot,{id:'',train_code:code,mode:trainMode,provenance:userSource})
+              beginEdit({...newRun(service,date),corridor_id:corridor?.id||null,corridor_version:corridor?.id?corridor.version:null})
+            },t("车次服务已创建"))
+          }}><input required maxLength={30} name="trainCode" aria-label={t("车次号")} placeholder={trainMode==='rail'?'G1':'7-M-001'}/>
+            <button className="primary compact" disabled={busy}>{t("创建并编排时刻")}</button>
+          </form>
+        </details>
         <div className="ops-actions">
-          <button className="secondary" disabled={!data.services.length} onClick={()=>beginEdit(newRun(data.services[0],date))}><Plus size={14}/>{t("运行实例")}</button>
+          <button className="secondary" disabled={!services.length} onClick={()=>beginEdit(newRun(services[0],date))}><Plus size={14}/>{t("运行实例")}</button>
           {detail&&<button className="secondary" onClick={()=>beginEdit(detail.run)}>{t("编辑时刻")}</button>}
           {detail&&<button className="secondary" onClick={()=>beginEdit({...detail.run,id:'',plan_version:0})}>{t("复制车次")}</button>}
         </div>
       </div>
       {rightDock&&createPortal(<div hidden={!visible} className="ops-pane ops-inspection">
+        <h3>{t("运行详情")}</h3>
+        {((tab==='corridor'&&!corridor)||(tab==='trains'&&!detail))&&
+          <p className="muted">{t("选择通道或车次查看走行径路与来源。")}</p>}
         {tab==='corridor'&&corridor&&<>
           <h3>{corridor.name}</h3><p>{t(trustLabel[corridor.verification_status])} · {corridor.edge_refs.length} {t("段 ·")} {((corridor.edge_refs.at(-1)?.end_distance_m??0)/1000).toFixed(2)} km</p>
           <dl><dt>{t("起点")}</dt><dd>{corridor.origin_node_id}</dd><dt>{t("终点")}</dt><dd>{corridor.destination_node_id}</dd>
           <dt>{t("来源")}</dt><dd>{corridor.provenance.source_url_or_reference}</dd><dt>{t("版本")}</dt><dd>{corridor.version||t("尚未保存")}</dd></dl>
           {corridor.id&&<div className="ops-actions">
             <button className="secondary" onClick={()=>{setCorridorFilter(corridor.id);setTab('trains')}}>{t("引用车次（")}{data.runs.filter(run=>run.corridor_id===corridor.id).length}）</button>
-            <button className="secondary" disabled={!data.services.length} onClick={()=>{
-              setTab('trains');beginEdit({...newRun(data.services[0],filterDate),corridor_id:corridor.id,corridor_version:corridor.version})
+            <button className="secondary" disabled={!services.length} onClick={()=>{
+              setTab('trains');beginEdit({...newRun(services[0],filterDate),corridor_id:corridor.id,corridor_version:corridor.version})
             }}>{t("在此通道新建车次")}</button></div>}
         </>}
         {tab==='trains'&&detail&&<>
@@ -260,6 +332,11 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
           <p>{t("车组")} {detail.trainset?.identifier || detail.trainset?.name || t("未指定车组")} {t("· 车型")} {detail.stock_type?.name || t("未知")}</p>
           {detail.diagnostics?.map((d,i)=><p key={i} className="muted">{d.message}</p>)}
           <div className="ops-actions">
+            <button className="primary" disabled={!detail.corridor} onClick={async()=>{
+              setFollow(true)
+              await control('seek',detail.chart[0]?.departure_time_s??detail.chart[0]?.arrival_time_s??28800)
+              await control('play');openBottom()
+            }}><Play size={14}/>{t("从发车开始模拟")}</button>
             <button className="secondary" onClick={selectClockStart}><RotateCcw size={14}/>{t("跳到发车")}</button>
             <button className="secondary" disabled={!detail.geometry} onClick={()=>propsMap.current.showPath(detail.geometry)}><GitBranch size={14}/>{t("高亮通道")}</button>
             <button className="secondary" disabled={selectedState?.lon==null||selectedState.lat==null}
@@ -273,7 +350,9 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
           </div>
         </>}
       </div>,rightDock)}
-      <div hidden={tab!=='data'}><OperationsData snapshot={snapshot} data={data} selected={selected} date={filterDate} execute={execute} busy={busy}/></div>
+      <div hidden={tab!=='data'}><OperationsData key={trainMode} snapshot={snapshot} data={{...data,services,runs:available,corridors:corridorList}}
+        selected={selected} date={filterDate} execute={execute} busy={busy} mode={trainMode}
+        onImported={day=>{setSelected('');setDate(day);setTab('trains')}}/></div>
       {tab==='scenario'&&<div className="ops-pane">
         <p className="muted">{t("假设性场景分析。运行参数和追踪间隔由工作区设置。")}</p>
         <label>{t("场景")}<select value={scenario.id} onChange={e=>setScenario(data.scenarios.find(s=>s.id===e.target.value)??initialScenario)}>
@@ -341,18 +420,18 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
         {editor&&<><button className="secondary compact" disabled={!past.length} onClick={()=>replayDraft(false)}>{t("撤销时刻修改")}</button>
           <button className="secondary compact" disabled={!future.length} onClick={()=>replayDraft(true)}>{t("重做时刻修改")}</button></>}</div>
       <div hidden={bottomTab!=='table'}>
-        {editor?<RunEditor run={editor} services={data.services} corridors={[...corridorList,...(detail?.corridor&&!corridorList.some(c=>c.id===detail.corridor?.id&&c.version===detail.corridor?.version)?[detail.corridor]:[])]}
+        {editor?<RunEditor snapshot={snapshot} mode={trainMode} run={editor} services={services} corridors={[...corridorList,...(detail?.corridor&&!corridorList.some(c=>c.id===detail.corridor?.id&&c.version===detail.corridor?.version)?[detail.corridor]:[])]}
           selection={selection} locate={inspectStop} setRun={updateDraft} busy={busy} save={run=>void execute(async()=>{
-            const saved=await opsApi.saveRun(snapshot,run);setSelected(saved.id);setEditor(undefined);setPast([]);setFuture([])
+            const saved=await opsApi.saveRun(snapshot,run);setDate(saved.service_date);setSelected(saved.id);setEditor(undefined);setPast([]);setFuture([])
           },t("已保存计划版本"))} close={()=>setEditor(undefined)}/>:detail&&
           <table className="ops-table bottom-timetable"><thead><tr><th>{t("站序")}</th><th>{t("车站")}</th><th>{t("到达")}</th><th>{t("出发")}</th><th>{t("站台")}</th><th>{t("性质")}</th></tr></thead><tbody>
             {detail.chart.map((stop,i)=><tr key={i}><td>{i+1}</td><td><button className="station-link" onClick={()=>inspectStop(stop.platform_id??stop.station_id)}>{stop.station_name??stop.station_id}</button></td>
-              <td>{formatTime(stop.arrival_time_s)}</td><td>{formatTime(stop.departure_time_s)}</td><td>{stop.platform_id??'—'}</td><td>{stop.pass_through?t("通过"):t("停站")}</td></tr>)}
+              <td>{formatTime(stop.arrival_time_s)}</td><td>{formatTime(stop.departure_time_s)}</td><td>{stop.platform_id??'—'}</td><td title={stop.timing_evidence}>{stop.pass_through?t("通过"):t("停站")}{stop.timing_evidence&&<small className="timing-evidence">{stop.timing_evidence}</small>}</td></tr>)}
           </tbody></table>}
       </div>
       <div hidden={bottomTab!=='chart'}><RunGraph detail={detail} editor={editor} corridors={corridorList} time={clock.time_s}
         distance={(editor?draftPosition:selectedState)?.distance_m??null} seek={time=>void control('seek',time)} edit={updateDraft}/></div>
-      {bottomTab==='metro'&&<MetroDiagram detail={detail} runs={available.filter(run=>byService.get(run.service_id)?.mode==='metro')}
+      {bottomTab==='metro'&&<MetroDiagram detail={detail} axis={metroAxis} runs={available}
         time={clock.time_s} select={changeRun} seek={time=>void control('seek',time)} locate={inspectStop}/>}
       </div>,bottomDock)}
     </>}
@@ -441,13 +520,26 @@ function newRun(service:Service,date:string):Run{
   return {id:'',service_id:service.id,train_number:service.train_code,service_date:date,time_zone:'Asia/Shanghai',
     plan_version:0,status:'scheduled',stops:[unboundStop(0),unboundStop(1)],provenance:userSource}
 }
-function RunEditor({run,services,corridors,selection,setRun,save,close,busy,locate}:{
+function RunEditor({snapshot,mode,run,services,corridors,selection,setRun,save,close,busy,locate}:{
+  snapshot:string;mode:'rail'|'metro';
   run:Run;services:Service[];corridors:Corridor[];selection?:Entity;setRun:(r:Run)=>void;save:(r:Run)=>void;close:()=>void;busy:boolean;locate:(id:string)=>void
 }){
   const corridor=corridors.find(c=>c.id===run.corridor_id && c.version===run.corridor_version)
   const [parseError,setParseError]=useState('')
   const [minutes,setMinutes]=useState(0)
+  const [matching,setMatching]=useState(false)
+  const [matchReport,setMatchReport]=useState('')
   const set=(i:number,value:Partial<Stop>)=>setRun({...run,stops:run.stops.map((stop,n)=>n===i?{...stop,...value}:stop)})
+  const setStation=(i:number,station_id:string)=>set(i,{station_id,platform_id:null,stop_edge_id:null,stop_edge_sequence:null,stop_offset_m:null,anchor_source:null})
+  async function suggest(){
+    setMatching(true);setParseError('');setMatchReport('')
+    try{
+      const result=await opsApi.suggestAnchors(snapshot,run)
+      setRun(result.run)
+      setMatchReport(result.matches.length?t("已定位 {0} 站。最远站点偏移 {1} m，使用自动参考锚点。",result.matches.length,
+        Math.max(...result.matches.map(item=>item.distance_m)).toFixed(1)):t("已有停站锚点已保留。"))
+    }catch(error){setParseError(describeError(error))}finally{setMatching(false)}
+  }
   return <form className="ops-editor" onSubmit={e=>{
     e.preventDefault()
     const form=new FormData(e.currentTarget)
@@ -468,10 +560,15 @@ function RunEditor({run,services,corridors,selection,setRun,save,close,busy,loca
     <label>{t("固定通道版本")}<select value={corridor?`${corridor.id}:${corridor.version}`:''} onChange={e=>{
       const c=corridors.find(c=>`${c.id}:${c.version}`===e.target.value)
       setRun({...run,corridor_id:c?.id,corridor_version:c?.version,
-        stops:run.stops.map(stop=>({...stop,stop_edge_id:null,stop_edge_sequence:null,stop_offset_m:null}))})
+        stops:run.stops.map(stop=>({...stop,stop_edge_id:null,stop_edge_sequence:null,stop_offset_m:null,anchor_source:null}))})
     }}><option value="">{t("时刻表 · 暂无通道")}</option>
       {corridors.map(c=><option key={`${c.id}:${c.version}`} value={`${c.id}:${c.version}`}>{c.name} · v{c.version}</option>)}
     </select></label>
+    <div className="ops-actions">
+      <button type="button" className="secondary" disabled={busy||matching||!corridor||run.stops.some(stop=>!stop.station_id)}
+        onClick={()=>void suggest()}>{t("按所选通道定位停站")}</button>
+      {matchReport&&<small role="status">{matchReport}</small>}
+    </div>
     <div className="ops-inline"><label>{t("整车平移（分钟）")}<input type="number" value={minutes} onChange={e=>setMinutes(e.target.valueAsNumber||0)}/></label>
       <button type="button" className="secondary compact" disabled={!minutes} onClick={()=>{
         const shift=(value:number|null|undefined)=>value==null?null:value+Math.round(minutes*60)
@@ -483,9 +580,12 @@ function RunEditor({run,services,corridors,selection,setRun,save,close,busy,loca
       }}>{t("平移时刻")}</button></div>
     {run.stops.map((stop,i)=><fieldset key={i}>
       <legend>{t("停站")} {i+1}</legend>
-      <label>{t("车站 UUID")}<input required value={stop.station_id} onChange={e=>set(i,{station_id:e.target.value})}/></label>
-      <button className="secondary compact" type="button" disabled={selection?.kind!=='station'} onClick={()=>set(i,{station_id:selection!.id})}>{t("填入选中车站")}</button>
-      <button className="secondary compact" type="button" disabled={!stop.station_id} onClick={()=>locate(stop.platform_id??stop.station_id)}>{t("定位站点")}</button>
+      <StopStationPicker snapshot={snapshot} mode={mode} stationId={stop.station_id} onPick={id=>setStation(i,id)}/>
+      <div className="ops-actions">
+        <button className="secondary compact" type="button" disabled={selection?.kind!=='station'||(selection.class==='metro_station')!==(mode==='metro')}
+          onClick={()=>setStation(i,selection!.id)}>{t("填入选中车站")}</button>
+        <button className="secondary compact" type="button" disabled={!stop.station_id} onClick={()=>locate(stop.platform_id??stop.station_id)}>{t("定位站点")}</button>
+      </div>
       <div className="ops-fields two">
         <label>{t("到达")}<TimeInput name={`arrive-${i}`} value={stop.arrival_time_s} change={arrival_time_s=>set(i,{arrival_time_s})}/></label>
         <label>{t("出发")}<TimeInput name={`depart-${i}`} value={stop.departure_time_s} change={departure_time_s=>set(i,{departure_time_s})}/></label>
@@ -497,10 +597,10 @@ function RunEditor({run,services,corridors,selection,setRun,save,close,busy,loca
         <label>{t("通道内区段序号")}<input value={stop.stop_edge_sequence==null?'':stop.stop_edge_sequence+1} type="number" min={1}
           max={corridor.edge_refs.length} onChange={e=>{
             const ref=corridor.edge_refs[e.target.valueAsNumber-1]
-            set(i,{stop_edge_id:ref?.edge_id??null,stop_edge_sequence:ref?.sequence??null,stop_offset_m:ref?(stop.stop_offset_m??0):null})
+            set(i,{stop_edge_id:ref?.edge_id??null,stop_edge_sequence:ref?.sequence??null,stop_offset_m:ref?(stop.stop_offset_m??0):null,anchor_source:null})
           }}/></label>
         <label>{t("沿走行方向偏移（米）")}<input type="number" step="any" min={0} value={stop.stop_offset_m??''}
-          onChange={e=>set(i,{stop_offset_m:e.target.value===''?null:e.target.valueAsNumber})}/></label>
+          onChange={e=>set(i,{stop_offset_m:e.target.value===''?null:e.target.valueAsNumber,anchor_source:null})}/></label>
       </div>}
     </fieldset>)}
     <div className="ops-actions">
@@ -511,6 +611,44 @@ function RunEditor({run,services,corridors,selection,setRun,save,close,busy,loca
     </div>
     {parseError&&<p className="error-text">{parseError}</p>}
   </form>
+}
+
+function StopStationPicker({snapshot,mode,stationId,onPick}:{snapshot:string;mode:'rail'|'metro';stationId:string;onPick:(id:string)=>void}){
+  const [query,setQuery]=useState('')
+  const [name,setName]=useState('')
+  const [items,setItems]=useState<Summary[]>([])
+  const [error,setError]=useState('')
+  useEffect(()=>{
+    let active=true
+    setName('')
+    if(stationId)void api.entity(snapshot,stationId).then(({entity})=>{if(active)setName(entity.name)}).catch(()=>{})
+    return ()=>{active=false}
+  },[snapshot,stationId])
+  useEffect(()=>{
+    setItems([]);setError('')
+    if(!query.trim())return
+    let active=true
+    const timer=window.setTimeout(()=>{
+      const term=query.trim()
+      const stationClass=mode==='metro'?'metro_station':'rail_station'
+      const lookup=/^[a-f\d-]{36}$/i.test(term)
+        ? api.entity(snapshot,term).then(({entity})=>entity.kind==='station'&&entity.class===stationClass?[entity]:[])
+        : api.page(snapshot,{kind:'station',query:term,classes:[stationClass]}).then(page=>page.items.slice(0,30))
+      void lookup.then(results=>{if(active)setItems(results)})
+        .catch(error=>{if(active)setError(describeError(error))})
+    },200)
+    return ()=>{active=false;window.clearTimeout(timer)}
+  },[snapshot,mode,query])
+  return <>
+    <strong>{name||stationId||t("尚未选站")}</strong>
+    <label>{t("搜索车站")}<input value={query} maxLength={128} onChange={e=>setQuery(e.target.value)}
+      onKeyDown={e=>{if(e.key==='Enter')e.preventDefault()}}/></label>
+    {!!items.length&&<select aria-label={t("选择停站")} value="" onChange={e=>{if(e.target.value){onPick(e.target.value);setQuery('')}}}>
+      <option value="">{t("选择停站")}</option>
+      {items.map(item=><option key={item.id} value={item.id}>{item.name} · {item.bounds.slice(0,2).map(value=>value.toFixed(2)).join(', ')}</option>)}
+    </select>}
+    {error&&<p className="error-text">{error}</p>}
+  </>
 }
 
 function TimeInput({name,value,change}:{name:string;value:number|null|undefined;change:(value:number|null)=>void}){
@@ -524,11 +662,10 @@ function TimeInput({name,value,change}:{name:string;value:number|null|undefined;
   }}/>
 }
 
-function OperationsData({snapshot,data,selected,date,execute,busy}:{
-  snapshot:string;data:OperationList;selected:string;date:string;execute:Execute;busy:boolean
+function OperationsData({snapshot,data,selected,date,execute,busy,mode,onImported}:{
+  snapshot:string;data:OperationList;selected:string;date:string;execute:Execute;busy:boolean;mode:'rail'|'metro';onImported:(date:string)=>void
 }){
   const [code,setCode]=useState('')
-  const [mode,setMode]=useState<'rail'|'metro'>('rail')
   const [source,setSource]=useState('')
   const [stock,setStock]=useState('')
   const [vehicle,setVehicle]=useState('')
@@ -539,7 +676,7 @@ function OperationsData({snapshot,data,selected,date,execute,busy}:{
   const file=useRef<HTMLInputElement>(null)
 
   async function readFile(f:File){
-    if(f.size>16*1024*1024)throw new Error(t("文件大于 16 MiB，请按日期或线路拆分。"))
+    if(f.size>(format==='json'?32:16)*1024*1024)throw new Error(t("文件超出导入容量，请按日期或线路拆分。"))
     if(format!=='gtfs')return f.text()
     const bytes=new Uint8Array(await f.arrayBuffer())
     let binary=''
@@ -557,16 +694,14 @@ function OperationsData({snapshot,data,selected,date,execute,busy}:{
 
   return <div className="ops-pane">
     <h3>{t("新建车次服务")}</h3>
-    <div className="ops-fields two"><label>{t("车次号")}<input value={code} onChange={e=>setCode(e.target.value)}/></label>
-      <label>{t("制式")}<select value={mode} onChange={e=>setMode(e.target.value as 'rail'|'metro')}>
-        <option value="rail">{t("国铁")}</option><option value="metro">{t("上海地铁")}</option>
-      </select></label></div>
+    <label>{t("车次号")}<input value={code} onChange={e=>setCode(e.target.value)}/></label>
     <label>{t("来源说明")}<input value={source} placeholder={t("例如工作区自定义计划")} onChange={e=>setSource(e.target.value)}/></label>
     <button className="secondary" disabled={!code||busy} onClick={()=>void execute(async()=>{
       await opsApi.saveService(snapshot,{id:'',train_code:code,mode,provenance:{...userSource,source_url_or_reference:source||userSource.source_url_or_reference}})
       setCode('')
     },t("车次服务已创建"))}>{t("保存服务")}</button>
     <h3>{t("时刻表导入与导出")}</h3>
+    {mode==='metro'&&<p className="muted">{t("上海 7 号线参考计划使用 RailScope JSON。先切到生成计划时使用的上海快照。")}</p>}
     <label>{t("文件格式")}<select value={format} onChange={e=>{setFormat(e.target.value as ScheduleFormat);if(file.current)file.current.value=''}}>
       <option value="json">RailScope JSON</option><option value="csv">CSV</option><option value="gtfs">GTFS ZIP</option>
     </select></label>
@@ -578,6 +713,7 @@ function OperationsData({snapshot,data,selected,date,execute,busy}:{
         if(!input)throw new Error(t("请选择时刻表文件。"))
         const imported=await opsApi.import(snapshot,format,await readFile(input),date,stopMap?JSON.parse(stopMap):undefined)
         if(!imported.runs)throw new Error(t("没有匹配的运行实例。"))
+        if(imported.first_date)onImported(imported.first_date)
       },t("时刻表已导入"))}><Upload size={15}/>{t("导入")}</button>
       <button className="secondary" disabled={busy||!data.runs.length} onClick={()=>void execute(download,t("导出文件已生成"),false)}><Download size={15}/>{t("导出")}{selected?t("所选车次"):t("时刻表")}</button>
     </div>
@@ -597,7 +733,7 @@ function OperationsData({snapshot,data,selected,date,execute,busy}:{
       <option value="">{t("请选择")}</option>{data.trainsets.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
     <button className="secondary" disabled={busy||!vehicleId||!selected}
       onClick={()=>void execute(()=>opsApi.assign(snapshot,selected,vehicleId),t("所选运行实例的担当已保存"))}>{t("分配给所选车次")}</button>
-    <CycleForm snapshot={snapshot} data={data} date={date} execute={execute} busy={busy}/>
+    {mode==='metro'&&<CycleForm snapshot={snapshot} data={data} date={date} execute={execute} busy={busy}/>}
   </div>
 }
 

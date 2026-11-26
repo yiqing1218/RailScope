@@ -28,6 +28,7 @@ export type Summary = {
   class: string
   status: string
   bounds: Bounds
+  workspace_category?: string
 }
 export type Entity = Summary & {
   source_ref: string
@@ -49,11 +50,11 @@ export type Entity = Summary & {
   has_edge: boolean
 }
 export type Override = { name: string; note: string; color: string; point: [number, number] | null; group: string;
-  width?:number|null;opacity?:number|null }
+  width?:number|null;opacity?:number|null;designation?:string;operator?:string;category?:string;associated_lines?:string[] }
 export type Workspace = { revision: number; value: Override; can_undo: boolean; can_redo: boolean }
-export type Inspection = { entity: Entity; workspace: Workspace }
+export type Inspection = { entity: Entity; workspace: Workspace; workspace_stations?:Summary[] }
 export type Page = { items: Summary[]; next: string | null }
-export type Filter = { kind?: Kind; parent?: string; query: string; bbox?: Bounds; cursor?: string }
+export type Filter = { kind?: Kind; classes?: string[]; parent?: string; query: string; bbox?: Bounds; cursor?: string }
 export type Stats = { hits: number; misses: number; evictions: number; bytes: number; read_micros: number; pending: number;
   disk_hits: number; precise_tiles: number; precise_micros: number }
 export type Route = { edges: string[]; meters: number; verification: string; geometry: Geometry | null }
@@ -65,6 +66,7 @@ export type RawSource={ref:string;kind:string;version?:number;tags?:Record<strin
 export type BusinessLineList = { lines: {id: string; name: string; member_count: number}[]; undo: boolean; redo: boolean }
 type LineEditRequest = {action: 'list' | 'undo' | 'redo'} |
   {action: 'create'; name: string; sources: string[]; split_at: number | null} |
+  {action: 'rename'; id: string; name: string} |
   {action: 'members'; id: string; offset: number}
 
 export const api = {

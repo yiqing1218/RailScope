@@ -60,6 +60,8 @@ python railscope-next/pipelines/enrich_pack.py `
 - **分析与诊断**可执行临时路径查询、检查场景资源风险和查看系统性能。
 - **数据**可安装和切换快照、查看许可和来源、导入旧版计划及审校失败的引用。
 
+目录、详情页、国铁通道编排及上海 7 号线和 G1 的本地运行验证见[地图与运行工作台](../docs/workbench.md)。
+
 ## 校验
 
 ```powershell

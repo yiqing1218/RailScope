@@ -1,11 +1,13 @@
 """Adapt the repository's railway and Shanghai metro references to directed snapshots."""
 import argparse
+import csv
 import heapq
 import json
 import math
 import sqlite3
 from collections import defaultdict
 from contextlib import closing
+from datetime import date, timedelta
 from pathlib import Path
 
 from shapely import from_wkb, transform
@@ -107,11 +109,12 @@ def station_anchor(stations, shapes, name):
     return min(candidates)
 
 
-def build_bundle(db, edges, timetable, classification, train_code, service_date, mode, provenance):
+def build_bundle(db, edges, timetable, classification, train_code, service_date, mode, provenance, station_index=None):
     shapes = path_shapes(db, edges)
     stops, anchors = [], []
     for seq, row in enumerate(timetable):
-        stations = list(station_shapes(db, row["name"], classification))
+        stations = ([station_index[row["name"]]] if station_index is not None else
+                    list(station_shapes(db, row["name"], classification)))
         if mode == "rail" and len(stations) != 1:
             raise ValueError(f"Cannot unambiguously identify {row['name']} in the snapshot")
         distance, sid, index, fraction = station_anchor(stations, shapes, row["name"])
@@ -121,7 +124,8 @@ def build_bundle(db, edges, timetable, classification, train_code, service_date,
                         "offset_from_station_m": round(distance, 1), "order": (index, fraction)})
         stops.append({"station_id": sid, "sequence": seq, "arrival_time_s": row["arrival_s"],
                       "departure_time_s": row["departure_s"], "stop_edge_id": edges[index]["edge_id"],
-                      "stop_edge_sequence": index, "stop_offset_m": fraction * shapes[index][1]})
+                      "stop_edge_sequence": index, "stop_offset_m": fraction * shapes[index][1],
+                      "anchor_source": "station_geometry_reference"})
 
     service = {"id": "reference-service", "train_code": train_code, "mode": mode, "provenance": provenance}
     run = {"id": "", "service_id": service["id"], "train_number": train_code,
@@ -177,13 +181,140 @@ def prepare_metro(pack, specification):
     return fixture(manifest, start, end, edges, route, "上海地铁 1 号线 莘庄向富锦路参考通道", bundle, anchors)
 
 
+WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+LINE7_RELATIONS = {"北行": "osm:relation:6819600", "南行": "osm:relation:6819599"}
+
+
+def timetable_seconds(value):
+    if not value:
+        return None
+    hour, minute, second = map(int, value.split(":"))
+    if not (0 <= hour < 48 and 0 <= minute < 60 and 0 <= second < 60):
+        raise ValueError(f"Invalid service-day time {value}")
+    return hour * 3600 + minute * 60 + second
+
+
+def prepare_line7(pack, source, monday):
+    if monday.weekday() != 0:
+        raise ValueError("--week-of must be a Monday")
+    manifest = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+    corridors, services, runs = [], [], []
+    paths = {}
+    main_paths, station_index = {}, {}
+    with closing(sqlite3.connect((pack / "canonical.sqlite").resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        for direction, relation in LINE7_RELATIONS.items():
+            names = ("花木路", "美兰湖") if direction == "北行" else ("美兰湖", "花木路")
+            endpoints = [next(station_shapes(db, name, "metro_station"))[1].coords[0] for name in names]
+            _, _, chain = directed_path(db, *endpoints, relation, "metro")
+            if not chain:
+                raise ValueError(f"Empty main corridor for {direction}")
+            main_paths[direction] = chain, path_shapes(db, chain)
+        for day_offset, weekday in enumerate(WEEKDAYS):
+            trips = defaultdict(list)
+            with (source / weekday / "02_stop_times.csv").open(encoding="utf-8-sig", newline="") as stream:
+                for row in csv.DictReader(stream):
+                    if row.get("weekday", weekday) != weekday:
+                        raise ValueError(f"{row['trip_id']}: weekday does not match {weekday}")
+                    trips[row["trip_id"]].append(row)
+            if not trips:
+                raise ValueError(f"No trips in {weekday}/02_stop_times.csv")
+            for train_code, rows in trips.items():
+                rows.sort(key=lambda row: int(row["sequence"]))
+                names = tuple(row["station"] for row in rows)
+                origin, terminal, direction = (rows[0][key] for key in ("origin", "terminal", "direction"))
+                if (origin, terminal) != (names[0], names[-1]) or len(names) != len(set(names)):
+                    raise ValueError(f"{train_code}: inconsistent endpoints or repeated station")
+                key = (direction, origin, terminal)
+                run_date = (monday + timedelta(days=day_offset)).isoformat()
+                provenance = {"source_kind": "user_defined", "source_url_or_reference":
+                    f"上海地铁7号线分日运行图 · {weekday}/02_stop_times.csv · 参考推演"}
+                if key not in paths:
+                    relation = LINE7_RELATIONS[direction]
+                    for name in names:
+                        if name in station_index:
+                            continue
+                        candidates = list(station_shapes(db, name, "metro_station"))
+                        if not candidates:
+                            raise ValueError(f"Station {name} is absent from the snapshot")
+                        # Resolve the same canonical station for both directions. Some
+                        # source areas of an interchange are closer to only one track.
+                        def rank(station):
+                            distances = [station_anchor([station], shapes, name)[0]
+                                         for _, shapes in main_paths.values()]
+                            return max(distances), sum(distances), station[0]
+                        station_index[name] = min(candidates, key=rank)
+                    chain, shapes = main_paths[direction]
+                    first, last = [station_anchor([station_index[name]], shapes, name)
+                                   for name in (origin, terminal)]
+                    if first[2:] >= last[2:]:
+                        raise ValueError(f"Invalid mainline anchor order for {origin} → {terminal}")
+                    # Turnback stations may lie in the middle of an atomic physical edge.
+                    # Keep the complete outer edges and put the stops at offsets on them.
+                    edges = [dict(edge, sequence=i) for i, edge in enumerate(chain[first[2]:last[2]+1])]
+                    start_pair, end_pair = [db.execute("SELECT from_node,to_node FROM edge WHERE id=?",
+                                           (edge["edge_id"],)).fetchone() for edge in (edges[0], edges[-1])]
+                    start = start_pair[not edges[0]["forward"]]
+                    end = end_pair[edges[-1]["forward"]]
+                    offsets = [{"name": name, "arrival_s": None, "departure_s": None} for name in names]
+                    template, anchors = build_bundle(db, edges, offsets, "metro_station", train_code, run_date,
+                                                     "metro", provenance, station_index)
+                    if any(anchor["offset_from_station_m"] > 250 for anchor in anchors):
+                        raise ValueError(f"At least one station is too far from {origin} → {terminal}")
+                    corridor = fixture(manifest, start, end, edges, relation,
+                                       f"上海地铁7号线 {origin} → {terminal}", template, anchors)["corridor"]
+                    corridor["id"] = f"line7-{len(corridors) + 1}"
+                    corridor["source_id"] = "reference:shanghai-metro:7"
+                    paths[key] = corridor["id"], names, template["runs"][0]["stops"]
+                    corridors.append(corridor)
+                corridor_id, expected_names, template = paths[key]
+                if names != expected_names or [int(row["sequence"]) for row in rows] != list(range(1, len(rows) + 1)):
+                    raise ValueError(f"{train_code}: stop sequence differs from the selected reference corridor")
+                stops = []
+                last = -1
+                for row, anchor in zip(rows, template, strict=True):
+                    arrival = timetable_seconds(row["arrival_time"])
+                    departure = timetable_seconds(row["departure_time"])
+                    start_time = arrival if arrival is not None else departure
+                    end_time = departure if departure is not None else arrival
+                    if start_time is None or start_time <= last or end_time < start_time:
+                        raise ValueError(f"{train_code}: invalid chronology at {row['station']}")
+                    last = end_time
+                    stops.append(dict(anchor, arrival_time_s=arrival, departure_time_s=departure,
+                                      timing_evidence=row["evidence"] or None))
+                services.append({"id": train_code, "train_code": train_code, "mode": "metro", "provenance": provenance})
+                runs.append({"id": "", "service_id": train_code, "train_number": train_code,
+                             "service_date": run_date, "time_zone": "Asia/Shanghai", "plan_version": 0,
+                             "status": "scheduled", "corridor_id": corridor_id, "stops": stops, "provenance": provenance})
+    return {"corridors": corridors, "services": services, "runs": runs}
+
+
+def import_bundle(reference):
+    corridor = reference["corridor"]
+    corridor["id"] = "reference-corridor"
+    bundle = reference["bundle"]
+    for run in bundle["runs"]:
+        run["corridor_id"] = corridor["id"]
+    return dict(bundle, corridors=[corridor])
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pack", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--examples", type=Path, default=Path(__file__).resolve().parents[2] / "examples" / "rail")
     parser.add_argument("--metro-line1", type=Path, help="Use the repository’s Line 1 public reconstruction specification")
+    parser.add_argument("--metro-line7", type=Path, help="Directory with seven weekday stop-time CSVs")
+    parser.add_argument("--week-of", type=date.fromisoformat, help="Monday to use for the Line 7 reference scenario")
+    parser.add_argument("--bundle", action="store_true", help="Emit an importable timetable bundle for G1 or Line 1")
     args = parser.parse_args()
-    result = prepare_metro(args.pack, args.metro_line1) if args.metro_line1 else prepare(args.pack, args.examples)
+    if args.metro_line7:
+        if not args.week_of or args.metro_line1:
+            parser.error("--metro-line7 requires --week-of and cannot be combined with --metro-line1")
+        result = prepare_line7(args.pack, args.metro_line7, args.week_of)
+    else:
+        fixture_data = prepare_metro(args.pack, args.metro_line1) if args.metro_line1 else prepare(args.pack, args.examples)
+        result = import_bundle(fixture_data) if args.bundle else fixture_data
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+    separators = (",", ":") if "corridors" in result else None
+    args.output.write_text(json.dumps(result, ensure_ascii=False, separators=separators,
+                                      indent=None if separators else 2)+"\n", encoding="utf-8")

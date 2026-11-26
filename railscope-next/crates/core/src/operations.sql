@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS ops_run (
  PRIMARY KEY(id,version), FOREIGN KEY(corridor_id,corridor_version) REFERENCES ops_corridor(id,version)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS ops_run_service ON ops_run(service_id,service_date,id,version);
+CREATE INDEX IF NOT EXISTS ops_run_date ON ops_run(service_date,id,version);
+CREATE TABLE IF NOT EXISTS ops_timetable_import (
+ snapshot TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(snapshot,digest)
+) STRICT;
 CREATE TABLE IF NOT EXISTS ops_stock (id TEXT PRIMARY KEY, payload TEXT NOT NULL) STRICT;
 CREATE TABLE IF NOT EXISTS ops_trainset (id TEXT PRIMARY KEY, stock_type_id TEXT REFERENCES ops_stock(id), payload TEXT NOT NULL) STRICT;
 CREATE TABLE IF NOT EXISTS ops_assignment (

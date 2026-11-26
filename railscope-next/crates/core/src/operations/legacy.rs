@@ -306,6 +306,8 @@ fn convert(
                     stop_edge_id: anchor.as_ref().map(|x| x.0.clone()),
                     stop_edge_sequence: anchor.as_ref().map(|x| x.1),
                     stop_offset_m: anchor.map(|x| x.2),
+                    timing_evidence: None,
+                    anchor_source: None,
                 });
             }
             let svc = save_service(

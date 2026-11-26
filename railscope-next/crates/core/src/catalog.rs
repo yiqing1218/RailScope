@@ -20,6 +20,8 @@ pub struct Summary {
     pub class: String,
     pub status: String,
     pub bounds: [f64; 4],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_category: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -47,11 +49,12 @@ pub struct StationLink {
     source_ref: String,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Filter {
     pub query: String,
     pub kind: Option<String>,
+    pub classes: Vec<String>,
     pub parent: Option<String>,
     pub bbox: Option<[f64; 4]>,
     pub cursor: Option<String>,
@@ -73,6 +76,7 @@ fn summary(row: &Row<'_>) -> rusqlite::Result<Summary> {
         class: row.get(4)?,
         status: row.get(5)?,
         bounds: [row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?],
+        workspace_category: None,
     })
 }
 
@@ -83,6 +87,10 @@ pub fn by_id(db: &Connection, id: &str) -> Result<Option<Summary>> {
 
 pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     ensure!(filter.query.chars().count() <= 128, "查询长度超过限制");
+    ensure!(
+        filter.classes.len() <= 16 && filter.classes.iter().all(|class| class.len() <= 48),
+        "目录子类超出范围"
+    );
     ensure!(filter.bbox.is_none_or(valid_bounds), "无效的查询范围");
     let connection = pack.connection()?;
     let fts = filter.query.nfkc().collect::<String>().to_lowercase();
@@ -121,6 +129,9 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     if filter.kind.is_some() {
         sql.push_str("AND e.kind = :kind ");
     }
+    if !filter.classes.is_empty() {
+        sql.push_str("AND e.class IN (SELECT value FROM json_each(:classes)) ");
+    }
     if source_ref.is_some() {
         sql.push_str("AND e.source_ref=:source_ref ");
     } else if !query.is_empty() {
@@ -141,6 +152,12 @@ pub fn list(pack: &Pack, filter: Filter) -> Result<Page> {
     statement.raw_bind_parameter(statement.parameter_index(":limit")?.unwrap(), limit + 1)?;
     if let Some(kind) = filter.kind {
         statement.raw_bind_parameter(statement.parameter_index(":kind")?.unwrap(), kind)?;
+    }
+    if !filter.classes.is_empty() {
+        statement.raw_bind_parameter(
+            statement.parameter_index(":classes")?.unwrap(),
+            serde_json::to_string(&filter.classes)?,
+        )?;
     }
     if let Some(source_ref) = source_ref {
         statement.raw_bind_parameter(

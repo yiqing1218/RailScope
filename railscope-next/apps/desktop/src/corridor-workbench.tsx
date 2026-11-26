@@ -6,7 +6,7 @@ import { api, type Entity, type Summary } from './api'
 import { describeError, opsApi, type ControlPoint, type ControlStep, type Corridor, type CorridorPreview } from './operations-api'
 
 type Props={
-  snapshot:string; corridors:Corridor[]; selection?:Entity; prefill?:{start?:Summary;end?:Summary}; current?:Corridor;
+  snapshot:string; mode:'rail'|'metro'; corridors:Corridor[]; selection?:Entity; prefill?:{start?:Summary;end?:Summary}; current?:Corridor;
   setCurrent:(corridor?:Corridor)=>void; execute:(task:()=>Promise<unknown>,message?:string,refresh?:boolean)=>Promise<void>;
   busy:boolean; dirty:(value:boolean)=>void; show:(shape:Geometry|null)=>void; locate:(point:[number,number])=>void;
   dock:HTMLElement|null;visible:boolean;open:()=>void;
@@ -14,10 +14,9 @@ type Props={
 type Choice = {id:string;name:string}
 const row=():ControlStep=>({node_id:'',line_id:null,via_edge:null})
 
-export function ControlCorridorEditor({snapshot,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,visible,open}:Props){
+export function ControlCorridorEditor({snapshot,mode,corridors,selection,prefill,current,setCurrent,execute,busy,dirty,show,locate,dock,visible,open}:Props){
   const [name,setName]=useState('')
   const [catalogQuery,setCatalogQuery]=useState('')
-  const [mode,setMode]=useState<'rail'|'metro'>('rail')
   const [strict,setStrict]=useState(false)
   const [steps,setSteps]=useState<ControlStep[]>(()=>[row(),row()])
   const [labels,setLabels]=useState<Record<string,string>>({})
@@ -45,7 +44,7 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
     reset()
     const start=prefill.start
     setSource({...(start&&{0:start}),...(prefill.end&&{1:prefill.end})})
-    if(start){setName(t("{0}出发", start.name));setMode(start.kind==='metro'||start.class==='metro_station'?'metro':'rail');dirty(true)}
+    if(start){setName(t("{0}出发", start.name));dirty(true)}
   },[prefill])
 
   function load(id:string){
@@ -55,7 +54,7 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
     void execute(async()=>{
       const value=await opsApi.corridorQuery<CorridorPreview>(snapshot,'preview',{corridor:found})
       setSteps(found.intent?.length?found.intent:[row(),row()]);setSource({});usePreview(value)
-      setMode(value.mode);setStrict(found.resolution_mode==='strict_unique');dirty(false)
+      setStrict(found.resolution_mode==='strict_unique');dirty(false)
     },undefined,false)
   }
 
@@ -91,11 +90,11 @@ export function ControlCorridorEditor({snapshot,corridors,selection,prefill,curr
     </div>
     <label>{t("通道名称")}<input value={name} onChange={e=>{setName(e.target.value);dirty(true)}}/></label>
     <div className="ops-fields two">
-      <label>{t("制式")}<select value={mode} onChange={e=>{setMode(e.target.value as typeof mode);invalidate()}}><option value="rail">{t("国铁")}</option><option value="metro">{t("上海地铁")}</option></select></label>
       <label>{t("解析方式")}<select value={strict?'strict':'reference'} onChange={e=>{setStrict(e.target.value==='strict');invalidate()}}>
         <option value="reference">{t("自动参考")}</option><option value="strict">{t("严格唯一")}</option>
       </select></label>
     </div>
+    <p className="muted">{t("先选起点的轨道锚点，再选沿行车方向接轨的线路与下一端点。只在换线时插入中间控制点。")}</p>
     <div className="corridor-columns"><span>{t("起点／换线端点")}</span><span>{t("接轨线路")}</span><span>{t("沿线可达端点")}</span></div>
     {steps.map((step,i)=><fieldset key={i} className="control-step"><legend>{i===0?t("起点"):i===steps.length-1?t("终点"):t("途经控制点 {0}", i)}</legend>
       <div className="control-table-row"><div className="control-endpoint">
@@ -175,7 +174,7 @@ function ControlPicker({snapshot,pointId,name,initial,selection,onPick}:{snapsho
       onClick={()=>{if(selection)void pick(selection)}}>{t("从地图读取选中对象")}</button>
     {!!controls.length&&<select aria-label={t("明确路径锚点")} value={controls.some(item=>item.id===pointId)?pointId:''} onChange={e=>{
       const found=controls.find(item=>item.id===e.target.value);if(found)onPick(found)
-    }}><option value="">{t("选择明确路径锚点…")}</option>{controls.map(item=><option key={item.id} value={item.id}>{item.name} · {item.point.map(n=>n.toFixed(4)).join(', ')}</option>)}</select>}
+    }}><option value="">{t("选择明确路径锚点…")}</option>{controls.map(item=><option key={item.id} value={item.id}>{item.name} · {item.evidence==='nearby_track_reference'?t("邻近轨道参考 {0} m",item.meters?.toFixed(0)):item.point.map(n=>n.toFixed(4)).join(', ')}</option>)}</select>}
     {error&&<p className="error-text" role="alert">{error}</p>}
   </>
 

@@ -34,9 +34,10 @@ export type Corridor = {
   warnings?: string[]
   candidates?: { edge_ids: string[]; meters: number }[]
   intent?: ControlStep[]
+  mode?: 'rail' | 'metro'
 }
 export type ControlStep = { node_id:string; line_id:string|null; via_edge?:string|null }
-export type ControlPoint = { id:string; name:string; point:[number,number]; meters?:number }
+export type ControlPoint = { id:string; name:string; point:[number,number]; meters?:number; evidence?:string }
 export type CorridorPreview = { corridor:Corridor; geometry:Geometry; mode:'rail'|'metro' }
 
 export type Service = {
@@ -60,6 +61,8 @@ export type Stop = {
   stop_edge_id?: string | null
   stop_edge_sequence?: number | null
   stop_offset_m?: number | null
+  timing_evidence?: string
+  anchor_source?: string | null
 }
 
 export type Run = {
@@ -99,6 +102,7 @@ export type OperationList = {
   corridors: Corridor[]
   services: Service[]
   runs: Run[]
+  dates: string[]
   stock_types: StockType[]
   trainsets: Trainset[]
   assignments: Assignment[]
@@ -170,7 +174,7 @@ function operations<T>(snapshot: string, action: string, args: Record<string, un
 }
 
 export const opsApi = {
-  list: (snapshot: string) => operations<OperationList>(snapshot, 'list'),
+  list: (snapshot: string, service_date?:string) => operations<OperationList>(snapshot, 'list', {service_date}),
   resolve: (snapshot: string, args: {
     start_id: string; end_id: string; strict: boolean; name: string; waypoints?: string[]; line_ids?: string[]
   }) => operations<Corridor>(snapshot, 'resolve_corridor', args),
@@ -188,12 +192,14 @@ export const opsApi = {
   getRun: (snapshot: string, id: string) => operations<RunDetail>(snapshot, 'get_run', { id }),
   previewRun: (snapshot: string, run: Run, time_s: number) =>
     operations<TrainState>(snapshot, 'preview_run', { run, time_s }),
+  suggestAnchors: (snapshot:string,run:Run) =>
+    operations<{run:Run;matches:{station:string;distance_m:number}[]}>(snapshot,'suggest_anchors',{run}),
   saveScenario: (snapshot: string, scenario: Scenario) => operations<Scenario>(snapshot, 'save_scenario', { scenario }),
   simulate: (snapshot: string, run_ids: string[], time_s: number, level: Level, scenario?: Scenario, resources=false) =>
     operations<Simulation>(snapshot, 'simulate', { run_ids, time_s, level, scenario, resources }),
   clock:(action:string,value?:number)=>invoke<Clock>('operations_clock',{action,value}),
   import: (snapshot: string, format: ScheduleFormat, content: string, service_date?: string,stop_map?:Record<string,string>) =>
-    operations<{services:number;runs:number}>(snapshot, 'import_timetable', { format, content, service_date, stop_map }),
+    operations<{services:number;runs:number;corridors:number;first_date:string;duplicate?:boolean}>(snapshot, 'import_timetable', { format, content, service_date, stop_map }),
   export: (snapshot: string, format: ScheduleFormat, run_ids?: string[]) =>
     operations<{ content: string; format: ScheduleFormat }>(snapshot, 'export_timetable', { format, run_ids }),
   demo: (snapshot:string,corridor:Corridor,origin_station_id:string,destination_station_id:string,service_date:string)=>

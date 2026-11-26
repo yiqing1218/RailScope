@@ -31,6 +31,7 @@
 
 ## 更多信息
 
+- [地图、目录与运行工作台使用说明](docs/workbench.md)
 - [从源码构建和生成全国数据包](railscope-next/README.md)
 - [铁路场站的点面关联和数据模型](docs/next-v7/railway-sites.md)
 - [历史截图、场站图和运行数据参考](docs/reference/README.md)

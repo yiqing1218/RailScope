@@ -51,6 +51,9 @@ function color(defaultColor: string | ExpressionSpecification): ExpressionSpecif
     ['to-color', ['coalesce', ['feature-state', 'color'], defaultColor]]]
 }
 
+const businessLabel: ExpressionSpecification = ['match', ['get','label'],
+  ['线路','轨道','道路','铁路线路','未命名线路'], '', ['coalesce',['get','label'],'']]
+
 export class MapController {
   readonly map: maplibre.Map
   private ready: Promise<void>
@@ -282,7 +285,7 @@ export class MapController {
       this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom,
         filter:['all',filter as ExpressionSpecification,['has',field]],layout:{'text-field':['get',field],'text-font':['Microsoft YaHei UI'],
           'text-size':field==='label'?12:10,
-          ...(field==='label'?{'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':.8}:{'text-anchor':'left','text-offset':[1,0]}),
+          ...(field==='label'?{'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':.85,'text-padding':4}:{'text-anchor':'left','text-offset':[1,0]}),
           'symbol-sort-key':['coalesce',['get','rank'],4]},
         paint:{'text-color':'#193941','text-halo-color':'#eef0e7','text-halo-width':1.2,'text-opacity':relocated}})
     }
@@ -319,8 +322,8 @@ export class MapController {
   private addBusinessLabels(){
     for(const [id,layer,minzoom] of [['rail-line-names','rail_names',8],['metro-line-names','metro_names',10],['road-names','road_names',10]] as const){
       this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom,
-        layout:{'symbol-placement':'line-center','text-field':['get','label'],'text-font':['Microsoft YaHei UI'],
-          'text-size':id==='rail-line-names'?13:11,'text-max-angle':42,'text-padding':6,'text-offset':[0,-.22],
+        layout:{'symbol-placement':'line-center','text-field':businessLabel,'text-font':['Microsoft YaHei UI'],
+          'text-size':id==='rail-line-names'?12:11,'text-max-angle':35,'text-padding':11,'text-offset':[0,-.4],
           'text-keep-upright':true,'symbol-sort-key':['coalesce',['get','rank'],3]},
         paint:{'text-color':'#263e53','text-halo-color':'#f9fcfc','text-halo-width':1.75}})
     }
@@ -495,7 +498,7 @@ export class MapController {
     const names=this.visualState.filter(item=>item.value.name)
     for(const id of ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','operating-site-labels','poi-labels']){
       if(!this.map.getLayer(id))continue
-      const fallback:ExpressionSpecification=['get','label']
+      const fallback:ExpressionSpecification=id.endsWith('line-names')||id==='road-names'?businessLabel:['get','label']
       this.map.setLayoutProperty(id,'text-field',names.length?['match',['get','rid'],...names.flatMap(item=>[item.render_id,item.value.name]),fallback]:fallback)
     }
     this.updateEdits()

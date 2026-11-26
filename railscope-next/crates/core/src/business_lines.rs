@@ -27,6 +27,10 @@ enum Request {
         id: String,
         offset: usize,
     },
+    Rename {
+        id: String,
+        name: String,
+    },
     Undo,
     Redo,
 }
@@ -43,6 +47,34 @@ fn member_query(db: &Connection, line: &str) -> Result<Vec<String>> {
     )?;
     let rows = stmt.query_map([line], |row| row.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+fn current_line(db: &Connection, snapshot: &str, id: &str) -> Result<Line> {
+    let payload: String = db
+        .query_row(
+            "SELECT line.value FROM line_edit_batch batch, json_each(batch.payload) line
+         WHERE snapshot=? AND superseded=0 AND applied=1 AND line.value->>'id'=?
+         ORDER BY batch.id DESC LIMIT 1",
+            params![snapshot, id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .context("工作区线路已撤销或快照已切换")?;
+    Ok(serde_json::from_str(&payload)?)
+}
+
+fn record_edit(db: &mut Connection, snapshot: &str, lines: &[Line]) -> Result<()> {
+    let tx = db.transaction()?;
+    tx.execute(
+        "UPDATE line_edit_batch SET superseded=1 WHERE snapshot=? AND applied=0",
+        [snapshot],
+    )?;
+    tx.execute(
+        "INSERT INTO line_edit_batch(snapshot,payload,applied) VALUES(?,?,1)",
+        params![snapshot, serde_json::to_string(lines)?],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 pub(crate) fn migrate(
@@ -98,9 +130,14 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
     match request {
         Request::List => {
             let mut stmt = db.prepare(
-                "SELECT line.value->>'id', line.value->>'name', json_array_length(line.value,'$.members')
-                 FROM line_edit_batch batch, json_each(batch.payload) line
-                 WHERE snapshot=? AND superseded=0 AND applied=1 ORDER BY batch.id DESC,line.key",
+                "WITH current AS (
+                     SELECT line.value,batch.id,line.key, row_number() OVER
+                       (PARTITION BY line.value->>'id' ORDER BY batch.id DESC) AS revision
+                     FROM line_edit_batch batch, json_each(batch.payload) line
+                     WHERE snapshot=? AND superseded=0 AND applied=1
+                 )
+                 SELECT value->>'id',value->>'name',json_array_length(value,'$.members')
+                 FROM current WHERE revision=1 ORDER BY id DESC,key",
             )?;
             let lines = stmt.query_map([snapshot], |row| Ok(json!({
                 "id":row.get::<_,String>(0)?,"name":row.get::<_,String>(1)?,"member_count":row.get::<_,u32>(2)?
@@ -167,29 +204,24 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             } else {
                 vec![make(name, members)]
             };
-            let tx = db.transaction()?;
-            tx.execute(
-                "UPDATE line_edit_batch SET superseded=1 WHERE snapshot=? AND applied=0",
-                [snapshot],
-            )?;
-            tx.execute(
-                "INSERT INTO line_edit_batch(snapshot,payload,applied) VALUES(?,?,1)",
-                params![snapshot, serde_json::to_string(&lines)?],
-            )?;
-            tx.commit()?;
+            record_edit(db, snapshot, &lines)?;
             Ok(json!({"created":lines.len()}))
         }
+        Request::Rename { id, name } => {
+            let name = name.trim();
+            ensure!(
+                !name.is_empty() && name.chars().count() <= 100,
+                "请输入有效线路名称"
+            );
+            let mut line = current_line(db, snapshot, &id)?;
+            if line.name != name {
+                line.name = name.to_owned();
+                record_edit(db, snapshot, &[line])?;
+            }
+            Ok(json!({"id":id,"name":name}))
+        }
         Request::Members { id, offset } => {
-            let payload: String = db
-                .query_row(
-                    "SELECT line.value FROM line_edit_batch batch, json_each(batch.payload) line
-                 WHERE snapshot=? AND superseded=0 AND applied=1 AND line.value->>'id'=?",
-                    params![snapshot, id],
-                    |row| row.get(0),
-                )
-                .optional()?
-                .context("工作区线路已撤销或快照已切换")?;
-            let line: Line = serde_json::from_str(&payload)?;
+            let line = current_line(db, snapshot, &id)?;
             let canonical = pack.connection()?;
             let mut members = vec![];
             for id in line.members.iter().skip(offset).take(64) {

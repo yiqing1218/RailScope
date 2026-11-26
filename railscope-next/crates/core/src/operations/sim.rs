@@ -100,6 +100,80 @@ fn line(path: &Prepared) -> Value {
         .collect::<Vec<_>>();
     json!({"type":"LineString","coordinates":points})
 }
+
+pub(super) fn suggest_anchors(
+    db: &Connection,
+    canonical: &Connection,
+    snapshot: &str,
+    mut run: Run,
+) -> Result<Value> {
+    ensure!((2..=2500).contains(&run.stops.len()), "请至少填写两个车站");
+    let path = prepare(db, canonical, snapshot, &run)?;
+    let mode = path.legs[0].track.kind.as_str();
+    ensure!(
+        service_for(db, &run.service_id)?.mode == mode,
+        "运行制式与通道不一致"
+    );
+    let radius = if mode == "metro" { 250. } else { 450. };
+    let mut minimum = -1.;
+    let mut matches = Vec::new();
+    for stop in &mut run.stops {
+        let station = station(canonical, &stop.station_id)?;
+        if let Some(explicit) = stop_distance(&path.corridor, stop) {
+            ensure!(
+                explicit > minimum,
+                "{} 的已有锚点与停站顺序不一致",
+                station.name
+            );
+            minimum = explicit;
+            continue;
+        }
+        let [w, s, e, n] = station.bounds;
+        let center = [(w + e) / 2., (s + n) / 2.];
+        let xscale = 111200. * center[1].to_radians().cos();
+        let project = |p: [f64; 2]| [(p[0] - center[0]) * xscale, (p[1] - center[1]) * 111200.];
+        let mut best: Option<(f64, &Leg, f64)> = None;
+        for leg in &path.legs {
+            if leg.reference.end_distance_m <= minimum {
+                continue;
+            }
+            for (i, pair) in leg.points.windows(2).enumerate() {
+                let [x, y] = project(pair[0]);
+                let [u, v] = project(pair[1]);
+                let (dx, dy) = (u - x, v - y);
+                let length_sq = dx * dx + dy * dy;
+                if length_sq <= 0. {
+                    continue;
+                }
+                let ratio = (-(x * dx + y * dy) / length_sq).clamp(0., 1.);
+                let meters = (x + ratio * dx).hypot(y + ratio * dy);
+                let offset =
+                    leg.cumulative[i] + ratio * (leg.cumulative[i + 1] - leg.cumulative[i]);
+                if leg.reference.start_distance_m + offset > minimum
+                    && meters <= radius
+                    && best.is_none_or(|(nearest, _, _)| meters < nearest)
+                {
+                    best = Some((meters, leg, offset));
+                }
+            }
+        }
+        let (meters, leg, offset) = best.with_context(|| {
+            format!(
+                "MISSING_STOP_ANCHOR · {} 未在所选通道找到按停站顺序可用的锚点（{} m）",
+                station.name, radius
+            )
+        })?;
+        minimum = leg.reference.start_distance_m + offset;
+        stop.stop_edge_id = Some(leg.reference.edge_id.clone());
+        stop.stop_edge_sequence = Some(leg.reference.sequence);
+        stop.stop_offset_m = Some(offset);
+        stop.anchor_source = Some("station_geometry_reference".into());
+        matches.push(json!({"station":station.name,"distance_m":meters}));
+    }
+    Ok(
+        json!({"run":run,"matches":matches,"source":"station geometry on selected corridor","verification_status":"automatic_reference","snapshot":snapshot}),
+    )
+}
 fn locate(path: &Prepared, cumulative: f64) -> (&Leg, f64, [f64; 2], f64) {
     let distance = cumulative.clamp(0., path.total);
     let leg = &path.legs[path
