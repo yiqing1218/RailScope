@@ -15,6 +15,91 @@ pub struct Semantics {
     pub grade: Option<f64>,
 }
 
+/// Presentation roles. Names are used only for already indexed railway objects.
+pub fn site_role(
+    tags: &Value,
+    kind: &str,
+    class: &str,
+    name: &str,
+    symbol: &str,
+) -> Option<(&'static str, &'static str)> {
+    let railway = tags["railway"].as_str().unwrap_or("");
+    let station = tags["station"].as_str().unwrap_or("");
+    let named_facility =
+        kind == "facility" && matches!(class, "station_area" | "station_building" | "railway_land");
+    let railway_area = named_facility
+        && (class != "station_area"
+            || tags["landuse"] == "railway"
+            || tags["train"] == "yes"
+            || tags["subway"] == "yes"
+            || !railway.is_empty());
+    if named_facility
+        || kind == "station"
+        || (kind == "facility"
+            && matches!(
+                railway,
+                "yard" | "junction" | "depot" | "workshop" | "engine_shed" | "signal_box"
+            ))
+    {
+        let tagged = match (railway, station, tags["railway:facility"].as_str()) {
+            ("junction" | "crossover" | "spur_junction" | "signal_box", _, _) => Some("junction"),
+            ("depot" | "workshop" | "engine_shed", _, _)
+            | (_, "depot", _)
+            | (_, _, Some("depot")) => Some("depot"),
+            (_, "marshalling_yard" | "marshalling", _) | (_, _, Some("marshalling_yard")) => {
+                Some("marshalling")
+            }
+            ("yard", _, _) | (_, "yard", _) => Some("yard"),
+            _ => None,
+        };
+        if let Some(role) = tagged {
+            return Some((role, "OSM 场站标签"));
+        }
+        if railway_area
+            || kind == "station"
+                && !matches!(symbol, "bus_station" | "unclassified_transport_station")
+        {
+            let name = name.trim();
+            let named = if name.ends_with("线路所") || name.ends_with("信号所") {
+                Some("junction")
+            } else if name.ends_with("编组站") || name.ends_with("编组场") {
+                Some("marshalling")
+            } else if [
+                "车辆段",
+                "停车场",
+                "动车所",
+                "动车段",
+                "运用所",
+                "机务段",
+                "整备所",
+                "检修基地",
+            ]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+            {
+                Some("depot")
+            } else if name.ends_with("货场") || name.ends_with("车场") {
+                Some("yard")
+            } else {
+                None
+            };
+            if let Some(role) = named {
+                return Some((role, "场站名称参考"));
+            }
+        }
+    }
+    match symbol {
+        "metro_station" | "metro_interchange" | "tram_stop" => Some(("metro", "OSM 轨道站标签")),
+        "rail_station_passenger" | "rail_station_unknown" | "rail_halt" => {
+            Some(("station", "OSM 铁路站标签"))
+        }
+        "rail_junction_site" | "rail_crossover_site" | "rail_spur_junction_site" => {
+            Some(("junction", "OSM 场站标签"))
+        }
+        _ => None,
+    }
+}
+
 fn limit(value: &str) -> Option<f64> {
     let (number, factor) = match value.split_once(' ') {
         Some((number, "mph")) => (number, 1.609344),

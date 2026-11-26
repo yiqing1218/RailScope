@@ -1,7 +1,7 @@
 import maplibre, { type ExpressionSpecification, type GeoJSONSource, type MapGeoJSONFeature } from 'maplibre-gl'
 import type { Feature, Geometry, Point } from 'geojson'
 import { type Bounds, type Kind, type Pack, type Summary, type Visual, tileTemplate } from './api'
-import { defaultTrackViews, facilityStyles, lifecycle, lifecycles, metroColor, metroStationSymbols, nationalStationSymbols, nonRailStationNames, railPaint, sites, siteSymbol, svgSymbol, trackProperty, type TrackViews } from './cartography'
+import { defaultTrackViews, facilityStyles, lifecycle, lifecycles, metroColor, metroStationSymbols, nationalStationSymbols, nonRailStationNames, railPaint, siteIcon, sites, siteSymbol, svgSymbol, trackProperty, type TrackViews } from './cartography'
 import { defaultLayers, type Visibility, type LayerGroup } from './layers'
 
 export type MapTheme = 'light' | 'color' | 'dark' | 'transport'
@@ -28,13 +28,15 @@ const layerIds: Record<LayerGroup, string[]> = {
   boundaries:['base-admin','context-base-admin'],
   cities:[...contextCities,...contextCities.map(id=>`context-${id}`)], villages:['minor-places'],localNames:['local-road-names'],localPoi:['poi-labels'],
   rail:trackLayers('rail'),railNames:['rail-line-names'],station:['rail-stations'],railStationNames:['rail-station-names','business-badges'],
-  facility:[...facilityLayers,'facility-points'],technical:['facility-symbols','facility-labels','technical-badges'],signals:['signal-symbols'],relics:[],
+  facility:[...facilityLayers,'facility-points','national-site-fill','national-site-outline','operating-site-fill','operating-site-outline'],
+  technical:['facility-symbols','facility-labels','operating-site-symbols','operating-site-labels','technical-badges'],signals:['signal-symbols'],relics:[],
   metro:[...trackLayers('metro'),...stripes],metroNames:['metro-line-names'],metroStations:['metro-stations'],metroStationNames:['metro-station-names'],
-  interchanges:['metro-interchanges'],metroFacilities:['metro-entrances'],
+  interchanges:['metro-interchanges'],metroFacilities:['metro-entrances','metro-site-fill','metro-site-outline'],
   road:['road-plan','road'],roadNames:['road-names'],roadSites:['poi','poi-area'],
   route:['train-route'],corridor:['corridor-route'],trains:['train-marker','train-label'],edit:['exact-point','exact-line','exact-area',editId],
 }
 const interactiveLayers = [editId,...Object.values(layerIds).flat().filter(id=>!baseLayers.includes(id)&&!overlays.includes(id)&&id!=='poi-labels').reverse()]
+const siteSymbols=['rail-stations','metro-stations','metro-interchanges','operating-site-symbols','operating-site-labels']
 const empty = { type: 'FeatureCollection', features: [] } as const
 const palettes = {
   light: {water:'#c8dcde',land:'#eef0e7',green:'#d7e6d0',built:'#dcd9d0',road:'#fffaf0',label:'#40565c',admin:'#bfaeaa'},
@@ -102,7 +104,9 @@ export class MapController {
       const hits = this.map.queryRenderedFeatures([[x - 5, y - 5], [x + 5, y + 5]], {
         layers: interactiveLayers.filter(id => this.map.getLayer(id)),
       })
-      const picked = hits.find(hit => typeof hit.id === 'number' && !hit.state?.relocated)
+      const eligible=hits.filter(hit=>typeof hit.id==='number'&&!hit.state?.relocated)
+      const picked = eligible.find(hit=>hit.layer.id===editId||siteSymbols.includes(hit.layer.id))
+        ??eligible.find(hit=>hit.layer.type!=='fill')??eligible[0]
       this.selectFeature(picked)
       onPick(typeof picked?.id === 'number' ? picked.id : null)
     })
@@ -230,14 +234,27 @@ export class MapController {
     const point = ['==',['geometry-type'],'Point'] as ExpressionSpecification
     const isStation = ['in',siteSymbol,['literal',[...nationalStationSymbols,...metroStationSymbols]]] as ExpressionSpecification
     const isNonRailStation = ['in',siteSymbol,['literal',Object.keys(nonRailStationNames)]] as ExpressionSpecification
+    const operatingSite = ['in',['get','site_role'],['literal',['junction','marshalling','yard','depot']]] as ExpressionSpecification
     const relocated = ['case',['boolean',['feature-state','relocated'],false],0,1] as ExpressionSpecification
     for (const [key, style] of Object.entries(facilityStyles)) {
+      const filter:ExpressionSpecification=['all',['==',siteSymbol,key],['!',operatingSite]]
       this.map.addLayer({id:`area-${key}`,type:'fill',source:'transport','source-layer':'facilities',minzoom:style.zoom,
-        filter:['all',['==',siteSymbol,key],polygon],paint:{'fill-color':color(style.fill),'fill-opacity':style.opacity}})
+        filter:['all',filter,polygon],paint:{'fill-color':color(style.fill),'fill-opacity':style.opacity}})
       this.map.addLayer({id:`line-${key}`,type:'line',source:'transport','source-layer':'facilities',minzoom:style.zoom,
-        filter:['all',['==',siteSymbol,key],key==='station_area'?polygon:['in',['geometry-type'],['literal',['LineString','Polygon']]]],
+        filter:['all',filter,key==='station_area'?polygon:['in',['geometry-type'],['literal',['LineString','Polygon']]]],
         paint:{'line-color':color(style.outline),'line-width':key==='platform'?['case',polygon,1,4]:1,
           ...(key==='station_area'?{'line-dasharray':[4,3]}:{})}})
+    }
+    const siteAreas:[string,'points'|'facilities',ExpressionSpecification][]=[
+      ['national-site','points',['all',polygon,['has','site_role'],['!=',['get','site_role'],'metro']]],
+      ['metro-site','points',['all',polygon,['==',['get','site_role'],'metro']]],
+      ['operating-site','facilities',['all',polygon,operatingSite]],
+    ]
+    for (const [id,layer,filter] of siteAreas) {
+      const base={source:'transport','source-layer':layer,minzoom:id==='operating-site'?12:13,filter}
+      const tint=id==='metro-site'?'#238c81':id==='operating-site'?'#af763d':'#3d75a7'
+      this.map.addLayer({...base,id:`${id}-fill`,type:'fill',paint:{'fill-color':color(tint),'fill-opacity':.18}})
+      this.map.addLayer({...base,id:`${id}-outline`,type:'line',paint:{'line-color':color(tint),'line-width':1.3}})
     }
     this.map.addLayer({id:'facility-points',type:'circle',source:'transport','source-layer':'facilities',minzoom:15,
       filter:['all',point,['==',siteSymbol,'platform']],paint:{'circle-color':color(facilityStyles.platform.outline),'circle-radius':3,'circle-opacity':relocated}})
@@ -247,16 +264,18 @@ export class MapController {
       filter:['all',point,['!',isStation],['!',isNonRailStation]],paint:{'circle-color':color(colors.poi),'circle-radius':3.5,
         'circle-stroke-color':'#fff','circle-stroke-width':1,'circle-opacity':relocated,'circle-stroke-opacity':relocated}})
     for (const [id, layer] of [['rail-stations','points'],['metro-stations','points'],['metro-interchanges','points'],
-      ['facility-symbols','facilities'],['metro-entrances','facilities'],['signal-symbols','facilities']] as const) {
+      ['facility-symbols','facilities'],['operating-site-symbols','facilities'],['metro-entrances','facilities'],['signal-symbols','facilities']] as const) {
       const scale = ['/', ['coalesce',['get','size_pct'],100], 100] as ExpressionSpecification
-      this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom:id==='signal-symbols'?17:6,
-        layout:{'icon-image':siteSymbol,'icon-size':['interpolate',['linear'],['zoom'],6,['*',.55,scale],14,scale,18,['*',1.05,scale]],
+      this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom:id==='signal-symbols'?17:id==='operating-site-symbols'?11:6,
+        ...(id==='operating-site-symbols'?{filter:operatingSite}:{}),
+        layout:{'icon-image':siteIcon,'icon-size':['interpolate',['linear'],['zoom'],6,['*',.55,scale],14,scale,18,['*',1.05,scale]],
           'icon-allow-overlap':false,'icon-padding':1,'symbol-sort-key':['match',siteSymbol,'metro_interchange',0,'rail_station_passenger',1,'rail_halt',4,2]},
         paint:{'icon-opacity':relocated}})
     }
     for (const [id,layer,field,minzoom, filter] of [
       ['rail-station-names','points','label',8,isStation],['metro-station-names','points','label',10,isStation],['poi-labels','points','label',13,['!',isStation]],
-      ['facility-labels','facilities','label',11,['in',siteSymbol,['literal',['switch_detail','railway_crossing_detail','rail_junction_site','rail_spur_junction_site','rail_yard_site']]]],
+      ['facility-labels','facilities','label',11,['in',siteSymbol,['literal',['switch_detail','railway_crossing_detail']]]],
+      ['operating-site-labels','facilities','label',11,operatingSite],
       ['business-badges','points','business',15,isStation],['technical-badges','points','technical',13,isStation],
     ] as const) {
       this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom,
@@ -290,8 +309,8 @@ export class MapController {
     this.map.setFilter('rail-station-names',['all',railSites,['has','label']])
     this.map.setFilter('metro-station-names',['all',siteFilter(metroKeys),['has','label']])
     const detailKeys=keys.filter(key=>!['signal_detail','subway_entrance',...railKeys,...metroKeys].includes(key))
-    this.map.setFilter('facility-symbols',['all',['==',['geometry-type'],'Point'],['in',siteSymbol,['literal',detailKeys]]])
-    this.map.setFilter('facility-labels',['all',['in',siteSymbol,['literal',detailKeys]],['has','label']])
+    this.map.setFilter('facility-symbols',['all',['==',['geometry-type'],'Point'],['!', ['has','site_role']],['in',siteSymbol,['literal',detailKeys]]])
+    this.map.setFilter('facility-labels',['all',['!', ['has','site_role']],['in',siteSymbol,['literal',detailKeys]],['has','label']])
     this.map.setFilter('metro-entrances',['all',['==',['geometry-type'],'Point'],['==',siteSymbol,'subway_entrance']])
     this.map.setFilter('signal-symbols',['all',['==',siteSymbol,'signal_detail'],['==',['geometry-type'],'Point']])
   }
@@ -473,7 +492,7 @@ export class MapController {
       if(this.map.getLayer(id)) this.map.setPaintProperty(id,'line-color',color(this.metroColor(`service${index+1}`,['metro_color','metro_secondary','metro_tertiary'][index])))
     })
     const names=this.visualState.filter(item=>item.value.name)
-    for(const id of ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','poi-labels']){
+    for(const id of ['rail-line-names','metro-line-names','road-names','rail-station-names','metro-station-names','facility-labels','operating-site-labels','poi-labels']){
       if(!this.map.getLayer(id))continue
       const fallback:ExpressionSpecification=['get','label']
       this.map.setLayoutProperty(id,'text-field',names.length?['match',['get','rid'],...names.flatMap(item=>[item.render_id,item.value.name]),fallback]:fallback)

@@ -183,6 +183,60 @@ try {
     await nav('运行')
     assert.equal(await evaluate('document.querySelector(".ops-bottom [aria-label=仿真层级]").value'),'l1')
     await nav('地图')
+
+    for(const [reference,role] of [
+      ['osm:node:4610023440','station'],
+      ['osm:way:768017614','junction'],
+      ['osm:way:407071295','marshalling'],
+      ['osm:way:157295605','depot'],
+    ]){
+      const item=(await invoke('catalog_page',{snapshot,filter:{query:reference,limit:10}})).items[0]
+      const inspection=await invoke('get_entity',{snapshot,id:item.id})
+      assert.equal(inspection.entity.site?.role,role,reference)
+      assert.ok(inspection.entity.site.areas.length>0,reference)
+      if(role==='station'){
+        const building=inspection.entity.site.areas.find(area=>area.kind==='building')
+        assert.ok(building,'station building linked from station')
+        const reverse=await invoke('get_entity',{snapshot,id:building.object.id})
+        assert.equal(reverse.entity.site.owner.id,item.id)
+        assert.ok(inspection.entity.station_links.some(link=>link.relation==='infrastructure'))
+      }
+      if(role==='junction') assert.ok(inspection.entity.station_links.some(link=>link.relation==='area_track'))
+      await evaluate(`(()=>{
+        const search=document.querySelector('input[aria-label="搜索交通实体"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(search,${JSON.stringify(reference)});
+        search.dispatchEvent(new Event('input',{bubbles:true}));
+      })()`)
+      const row=`[...document.querySelectorAll(".result-row")].find(el=>el.textContent.includes(${JSON.stringify(item.name)}))`
+      await wait(()=>evaluate(`Boolean(${row})`),`Station search: ${reference}`)
+      await evaluate(`(${row}).click()`)
+      await wait(()=>evaluate(`document.querySelector(".object-head h3")?.textContent===${JSON.stringify(item.name)}`),`Station inspector: ${reference}`)
+      await click('.site-overview button')
+      await sleep(1250)
+      await wait(async()=> (await invoke('diagnostics')).pending===0,`Station tiles: ${reference}`)
+      await sleep(700)
+      await click('.property-tabs button:nth-child(2)')
+      assert.equal(await evaluate('document.querySelector(".property-tabs button:nth-child(2)").getAttribute("aria-pressed")'),'true')
+      if(inspection.entity.station_links.length) assert.ok(await evaluate('Boolean(document.querySelector(".station-evidence button"))'))
+      const siteImage=await send('Page.captureScreenshot',{format:'png'})
+      await writeFile(join(output,`site-${role}.png`),Buffer.from(siteImage.data,'base64'))
+    }
+    const hongqiao=(await invoke('catalog_page',{snapshot,filter:{query:'osm:node:4610023440',limit:10}})).items[0]
+    const hongqiaoDetail=(await invoke('get_entity',{snapshot,id:hongqiao.id})).entity
+    const building=hongqiaoDetail.site.areas.find(area=>area.kind==='building').object
+    const footprint=await invoke('get_geometry',{snapshot,id:building.id})
+    const [x,y]=footprint.type==='Polygon'?footprint.coordinates[0][0]:footprint.coordinates[0][0][0]
+    await click('.inspector [aria-label="清除选中"]')
+    await camera(x,y,16)
+    await sleep(1500)
+    await wait(async()=> (await invoke('diagnostics')).pending===0,'Station footprint tiles')
+    const point=await evaluate(`(()=>{
+      const {left,top,width,height}=document.querySelector('.maplibregl-canvas').getBoundingClientRect();
+      return {x:left+width/2,y:top+height/2};
+    })()`)
+    await send('Input.dispatchMouseEvent',{...point,type:'mousePressed',button:'left',clickCount:1})
+    await send('Input.dispatchMouseEvent',{...point,type:'mouseReleased',button:'left',clickCount:1})
+    await wait(()=>evaluate('document.querySelector(".object-head h3")?.textContent==="上海虹桥"'),'Clicking the footprint opens its station')
   }
   await writeFile(join(output,'map-checks.json'),JSON.stringify({baseline,snapshot,viewport,views},null,2)+'\n')
   console.log(JSON.stringify(views.map(({name,settled_ms,fps})=>({name,settled_ms,fps}))))

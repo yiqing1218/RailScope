@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import type { Geometry } from 'geojson'
+import type { siteAreaNames, siteRoleNames } from './cartography'
 
 export type Kind = 'rail' | 'metro' | 'road' | 'station' | 'poi' | 'facility' | 'line'
 export type Bounds = [number, number, number, number]
@@ -37,7 +38,13 @@ export type Entity = Summary & {
   semantics: { render_class: string; lifecycle: string; reason: string; speed_kmh: number | null;
     gauge_mm: number | null; electrification: string | null; business: string | null; technical: string | null; grade: number | null }
   memberships: Summary[]
-  station_links: {line:Summary;relation:'infrastructure'|'route_reference'|'service';evidence:string;source_ref:string}[]
+  station_links: {line:Summary;relation:'infrastructure'|'route_reference'|'service'|'area_track';evidence:string;source_ref:string}[]
+  site: {
+    role:keyof typeof siteRoleNames
+    evidence:string
+    owner:Summary|null
+    areas:{object:Summary;kind:keyof typeof siteAreaNames;evidence:string}[]
+  }|null
   has_geometry: boolean
   has_edge: boolean
 }

@@ -628,7 +628,7 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
     await click('重做')
     await waitFor(() => evaluate('document.querySelector(".success")?.textContent.includes("已重做")'), 'workspace redo')
     assert.equal((await invoke('get_entity', { snapshot, id: first.id })).workspace.value.note, '离线工作区验收')
-    await click('来源与关联')
+    await click('来源')
   }
   await click('图层')
   const selector = '.layer-control input'

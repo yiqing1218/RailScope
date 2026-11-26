@@ -2,14 +2,14 @@ import { Activity, ArrowUpRight, Check, ChevronRight, Compass, Crosshair, Databa
   MapPin, Maximize2, PanelBottom, PanelLeft, PanelRight, Redo2, Route as RouteIcon, Save, Settings as SettingsIcon, TrainFront, Undo2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { api, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
+import { api, type Bounds, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
 import { Catalog, PackMenu, className, kindNames, statusName } from './catalog'
 import { MapController, type MapTheme } from './map'
 import { LayerTree, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
 import { chinaDate, opsApi, type ControlPoint, type LegacyIssue, type Level } from './operations-api'
-import { facilityStyles, lifecycles, missingColor, nonRailStationNames, readTrackViews, sites, svgSymbol, symbolName, thematic, tracks, type TrackViews } from './cartography'
+import { facilityStyles, lifecycles, missingColor, nonRailStationNames, readTrackViews, siteAreaNames, siteRoleNames, sites, svgSymbol, symbolName, thematic, tracks, type TrackViews } from './cartography'
 import { Settings, themes, type SettingsSection } from './settings'
 
 const visibilityKey = 'railscope-next.layers'
@@ -187,13 +187,19 @@ export function App() {
     }
     const start = performance.now()
     try {
-      const result = await api.entity(pack.snapshot, id)
+      let result = await api.entity(pack.snapshot, id)
+      if(generation!==selection.current)return
+      const owner=result.entity.site?.owner
+      if(owner){
+        result=await api.entity(pack.snapshot,owner.id)
+        if(generation!==selection.current)return
+        controller.current?.selectSummary(owner)
+      }
       if (generation !== selection.current) return
       recordQuery(performance.now() - start)
       setDetails(result)
-      if(result.entity.kind==='line'&&result.entity.has_geometry) {
-        const geometry=await api.geometry(pack.snapshot,result.entity.id)
-        if(generation===selection.current)controller.current?.setExact(geometry)
+      if(result.entity.has_geometry&&(result.entity.kind==='line'||result.entity.site)) {
+        await displayGeometry(pack,result.entity,generation,false)
       }
       if(generation===selection.current)controller.current?.setFocusLine(result.entity.kind==='line'?result.entity.render_id:undefined)
     } catch (error) {
@@ -222,13 +228,24 @@ export function App() {
     if (!active || !details) return
     const generation = selection.current
     try {
-      const geometry = await api.geometry(active.snapshot, details.entity.id)
-      if (generation === selection.current) {
-        controller.current?.setExact(geometry)
-        controller.current?.fit(details.entity.bounds)
-      }
+      await displayGeometry(active,details.entity,generation,true)
     } catch (error) {
       if (generation === selection.current) setDetailError(String(error))
+    }
+  }
+
+  async function displayGeometry(pack:Pack,entity:Inspection['entity'],generation:number,fit:boolean){
+    const areas=entity.site?.areas.map(area=>area.object).filter(area=>area.id!==entity.id).slice(0,8)??[]
+    const objects=[entity,...areas]
+    const geometries=(await Promise.all(objects.map(object=>api.geometry(pack.snapshot,object.id))))
+      .filter(geometry=>geometry!==null)
+    if(generation!==selection.current)return
+    controller.current?.setExact(geometries.length>1?{type:'GeometryCollection',geometries}:geometries[0]??null)
+    if(fit){
+      const bounds=objects.reduce<Bounds>((box,{bounds})=>[
+        Math.min(box[0],bounds[0]),Math.min(box[1],bounds[1]),Math.max(box[2],bounds[2]),Math.max(box[3],bounds[3]),
+      ],entity.bounds)
+      controller.current?.fit(bounds)
     }
   }
 
@@ -487,7 +504,7 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
 }) {
   const { entity, workspace } = inspection
   const meaning=entity.semantics
-  const [tab, setTab] = useState<'attributes' | 'workspace'>('attributes')
+  const [tab, setTab] = useState<'overview' | 'lines' | 'attributes' | 'workspace'>(entity.site?'overview':'attributes')
   const [draft, setDraft] = useState<Override>(workspace.value)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -536,16 +553,36 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
 
   return <div className="properties">
     <div className="object-head">
-      <span className="object-type">{kindNames[entity.kind]}</span>
+      <span className="object-type">{entity.site?siteRoleNames[entity.site.role]:kindNames[entity.kind]}</span>
       <h3>{workspace.value.name || entity.name}</h3>
-      <span>{symbolName(meaning.render_class)??className(entity.class)} · {lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status)}</span>
+      <span>{entity.site?entity.site.evidence:(symbolName(meaning.render_class)??className(entity.class))} · {lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status)}</span>
     </div>
-    <div className="tabs property-tabs">
-      <button className={tab === 'attributes' ? 'active' : ''} onClick={() => setTab('attributes')}>来源与关联</button>
-      <button className={tab === 'workspace' ? 'active' : ''} onClick={() => setTab('workspace')}>工作区</button>
+    <div className="tabs property-tabs" role="group" aria-label="对象选项卡">
+      {entity.site&&<>
+        <button className={tab==='overview'?'active':''} aria-pressed={tab==='overview'} onClick={()=>setTab('overview')}>概览</button>
+        <button className={tab==='lines'?'active':''} aria-pressed={tab==='lines'} onClick={()=>setTab('lines')}>关联线路</button>
+      </>}
+      <button className={tab === 'attributes' ? 'active' : ''} aria-pressed={tab==='attributes'} onClick={() => setTab('attributes')}>{entity.site?'来源':'来源与关联'}</button>
+      <button className={tab === 'workspace' ? 'active' : ''} aria-pressed={tab==='workspace'} onClick={() => setTab('workspace')}>工作区</button>
     </div>
-    {tab === 'attributes' ? <div className="property-content">
-      {entity.kind==='station'&&<StationLinks entity={entity} pack={pack} openLine={openLine}/>}
+    {tab==='overview'&&entity.site ? <div className="property-content site-overview">
+      <dl>
+        <dt>场站类别</dt><dd>{siteRoleNames[entity.site.role]}</dd>
+        {entity.tags.ref&&<><dt>站码／编号</dt><dd>{entity.tags.ref}</dd></>}
+        {entity.tags.operator&&<><dt>运营管理</dt><dd>{entity.tags.operator}</dd></>}
+        {entity.kind==='station'&&<><dt>运输业务</dt><dd>{{passenger:'客运',freight:'货运',mixed:'客货运'}[meaning.business??'']??'待核验'}</dd>
+          <dt>技术类型</dt><dd>{{marshalling:'编组站',district:'区段站',intermediate:'中间站'}[meaning.technical??'']??'待核验'}</dd></>}
+        <dt>来源核验</dt><dd>{entity.verification==='verified'?'已核验':'自动参考'}</dd>
+      </dl>
+      <div className="site-coverage">
+        <h4>地图范围</h4>
+        {entity.site.areas.length?<ul>{entity.site.areas.map(area=><li key={area.object.id}><strong>{siteAreaNames[area.kind]}</strong>
+          <span>{area.object.name} · {area.evidence}</span></li>)}</ul>:<p className="muted">当前快照未关联面状轮廓。</p>}
+        {entity.has_geometry&&<button className="secondary compact" onClick={exact}><Crosshair size={15}/>查看精确几何</button>}
+      </div>
+      {entity.kind==='station'&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
+    </div> : tab==='lines' ? <div className="property-content"><StationLinks entity={entity} pack={pack} openLine={openLine}/></div>
+    : tab === 'attributes' ? <div className="property-content">
       <dl>
         {workspace.value.name && <><dt>原始名称</dt><dd>{entity.name}</dd></>}
         <dt>快照</dt><dd>{pack.snapshot}</dd>
@@ -660,18 +697,18 @@ function StationLinks({entity,pack,openLine}:{entity:Inspection['entity'];pack:P
   return <div className="members">
     <h4>相关线路</h4>
     {entity.station_links.length===0&&<p className="muted">线路待关联</p>}
-    {(['service','infrastructure','route_reference'] as const).map(relation=>{
+    {(['infrastructure','service','area_track','route_reference'] as const).map(relation=>{
       const links=entity.station_links.filter(link=>link.relation===relation)
       return links.length>0&&<div className="station-evidence" key={relation}>
-        <strong>{{service:'运营线路',infrastructure:'铁路业务线路',route_reference:'列车关系参考'}[relation]}</strong>
+        <strong>{{service:'运营线路',infrastructure:'铁路业务线路',area_track:'穿越场站范围 · 几何参考',route_reference:'列车关系参考'}[relation]}</strong>
         {links.map(link=><button key={link.line.id} onClick={()=>openLine(link.line)}>
-          <span>{link.line.name}<small>{link.evidence} · {link.source_ref}</small></span><ArrowUpRight size={14}/>
+          <span>{link.line.name || '未命名线路'}<small>{link.evidence} · {link.source_ref}</small></span><ArrowUpRight size={14}/>
         </button>)}
       </div>
     })}
     <details className="station-evidence"><summary>物理接轨与待关联</summary>
       {tracks==null&&!error&&<button className="secondary compact" disabled={busy} onClick={()=>void load()}>{busy?'正在查询轨道锚点…':'查询物理接轨'}</button>}
-      {tracks?.map(line=><button key={line.id} onClick={()=>openLine(line)}>{line.name}<ArrowUpRight size={14}/></button>)}
+      {tracks?.map(line=><button key={line.id} onClick={()=>openLine(line)}>{line.name || '未命名线路'}<ArrowUpRight size={14}/></button>)}
       {tracks?.length===0&&<small>当前来源没有可确认的物理接轨。</small>}
       {error&&<p className="error-text">{error}</p>}
     </details>

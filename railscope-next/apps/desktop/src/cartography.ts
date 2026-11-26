@@ -34,6 +34,8 @@ export const sites = {
   rail_halt: ['乘降所', 11, `<circle cx="12" cy="12" r="3.5" fill="#62758B"/>`],
   tram_stop: ['有轨电车站', 11, `<circle cx="12" cy="12" r="5.5" fill="none" stroke="#5C9A70" stroke-width="2"/>`],
   rail_yard_site: ['车场／货场', 11, `<rect x="1" y="4" width="22" height="16" rx="2" fill="none" stroke="#8B775C" stroke-width="1.7"/><path d="M5 9 H19 M5 12 H19 M5 15 H19" fill="none" stroke="#8B775C" stroke-width="1.2"/>`],
+  rail_depot_site: ['车辆段／基地', 11, `<path d="M3 20V9l9-6 9 6v11Z" fill="#f9fcf9" stroke="#2c7666" stroke-width="2"/><path d="M8 20v-8h8v8" fill="none" stroke="#2c7666" stroke-width="1.8"/>`],
+  rail_marshalling_site: ['编组站', 11, `<circle cx="12" cy="12" r="9" fill="#fffaf0" stroke="#9a6035" stroke-width="2"/><path d="M6 16h12M9 16v-4l5-5M13 16v-4l4-4" fill="none" stroke="#9a6035" stroke-width="1.6"/>`],
   rail_junction_site: ['分歧线路所', 11, `<path d="M12 4 L20 12 L12 20 L4 12 Z" fill="#A37437"/>`],
   rail_crossover_site: ['渡线所', 13, `<path d="M5 5 L19 19 M19 5 L5 19" fill="none" stroke="#806C58" stroke-width="2.5" stroke-linecap="round"/>`],
   rail_spur_junction_site: ['专用线接入所', 13, `<path d="M12 4 L21 20 L3 20 Z" fill="none" stroke="#806C58" stroke-width="2" stroke-linejoin="round"/>`],
@@ -59,6 +61,8 @@ export const defaultTrackViews: TrackViews = { rail:'infrastructure', metro:'lin
 export const nationalStationSymbols=['rail_station_passenger','rail_station_unknown','rail_halt']
 export const metroStationSymbols=['metro_station','metro_interchange','tram_stop']
 export const nonRailStationNames = { bus_station:'公交场站', unclassified_transport_station:'未分类公共交通站' }
+export const siteRoleNames = {station:'国铁车站',metro:'城市轨道车站',junction:'线路所',marshalling:'编组站',yard:'车场／货场',depot:'车辆段／运用所',area:'铁路场站范围'}
+export const siteAreaNames = {boundary:'站区边界',railway_land:'铁路用地',building:'站房轮廓'}
 
 export function readTrackViews(storage: Pick<Storage,'getItem'>): TrackViews {
   const rail=storage.getItem('railscope-next.rail-style')
@@ -93,6 +97,9 @@ export const siteSymbol: ExpressionSpecification = ['coalesce',['get','symbol'],
   'rail_station','rail_station_unknown','metro_station','metro_station','switch','switch_detail',
   'railway_crossing','railway_crossing_detail','platform','platform','station_area','station_area',
   'station_building','station_building','rail_site_unknown']]
+
+export const siteIcon: ExpressionSpecification = ['match',['get','site_role'],
+  'junction','rail_junction_site','marshalling','rail_marshalling_site','yard','rail_yard_site','depot','rail_depot_site',siteSymbol]
 
 export const lifecycle: ExpressionSpecification = ['coalesce',['get','life'], ['match',['get','status'],
   'operating','active','planned','proposed','construction','construction','disused','disused','unknown']]

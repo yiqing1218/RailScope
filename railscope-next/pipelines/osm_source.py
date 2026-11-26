@@ -8,7 +8,7 @@ from shapely.geometry import LineString, Point, Polygon
 
 RAIL = {"rail", "narrow_gauge", "light_rail", "subway", "tram", "monorail", "maglev"}
 TECHNICAL = {"switch", "signal", "railway_crossing", "level_crossing", "subway_entrance"}
-OPERATING_SITES = {"yard", "junction", "crossover", "spur_junction"}
+OPERATING_SITES = {"yard", "junction", "crossover", "spur_junction", "signal_box", "depot", "workshop", "engine_shed"}
 LIFECYCLE = {"construction": "construction", "proposed": "planned", "disused": "disused", "abandoned": "disused", "razed": "disused"}
 
 

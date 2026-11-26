@@ -179,6 +179,15 @@ summary { cursor: pointer; color: #3b575c; }
 .dock-resize:hover { background:#3b8b6e55; }
 .view-settings { pointer-events:auto; position:relative; margin:0; border:1px solid #98aeb0; border-radius:5px; padding:0; background:var(--paper); color:var(--ink); }
 .view-settings summary { padding:8px 10px; color:inherit; }
+.site-overview { display:grid; gap:14px; }
+.site-overview dl { margin:0; }
+.site-coverage { background:#eef3ee; border:1px solid #d4e0d6; border-radius:6px; padding:11px; }
+.site-coverage h4 { margin-bottom:8px; }
+.site-coverage ul { padding:0; margin:0 0 10px; list-style:none; }
+.site-coverage li { display:grid; gap:3px; padding:7px 0; border-top:1px solid #d4e0d6; }
+.site-coverage li span { color:var(--muted); font-size:11px; }
+.site-coverage p { margin:0 0 10px; }
+.site-overview > button { justify-self:start; }
 .settings-dialog { width:min(850px, calc(100vw - 48px)); height:min(590px, calc(100vh - 72px)); max-width:none; max-height:none; padding:0; color:var(--ink); background:var(--paper); border:1px solid #a8b9b1; border-radius:12px; box-shadow:0 20px 65px #071a2350; }
 .settings-dialog[open] { display:grid; grid-template-rows:auto minmax(0,1fr) auto; }
 .settings-dialog::backdrop { background:#14282f52; }

@@ -483,6 +483,17 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             let facts = crate::cartography::classify(&tags, &kind, &category, &status, verified);
             attrs.push(("symbol", Value::Text(facts.render_class.into())));
             attrs.push(("life", Value::Text(facts.lifecycle.into())));
+            if matches!(kind.as_str(), "station" | "facility")
+                && let Some((role, _)) = crate::cartography::site_role(
+                    &tags,
+                    &kind,
+                    &category,
+                    &name,
+                    facts.render_class,
+                )
+            {
+                attrs.push(("site_role", Value::Text(role.into())));
+            }
             if kind == "station" {
                 if !tags["name:zh"]
                     .as_str()

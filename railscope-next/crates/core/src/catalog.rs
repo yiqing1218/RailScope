@@ -5,6 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
+mod site;
 
 const SUMMARY: &str = "e.id, e.render_id, e.name, e.kind, e.class, e.status,
                        g.min_x, g.min_y, g.max_x, g.max_y";
@@ -33,6 +34,7 @@ pub struct Entity {
     pub semantics: crate::cartography::Semantics,
     pub memberships: Vec<Summary>,
     pub station_links: Vec<StationLink>,
+    pub site: Option<site::Site>,
     pub has_geometry: bool,
     pub has_edge: bool,
 }
@@ -304,16 +306,6 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
     let memberships = statement
         .query_map([&base.id], summary)?
         .collect::<rusqlite::Result<_>>()?;
-    let station_links = if base.kind == "station" {
-        station_links(
-            &connection,
-            &base.id,
-            &source_ref,
-            pack.manifest.source_schema >= 3,
-        )?
-    } else {
-        Vec::new()
-    };
     let has_geometry=has_geometry || (base.kind=="line" && connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM line_member m JOIN geometry g ON g.entity_id=m.member_id WHERE m.line_id=? AND g.wgs84_wkb IS NOT NULL)", [&base.id], |r|r.get::<_,bool>(0))?);
     let tags = serde_json::from_str(&tags)?;
@@ -324,6 +316,34 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
         &base.status,
         verification == "verified",
     );
+    let role = crate::cartography::site_role(
+        &tags,
+        &base.kind,
+        &base.class,
+        &base.name,
+        semantics.render_class,
+    );
+    let site = site::inspect(&connection, &base, &tags, role)?;
+    let mut station_links = if site.is_some() {
+        station_links(
+            &connection,
+            &base.id,
+            &source_ref,
+            pack.manifest.source_schema >= 3,
+        )?
+    } else {
+        Vec::new()
+    };
+    if let Some(site) = &site {
+        for link in site::area_lines(&connection, site)? {
+            if !station_links
+                .iter()
+                .any(|prior| prior.line.id == link.line.id)
+            {
+                station_links.push(link);
+            }
+        }
+    }
     Ok(Some(Entity {
         summary: base,
         source_ref,
@@ -334,6 +354,7 @@ pub fn get(pack: &Pack, id: &str) -> Result<Option<Entity>> {
         semantics,
         memberships,
         station_links,
+        site,
         has_geometry,
         has_edge,
     }))
@@ -346,7 +367,7 @@ fn station_links(
     has_relations: bool,
 ) -> Result<Vec<StationLink>> {
     let stop_area = if has_relations {
-        "UNION ALL SELECT line.id, 'OSM stop_area 成员关联'
+        "UNION ALL SELECT line.id, 2
          FROM source_relation_member own JOIN source_object area ON area.ref=own.relation_ref
          JOIN source_relation_member stop ON stop.relation_ref=area.ref
          JOIN source_relation_member service ON service.member_ref=stop.member_ref
@@ -357,8 +378,14 @@ fn station_links(
         ""
     };
     let sql = format!(
-        "WITH matches(id,evidence) AS (
-        SELECT line_id,'OSM 线路成员' FROM line_member WHERE member_id=?1
+        "WITH anchor(id) AS (SELECT n.id FROM entity own JOIN node n ON n.source_ref=own.source_ref
+         WHERE own.id=?1 AND n.network='rail'),
+        tracks(id) AS (SELECT e.id FROM anchor a JOIN edge e ON e.from_node=a.id
+                       UNION SELECT e.id FROM anchor a JOIN edge e ON e.to_node=a.id),
+        matches(id,evidence) AS (
+        SELECT line_id,1 FROM line_member WHERE member_id=?1
+        UNION ALL SELECT m.line_id,3 FROM tracks t JOIN line_member m ON m.member_id=t.id
+          JOIN entity track ON track.id=t.id WHERE track.kind IN ('rail','metro') AND track.status='operating'
         {stop_area}
         ) SELECT {SUMMARY},e.source_ref,min(matches.evidence)
         FROM matches JOIN entity e ON e.id=matches.id JOIN geometry g ON g.entity_id=e.id
@@ -374,11 +401,16 @@ fn station_links(
             _ => "service",
         }
         .to_owned();
+        let evidence = match r.get::<_, u8>(11)? {
+            1 => "OSM 线路成员",
+            2 => "OSM stop_area 成员关联",
+            _ => "同一原始轨道端点",
+        };
         Ok(StationLink {
             line,
             relation,
             source_ref: r.get(10)?,
-            evidence: r.get(11)?,
+            evidence: evidence.into(),
         })
     };
     if has_relations {
