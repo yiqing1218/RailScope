@@ -408,7 +408,13 @@ fn main() {
             let packs = std::env::var_os("RAILSCOPE_NEXT_PACKS")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| data.join("packs"));
-            let engine = Engine::new(packs, data.join("workspace.sqlite"))?;
+            let bundled = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|path| path.join("starter-packs"))
+                .filter(|path| path.is_dir());
+            let engine = Engine::with_bundled_packs(packs, data.join("workspace.sqlite"), bundled)?;
             app.manage(Arc::new(engine));
             app.manage(Arc::new(Routes::default()));
             app.manage(OpsClock(Mutex::new(rail_ops::Clock::default())));

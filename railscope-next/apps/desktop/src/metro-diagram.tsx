@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { useMemo, useState } from 'react'
 import { formatTime, type Run, type RunDetail } from './operations-api'
 
@@ -30,7 +31,7 @@ export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
     if(stops.some((stop,i)=>i>0&&(reverse?stop.index>=stops[i-1].index:stop.index<=stops[i-1].index)))return []
     return [{run,stops,reverse}]
   }),[runs,indices])
-  if(!base||rows.length<2)return <div className="metro-empty">先在左侧选择已编排停站的上海地铁车次。</div>
+  if(!base||rows.length<2)return <div className="metro-empty">{t("先在左侧选择已编排停站的上海地铁车次。")}</div>
   const anchor=base.chart[0]?.departure_time_s??base.chart[0]?.arrival_time_s??time
   const start=Math.max(0,Math.floor(((follow?time:anchor)-span*15)/300)*300)
   const end=start+span*60
@@ -44,20 +45,20 @@ export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
   const shown=plans.filter(({stops,reverse})=>stops[0].arrive<=end&&stops.at(-1)!.depart>=start&&
     (direction==='all'||(direction==='back')===reverse)).sort((a,b)=>Number(b.run.id===base.run.id)-Number(a.run.id===base.run.id)).slice(0,240)
   const ticks=Array.from({length:1+span/15},(_,i)=>start+i*900)
-  return <section className="metro-diagram" aria-label="上海地铁交路运行图">
+  return <section className="metro-diagram" aria-label={t("上海地铁交路运行图")}>
     <header className="metro-diagram-head">
-      <div><strong>{rows[0].station_name??'起点'} ↔ {rows.at(-1)?.station_name??'终点'}</strong>
-        <small>{base.run.service_date} · {shown.length} 趟 · 计划时刻</small></div>
+      <div><strong>{rows[0].station_name??t("起点")} ↔ {rows.at(-1)?.station_name??t("终点")}</strong>
+        <small>{base.run.service_date} · {shown.length} {t("趟 · 计划时刻")}</small></div>
       <div className="metro-diagram-tools">
-        <label>方向<select value={direction} onChange={e=>setDirection(e.target.value as typeof direction)}><option value="all">双向</option><option value="out">顺向</option><option value="back">反向</option></select></label>
-        <label>纵轴<select value={scale} onChange={e=>setScale(e.target.value as typeof scale)}><option value="station">站序</option><option value="distance" disabled={!maxDist}>里程</option></select></label>
-        <label>时窗<select value={span} onChange={e=>setSpan(Number(e.target.value))}><option value={45}>45 分钟</option><option value={90}>90 分钟</option><option value={180}>3 小时</option></select></label>
-        <label><input type="checkbox" checked={follow} onChange={event=>setFollow(event.target.checked)}/>跟随时钟</label>
+        <label>{t("方向")}<select value={direction} onChange={e=>setDirection(e.target.value as typeof direction)}><option value="all">{t("双向")}</option><option value="out">{t("顺向")}</option><option value="back">{t("反向")}</option></select></label>
+        <label>{t("纵轴")}<select value={scale} onChange={e=>setScale(e.target.value as typeof scale)}><option value="station">{t("站序")}</option><option value="distance" disabled={!maxDist}>{t("里程")}</option></select></label>
+        <label>{t("时窗")}<select value={span} onChange={e=>setSpan(Number(e.target.value))}><option value={45}>{t("45 分钟")}</option><option value={90}>{t("90 分钟")}</option><option value={180}>{t("3 小时")}</option></select></label>
+        <label><input type="checkbox" checked={follow} onChange={event=>setFollow(event.target.checked)}/>{t("跟随时钟")}</label>
       </div>
     </header>
-    <div className="metro-keys"><span className="metro-out">顺向运行</span><span className="metro-return">反向运行</span><span className="metro-now">模拟时钟</span></div>
+    <div className="metro-keys"><span className="metro-out">{t("顺向运行")}</span><span className="metro-return">{t("反向运行")}</span><span className="metro-now">{t("模拟时钟")}</span></div>
     <div className="metro-diagram-scroll">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="时间与站序运行图"
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t("时间与站序运行图")}
         onClick={event=>{
           const box=event.currentTarget.getBoundingClientRect()
           const point=(event.clientX-box.left)/box.width*width
@@ -70,7 +71,7 @@ export function MetroDiagram({detail,runs,time,select,seek,locate}:Props){
           <text x={label-9} y={y(i)+4} textAnchor="end" className="metro-station-link" tabIndex={0} role="button"
             onClick={event=>{event.stopPropagation();locate(row.station_id)}}
             onKeyDown={event=>{if(event.key==='Enter')locate(row.station_id)}}>
-            {row.station_name??`第 ${i+1} 站`}</text></g>)}
+            {row.station_name??t("第 {0} 站", i+1)}</text></g>)}
         <g clipPath="url(#metro-time-window)">
           {[...shown].reverse().map(({run,stops,reverse})=><polyline key={run.id} points={stops.flatMap(stop=>[
             `${x(stop.arrive)},${y(stop.index)}`,`${x(stop.depart)},${y(stop.index)}`,

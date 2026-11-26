@@ -103,6 +103,46 @@ async function jump(lon, lat, zoom) {
   await evaluate('document.querySelector(".coordinate-jump").requestSubmit(); document.querySelector(".view-settings").open=false')
 }
 
+async function verifyStarter() {
+  await waitFor(() => evaluate('document.querySelector(".welcome-dialog").open'), 'first-run welcome')
+  assert.equal((await invoke('list_data_packs')).active?.snapshot, 'shanghai-osm-202609-v4')
+  await select('.welcome-dialog .language-select select', 'en')
+  assert.equal(await evaluate('document.documentElement.lang'), 'en')
+  assert.ok(await evaluate('document.querySelector(".welcome-dialog").innerText.includes("Shanghai offline map is ready")'))
+  if (artifacts) {
+    await mkdir(artifacts, {recursive:true})
+    const welcome = await send('Page.captureScreenshot',{format:'png'})
+    await writeFile(join(artifacts,'welcome-en.png'),Buffer.from(welcome.data,'base64'))
+  }
+  await evaluate('document.querySelector(".welcome-primary").click()')
+  await waitFor(() => evaluate('!document.querySelector(".welcome-dialog").open'), 'enter included map')
+  assert.ok(await evaluate('document.querySelector(".map-title").innerText.includes("Shanghai")'))
+  const before = (await invoke('diagnostics')).precise_tiles
+  await evaluate(`(() => {
+    const form = document.querySelector('.coordinate-jump');
+    form.elements.lng.value = '121.474';
+    form.elements.lat.value = '31.230';
+    form.elements.zoom.value = '12';
+    form.requestSubmit();
+  })()`)
+  await waitFor(async()=> (await invoke('diagnostics')).precise_tiles > before, 'Shanghai tiles work offline')
+  await click('Operations')
+  assert.ok(await evaluate('document.querySelector(".ops-workbench").innerText.includes("Shared corridors")'))
+  await click('Data')
+  assert.ok(await evaluate('document.querySelector(".local-pack-install").innerText.includes("Install a local snapshot")'))
+  await click('Settings')
+  await input('.settings-search input','Simulation level')
+  await waitFor(() => evaluate('document.querySelector("#settings-section-title")?.textContent==="Operations and simulation"'),'English settings search')
+  await click('Done')
+  await send('Page.reload')
+  await waitFor(() => evaluate('document.querySelector(".snapshot")?.textContent==="shanghai-osm-202609-v4"'),'reload included pack')
+  assert.equal(await evaluate('document.documentElement.lang'),'en')
+  assert.equal(await evaluate('document.querySelector(".welcome-dialog").open'),false)
+  await select('.top .language-select select', 'zh')
+  assert.equal(await evaluate('document.documentElement.lang'),'zh-CN')
+  assert.ok(await evaluate('document.querySelector(".map-title").innerText.includes("上海")'))
+}
+
 async function roam(snapshot, minutes) {
   const cameras = [
     { name: '济南指定中心', lon: 116.9003, lat: 36.0676 },
@@ -576,6 +616,13 @@ if (process.env.RAILSCOPE_REFERENCE_FIXTURE) {
   await send('Page.enable')
   await send('Page.reload', { ignoreCache: true })
   await waitFor(hasCanvas, 'offline map canvas')
+  const starter = process.env.RAILSCOPE_STARTER_SMOKE === '1'
+  if (starter) await verifyStarter()
+  else {
+    await select('.top .language-select select', 'zh')
+    await waitFor(() => evaluate('!document.querySelector(".map-loading")'),'first-run startup')
+    await evaluate('document.querySelector(".welcome-dialog button[aria-label=退出介绍]")?.click()')
+  }
   const sandbox = process.env.RAILSCOPE_SMOKE_WRITABLE === '1'
   const sourcePack = process.env.RAILSCOPE_INSTALL_FIXTURE
   if (sourcePack) {

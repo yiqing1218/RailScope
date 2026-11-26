@@ -4,6 +4,10 @@ RailScope Next 是独立的 Windows 交通 GIS 工作台，使用 Tauri 2、Rust
 
 ## 启动
 
+Windows x64 用户可从 [GitHub Releases](https://github.com/yiqing1218/RailScope/releases/latest) 下载安装包。安装后从开始菜单打开 RailScope Next，首次启动可直接进入随附的上海离线地图。顶栏地球图标切换中文与 English，问号打开使用指南。
+
+For Windows x64, download the installer from [GitHub Releases](https://github.com/yiqing1218/RailScope/releases/latest) and launch RailScope Next from the Start menu. The Shanghai offline map is included. Use the globe menu to switch languages and the question mark to reopen Quick start.
+
 仓库中可双击 `Start-RailScope-Next.cmd`。启动脚本使用 `data/processed/railscope-next/packs` 中的本机数据包。
 
 从源码构建需要 Node.js 22.12+、Rust stable MSVC、Microsoft C++ Build Tools 和 WebView2。在仓库根目录运行以下命令。[Tauri Windows 构建环境](https://v2.tauri.app/start/prerequisites/)
@@ -14,7 +18,9 @@ npm.cmd ci
 npm.cmd run tauri -- build --no-bundle
 ```
 
-要构建 NSIS 安装包，将最后一条命令改为 `npm.cmd run tauri -- build`。独立安装时，在数据包菜单中选择「从本机安装」并输入快照目录，校验成功后选择该快照。默认数据包根目录为 `%LOCALAPPDATA%\app.railscope.next\packs`，也可用 `RAILSCOPE_NEXT_PACKS` 指定。
+要构建普通 NSIS 安装包，将最后一条命令改为 `npm.cmd run tauri -- build`。发布随附上海数据的安装包时，先将发行页的上海数据 ZIP 解压到 `data/processed/railscope-next/packs`，保留里面的 `shanghai-osm-202609-v4` 文件夹，然后运行 `npm.cmd run tauri -- build --config src-tauri/tauri.release.conf.json`。
+
+安装新的本机快照时，在「数据 → 数据包 → 安装本地快照」输入包含 `manifest.json` 的文件夹路径。默认安装到 `%LOCALAPPDATA%\app.railscope.next\packs`，也可通过 `RAILSCOPE_NEXT_PACKS` 指定。随软件安装的上海资源可直接读取。已有工作区会保留上次使用的数据包。
 
 ## 生成离线数据包
 

@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import maplibre, { type ExpressionSpecification, type GeoJSONSource, type MapGeoJSONFeature } from 'maplibre-gl'
 import type { Feature, Geometry, Point } from 'geojson'
 import { type Bounds, type Kind, type Pack, type Summary, type Visual, tileTemplate } from './api'
@@ -87,7 +88,7 @@ export class MapController {
       await Promise.all(Object.entries(sites).map(([id, [,, graphic]]) => new Promise<void>((resolve, reject) => {
         const img = new Image()
         img.onload = () => { if (!this.map.hasImage(id)) this.map.addImage(id, img, {pixelRatio:2}); resolve() }
-        img.onerror = () => reject(new Error(`无法载入地图符号 · ${id}`))
+        img.onerror = () => reject(new Error(t("无法载入地图符号 · {0}", id)))
         img.src = svgSymbol(graphic)
       })))
     })

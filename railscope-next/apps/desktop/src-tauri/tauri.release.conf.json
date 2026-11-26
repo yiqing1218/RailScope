@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "../../../../data/processed/railscope-next/packs/shanghai-osm-202609-v4/manifest.json": "starter-packs/shanghai-osm-202609-v4/manifest.json",
+      "../../../../data/processed/railscope-next/packs/shanghai-osm-202609-v4/canonical.sqlite": "starter-packs/shanghai-osm-202609-v4/canonical.sqlite",
+      "../../../../data/processed/railscope-next/packs/shanghai-osm-202609-v4/transport.pmtiles": "starter-packs/shanghai-osm-202609-v4/transport.pmtiles",
+      "../../../../docs/licenses/shanghai-offline-data.md": "starter-packs/shanghai-offline-data.md"
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { useEffect, useRef, useState } from 'react'
 
 export const layerGroups = [
@@ -36,10 +37,10 @@ export const presets = {
 
 export function LayerTree({visibility,onLayer,onPreset}:{visibility:Visibility;onLayer:(key:LayerGroup,value:boolean)=>void;onPreset:(value:Partial<Visibility>)=>void}){
   return <div className="layer-controls">
-    <label className="layer-preset">地图预设<select aria-label="地图预设" value="" onChange={event=>{
+    <label className="layer-preset">{t("地图预设")}<select aria-label={t("地图预设")} value="" onChange={event=>{
       const key=event.target.value as keyof typeof presets
       if(key)onPreset(presets[key])
-    }}><option value="">选择预设</option>{Object.keys(presets).map(key=><option key={key}>{key}</option>)}</select></label>
+    }}><option value="">{t("选择预设")}</option>{Object.keys(presets).map(key=><option key={key} value={key}>{t(key)}</option>)}</select></label>
     {layerGroups.map((group,index)=><LayerSection key={group.name} group={group} visibility={visibility}
       onLayer={onLayer} onPreset={onPreset} initiallyOpen={index<3}/>)}
   </div>
@@ -54,9 +55,9 @@ function LayerSection({group,visibility,onLayer,onPreset,initiallyOpen}:{
   const checkbox=useRef<HTMLInputElement>(null)
   useEffect(()=>{if(checkbox.current)checkbox.current.indeterminate=enabled>0&&enabled<group.items.length},[enabled,group])
   return <details className="layer-section" open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)}>
-    <summary><input ref={checkbox} type="checkbox" aria-label={group.name} checked={enabled===group.items.length}
-      onClick={event=>event.stopPropagation()} onChange={event=>onPreset(Object.fromEntries(group.items.map(([key])=>[key,event.target.checked])))}/>{group.name}</summary>
-    {group.items.map(([key,name])=><label className="layer-control" key={key}><span>{name}</span>
-      <input aria-label={name} type="checkbox" checked={visibility[key]} onChange={event=>onLayer(key,event.target.checked)}/></label>)}
+    <summary><input ref={checkbox} type="checkbox" aria-label={t(group.name)} checked={enabled===group.items.length}
+      onClick={event=>event.stopPropagation()} onChange={event=>onPreset(Object.fromEntries(group.items.map(([key])=>[key,event.target.checked])))}/>{t(group.name)}</summary>
+    {group.items.map(([key,name])=><label className="layer-control" key={key}><span>{t(name)}</span>
+      <input aria-label={t(name)} type="checkbox" checked={visibility[key]} onChange={event=>onLayer(key,event.target.checked)}/></label>)}
   </details>
 }

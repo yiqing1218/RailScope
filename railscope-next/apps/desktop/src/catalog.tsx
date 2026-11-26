@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowLeft, ArrowUpRight, Building2, ChevronDown, ChevronRight, CircleHelp, Database, Folder,
   GitBranch, Layers3, LocateFixed, MapPin, Route as RouteIcon, Search, TrainFront, X } from 'lucide-react'
@@ -19,9 +20,9 @@ const classes: Record<string, string> = {
   railway_crossing: '铁路交叉点', level_crossing: '平交道口', railway: '铁路线路',
   train: '列车线路关系', road: '道路线路', unknown: '类别待核验',
 }
-export const className = (value: string) => classes[value] ?? value
+export const className = (value: string) => t(classes[value] ?? value)
 export const statusName = (value: string) => ({
-  operating: '运营', construction: '在建', planned: '规划', disused: '停用', unknown: '待核验',
+  operating: t("运营"), construction: t("在建"), planned: t("规划"), disused: t("停用"), unknown: t("待核验"),
 })[value] ?? value
 
 const types: { id: Kind; icon: typeof TrainFront }[] = [
@@ -30,11 +31,34 @@ const types: { id: Kind; icon: typeof TrainFront }[] = [
   { id: 'facility', icon: Building2 }, { id: 'poi', icon: LocateFixed },
 ]
 
-export function PackMenu({ packs, active, changing, change, conflicts, onInstalled }: {
+export function PackMenu({ packs, active, changing, change, conflicts, onManage }: {
   packs: Pack[]; active: Pack | null; changing: boolean; change: (pack: Pack) => void; conflicts: Conflict[]
-  onInstalled:(pack:Pack)=>void
+  onManage:()=>void
 }) {
   const [open, setOpen] = useState(false)
+  return <div className="pack-menu">
+    <button className="pack-trigger" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <Database size={17} /><span>{t(active?.region ?? "数据包")}</span><ChevronDown size={14} />
+    </button>
+    {open && <div className="pack-popover">
+      <div className="popup-title">{t("本地数据包")}<button className="icon" aria-label={t("关闭数据包")} onClick={() => setOpen(false)}><X size={16} /></button></div>
+      {packs.length === 0 ? <p>{t("将已生成的数据包放入应用的 packs 目录后重新启动。")}</p>
+        : packs.map(pack => <button key={pack.snapshot} disabled={changing} className="pack-choice"
+          onClick={() => { change(pack); setOpen(false) }}>
+          <span>{t(pack.region)}<small>{pack.snapshot}</small><small>{pack.source_schema>=3?t("原始对象已索引"):t("预建 Z{0}–{1}", pack.min_zoom, pack.max_zoom)}</small></span>
+          {active?.snapshot === pack.snapshot ? <b>{t("使用中")}</b> : <ArrowUpRight size={16} />}
+        </button>)}
+      {active && <p>{active.source} · {active.license}{active.basemap ? ' · Natural Earth' : ''}</p>}
+      <button className="secondary compact pack-manage" onClick={()=>{setOpen(false);onManage()}}>{t("管理离线数据")}</button>
+      {conflicts.length > 0 && <details open><summary>{t("工作区迁移冲突")}</summary>
+        <ul className="conflicts">{conflicts.map(conflict => <li key={`${conflict.source_snapshot}:${conflict.entity}`}>
+          {t(conflict.reason)}<small>{conflict.entity} · {conflict.source_snapshot}</small>
+        </li>)}</ul></details>}
+    </div>}
+  </div>
+}
+
+export function PackInstall({onInstalled}:{onInstalled:(pack:Pack)=>void}) {
   const [path,setPath]=useState('')
   const [job,setJob]=useState('')
   const [progress,setProgress]=useState<[number,number]>()
@@ -51,40 +75,21 @@ export function PackMenu({ packs, active, changing, change, conflicts, onInstall
     try{
       const manifest=await api.install(path.trim(),id)
       onInstalled(manifest)
-      setStatus('校验通过，数据包已安装')
+      setStatus("校验通过，数据包已安装")
       setPath('')
     } catch(e){setFailure(String(e))}
     finally{setJob('')}
   }
-  return <div className="pack-menu">
-    <button className="pack-trigger" onClick={() => setOpen(!open)} aria-expanded={open}>
-      <Database size={17} /><span>{active?.region ?? '数据包'}</span><ChevronDown size={14} />
-    </button>
-    {open && <div className="pack-popover">
-      <div className="popup-title">本地数据包<button className="icon" aria-label="关闭数据包" onClick={() => setOpen(false)}><X size={16} /></button></div>
-      {packs.length === 0 ? <p>将已生成的数据包放入应用的 packs 目录后重新启动。</p>
-        : packs.map(pack => <button key={pack.snapshot} disabled={changing} className="pack-choice"
-          onClick={() => { change(pack); setOpen(false) }}>
-          <span>{pack.region}<small>{pack.snapshot}</small><small>{pack.source_schema>=3?'原始对象已索引':`预建 Z${pack.min_zoom}–${pack.max_zoom}`}</small></span>
-          {active?.snapshot === pack.snapshot ? <b>使用中</b> : <ArrowUpRight size={16} />}
-        </button>)}
-      {active && <p>{active.source} · {active.license}{active.basemap ? ' · Natural Earth' : ''}</p>}
-      <details><summary>安装本地快照</summary>
+  return <div className="local-pack-install"><h3>{t("安装本地快照")}</h3>
         <form className="pack-install" onSubmit={e=>{e.preventDefault();void install()}}>
-          <input value={path} onChange={e=>setPath(e.target.value)} placeholder="数据包文件夹的绝对路径" aria-label="数据包文件夹"/>
-          <div className="ops-actions"><button className="secondary compact" disabled={!path.trim()||!!job}>校验并安装</button>
-            {!!job&&<button type="button" className="secondary compact" onClick={()=>void api.packJob(job,true)}>取消</button>}
+          <input value={path} onChange={e=>setPath(e.target.value)} placeholder={t("数据包文件夹的绝对路径")} aria-label={t("数据包文件夹")}/>
+          <div className="ops-actions"><button className="secondary compact" disabled={!path.trim()||!!job}>{t("校验并安装")}</button>
+            {!!job&&<button type="button" className="secondary compact" onClick={()=>void api.packJob(job,true)}>{t("取消")}</button>}
           </div>
           {job&&<><progress value={progress?.[0]??0} max={progress?.[1]||1}/>
-            <small>{progress?.[0]===progress?.[1]?'校验快照…':'复制数据…'}</small></>}
-          {status&&<small role="status">{status}</small>}{failure&&<small role="alert" className="error-text">{failure}</small>}
+            <small>{progress?.[0]===progress?.[1]?t("校验快照…"):t("复制数据…")}</small></>}
+          {status&&<small role="status">{t(status)}</small>}{failure&&<small role="alert" className="error-text">{t(failure)}</small>}
         </form>
-      </details>
-      {conflicts.length > 0 && <details open><summary>工作区迁移冲突</summary>
-        <ul className="conflicts">{conflicts.map(conflict => <li key={`${conflict.source_snapshot}:${conflict.entity}`}>
-          {conflict.reason}<small>{conflict.entity} · {conflict.source_snapshot}</small>
-        </li>)}</ul></details>}
-    </div>}
   </div>
 }
 
@@ -165,40 +170,40 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
     setNearby(false)
   }
 
-  return <aside className="sidebar" aria-label="数据浏览">
+  return <aside className="sidebar" aria-label={t("数据浏览")}>
     <div className="tabs">
-      <button className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}><Database size={15} />目录</button>
-      <button className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}><Layers3 size={15} />图层</button>
+      <button className={tab === 'catalog' ? 'active' : ''} onClick={() => setTab('catalog')}><Database size={15} />{t("目录")}</button>
+      <button className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}><Layers3 size={15} />{t("图层")}</button>
     </div>
     {tab === 'catalog' ? <>
       <div className="sidebar-heading">
-        <span className="small-label">本地交通地理数据</span>
-        <h1>{pack ? `${pack.region}交通网` : '交通网络'}</h1>
+        <span className="small-label">{t("本地交通地理数据")}</span>
+        <h1>{pack ? t("{0}交通网", t(pack.region)) : t("交通网络")}</h1>
       </div>
       <label className="search"><Search size={17} />
-        <input aria-label="搜索交通实体" placeholder="搜索车站、线路或拼音" value={query}
+        <input aria-label={t("搜索交通实体")} placeholder={t("搜索车站、线路或拼音")} value={query}
           onChange={e => { setWorkGroup(undefined); setQuery(e.target.value) }} maxLength={128} />
-        {query && <button className="icon" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}
+        {query && <button className="icon" aria-label={t("清空搜索")} onClick={() => setQuery('')}><X size={15} /></button>}
       </label>
       <div className="section-label">
-        {browse ? <button className="back" onClick={overview}><ArrowLeft size={14} />{workGroup ?? group?.name ?? (kind ? kindNames[kind] : '浏览目录')}</button>
-          : <span>按对象浏览</span>}
-        <button className={nearby ? 'nearby on' : 'nearby'} aria-pressed={nearby} disabled={!pack || !!workGroup} title="限制在当前视野"
-          onClick={() => setNearby(!nearby)}><LocateFixed size={15} />当前视野</button>
+        {browse ? <button className="back" onClick={overview}><ArrowLeft size={14} />{workGroup ?? group?.name ?? t(kind ? kindNames[kind] : "浏览目录")}</button>
+          : <span>{t("按对象浏览")}</span>}
+        <button className={nearby ? 'nearby on' : 'nearby'} aria-pressed={nearby} disabled={!pack || !!workGroup} title={t("限制在当前视野")}
+          onClick={() => setNearby(!nearby)}><LocateFixed size={15} />{t("当前视野")}</button>
       </div>
       {!browse ? <div className="categories">
         {types.map(({ id, icon: Icon }) => <button key={id} disabled={!pack} onClick={() => setKind(id)}>
-          <Icon size={18} /><span>{kindNames[id]}</span><small>{(pack?.counts[id] ?? 0).toLocaleString('zh-CN')}</small>
+          <Icon size={18} /><span>{t(kindNames[id])}</span><small>{(pack?.counts[id] ?? 0).toLocaleString(document.documentElement.lang)}</small>
           <ChevronRight size={15} />
         </button>)}
-        {groups.length > 0 && <div className="group-label">工作区分组</div>}
+        {groups.length > 0 && <div className="group-label">{t("工作区分组")}</div>}
         {groups.map(item => <button key={item.name} onClick={() => setWorkGroup(item.name)}>
           <Folder size={18} /><span className="group-name">{item.name}</span><small>{item.count}</small><ChevronRight size={15} />
         </button>)}
       </div> : <>
         <div className="results" ref={list}>
           {error && <p className="sidebar-message" role="alert">{error}</p>}
-          {!error && !result.items.length && <p className="sidebar-message">{pending ? '正在查询…' : '没有符合条件的对象'}</p>}
+          {!error && !result.items.length && <p className="sidebar-message">{pending ? t("正在查询…") : t("没有符合条件的对象")}</p>}
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map(virtualRow => {
               const item = result.items[virtualRow.index]
@@ -211,12 +216,12 @@ export function Catalog({ pack, selected, onSelect, group, setGroup, view, visib
               </button>
             })}
           </div>
-          {result.next && <button className="more" disabled={pending} onClick={more}><ArrowDown size={14} />{pending ? '载入中…' : '加载更多'}</button>}
+          {result.next && <button className="more" disabled={pending} onClick={more}><ArrowDown size={14} />{pending ? t("载入中…") : t("加载更多")}</button>}
         </div>
       </>}
-      <div className="sidebar-base"><Database size={14} /> {pack ? `${Object.values(pack.counts).reduce((a, b) => a + b, 0).toLocaleString('zh-CN')} 个对象` : '等待安装离线数据'}</div>
+      <div className="sidebar-base"><Database size={14} /> {pack ? t("{0} 个对象", Object.values(pack.counts).reduce((a, b) => a + b, 0).toLocaleString('zh-CN')) : t("等待安装离线数据")}</div>
     </> : <>
-      <div className="sidebar-heading"><span className="small-label">地图显示</span><h1>交通图层</h1></div>
+      <div className="sidebar-heading"><span className="small-label">{t("地图显示")}</span><h1>{t("交通图层")}</h1></div>
       <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
     </>}
   </aside>

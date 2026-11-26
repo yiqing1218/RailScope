@@ -25,6 +25,7 @@ type ActivePack = Option<Arc<Pack>>;
 
 pub struct Engine {
     root: PathBuf,
+    bundled: Option<PathBuf>,
     active: RwLock<ActivePack>,
     previous: Mutex<ActivePack>,
     workspace: Mutex<Connection>,
@@ -33,6 +34,14 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(root: PathBuf, workspace: PathBuf) -> Result<Self> {
+        Self::with_bundled_packs(root, workspace, None)
+    }
+
+    pub fn with_bundled_packs(
+        root: PathBuf,
+        workspace: PathBuf,
+        bundled: Option<PathBuf>,
+    ) -> Result<Self> {
         fs::create_dir_all(&root)?;
         let cache_path = workspace.with_file_name("precision-tiles.sqlite");
         let disk_tiles = match tile_cache::DiskTiles::open(&cache_path) {
@@ -49,6 +58,7 @@ impl Engine {
         let saved = workspace::active(&db)?;
         let engine = Self {
             root,
+            bundled,
             active: RwLock::new(None),
             previous: Mutex::new(None),
             workspace: Mutex::new(db),
@@ -74,7 +84,18 @@ impl Engine {
     }
 
     pub fn packs(&self) -> Result<Vec<Manifest>> {
-        pack::available(&self.root)
+        let mut packs = pack::available(&self.root)?;
+        if let Some(root) = &self.bundled {
+            for manifest in pack::available(root)? {
+                if !packs
+                    .iter()
+                    .any(|installed| installed.snapshot == manifest.snapshot)
+                {
+                    packs.push(manifest);
+                }
+            }
+        }
+        Ok(packs)
     }
 
     pub fn install_pack(
@@ -135,7 +156,12 @@ impl Engine {
         {
             return Ok(active.manifest.clone());
         }
-        let path = self.root.join(snapshot);
+        let mut path = self.root.join(snapshot);
+        if !path.exists()
+            && let Some(root) = &self.bundled
+        {
+            path = root.join(snapshot);
+        }
         ensure!(
             fs::symlink_metadata(&path)?.file_type().is_dir(),
             "数据包文件夹无效"

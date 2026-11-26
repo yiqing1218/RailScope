@@ -1,9 +1,10 @@
-import { Activity, ArrowUpRight, Check, ChevronRight, Compass, Crosshair, Database, FileText, Map as MapIcon,
+import { t, useLanguage } from './i18n'
+import { Activity, ArrowUpRight, Check, ChevronRight, CircleHelp, Compass, Crosshair, Database, FileText, Map as MapIcon,
   MapPin, Maximize2, PanelBottom, PanelLeft, PanelRight, Redo2, Route as RouteIcon, Save, Settings as SettingsIcon, TrainFront, Undo2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { api, type Bounds, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
-import { Catalog, PackMenu, className, kindNames, statusName } from './catalog'
+import { Catalog, PackInstall, PackMenu, className, kindNames, statusName } from './catalog'
 import { MapController, type MapTheme } from './map'
 import { LayerTree, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
@@ -11,6 +12,7 @@ import { OperationsWorkbench, type OperationsHandle } from './operations-workben
 import { chinaDate, opsApi, type ControlPoint, type LegacyIssue, type Level } from './operations-api'
 import { facilityStyles, lifecycles, missingColor, nonRailStationNames, readTrackViews, siteAreaNames, siteRoleNames, sites, svgSymbol, symbolName, thematic, tracks, type TrackViews } from './cartography'
 import { Settings, themes, type SettingsSection } from './settings'
+import { LanguageSelect, Welcome } from './welcome'
 
 const visibilityKey = 'railscope-next.layers'
 type Mode = 'detail' | 'operations' | 'analysis' | 'data'
@@ -38,6 +40,12 @@ function loadVisibility() {
 }
 
 export function App() {
+  const language=useLanguage()
+  const [welcomeOpen,setWelcomeOpen]=useState(()=>localStorage.getItem('railscope-next.quick-start')!=='seen')
+  function closeWelcome(){
+    localStorage.setItem('railscope-next.quick-start','seen')
+    setWelcomeOpen(false)
+  }
   const [packs, setPacks] = useState<Pack[]>([])
   const [active, setActive] = useState<Pack | null>(null)
   const [changing, setChanging] = useState(true)
@@ -111,7 +119,7 @@ export function App() {
       setView(map.view())
       return () => { observer.disconnect(); controller.current = undefined; map.destroy() }
     } catch (error) {
-      setMapError(`地图初始化失败 · ${String(error)}`)
+      setMapError(t("地图初始化失败 · {0}", String(error)))
     }
   }, [])
   useEffect(() => startMetrics(), [])
@@ -211,7 +219,7 @@ export function App() {
 
   async function change(pack: Pack) {
     if (pack.snapshot === active?.snapshot) return
-    if (operationsDirty && !window.confirm('当前有未保存的运行草稿。切换数据包并放弃草稿？')) return
+    if (operationsDirty && !window.confirm(t("当前有未保存的运行草稿。切换数据包并放弃草稿？"))) return
     setGlobalError('')
     setMapError('')
     setChanging(true)
@@ -290,23 +298,30 @@ export function App() {
   function openBottom(focus=false){
     setLayouts(old=>({...old,operations:{...old.operations,hideBottom:false,focusBottom:focus||old.operations.focusBottom}}))
   }
+  function openData(){
+    setMode('data');setDataTab('packs')
+    setLayouts(old=>({...old,data:{...old.data,hideLeft:false}}))
+  }
 
   const zoom=view?Math.floor(view.zoom):0
   const precise=!overview && active && (zoom>=15||zoom>active.max_zoom||(active.source_schema>=3&&zoom>=9))
-  return <div className="app" data-theme={theme}>
+  return <div className="app" data-theme={theme} data-language={language}>
     <header className="top">
       <div className="brand"><div className="brand-icon"><TrainFront size={23} strokeWidth={1.7} /></div><strong>RailScope <span>Next</span></strong></div>
-      <nav aria-label="工作台">
+      <nav aria-label={t("工作台")}>
         {modes.map(({id,title,icon:Icon})=><button key={id} className={mode===id?'selected':''} aria-current={mode===id?'page':undefined}
-          onClick={()=>setMode(id)}><Icon size={17}/>{title}</button>)}
-        <button aria-haspopup="dialog" title="设置 (Ctrl+,)" onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>设置</button>
+          aria-label={t(title)} title={t(title)} onClick={()=>setMode(id)}><Icon size={17}/><span>{t(title)}</span></button>)}
+        <button aria-haspopup="dialog" title={t("设置 (Ctrl+,)")} onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>{t("设置")}</button>
       </nav>
       <div className="workspace-tools">
-        <button className="icon" title="显隐任务面板" aria-label="任务面板" aria-pressed={!layout.hideLeft} onClick={()=>setLayout(old=>({...old,hideLeft:!old.hideLeft}))}><PanelLeft size={17}/></button>
-        <button className="icon" title="显隐对象面板" aria-label="对象面板" aria-pressed={!layout.hideRight} onClick={()=>setLayout(old=>({...old,hideRight:!old.hideRight}))}><PanelRight size={17}/></button>
-        <button className="icon" title="显隐底部工作区" aria-label="底部工作区" aria-pressed={!layout.hideBottom} onClick={()=>setLayout(old=>({...old,hideBottom:!old.hideBottom,focusBottom:false}))}><PanelBottom size={17}/></button>
-        <PackMenu packs={packs} active={active} changing={changing} change={change} conflicts={conflicts}
-          onInstalled={pack=>setPacks(items=>[pack,...items.filter(item=>item.snapshot!==pack.snapshot)])} />
+        <button className="icon" title={t("显隐任务面板")} aria-label={t("任务面板")} aria-pressed={!layout.hideLeft} onClick={()=>setLayout(old=>({...old,hideLeft:!old.hideLeft}))}><PanelLeft size={17}/></button>
+        <button className="icon" title={t("显隐对象面板")} aria-label={t("对象面板")} aria-pressed={!layout.hideRight} onClick={()=>setLayout(old=>({...old,hideRight:!old.hideRight}))}><PanelRight size={17}/></button>
+        <button className="icon" title={t("显隐底部工作区")} aria-label={t("底部工作区")} aria-pressed={!layout.hideBottom} onClick={()=>setLayout(old=>({...old,hideBottom:!old.hideBottom,focusBottom:false}))}><PanelBottom size={17}/></button>
+        <PackMenu packs={packs} active={active} changing={changing} change={change} conflicts={conflicts} onManage={openData} />
+        <button className="icon quick-start-trigger" title={t("使用指南")} aria-label={t("使用指南")} aria-haspopup="dialog" onClick={()=>setWelcomeOpen(true)}>
+          <CircleHelp size={18}/>
+        </button>
+        <LanguageSelect />
       </div>
     </header>
     <Settings open={settingsOpen} section={settingsSection} onSection={setSettingsSection} onClose={()=>setSettingsOpen(false)}
@@ -315,12 +330,15 @@ export function App() {
       onPanel={(target,panel,visible)=>setLayouts(old=>({...old,[target]:{...old[target],[panel]:!visible,
         focusBottom:panel==='hideBottom'&&!visible?false:old[target].focusBottom}}))}
       resetLayout={target=>setLayouts(old=>({...old,[target]:layoutDefaults}))}
-      level={level} setLevel={setLevel} pack={active} onData={()=>{setSettingsOpen(false);setMode('data');setDataTab('packs');
-        setLayouts(old=>({...old,data:{...old.data,hideLeft:false}}))}}/>
+      level={level} setLevel={setLevel} pack={active} onData={()=>{setSettingsOpen(false);openData()}}/>
+    <Welcome open={welcomeOpen&&!changing} pack={active} onClose={closeWelcome}
+      onMap={()=>{closeWelcome();setMode('detail')}}
+      onOperations={()=>{closeWelcome();setMode('operations')}}
+      onData={()=>{closeWelcome();openData()}}/>
     <main className="workspace" data-mode={mode} data-left={!layout.hideLeft} data-right={!layout.hideRight}
       style={{gridTemplateColumns:`${layout.hideLeft?'0px':`min(${layout.left}px, 32vw)`} minmax(0, 1fr) ${layout.hideRight?'0px':`min(${layout.right}px, 33vw)`}`,
         gridTemplateRows:`minmax(${layout.focusBottom&&!layout.hideBottom?'115px':'0'},1fr) ${layout.hideBottom?'0px':layout.focusBottom?'min(67vh, 760px)':`min(${layout.bottom}px, 55vh)`}`}}>
-      <aside className="task-dock" aria-label="任务面板" hidden={layout.hideLeft}>
+      <aside className="task-dock" aria-label={t("任务面板")} hidden={layout.hideLeft}>
       <div className="catalog-dock" hidden={mode!=='detail'}><Catalog pack={active} selected={details?.entity.id} onSelect={item => { void select(item.id, item) }}
         group={group} setGroup={setGroup} view={view?.bounds} visibility={visibility}
         workspaceChange={workspaceChange}
@@ -330,43 +348,46 @@ export function App() {
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
         onPlaying={setSimulationPlaying} onDirty={setOperationsDirty} level={level} setLevel={setLevel}/>
       <div className="task-pane" hidden={mode!=='analysis'}>
-        <div className="panel-title"><Activity size={17}/><h2>分析与诊断</h2></div>
-        <div className="task-menu">{([['route','路径分析'],['topology','拓扑与通道'],['conflicts','时刻与车辆冲突'],['quality','数据质量'],['metrics','系统性能']] as const).map(([id,label])=>
+        <div className="panel-title"><Activity size={17}/><h2>{t("分析与诊断")}</h2></div>
+        <div className="task-menu">{([['route',t("路径分析")],['topology',t("拓扑与通道")],['conflicts',t("时刻与车辆冲突")],['quality',t("数据质量")],['metrics',t("系统性能")]] as const).map(([id,label])=>
           <button key={id} className={analysisTab===id?'active':''} aria-pressed={analysisTab===id} onClick={()=>setAnalysisTab(id)}>{label}</button>)}</div>
         <div hidden={analysisTab!=='route'}><PathPanel key={active?.snapshot} pack={active} selection={details?.entity} transfer={showOperations}
           show={geometry => controller.current?.setExact(geometry)} dock={analysisDock} visible={mode==='analysis'&&analysisTab==='route'}
           reveal={() => setLayouts(old=>({...old,analysis:{...old.analysis,hideBottom:false}}))} /></div>
-        {analysisTab==='topology'&&<div className="property-content task-summary"><h3>物理连接</h3><p>路径分析按显式拓扑与运行方向查询。选择物理轨道可检查来源或打开通道工作区。</p>
-          <button className="secondary" disabled={!details?.entity.has_edge} onClick={()=>showOperations(details?.entity)}>在运行中检查轨道</button></div>}
-        {analysisTab==='conflicts'&&<div className="property-content task-summary"><p>资源分析使用已保存时刻、经过校验的通道和车组分配。</p>
-          <button className="secondary" onClick={()=>{setMode('operations');operations.current?.openScenario()}}>打开运行资源分析</button></div>}
-        {analysisTab==='quality'&&<div className="property-content task-summary"><p>{conflicts.length} 条快照迁移冲突</p>
-          <button className="secondary" onClick={()=>{setDataTab('review');setMode('data')}}>查看来源与冲突</button></div>}
+        {analysisTab==='topology'&&<div className="property-content task-summary"><h3>{t("物理连接")}</h3><p>{t("路径分析按显式拓扑与运行方向查询。选择物理轨道可检查来源或打开通道工作区。")}</p>
+          <button className="secondary" disabled={!details?.entity.has_edge} onClick={()=>showOperations(details?.entity)}>{t("在运行中检查轨道")}</button></div>}
+        {analysisTab==='conflicts'&&<div className="property-content task-summary"><p>{t("资源分析使用已保存时刻、经过校验的通道和车组分配。")}</p>
+          <button className="secondary" onClick={()=>{setMode('operations');operations.current?.openScenario()}}>{t("打开运行资源分析")}</button></div>}
+        {analysisTab==='quality'&&<div className="property-content task-summary"><p>{conflicts.length} {t("条快照迁移冲突")}</p>
+          <button className="secondary" onClick={()=>{setDataTab('review');setMode('data')}}>{t("查看来源与冲突")}</button></div>}
         {analysisTab==='metrics'&&<MetricsPanel pack={active}/>}
       </div>
       <div className="task-pane" hidden={mode!=='data'}>
-        <div className="panel-title"><Database size={17}/><h2>数据</h2></div>
-        <div className="task-menu">{([['packs','数据包'],['import','导入旧版计划'],['source','版本与来源'],['review','审校冲突']] as const).map(([id,label])=>
+        <div className="panel-title"><Database size={17}/><h2>{t("数据")}</h2></div>
+        <div className="task-menu">{([['packs',t("数据包")],['import',t("导入旧版计划")],['source',t("版本与来源")],['review',t("审校冲突")]] as const).map(([id,label])=>
           <button key={id} className={dataTab===id?'active':''} aria-pressed={dataTab===id} onClick={()=>setDataTab(id)}>{label}</button>)}</div>
-        {dataTab==='packs'&&<div className="property-content task-summary">{packs.map(pack=><button key={pack.snapshot} className="pack-choice" disabled={changing||pack.snapshot===active?.snapshot}
-          onClick={()=>void change(pack)}><span>{pack.region}<small>{pack.snapshot}</small></span><b>{pack.snapshot===active?.snapshot?'当前':'切换'}</b></button>)}</div>}
-        {dataTab==='source'&&<div className="property-content task-summary"><p>{active?.source ?? '未加载快照'}</p><p>{active?.source_file}</p><p>{active?.license}</p>
+        {dataTab==='packs'&&<div className="property-content task-summary">
+          {packs.map(pack=><button key={pack.snapshot} className="pack-choice" disabled={changing||pack.snapshot===active?.snapshot}
+            onClick={()=>void change(pack)}><span>{t(pack.region)}<small>{pack.snapshot}</small></span><b>{pack.snapshot===active?.snapshot?t("当前"):t("切换")}</b></button>)}
+          <PackInstall onInstalled={pack=>{setPacks(items=>[pack,...items.filter(item=>item.snapshot!==pack.snapshot)]);if(!active)void change(pack)}}/>
+        </div>}
+        {dataTab==='source'&&<div className="property-content task-summary"><p>{active?.source ?? t("未加载快照")}</p><p>{active?.source_file}</p><p>{active?.license}</p>
           {active&&<dl>{Object.entries(active.source_objects??{}).map(([key,count])=><div className="source-count" key={key}><dt>{key}</dt><dd>{count.toLocaleString()}</dd></div>)}</dl>}</div>}
-        {dataTab==='review'&&<div className="property-content task-summary">{conflicts.length===0?<p>当前快照没有已记录的迁移冲突。</p>:
+        {dataTab==='review'&&<div className="property-content task-summary">{conflicts.length===0?<p>{t("当前快照没有已记录的迁移冲突。")}</p>:
           <ul className="conflicts">{conflicts.map(item=><li key={`${item.entity}-${item.source_snapshot}`}>
             <span>{item.reason}</span><small>{item.source_snapshot} · {item.entity}</small></li>)}</ul>}</div>}
         {active&&<LegacyData key={active.snapshot} snapshot={active.snapshot} tab={dataTab} onImported={()=>operations.current?.refresh()}/>}
       </div>
       </aside>
-      <section className="map-panel" ref={mapPanel} aria-label="离线交通地图">
+      <section className="map-panel" ref={mapPanel} aria-label={t("离线交通地图")}>
         <div className="map-canvas" ref={canvas} />
         {!layout.hideLeft&&<div className="dock-resize left" aria-hidden="true" onPointerDown={e=>resize(e,'left')}/>}
         {!layout.hideRight&&<div className="dock-resize right" aria-hidden="true" onPointerDown={e=>resize(e,'right')}/>}
         <div className="map-tools">
-          {active && <><div className="map-title"><Compass size={17} /><span>{active.region} · 交通地图</span></div>
-            <button className="map-home" onClick={() => controller.current?.fit(active.bounds, 11)} title="返回数据包范围" aria-label="返回数据包范围"><Crosshair size={17} /></button></>}
+          {active && <><div className="map-title"><Compass size={17} /><span>{t(active.region)} {t("· 交通地图")}</span></div>
+            <button className="map-home" onClick={() => controller.current?.fit(active.bounds, 11)} title={t("返回数据包范围")} aria-label={t("返回数据包范围")}><Crosshair size={17} /></button></>}
           <details className="view-settings">
-            <summary>视图</summary>
+            <summary>{t("视图")}</summary>
             <div>
               <form className="coordinate-jump" onSubmit={event=>{
                 event.preventDefault()
@@ -375,63 +396,64 @@ export function App() {
                 if(Number.isFinite(lng)&&Math.abs(lng)<=180&&Number.isFinite(lat)&&Math.abs(lat)<=85&&zoom>=0&&zoom<=22)
                   controller.current?.map.jumpTo({center:[lng,lat],zoom})
               }}>
-                <input name="lng" required type="number" step="any" aria-label="跳转经度" placeholder="经度"/>
-                <input name="lat" required type="number" step="any" aria-label="跳转纬度" placeholder="纬度"/>
-                <input name="zoom" required type="number" step="any" aria-label="跳转缩放" placeholder="Z"/>
-                <button className="secondary compact">定位</button>
+                <input name="lng" required type="number" step="any" aria-label={t("跳转经度")} placeholder={t("经度")}/>
+                <input name="lat" required type="number" step="any" aria-label={t("跳转纬度")} placeholder={t("纬度")}/>
+                <input name="zoom" required type="number" step="any" aria-label={t("跳转缩放")} placeholder="Z"/>
+                <button className="secondary compact">{t("定位")}</button>
               </form>
-              <button className="secondary compact" onClick={()=>{setSettingsSection('map');setSettingsOpen(true)}}>地图与底图设置</button>
+              <button className="secondary compact" onClick={()=>{setSettingsSection('map');setSettingsOpen(true)}}>{t("地图与底图设置")}</button>
             </div>
           </details>
-          <details className="view-settings"><summary>图层</summary><div>
-            <button className="secondary compact" onClick={()=>{setSettingsSection('tracks');setSettingsOpen(true)}}>轨道配色设置</button>
+          <details className="view-settings"><summary>{t("图层")}</summary><div>
+            <button className="secondary compact" onClick={()=>{setSettingsSection('tracks');setSettingsOpen(true)}}>{t("轨道配色设置")}</button>
             <LayerTree visibility={visibility} onLayer={onLayer} onPreset={onPreset}/>
-            <details className="rail-legend"><summary>图例</summary><MapLegend views={trackViews}/></details>
+            <details className="rail-legend"><summary>{t("图例")}</summary><MapLegend views={trackViews}/></details>
           </div></details>
         </div>
         {!active && !changing && !globalError && <div className="map-empty">
-          <Database size={24} /><h2>尚未加载离线地图</h2><p>将数据包放入 packs 目录后重新启动。</p>
+          <Database size={24} /><h2>{t("尚未加载离线地图")}</h2>
+          <button className="primary compact" onClick={()=>setWelcomeOpen(true)}>{t("使用指南")}</button>
         </div>}
         {(globalError || mapError) && <div className="map-error" role="alert">
-          <span>{globalError || mapError}</span><button onClick={() => { setGlobalError(''); setMapError('') }} aria-label="关闭提示"><X size={15} /></button>
+          <span>{globalError || mapError}</span><button onClick={() => { setGlobalError(''); setMapError('') }} aria-label={t("关闭提示")}><X size={15} /></button>
         </div>}
-        {!globalError && changing && <div className="map-loading">正在校验本地数据包…</div>}
+        {!globalError && changing && <div className="map-loading">{t("正在校验本地数据包…")}</div>}
       </section>
-      <aside className="inspector" aria-label="工作面板" hidden={layout.hideRight}>
+      <aside className="inspector" aria-label={t("工作面板")} hidden={layout.hideRight}>
         <div hidden={mode==='data'||(mode==='operations'&&!details)}>
-          <div className="panel-title"><FileText size={16} /><h2>对象属性</h2>{details && <button className="icon" aria-label="清除选中" onClick={clear}><X size={17} /></button>}</div>
-          {backStation&&details?.entity.kind==='line'&&<button className="secondary compact" onClick={()=>{void select(backStation.id,backStation);setBackStation(undefined)}}>返回 {backStation.name}</button>}
+          <div className="panel-title"><FileText size={16} /><h2>{t("对象属性")}</h2>{details && <button className="icon" aria-label={t("清除选中")} onClick={clear}><X size={17} /></button>}</div>
+          {backStation&&details?.entity.kind==='line'&&<button className="secondary compact" onClick={()=>{void select(backStation.id,backStation);setBackStation(undefined)}}>{t("返回")} {backStation.name}</button>}
           {detailError && <p className="error-text" role="alert">{detailError}</p>}
-          {busy ? <div className="blank">正在读取对象…</div> : details && active
+          {busy ? <div className="blank">{t("正在读取对象…")}</div> : details && active
             ? <Properties key={details.entity.id} inspection={details} pack={active} exact={exact}
                 showMembers={line=>{setGroup(line);setMode('detail')}} update={(state, target) => applyWorkspace(state, target, active)}
                 openLine={line=>{setBackStation(details.entity);void select(line.id,line)}}
                 useForCorridor={()=>showOperations(details.entity)} useForAnalysis={()=>{setAnalysisTab('route');setMode('analysis')}}
                 zoomOverride={point => controller.current?.fit([point[0], point[1], point[0], point[1]])} />
-            : <div className="blank"><MapPin size={24} /><strong>选择地图对象</strong><p>点击地图或打开搜索结果即可查看资料。</p></div>}
+            : <div className="blank"><MapPin size={24} /><strong>{t("选择地图对象")}</strong><p>{t("点击地图或打开搜索结果即可查看资料。")}</p></div>}
         </div>
         {mode==='detail'&&active&&<BusinessLines key={active.snapshot} snapshot={active.snapshot} selection={details?.entity}
           openMember={item => { void select(item.id, item) }} />}
-        {mode==='data'&&<div className="property-content task-summary"><h3>{active?.snapshot??'快照详情'}</h3>
+        {mode==='data'&&<div className="property-content task-summary"><h3>{active?.snapshot??t("快照详情")}</h3>
           {active&&<><p>{active.source}</p><code>{active.source_sha256}</code><p>{active.bounds.join(' · ')}</p></>}</div>}
         <div ref={setRightDock} hidden={mode!=='operations'}/>
       </aside>
-      <section className="bottom-dock" aria-label="底部工作区" hidden={layout.hideBottom}>
+      <section className="bottom-dock" aria-label={t("底部工作区")} hidden={layout.hideBottom}>
         <div className="dock-resize bottom" aria-hidden="true" onPointerDown={e=>resize(e,'bottom')}/>
-        <div className="panel-title"><PanelBottom size={15}/><h2>{mode==='operations'?'时刻与运行图':mode==='analysis'?'分析结果':'底部工作区'}</h2>
-          <button className="icon" aria-label="聚焦底部工作区" aria-pressed={layout.focusBottom} onClick={()=>setLayout(old=>({...old,focusBottom:!old.focusBottom}))}><Maximize2 size={15}/></button>
-          <button className="icon" aria-label="收起底部工作区" onClick={()=>setLayout(old=>({...old,hideBottom:true,focusBottom:false}))}><X size={16}/></button>
+        <div className="panel-title"><PanelBottom size={15}/><h2>{mode==='operations'?t("时刻与运行图"):mode==='analysis'?t("分析结果"):t("底部工作区")}</h2>
+          <button className="icon" aria-label={t("聚焦底部工作区")} aria-pressed={layout.focusBottom} onClick={()=>setLayout(old=>({...old,focusBottom:!old.focusBottom}))}><Maximize2 size={15}/></button>
+          <button className="icon" aria-label={t("收起底部工作区")} onClick={()=>setLayout(old=>({...old,hideBottom:true,focusBottom:false}))}><X size={16}/></button>
         </div>
         <div ref={setBottomDock} className="bottom-content" hidden={mode!=='operations'}/>
         <div ref={setAnalysisDock} className="bottom-content" hidden={mode!=='analysis'}/>
       </section>
     </main>
     <footer className="statusbar">
-      <span><span className={active ? 'dot online' : 'dot'} />{active ? '离线 · 本地快照' : '无活动快照'}</span>
+      <span><span className={active ? 'dot online' : 'dot'} />{active ? t("离线 · 本地快照") : t("无活动快照")}</span>
       <span className="snapshot">{active?.snapshot}</span>
-      {simulationPlaying&&<button className="status-action" onClick={()=>{setMode('operations');operations.current?.pause()}}>计划仿真中 · 暂停</button>}
-      {operationsDirty&&<span>运行草稿未保存</span>}
-      {active&&<span>{precise?'源几何 · 按视野生成':'概览瓦片'}{active.source_schema>=3?' · OSM 原始对象':''}</span>}
+      {simulationPlaying&&<button className="status-action" onClick={()=>{setMode('operations');operations.current?.pause()}}>{t("计划仿真中 · 暂停")}</button>}
+      {operationsDirty&&<span>{t("运行草稿未保存")}</span>}
+      {active&&<span>{precise?t("源几何 · 按视野生成"):t("概览瓦片")}{active.source_schema>=3?t(" · OSM 原始对象"):''}</span>}
       <span className="coordinates">{view && `${view.center.lng.toFixed(4)}° E   ${view.center.lat.toFixed(4)}° N`}</span>
       <span className="zoom">{view ? `Z ${view.zoom.toFixed(1)}` : ''}</span>
     </footer>
@@ -456,41 +478,41 @@ function LegacyData({snapshot,tab,onImported}:{snapshot:string;tab:string;onImpo
     if(!file)return
     setError('');setStatus('');setBusy(true)
     try {
-      if(file.size>16*1024*1024)throw new Error('旧版文件超过 16 MiB。')
+      if(file.size>16*1024*1024)throw new Error(t("旧版文件超过 16 MiB。"))
       const mapping=aliases.trim()?JSON.parse(aliases):{}
       const result=await opsApi.importLegacy(snapshot,(await file.text()).replace(/^\uFEFF/,''),date,mapping)
-      if(result.pending)setError(result.issue??'存在待修复引用，请在审校中查看。')
-      else {setStatus(`已导入 ${result.corridors} 条通道、${result.runs} 趟车次。`);onImported()}
+      if(result.pending)setError(result.issue??t("存在待修复引用，请在审校中查看。"))
+      else {setStatus(t("已导入 {0} 条通道、{1} 趟车次。", result.corridors, result.runs));onImported()}
     }catch(cause){setError(String(cause))}finally{setBusy(false)}
   }
   return <>
     <form hidden={tab!=='import'} className="property-content task-summary data-import" onSubmit={e=>{e.preventDefault();void load()}}>
-      <label>旧版 JSON<input type="file" accept=".json" onChange={e=>setFile(e.target.files?.[0])}/></label>
-      <label>文件未指定运营日时使用<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label>
-      <label>显式 ID 对照（JSON，可选）<textarea value={aliases} onChange={e=>setAliases(e.target.value)} rows={5}
-        placeholder={'{"line:旧线路编号":"现有 RailScope UUID"}'}/></label>
-      <button className="primary" disabled={busy||!file}>校验并导入</button>
+      <label>{t("旧版 JSON")}<input type="file" accept=".json" onChange={e=>setFile(e.target.files?.[0])}/></label>
+      <label>{t("文件未指定运营日时使用")}<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label>
+      <label>{t("显式 ID 对照（JSON，可选）")}<textarea value={aliases} onChange={e=>setAliases(e.target.value)} rows={5}
+        placeholder={t("{\"line:旧线路编号\":\"现有 RailScope UUID\"}")}/></label>
+      <button className="primary" disabled={busy||!file}>{t("校验并导入")}</button>
       {status&&<p role="status">{status}</p>}{error&&<p className="error-text" role="alert">{error}</p>}
     </form>
-    {tab==='review'&&<div className="property-content task-summary"><h3>旧计划待修复</h3>
-      {issues.length===0?<p>暂无待修复旧计划。</p>:issues.map(item=><details key={item.id}><summary>{item.schema}</summary><p>{item.reason}</p></details>)}
+    {tab==='review'&&<div className="property-content task-summary"><h3>{t("旧计划待修复")}</h3>
+      {issues.length===0?<p>{t("暂无待修复旧计划。")}</p>:issues.map(item=><details key={item.id}><summary>{item.schema}</summary><p>{item.reason}</p></details>)}
     </div>}
   </>
 }
 
 function MapLegend({views}:{views:TrackViews}) {
   const themed = views.rail!=='infrastructure' ? thematic[views.rail] : undefined
-  const items: [string,string][] = themed?.entries.length ? [...themed.entries.map(([,name,color]):[string,string]=>[name,color]),['未知／缺失',missingColor]]
+  const items: [string,string][] = themed?.entries.length ? [...themed.entries.map(([,name,color]):[string,string]=>[name,color]),[t("未知／缺失"),missingColor]]
     : Object.entries(tracks).filter(([key])=>key.startsWith('rail_')||key.startsWith('track_')).map(([, [name,color]])=>[name,color])
   return <ul className="map-legend-list">
-    {items.map(([name,color])=><li key={name}><i style={{backgroundColor:color}}/>{name}</li>)}
+    {items.map(([name,color])=><li key={name}><i style={{backgroundColor:color}}/>{t(name)}</li>)}
     {views.rail==='lifecycle'&&Object.entries(lifecycles).map(([key,[name,opacity,,dash]])=><li key={key}>
-      <i style={{borderTop:`2px ${dash?'dashed':'solid'} currentColor`,opacity}}/>{name}</li>)}
-    {views.metro==='lines'&&<li>城市轨道 · 按运营线路色显示</li>}
+      <i style={{borderTop:`2px ${dash?'dashed':'solid'} currentColor`,opacity}}/>{t(name)}</li>)}
+    {views.metro==='lines'&&<li>{t("城市轨道 · 按运营线路色显示")}</li>}
     {Object.entries(tracks).filter(([key])=>['metro_track','light_rail_track','tram_track','monorail_track'].includes(key))
-      .map(([, [name,color]])=><li key={name}><i style={{backgroundColor:color}}/>{name}</li>)}
-    {Object.values(sites).map(([name,,graphic])=><li key={name}><img alt="" src={svgSymbol(graphic)}/>{name}</li>)}
-    {Object.values(facilityStyles).map(item=><li key={item.name}><i style={{backgroundColor:item.fill,border:`1px solid ${item.outline}`}}/>{item.name}</li>)}
+      .map(([, [name,color]])=><li key={name}><i style={{backgroundColor:color}}/>{t(name)}</li>)}
+    {Object.values(sites).map(([name,,graphic])=><li key={name}><img alt="" src={svgSymbol(graphic)}/>{t(name)}</li>)}
+    {Object.values(facilityStyles).map(item=><li key={item.name}><i style={{backgroundColor:item.fill,border:`1px solid ${item.outline}`}}/>{t(item.name)}</li>)}
   </ul>
 }
 
@@ -528,7 +550,7 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
     try {
       const [x, y] = coordinates.map(coordinate => coordinate.trim())
       if (action === 'apply' && (x || y) && (!x || !y || !Number.isFinite(Number(x)) || !Number.isFinite(Number(y)))) {
-        setError('请填写有效的经纬度，或同时留空以恢复原始位置。')
+        setError(t("请填写有效的经纬度，或同时留空以恢复原始位置。"))
         return
       }
       const result = action === 'apply'
@@ -538,7 +560,7 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
         : await api.replay(pack.snapshot, entity.id, workspace.revision, action === 'redo')
       update(result, inspection)
       if (result.value.point) zoomOverride(result.value.point)
-      setConfirmation({ apply: '已保存到工作区', undo: '已撤销', redo: '已重做' }[action])
+      setConfirmation({ apply: t("已保存到工作区"), undo: t("已撤销"), redo: t("已重做") }[action])
     } catch (e) {
       setError(String(e))
       try {
@@ -553,87 +575,87 @@ function Properties({ inspection, pack, exact, showMembers, openLine, update, zo
 
   return <div className="properties">
     <div className="object-head">
-      <span className="object-type">{entity.site?siteRoleNames[entity.site.role]:kindNames[entity.kind]}</span>
+      <span className="object-type">{t(entity.site?siteRoleNames[entity.site.role]:kindNames[entity.kind])}</span>
       <h3>{workspace.value.name || entity.name}</h3>
-      <span>{entity.site?entity.site.evidence:(symbolName(meaning.render_class)??className(entity.class))} · {lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status)}</span>
+      <span>{t(entity.site?.evidence ?? symbolName(meaning.render_class) ?? className(entity.class))} · {t(lifecycles[meaning.lifecycle as keyof typeof lifecycles]?.[0]??statusName(entity.status))}</span>
     </div>
-    <div className="tabs property-tabs" role="group" aria-label="对象选项卡">
+    <div className="tabs property-tabs" role="group" aria-label={t("对象选项卡")}>
       {entity.site&&<>
-        <button className={tab==='overview'?'active':''} aria-pressed={tab==='overview'} onClick={()=>setTab('overview')}>概览</button>
-        <button className={tab==='lines'?'active':''} aria-pressed={tab==='lines'} onClick={()=>setTab('lines')}>关联线路</button>
+        <button className={tab==='overview'?'active':''} aria-pressed={tab==='overview'} onClick={()=>setTab('overview')}>{t("概览")}</button>
+        <button className={tab==='lines'?'active':''} aria-pressed={tab==='lines'} onClick={()=>setTab('lines')}>{t("关联线路")}</button>
       </>}
-      <button className={tab === 'attributes' ? 'active' : ''} aria-pressed={tab==='attributes'} onClick={() => setTab('attributes')}>{entity.site?'来源':'来源与关联'}</button>
-      <button className={tab === 'workspace' ? 'active' : ''} aria-pressed={tab==='workspace'} onClick={() => setTab('workspace')}>工作区</button>
+      <button className={tab === 'attributes' ? 'active' : ''} aria-pressed={tab==='attributes'} onClick={() => setTab('attributes')}>{entity.site?t("来源"):t("来源与关联")}</button>
+      <button className={tab === 'workspace' ? 'active' : ''} aria-pressed={tab==='workspace'} onClick={() => setTab('workspace')}>{t("工作区")}</button>
     </div>
     {tab==='overview'&&entity.site ? <div className="property-content site-overview">
       <dl>
-        <dt>场站类别</dt><dd>{siteRoleNames[entity.site.role]}</dd>
-        {entity.tags.ref&&<><dt>站码／编号</dt><dd>{entity.tags.ref}</dd></>}
-        {entity.tags.operator&&<><dt>运营管理</dt><dd>{entity.tags.operator}</dd></>}
-        {entity.kind==='station'&&<><dt>运输业务</dt><dd>{{passenger:'客运',freight:'货运',mixed:'客货运'}[meaning.business??'']??'待核验'}</dd>
-          <dt>技术类型</dt><dd>{{marshalling:'编组站',district:'区段站',intermediate:'中间站'}[meaning.technical??'']??'待核验'}</dd></>}
-        <dt>来源核验</dt><dd>{entity.verification==='verified'?'已核验':'自动参考'}</dd>
+        <dt>{t("场站类别")}</dt><dd>{t(siteRoleNames[entity.site.role])}</dd>
+        {entity.tags.ref&&<><dt>{t("站码／编号")}</dt><dd>{entity.tags.ref}</dd></>}
+        {entity.tags.operator&&<><dt>{t("运营管理")}</dt><dd>{entity.tags.operator}</dd></>}
+        {entity.kind==='station'&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??t("待核验")}</dd>
+          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??t("待核验")}</dd></>}
+        <dt>{t("来源核验")}</dt><dd>{entity.verification==='verified'?t("已核验"):t("自动参考")}</dd>
       </dl>
       <div className="site-coverage">
-        <h4>地图范围</h4>
-        {entity.site.areas.length?<ul>{entity.site.areas.map(area=><li key={area.object.id}><strong>{siteAreaNames[area.kind]}</strong>
-          <span>{area.object.name} · {area.evidence}</span></li>)}</ul>:<p className="muted">当前快照未关联面状轮廓。</p>}
-        {entity.has_geometry&&<button className="secondary compact" onClick={exact}><Crosshair size={15}/>查看精确几何</button>}
+        <h4>{t("地图范围")}</h4>
+        {entity.site.areas.length?<ul>{entity.site.areas.map(area=><li key={area.object.id}><strong>{t(siteAreaNames[area.kind])}</strong>
+          <span>{area.object.name} · {t(area.evidence)}</span></li>)}</ul>:<p className="muted">{t("当前快照未关联面状轮廓。")}</p>}
+        {entity.has_geometry&&<button className="secondary compact" onClick={exact}><Crosshair size={15}/>{t("查看精确几何")}</button>}
       </div>
-      {entity.kind==='station'&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
+      {entity.kind==='station'&&<button className="secondary compact" onClick={useForCorridor}>{t("作为通道起点")}</button>}
     </div> : tab==='lines' ? <div className="property-content"><StationLinks entity={entity} pack={pack} openLine={openLine}/></div>
     : tab === 'attributes' ? <div className="property-content">
       <dl>
-        {workspace.value.name && <><dt>原始名称</dt><dd>{entity.name}</dd></>}
-        <dt>快照</dt><dd>{pack.snapshot}</dd>
-        <dt>来源</dt><dd>{entity.source_ref} · v{entity.source_version}</dd>
-        <dt>核验</dt><dd>{entity.verification === 'verified' ? '已核验' : '自动参考'} · {entity.confidence === 'low' ? '低' : '中'}置信度</dd>
-        <dt>实体 ID</dt><dd className="monospace">{entity.id}</dd>
-        <dt>分类依据</dt><dd>{meaning.reason}</dd>
-        {entity.has_edge&&entity.kind!=='road'&&<><dt>速度／轨距</dt><dd>{meaning.speed_kmh==null?'未知':`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?'未知':`${meaning.gauge_mm} mm`}</dd>
-          <dt>供电／股道号</dt><dd>{{overhead:'接触网',third_rail:'第三轨',none:'无电气化'}[meaning.electrification??'']??'未知'} · {entity.tags['railway:track_ref']??'未知'}</dd></>}
-        {entity.kind==='station'&&<><dt>运输业务</dt><dd>{{passenger:'客运',freight:'货运',mixed:'客货运'}[meaning.business??'']??'待核验'}</dd>
-          <dt>技术类型</dt><dd>{{marshalling:'编组站',district:'区段站',intermediate:'中间站'}[meaning.technical??'']??'待核验'}</dd></>}
-        {entity.kind==='line'&&<><dt>线路配色</dt><dd>{workspace.value.color?`工作区覆盖 ${workspace.value.color}`:entity.tags.colour?`OSM colour · ${entity.tags.colour}`:'制式默认色'}</dd></>}
+        {workspace.value.name && <><dt>{t("原始名称")}</dt><dd>{entity.name}</dd></>}
+        <dt>{t("快照")}</dt><dd>{pack.snapshot}</dd>
+        <dt>{t("来源")}</dt><dd>{entity.source_ref} · v{entity.source_version}</dd>
+        <dt>{t("核验")}</dt><dd>{entity.verification === 'verified' ? t("已核验") : t("自动参考")} · {entity.confidence === 'low' ? t("低") : t("中")}{t("置信度")}</dd>
+        <dt>{t("实体 ID")}</dt><dd className="monospace">{entity.id}</dd>
+        <dt>{t("分类依据")}</dt><dd>{t(meaning.reason)}</dd>
+        {entity.has_edge&&entity.kind!=='road'&&<><dt>{t("速度／轨距")}</dt><dd>{meaning.speed_kmh==null?t("未知"):`${meaning.speed_kmh.toFixed(1)} km/h`} · {meaning.gauge_mm==null?t("未知"):`${meaning.gauge_mm} mm`}</dd>
+          <dt>{t("供电／股道号")}</dt><dd>{{overhead:t("接触网"),third_rail:t("第三轨"),none:t("无电气化")}[meaning.electrification??'']??t("未知")} · {entity.tags['railway:track_ref']??t("未知")}</dd></>}
+        {entity.kind==='station'&&<><dt>{t("运输业务")}</dt><dd>{{passenger:t("客运"),freight:t("货运"),mixed:t("客货运")}[meaning.business??'']??t("待核验")}</dd>
+          <dt>{t("技术类型")}</dt><dd>{{marshalling:t("编组站"),district:t("区段站"),intermediate:t("中间站")}[meaning.technical??'']??t("待核验")}</dd></>}
+        {entity.kind==='line'&&<><dt>{t("线路配色")}</dt><dd>{workspace.value.color?t("工作区覆盖 {0}", workspace.value.color):entity.tags.colour?`OSM colour · ${entity.tags.colour}`:t("制式默认色")}</dd></>}
       </dl>
-      {entity.has_geometry && <button className="secondary" onClick={exact}><Crosshair size={15} />查看精确几何</button>}
-      {workspace.value.point && <button className="secondary" onClick={() => zoomOverride(workspace.value.point!)}><MapPin size={15} />定位工作区坐标</button>}
-      {entity.kind === 'line' && <button className="secondary" onClick={() => showMembers(entity)}><ChevronRight size={15} />浏览线路成员</button>}
+      {entity.has_geometry && <button className="secondary" onClick={exact}><Crosshair size={15} />{t("查看精确几何")}</button>}
+      {workspace.value.point && <button className="secondary" onClick={() => zoomOverride(workspace.value.point!)}><MapPin size={15} />{t("定位工作区坐标")}</button>}
+      {entity.kind === 'line' && <button className="secondary" onClick={() => showMembers(entity)}><ChevronRight size={15} />{t("浏览线路成员")}</button>}
       <div className="ops-actions">
-        {(entity.kind==='station'&&!Object.hasOwn(nonRailStationNames,meaning?.render_class??'')||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>作为通道起点</button>}
-        {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>用于路径分析</button>}
+        {(entity.kind==='station'&&!Object.hasOwn(nonRailStationNames,meaning?.render_class??'')||entity.has_edge&&entity.kind!=='road')&&<button className="secondary compact" onClick={useForCorridor}>{t("作为通道起点")}</button>}
+        {entity.has_edge&&<button className="secondary compact" onClick={useForAnalysis}>{t("用于路径分析")}</button>}
       </div>
-      {entity.kind!=='station'&&entity.memberships.length > 0 && <div className="members"><h4>所属线路</h4>{entity.memberships.map(line =>
+      {entity.kind!=='station'&&entity.memberships.length > 0 && <div className="members"><h4>{t("所属线路")}</h4>{entity.memberships.map(line =>
         <button key={line.id} onClick={() => openLine(line)}>{line.name}<ArrowUpRight size={14} /></button>)}</div>}
-      <details><summary>原始 OSM 标签 · {Object.keys(entity.tags).length}</summary>
+      <details><summary>{t("原始 OSM 标签 ·")} {Object.keys(entity.tags).length}</summary>
         <dl className="tags">{Object.entries(entity.tags).flatMap(([k, v]) => [<dt key={`k-${k}`}>{k}</dt>, <dd key={`v-${k}`}>{v}</dd>])}</dl>
       </details>
       <SourceBrowser snapshot={pack.snapshot} initial={entity.source_ref}/>
     </div> : <form className="property-content edit-form" onSubmit={e => { e.preventDefault(); void change('apply') }}>
-      <label>工作区名称<input value={draft.name} placeholder={entity.name} maxLength={120} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
-      <label>工作区分组<input value={draft.group} placeholder="留空则移出分组" maxLength={80}
+      <label>{t("工作区名称")}<input value={draft.name} placeholder={entity.name} maxLength={120} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
+      <label>{t("工作区分组")}<input value={draft.group} placeholder={t("留空则移出分组")} maxLength={80}
         onChange={e => setDraft({ ...draft, group: e.target.value })} /></label>
-      <label>备注<textarea value={draft.note} rows={5} maxLength={4000} onChange={e => setDraft({ ...draft, note: e.target.value })} /></label>
-      {(entity.kind !== 'line'||['subway','light_rail','tram','monorail'].includes(entity.class)) && <label>地图颜色<span className="color-row">
+      <label>{t("备注")}<textarea value={draft.note} rows={5} maxLength={4000} onChange={e => setDraft({ ...draft, note: e.target.value })} /></label>
+      {(entity.kind !== 'line'||['subway','light_rail','tram','monorail'].includes(entity.class)) && <label>{t("地图颜色")}<span className="color-row">
         <input type="color" value={draft.color || '#176ce0'} onChange={e => setDraft({ ...draft, color: e.target.value })} />
-        <button type="button" className="secondary compact" disabled={!draft.color} onClick={() => setDraft({ ...draft, color: '' })}>恢复默认</button>
+        <button type="button" className="secondary compact" disabled={!draft.color} onClick={() => setDraft({ ...draft, color: '' })}>{t("恢复默认")}</button>
       </span></label>}
       {entity.has_edge&&<div className="point-fields">
-        <label>线宽（像素）<input type="number" step=".25" min={.25} max={24}
-          value={draft.width??''} placeholder="按缩放分级" onChange={e=>setDraft({...draft,width:e.target.value===''?null:e.target.valueAsNumber})}/></label>
-        <label>不透明度（0–1）<input type="number" step=".05" min={0} max={1}
-          value={draft.opacity??''} placeholder="默认" onChange={e=>setDraft({...draft,opacity:e.target.value===''?null:e.target.valueAsNumber})}/></label>
+        <label>{t("线宽（像素）")}<input type="number" step=".25" min={.25} max={24}
+          value={draft.width??''} placeholder={t("按缩放分级")} onChange={e=>setDraft({...draft,width:e.target.value===''?null:e.target.valueAsNumber})}/></label>
+        <label>{t("不透明度（0–1）")}<input type="number" step=".05" min={0} max={1}
+          value={draft.opacity??''} placeholder={t("默认")} onChange={e=>setDraft({...draft,opacity:e.target.value===''?null:e.target.valueAsNumber})}/></label>
       </div>}
       {pointEntity && <div className="point-fields">
-        <label>工作区经度<input inputMode="decimal" value={coordinates[0]} placeholder={String(entity.bounds[0])}
+        <label>{t("工作区经度")}<input inputMode="decimal" value={coordinates[0]} placeholder={String(entity.bounds[0])}
           onChange={e => setCoordinates([e.target.value, coordinates[1]])} /></label>
-        <label>工作区纬度<input inputMode="decimal" value={coordinates[1]} placeholder={String(entity.bounds[1])}
+        <label>{t("工作区纬度")}<input inputMode="decimal" value={coordinates[1]} placeholder={String(entity.bounds[1])}
           onChange={e => setCoordinates([coordinates[0], e.target.value])} /></label>
       </div>}
       <div className="edit-actions">
-        <button className="primary" type="submit" disabled={!edited || saving}><Save size={15} />保存</button>
-        <button className="icon framed" type="button" aria-label="撤销" disabled={!workspace.can_undo || saving} onClick={() => void change('undo')}><Undo2 size={17} /></button>
-        <button className="icon framed" type="button" aria-label="重做" disabled={!workspace.can_redo || saving} onClick={() => void change('redo')}><Redo2 size={17} /></button>
+        <button className="primary" type="submit" disabled={!edited || saving}><Save size={15} />{t("保存")}</button>
+        <button className="icon framed" type="button" aria-label={t("撤销")} disabled={!workspace.can_undo || saving} onClick={() => void change('undo')}><Undo2 size={17} /></button>
+        <button className="icon framed" type="button" aria-label={t("重做")} disabled={!workspace.can_redo || saving} onClick={() => void change('redo')}><Redo2 size={17} /></button>
       </div>
       {error && <p className="error-text" role="alert">{error}</p>}
       {confirmation && <p className="success" role="status"><Check size={15} />{confirmation}</p>}
@@ -658,22 +680,22 @@ function SourceBrowser({snapshot,initial}:{snapshot:string;initial:string}){
     return ()=>{cancelled=true}
   },[snapshot,reference,offset,open])
   return <details onToggle={e=>setOpen(e.currentTarget.open)}>
-    <summary>OSM 源对象与原始成员</summary>
+    <summary>{t("OSM 源对象与原始成员")}</summary>
     {error&&<p className="error-text">{error}</p>}
-    {open&&!source&&!error&&<p className="muted">读取来源…</p>}
+    {open&&!source&&!error&&<p className="muted">{t("读取来源…")}</p>}
     {source&&<>
       <div className="ops-actions"><strong>{source.ref} · v{source.version??'—'}</strong>
-        {history.length>1&&<button className="secondary compact" onClick={()=>{setHistory(history.slice(0,-1));setOffset(0)}}>返回</button>}
+        {history.length>1&&<button className="secondary compact" onClick={()=>{setHistory(history.slice(0,-1));setOffset(0)}}>{t("返回")}</button>}
       </div>
-      {!source.complete&&<p className="muted">此版本的快照仅保留部分原始元数据。</p>}
+      {!source.complete&&<p className="muted">{t("此版本的快照仅保留部分原始元数据。")}</p>}
       {source.point&&<p className="muted">{source.point.join(', ')}</p>}
       {source.tags&&<dl className="raw-source-tags">{Object.entries(source.tags).map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>}
       {!!source.rows.length&&<ol className="raw-source-members" start={offset+1}>{source.rows.map(row=>
         <li key={row.ordinal}><button className="secondary compact" onClick={()=>{setHistory([...history,row.ref]);setOffset(0)}}>{row.ref}</button>
           {row.role&&<small> {row.role}</small>}</li>)}</ol>}
       <div className="ops-actions">
-        {offset>0&&<button className="secondary compact" onClick={()=>setOffset(Math.max(0,offset-100))}>上一页</button>}
-        {source.next!=null&&<button className="secondary compact" onClick={()=>setOffset(source.next!)}>下一页</button>}
+        {offset>0&&<button className="secondary compact" onClick={()=>setOffset(Math.max(0,offset-100))}>{t("上一页")}</button>}
+        {source.next!=null&&<button className="secondary compact" onClick={()=>setOffset(source.next!)}>{t("下一页")}</button>}
       </div>
     </>}
   </details>
@@ -695,21 +717,21 @@ function StationLinks({entity,pack,openLine}:{entity:Inspection['entity'];pack:P
     }catch(error){setError(String(error))}finally{setBusy(false)}
   }
   return <div className="members">
-    <h4>相关线路</h4>
-    {entity.station_links.length===0&&<p className="muted">线路待关联</p>}
+    <h4>{t("相关线路")}</h4>
+    {entity.station_links.length===0&&<p className="muted">{t("线路待关联")}</p>}
     {(['infrastructure','service','area_track','route_reference'] as const).map(relation=>{
       const links=entity.station_links.filter(link=>link.relation===relation)
       return links.length>0&&<div className="station-evidence" key={relation}>
-        <strong>{{service:'运营线路',infrastructure:'铁路业务线路',area_track:'穿越场站范围 · 几何参考',route_reference:'列车关系参考'}[relation]}</strong>
+        <strong>{{service:t("运营线路"),infrastructure:t("铁路业务线路"),area_track:t("穿越场站范围 · 几何参考"),route_reference:t("列车关系参考")}[relation]}</strong>
         {links.map(link=><button key={link.line.id} onClick={()=>openLine(link.line)}>
-          <span>{link.line.name || '未命名线路'}<small>{link.evidence} · {link.source_ref}</small></span><ArrowUpRight size={14}/>
+          <span>{link.line.name || t("未命名线路")}<small>{t(link.evidence)} · {link.source_ref}</small></span><ArrowUpRight size={14}/>
         </button>)}
       </div>
     })}
-    <details className="station-evidence"><summary>物理接轨与待关联</summary>
-      {tracks==null&&!error&&<button className="secondary compact" disabled={busy} onClick={()=>void load()}>{busy?'正在查询轨道锚点…':'查询物理接轨'}</button>}
-      {tracks?.map(line=><button key={line.id} onClick={()=>openLine(line)}>{line.name || '未命名线路'}<ArrowUpRight size={14}/></button>)}
-      {tracks?.length===0&&<small>当前来源没有可确认的物理接轨。</small>}
+    <details className="station-evidence"><summary>{t("物理接轨与待关联")}</summary>
+      {tracks==null&&!error&&<button className="secondary compact" disabled={busy} onClick={()=>void load()}>{busy?t("正在查询轨道锚点…"):t("查询物理接轨")}</button>}
+      {tracks?.map(line=><button key={line.id} onClick={()=>openLine(line)}>{line.name || t("未命名线路")}<ArrowUpRight size={14}/></button>)}
+      {tracks?.length===0&&<small>{t("当前来源没有可确认的物理接轨。")}</small>}
       {error&&<p className="error-text">{error}</p>}
     </details>
   </div>
@@ -753,26 +775,26 @@ function PathPanel({ pack, selection, show, transfer, dock, visible, reveal }: {
     }
   }
   return <>
-    <div className="panel-title"><RouteIcon size={16} /><h2>路径分析</h2></div>
+    <div className="panel-title"><RouteIcon size={16} /><h2>{t("路径分析")}</h2></div>
     <div className="property-content path">
-      <p>从地图或目录选中运营轨道或道路，再设为起点或终点。</p>
+      <p>{t("从地图或目录选中运营轨道或道路，再设为起点或终点。")}</p>
       {(['start', 'end'] as const).map(which => <div className="path-point" key={which}>
-        <small>{which === 'start' ? '起点边' : '终点边'}</small>
-        <strong>{points[which]?.name ?? '尚未选择'}</strong>
+        <small>{which === 'start' ? t("起点边") : t("终点边")}</small>
+        <strong>{points[which]?.name ?? t("尚未选择")}</strong>
         <button className="secondary compact" disabled={!selection?.has_edge || busy} onClick={() => {
           setPoints(old => ({ ...old, [which]: selection })); setResult(undefined); setError('')
-        }}>使用选中对象</button>
+        }}>{t("使用选中对象")}</button>
       </div>)}
-      <button className="primary" disabled={!points.start || !points.end || busy} onClick={() => void analyze()}><RouteIcon size={16} />计算连接路径</button>
-      {busy && <button className="secondary" onClick={() => { if (job.current) void api.cancel(job.current) }}>取消</button>}
+      <button className="primary" disabled={!points.start || !points.end || busy} onClick={() => void analyze()}><RouteIcon size={16} />{t("计算连接路径")}</button>
+      {busy && <button className="secondary" onClick={() => { if (job.current) void api.cancel(job.current) }}>{t("取消")}</button>}
       {error && <p className="error-text" role="alert">{error}</p>}
-      {result && <button className="secondary" onClick={reveal}>查看本次结果</button>}
+      {result && <button className="secondary" onClick={reveal}>{t("查看本次结果")}</button>}
     </div>
     {result && dock && createPortal(<div className="property-content" hidden={!visible}>
       <div className="result-path"><strong>{(result.meters / 1000).toFixed(2)} km</strong>
-        <span>{points.start?.name} → {points.end?.name}</span><span>{result.edges.length} 个物理区段 · 自动参考</span>
-        {points.start?.kind!=='road'&&<button className="secondary compact" onClick={()=>transfer(points.start,points.end)}>转到运行 · 新建通道</button>}
-        {result.geometry && <button className="secondary compact" onClick={() => show(result.geometry)}>高亮路径</button>}
+        <span>{points.start?.name} → {points.end?.name}</span><span>{result.edges.length} {t("个物理区段 · 自动参考")}</span>
+        {points.start?.kind!=='road'&&<button className="secondary compact" onClick={()=>transfer(points.start,points.end)}>{t("转到运行 · 新建通道")}</button>}
+        {result.geometry && <button className="secondary compact" onClick={() => show(result.geometry)}>{t("高亮路径")}</button>}
       </div>
     </div>, dock)}
   </>
@@ -815,16 +837,16 @@ function BusinessLines({ snapshot, selection, openMember }: {
   return <details className="property-content" onToggle={event => {
     if (event.currentTarget.open && !history && !busy) void perform(refresh)
   }}>
-    <summary>工作区线路拆分与合并</summary>
-    <p>从目录选取源线路。拆分点按源成员顺序填写，拆分或合并结果保存在当前快照的工作区。</p>
+    <summary>{t("工作区线路拆分与合并")}</summary>
+    <p>{t("从目录选取源线路。拆分点按源成员顺序填写，拆分或合并结果保存在当前快照的工作区。")}</p>
     <div className="ops-actions">
       <button className="secondary compact" disabled={busy || selection?.kind !== 'line' || sources.some(line => line.id === selection.id)}
-        onClick={() => { if (selection) setSources([...sources, selection]) }}>加入选中线路</button>
-      <button className="secondary compact" disabled={busy || !history?.undo} onClick={() => void replay('undo')}>撤销线路编辑</button>
-      <button className="secondary compact" disabled={busy || !history?.redo} onClick={() => void replay('redo')}>重做线路编辑</button>
+        onClick={() => { if (selection) setSources([...sources, selection]) }}>{t("加入选中线路")}</button>
+      <button className="secondary compact" disabled={busy || !history?.undo} onClick={() => void replay('undo')}>{t("撤销线路编辑")}</button>
+      <button className="secondary compact" disabled={busy || !history?.redo} onClick={() => void replay('redo')}>{t("重做线路编辑")}</button>
     </div>
     {!!sources.length && <ol>{sources.map(line => <li key={line.id}>{line.name} <button className="secondary compact"
-      onClick={() => setSources(sources.filter(item => item.id !== line.id))}>移除</button></li>)}</ol>}
+      onClick={() => setSources(sources.filter(item => item.id !== line.id))}>{t("移除")}</button></li>)}</ol>}
     <form onSubmit={event => {
       event.preventDefault()
       void perform(async () => {
@@ -832,20 +854,20 @@ function BusinessLines({ snapshot, selection, openMember }: {
         setName(''); setSplit(''); setSources([]); await refresh()
       })
     }}>
-      <label>新线路名称 <input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
-      {sources.length === 1 && <label>拆分点（第几个成员之后） <input required type="number" min={1} step={1}
+      <label>{t("新线路名称")} <input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
+      {sources.length === 1 && <label>{t("拆分点（第几个成员之后）")} <input required type="number" min={1} step={1}
         value={split} onChange={event => setSplit(event.target.value)} /></label>}
-      <button className="primary compact" disabled={busy || !sources.length || !name.trim()}>{sources.length === 1 ? '拆分线路' : '合并线路'}</button>
+      <button className="primary compact" disabled={busy || !sources.length || !name.trim()}>{sources.length === 1 ? t("拆分线路") : t("合并线路")}</button>
     </form>
     {error && <p className="error-text" role="alert">{error}</p>}
     {history?.lines.map(line => <div key={line.id} className="ops-row">
-      <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, 0)}>{line.name} · {line.member_count} 个成员</button>
+      <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, 0)}>{line.name} · {line.member_count} {t("个成员")}</button>
       {page?.id === line.id && <>
         <ol className="raw-source-members" start={page.offset + 1}>{page.members.map((item, index) => <li key={`${item.id}-${index}`}>
           <button className="secondary compact" onClick={() => openMember(item)}>{item.name}</button></li>)}</ol>
         <div className="ops-actions">
-          {page.offset > 0 && <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, page.offset - 64)}>上一页</button>}
-          {page.next != null && <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, page.next!)}>下一页</button>}
+          {page.offset > 0 && <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, page.offset - 64)}>{t("上一页")}</button>}
+          {page.next != null && <button className="secondary compact" disabled={busy} onClick={() => void open(line.id, page.next!)}>{t("下一页")}</button>}
         </div>
       </>}
     </div>)}
@@ -867,23 +889,23 @@ function MetricsPanel({ pack }: { pack: Pack | null }) {
   }, [pack?.snapshot])
   const counts = stats ? stats.hits + stats.misses : 0
   return <>
-    <div className="panel-title"><Activity size={16} /><h2>渲染与数据诊断</h2></div>
+    <div className="panel-title"><Activity size={16} /><h2>{t("渲染与数据诊断")}</h2></div>
     <div className="property-content">
-      <p className="muted">WebView 动画帧采样 · {frame.samples} 帧</p>
+      <p className="muted">{t("WebView 动画帧采样 ·")} {frame.samples} {t("帧")}</p>
       <div className="metrics">
-        <div><strong>{frame.fps}</strong><small>平均 FPS</small></div>
-        <div><strong>{frame.p95.toFixed(1)}</strong><small>P95 帧时间 · ms</small></div>
+        <div><strong>{frame.fps}</strong><small>{t("平均 FPS")}</small></div>
+        <div><strong>{frame.p95.toFixed(1)}</strong><small>{t("P95 帧时间 · ms")}</small></div>
       </div>
       <dl>
-        <dt>P50 / P99 帧时间</dt><dd>{frame.p50.toFixed(1)} / {frame.p99.toFixed(1)} ms</dd>
-        <dt>点击至下一帧 P95</dt><dd>{frame.selection.toFixed(1)} ms</dd>
-        <dt>属性查询 P95</dt><dd>{frame.query.toFixed(1)} ms</dd>
-        <dt>精细瓦片生成</dt><dd>{stats?.precise_tiles??0}</dd>
-        <dt>精细瓦片平均生成</dt><dd>{stats?.precise_tiles? (stats.precise_micros/1000/stats.precise_tiles).toFixed(2):'—'} ms</dd>
-        <dt>精细瓦片磁盘命中</dt><dd>{stats?.disk_hits??0}</dd>
-        <dt>瓦片缓存命中</dt><dd>{counts ? Math.round(100 * stats!.hits / counts) : 0}%</dd>
-        <dt>缓存占用</dt><dd>{((stats?.bytes ?? 0) / (1024 * 1024)).toFixed(2)} MiB</dd>
-        <dt>读取 / 淘汰</dt><dd>{stats?.misses ?? 0} / {stats?.evictions ?? 0}</dd>
+        <dt>{t("P50 / P99 帧时间")}</dt><dd>{frame.p50.toFixed(1)} / {frame.p99.toFixed(1)} ms</dd>
+        <dt>{t("点击至下一帧 P95")}</dt><dd>{frame.selection.toFixed(1)} ms</dd>
+        <dt>{t("属性查询 P95")}</dt><dd>{frame.query.toFixed(1)} ms</dd>
+        <dt>{t("精细瓦片生成")}</dt><dd>{stats?.precise_tiles??0}</dd>
+        <dt>{t("精细瓦片平均生成")}</dt><dd>{stats?.precise_tiles? (stats.precise_micros/1000/stats.precise_tiles).toFixed(2):'—'} ms</dd>
+        <dt>{t("精细瓦片磁盘命中")}</dt><dd>{stats?.disk_hits??0}</dd>
+        <dt>{t("瓦片缓存命中")}</dt><dd>{counts ? Math.round(100 * stats!.hits / counts) : 0}%</dd>
+        <dt>{t("缓存占用")}</dt><dd>{((stats?.bytes ?? 0) / (1024 * 1024)).toFixed(2)} MiB</dd>
+        <dt>{t("读取 / 淘汰")}</dt><dd>{stats?.misses ?? 0} / {stats?.evictions ?? 0}</dd>
       </dl>
     </div>
   </>

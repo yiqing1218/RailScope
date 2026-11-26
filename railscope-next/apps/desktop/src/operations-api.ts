@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { invoke } from '@tauri-apps/api/core'
 import type { Geometry, LineString } from 'geojson'
 
@@ -221,7 +222,7 @@ export function parseTime(input: string): number | undefined {
   const value = input.trim()
   if (!value) return undefined
   const match = /^(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/.exec(value)
-  if (!match) throw new Error(`时刻“${input}”格式有误。请输入 HH:MM 或 HH:MM:SS。`)
+  if (!match) throw new Error(t("时刻“{0}”格式有误。请输入 HH:MM 或 HH:MM:SS。", input))
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] ?? 0)
 }
 
