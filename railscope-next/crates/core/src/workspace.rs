@@ -527,7 +527,7 @@ pub fn apply(
 }
 
 pub(crate) fn record(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     snapshot: &str,
     entity: &str,
     value: &Override,

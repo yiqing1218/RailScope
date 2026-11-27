@@ -25,7 +25,7 @@ const modes: {id:Mode; title:string; description:string; icon:typeof MapIcon}[] 
 ]
 const layoutDefaults = {left:310,right:343,bottom:320,hideLeft:false,hideRight:false,hideBottom:true,focusBottom:false}
 type Layout = typeof layoutDefaults
-const defaultLayout = (mode:Mode):Layout => mode==='operations'?{...layoutDefaults,left:248,right:350}:layoutDefaults
+const defaultLayout = (mode:Mode):Layout => mode==='operations'?{...layoutDefaults,left:248,right:350,hideBottom:false}:layoutDefaults
 function layoutPreferences(): Record<Mode,Layout> {
   let saved:Record<string,Partial<Layout>> = {}
   try {
@@ -109,6 +109,7 @@ export function App() {
     setTrains: (...args:Parameters<MapController['setTrains']>)=>controller.current?.setTrains(...args),
     showPath: (...args:Parameters<MapController['setTrainPath']>)=>controller.current?.setTrainPath(...args),
     showCorridor: (...args:Parameters<MapController['setCorridorPath']>)=>controller.current?.setCorridorPath(...args),
+    setFocus: (...args:Parameters<MapController['setOperationFocus']>)=>controller.current?.setOperationFocus(...args),
     focusTrain: (...args:Parameters<MapController['focusTrain']>)=>controller.current?.focusTrain(...args),
     revealLayer: (layer:'railTrains'|'metroTrains'|'route'|'corridor')=>setVisibility(old=>old[layer]?old:{...old,[layer]:true}),
     stopFollowing:()=>controller.current?.stopFollowing(),
@@ -170,6 +171,19 @@ export function App() {
     localStorage.setItem('railscope-next.metro-style',trackViews.metro)
   },[trackViews])
   useEffect(()=>{localStorage.setItem('railscope.ops.level',level)},[level])
+  useEffect(()=>{
+    if(mode!=='detail')return
+    const entity=details?.entity
+    const memberships=entity&&['rail','metro'].includes(entity.kind)
+      ? [...new Set(entity.memberships.filter(line=>line.kind==='line').map(line=>line.id))] : []
+    const id=entity?.kind==='line'?entity.id:memberships.length===1?memberships[0]:undefined
+    if(!active||!id){controller.current?.setOperationFocus(undefined,null,[]);return}
+    let cancelled=false
+    void api.geometry(active.snapshot,id).then(geometry=>{
+      if(!cancelled)controller.current?.setOperationFocus(geometry?'line':undefined,geometry,[],!!geometry)
+    }).catch(error=>{if(!cancelled)setDetailError(String(error))})
+    return ()=>{cancelled=true;controller.current?.setOperationFocus(undefined,null,[])}
+  },[mode,details?.entity,active])
   useEffect(() => {
     controller.current?.setLayers(visibility)
     localStorage.setItem(visibilityKey, JSON.stringify(visibility))
@@ -221,7 +235,7 @@ export function App() {
       if (generation !== selection.current) return
       recordQuery(performance.now() - start)
       setDetails(result)
-      if(result.entity.has_geometry&&(result.entity.kind==='line'||result.entity.site)) {
+      if(result.entity.has_geometry&&result.entity.site) {
         await displayGeometry(pack,result.entity,generation,false)
       }
       if(generation===selection.current)controller.current?.setFocusLine(result.entity.kind==='line'?result.entity.render_id:undefined)
@@ -366,8 +380,6 @@ export function App() {
         onLayer={onLayer} onPreset={onPreset} /></div>
       <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
         selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
-        trainLayers={{rail:visibility.railTrains,metro:visibility.metroTrains}}
-        onTrainLayer={(network,value)=>onLayer(network==='rail'?'railTrains':'metroTrains',value)}
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
         onPlaying={setSimulationPlaying} onDirty={setOperationsDirty} level={level} setLevel={setLevel}/>
       <div className="task-pane" hidden={mode!=='analysis'}>

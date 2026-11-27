@@ -373,7 +373,13 @@ pub fn export(db: &Connection, pack: &Pack, filter: ExportFilter) -> Result<Expo
             ..Default::default()
         },
     )?;
-    ensure!(!page.items.is_empty(), "没有匹配的对象可导出");
+    if page.items.is_empty() {
+        return Ok(Export {
+            content: String::new(),
+            count: 0,
+            next: None,
+        });
+    }
     let mut document = Document {
         schema_version: 1,
         snapshot_id: snapshot.clone(),
@@ -543,6 +549,20 @@ pub struct Report {
 }
 
 pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) -> Result<Report> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let result = import_in(&tx, pack, content, preview)?;
+    if !preview {
+        tx.commit()?;
+    }
+    Ok(result)
+}
+
+pub(crate) fn import_in(
+    db: &Connection,
+    pack: &Pack,
+    content: &str,
+    preview: bool,
+) -> Result<Report> {
     ensure!(content.len() <= MAX_BYTES, "资料文件超过 16 MiB");
     let document: Document = serde_json::from_str(content.trim_start_matches('\u{feff}'))?;
     let snapshot = &pack.manifest.snapshot;
@@ -557,7 +577,6 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
     );
     document.source.validate()?;
     let canonical = pack.connection()?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut lookup = canonical.prepare("SELECT kind FROM entity WHERE id=?")?;
     let mut seen = HashSet::new();
     let mut changed = 0;
@@ -575,7 +594,7 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
                     && matches!(kind.as_str(), "station" | "line" | "rail" | "metro"),
                 "对象类型与资料记录不符"
             );
-            let old = get_override(&tx, snapshot, id)?;
+            let old = get_override(db, snapshot, id)?;
             let mut edits = None;
             if let Some(original) = &record.original {
                 let (current, _) = editable_fields(&canonical, id, &kind, &old)?;
@@ -597,7 +616,7 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
             merged.import_sources = sources;
             merged.validate_associations(&canonical, &kind)?;
             merged.profile.validate(&canonical, id, &kind)?;
-            workspace::record(&tx, snapshot, id, &merged, "external_import")
+            workspace::record(db, snapshot, id, &merged, "external_import")
         };
         ensure!(
             seen.insert(&record.entity_id),
@@ -607,9 +626,6 @@ pub fn import(db: &mut Connection, pack: &Pack, content: &str, preview: bool) ->
         if save().with_context(|| format!("第 {} 条资料 · {}", index + 1, record.entity_id))? {
             changed += 1;
         }
-    }
-    if !preview {
-        tx.commit()?;
     }
     Ok(Report {
         records: document.records.len(),

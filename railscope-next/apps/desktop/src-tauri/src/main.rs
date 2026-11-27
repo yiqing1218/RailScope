@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, ensure};
 use railscope_next_core::{
-    Engine, catalog, external_data, graph, operations as rail_ops, pack, workspace,
+    Engine, catalog, exchange, external_data, graph, operations as rail_ops, pack, workspace,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -26,6 +26,8 @@ struct TileWorkers(Arc<Semaphore>);
 struct OpsClock(Mutex<rail_ops::Clock>);
 #[derive(Default)]
 struct InstallJobs(Mutex<HashMap<String, Arc<InstallProgress>>>);
+#[derive(Default)]
+struct ExchangeJobs(Mutex<HashMap<String, Arc<InstallProgress>>>);
 #[derive(Default)]
 struct InstallProgress {
     done: AtomicU64,
@@ -66,6 +68,125 @@ async fn install_data_pack(
 
 #[tauri::command]
 fn data_pack_job(job: String, cancel: bool, jobs: State<'_, Arc<InstallJobs>>) -> Option<[u64; 2]> {
+    let jobs = jobs.0.lock().unwrap();
+    let progress = jobs.get(&job)?;
+    if cancel {
+        progress.stop.store(true, Ordering::Relaxed);
+    }
+    Some([
+        progress.done.load(Ordering::Relaxed),
+        progress.total.load(Ordering::Relaxed),
+    ])
+}
+
+#[cfg(windows)]
+fn choose_exchange_file(owner: isize, save: bool, name: &str) -> Result<Option<PathBuf>> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
+        OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+    let mut file = vec![0u16; 32_768];
+    for (to, from) in file.iter_mut().zip(name.encode_utf16()) {
+        *to = from;
+    }
+    let filter: Vec<_> = "RailScope 资料包\0*.zip\0\0".encode_utf16().collect();
+    let extension = [b'z' as u16, b'i' as u16, b'p' as u16, 0];
+    let mut dialog = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: owner as _,
+        lpstrFilter: filter.as_ptr(),
+        lpstrFile: file.as_mut_ptr(),
+        nMaxFile: file.len() as u32,
+        lpstrDefExt: extension.as_ptr(),
+        Flags: OFN_EXPLORER
+            | OFN_NOCHANGEDIR
+            | OFN_PATHMUSTEXIST
+            | if save {
+                OFN_OVERWRITEPROMPT
+            } else {
+                OFN_FILEMUSTEXIST
+            },
+        ..Default::default()
+    };
+    // The dialog uses only UTF-16 buffers that remain allocated until it returns.
+    let chosen = unsafe {
+        if save {
+            GetSaveFileNameW(&mut dialog)
+        } else {
+            GetOpenFileNameW(&mut dialog)
+        }
+    };
+    if chosen == 0 {
+        let code = unsafe { CommDlgExtendedError() };
+        ensure!(code == 0, "无法打开资料文件对话框 ({code})");
+        return Ok(None);
+    }
+    let end = file.iter().position(|&c| c == 0).context("文件路径超长")?;
+    Ok(Some(PathBuf::from(OsString::from_wide(&file[..end]))))
+}
+
+#[tauri::command]
+async fn exchange_archive(
+    snapshot: String,
+    job: String,
+    scope: Option<exchange::Scope>,
+    preview: bool,
+    window: tauri::WebviewWindow,
+    engine: Core<'_>,
+    jobs: State<'_, Arc<ExchangeJobs>>,
+) -> AppResult<Option<exchange::Report>> {
+    if !pack::valid_id(&job) || !pack::valid_id(&snapshot) {
+        return Err("无效资料任务".into());
+    }
+    #[cfg(windows)]
+    let owner = window.hwnd().map_err(|error| error.to_string())?.0 as isize;
+    let engine = Arc::clone(engine.inner());
+    let jobs = Arc::clone(jobs.inner());
+    let progress = Arc::new(InstallProgress::default());
+    {
+        let mut running = jobs.0.lock().unwrap();
+        if !running.is_empty() {
+            return Err("已有资料任务在运行".into());
+        }
+        running.insert(job.clone(), progress.clone());
+    }
+    let result = background(move || {
+        #[cfg(windows)]
+        let path = choose_exchange_file(
+            owner,
+            scope.is_some(),
+            &scope
+                .as_ref()
+                .map(|_| format!("railscope-{snapshot}.zip"))
+                .unwrap_or_default(),
+        )?;
+        #[cfg(not(windows))]
+        let path: Option<PathBuf> = anyhow::bail!("资料 ZIP 文件选择目前仅支持 Windows");
+        let Some(path) = path else { return Ok(None) };
+        let report = |done, total| {
+            progress.total.store(total, Ordering::Relaxed);
+            progress.done.store(done, Ordering::Relaxed);
+        };
+        engine
+            .with_workspace(&snapshot, |db, pack| {
+                match scope {
+                    Some(scope) => {
+                        exchange::export_to(db, pack, &path, &scope, &progress.stop, report)
+                    }
+                    None => exchange::import_from(db, pack, &path, preview, &progress.stop, report),
+                }
+                .map(Some)
+            })
+            .map_err(|error| anyhow::anyhow!("{error:#}"))
+    })
+    .await;
+    jobs.0.lock().unwrap().remove(&job);
+    result
+}
+
+#[tauri::command]
+fn exchange_job(job: String, cancel: bool, jobs: State<'_, Arc<ExchangeJobs>>) -> Option<[u64; 2]> {
     let jobs = jobs.0.lock().unwrap();
     let progress = jobs.get(&job)?;
     if cancel {
@@ -499,6 +620,7 @@ fn main() {
             app.manage(Arc::new(Routes::default()));
             app.manage(OpsClock(Mutex::new(rail_ops::Clock::default())));
             app.manage(Arc::new(InstallJobs::default()));
+            app.manage(Arc::new(ExchangeJobs::default()));
             app.manage(TileWorkers(Arc::new(Semaphore::new(4))));
             Ok(())
         })
@@ -556,6 +678,8 @@ fn main() {
             activate_data_pack,
             install_data_pack,
             data_pack_job,
+            exchange_archive,
+            exchange_job,
             catalog_page,
             get_entity,
             get_geometry,

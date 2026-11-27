@@ -364,6 +364,33 @@ pub(super) fn import(
     stop_map: &BTreeMap<String, String>,
     external_preview: Option<bool>,
 ) -> Result<Value> {
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let result = import_in(
+        &tx,
+        canonical,
+        pack,
+        format,
+        content,
+        service_date,
+        stop_map,
+        external_preview,
+    )?;
+    if external_preview != Some(true) {
+        tx.commit()?;
+    }
+    Ok(result)
+}
+
+pub(super) fn import_in(
+    tx: &Connection,
+    canonical: &Connection,
+    pack: &Pack,
+    format: &str,
+    content: &str,
+    service_date: Option<&str>,
+    stop_map: &BTreeMap<String, String>,
+    external_preview: Option<bool>,
+) -> Result<Value> {
     let snapshot = pack.manifest.snapshot.as_str();
     ensure!(
         content.len() <= LIMIT * 2 && stop_map.len() <= 50000,
@@ -407,7 +434,6 @@ pub(super) fn import(
                 && bundle.corridor_intents.is_empty()),
         "DATA_VERSION_CONFLICT · 回填文件须使用导出时的快照和连续通道"
     );
-    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let digest = if bundle.edit_existing {
         Some(format!("edit:{:x}", Sha256::digest(content.as_bytes())))
     } else if corridor_count > 0 {
@@ -440,15 +466,12 @@ pub(super) fn import(
     }
     if bundle.edit_existing {
         let preview = external_preview.unwrap();
-        let result = apply_exported(&tx, canonical, pack, bundle, preview)?;
-        if !preview {
-            if result["changed"] != 0 {
-                tx.execute(
-                    "INSERT INTO ops_timetable_import VALUES(?,?,?)",
-                    params![snapshot, digest, serde_json::to_string(&result)?],
-                )?;
-            }
-            tx.commit()?;
+        let result = apply_exported(tx, canonical, pack, bundle, preview)?;
+        if !preview && result["changed"] != 0 {
+            tx.execute(
+                "INSERT INTO ops_timetable_import VALUES(?,?,?)",
+                params![snapshot, digest, serde_json::to_string(&result)?],
+            )?;
         }
         return Ok(result);
     }
@@ -482,7 +505,7 @@ pub(super) fn import(
             "INVALID_TIMETABLE · 通道引用缺失或重复"
         );
         corridor.version = 0;
-        let saved = save_corridor(&tx, canonical, pack, corridor)
+        let saved = save_corridor(tx, canonical, pack, corridor)
             .map_err(|error| anyhow::anyhow!("{error:#} · 通道 {key}"))?;
         corridors.insert(key, (saved.id, saved.version));
     }
@@ -505,7 +528,7 @@ pub(super) fn import(
         }
         // Imports create independent versions with new RailScope IDs.
         svc.id.clear();
-        let saved = save_service(&tx, svc)?;
+        let saved = save_service(tx, svc)?;
         service_ids.insert(original, saved.id);
     }
     for mut run in bundle.runs.drain(..) {
@@ -521,7 +544,7 @@ pub(super) fn import(
         run.id.clear();
         run.plan_version = 0;
         let label = format!("车次 {} · {}", run.train_number, run.service_date);
-        save_run(&tx, canonical, snapshot, run)
+        save_run(tx, canonical, snapshot, run)
             .map_err(|error| anyhow::anyhow!("{error:#} · {label}"))?;
     }
     let mut result = json!({"services":service_ids.len(),"runs":inserted,"corridors":corridors.len(),"first_date":first_date,
@@ -531,9 +554,6 @@ pub(super) fn import(
             "INSERT INTO ops_timetable_import VALUES(?,?,?)",
             params![snapshot, digest, serde_json::to_string(&result)?],
         )?;
-    }
-    if external_preview != Some(true) {
-        tx.commit()?;
     }
     if let Some(preview) = external_preview {
         result["preview"] = json!(preview);
@@ -940,10 +960,9 @@ pub(super) fn export_external(
         }
         _ => bail!("INVALID_FORMAT · 未知的运行资料类型"),
     };
-    ensure!(
-        count > 0,
-        "MISSING_TIMETABLE · 当前范围没有可导出的运行资料"
-    );
+    if count == 0 {
+        return Ok(json!({"format":format,"content":"","count":0,"next":null}));
+    }
     let mut result = encode_bundle(&bundle, canonical, format)?;
     result["count"] = json!(count);
     result["next"] = json!(next);

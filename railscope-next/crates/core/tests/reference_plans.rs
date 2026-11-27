@@ -61,6 +61,26 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
     let result = import(metro, &shanghai)?;
     assert_eq!(result["corridors"], 6);
     assert_eq!(result["runs"], 2870);
+    let metro_corridors = list(metro, "2026-11-23")?["corridors"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let references: Vec<_> = metro_corridors
+        .iter()
+        .map(|c| json!([c["id"], c["version"]]))
+        .collect();
+    let focus = plans(
+        &engine,
+        metro,
+        "focus_geometry",
+        json!({"corridors":references}),
+    )?;
+    let geometry_count = focus["geometries"].as_array().unwrap().len();
+    let edge_count: usize = metro_corridors
+        .iter()
+        .map(|c| c["edge_refs"].as_array().unwrap().len())
+        .sum();
+    assert!(geometry_count > 0 && geometry_count < edge_count);
     assert_eq!(import(metro, &shanghai)?["duplicate"], true);
 
     let mut count = 0;

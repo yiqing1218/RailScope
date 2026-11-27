@@ -22,6 +22,45 @@ mod sim;
 
 pub use corridors::query as corridor_query;
 
+pub(crate) fn export_exchange_page(
+    db: &Connection,
+    pack: &Pack,
+    format: &str,
+    scope: &str,
+    day: Option<&str>,
+    cursor: Option<&str>,
+) -> Result<Value> {
+    schedule::export_external(
+        db,
+        &pack.connection()?,
+        &pack.manifest.snapshot,
+        format,
+        scope,
+        day,
+        cursor,
+    )
+}
+
+pub(crate) fn import_exchange_page(
+    db: &Connection,
+    pack: &Pack,
+    format: &str,
+    content: &str,
+    day: Option<&str>,
+    preview: bool,
+) -> Result<Value> {
+    schedule::import_in(
+        db,
+        &pack.connection()?,
+        pack,
+        format,
+        content,
+        day,
+        &BTreeMap::new(),
+        Some(preview),
+    )
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Provenance {
     source_kind: String,
@@ -301,6 +340,9 @@ enum Request {
         scope: String,
         service_date: Option<String>,
         cursor: Option<String>,
+    },
+    FocusGeometry {
+        corridors: Vec<(String, u32)>,
     },
     SeedDemo {
         corridor_id: String,
@@ -973,6 +1015,28 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
     let canonical = pack.connection()?;
     let snapshot = pack.manifest.snapshot.as_str();
     match serde_json::from_value::<Request>(request)? {
+        Request::FocusGeometry { corridors } => {
+            ensure!(corridors.len() <= 256, "线路的通道数量超出地图显示范围");
+            let mut edges = HashSet::new();
+            let mut geometries = Vec::new();
+            for (id, version) in corridors {
+                identifier(&id)?;
+                let corridor: Corridor = from_row(
+                    db,
+                    "SELECT payload FROM ops_corridor WHERE id=? AND version=? AND snapshot=?",
+                    params![id, version, snapshot],
+                )?
+                .context("选中的通道版本已变更")?;
+                for edge in corridor.edge_refs {
+                    if edges.insert(edge.edge_id.clone()) {
+                        if let Some(shape) = catalog::geometry(&canonical, &edge.edge_id)? {
+                            geometries.push(shape);
+                        }
+                    }
+                }
+            }
+            Ok(json!({"type":"GeometryCollection","geometries":geometries}))
+        }
         Request::List { service_date } => {
             if let Some(date) = service_date.as_deref() {
                 NaiveDate::parse_from_str(date, "%Y-%m-%d")?;

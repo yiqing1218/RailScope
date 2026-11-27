@@ -212,6 +212,8 @@ export const opsApi = {
   exportExternal:(snapshot:string,scope:'corridors'|'runs',format:ScheduleFormat,service_date?:string,cursor?:string)=>
     operations<{format:ScheduleFormat;content:string;count:number;next:string|null}>(
       snapshot,'export_external_plan',{scope,format,service_date,cursor}),
+  focusGeometry:(snapshot:string,corridors:Corridor[])=>
+    operations<Geometry>(snapshot,'focus_geometry',{corridors:corridors.map(({id,version})=>[id,version])}),
   export: (snapshot: string, format: ScheduleFormat, run_ids?: string[]) =>
     operations<{ content: string; format: ScheduleFormat }>(snapshot, 'export_timetable', { format, run_ids }),
   demo: (snapshot:string,corridor:Corridor,origin_station_id:string,destination_station_id:string,service_date:string)=>
@@ -262,6 +264,12 @@ export function datedRunLabel(run: Run) {
   return `${run.train_number} · ${run.service_date}`
 }
 
-export function chinaDate() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+const chinaCalendar = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'})
+const chinaClock = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
+export function chinaDate(now = new Date()) {
+  return chinaCalendar.format(now)
+}
+export function chinaWallClock(now = new Date()) {
+  const [h,m,s]=chinaClock.format(now).split(':').map(Number)
+  return {day:chinaDate(now),seconds:h*3600+m*60+s}
 }

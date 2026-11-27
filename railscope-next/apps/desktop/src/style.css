@@ -417,6 +417,34 @@ summary { cursor: pointer; color: #3b575c; }
 .layer-section .layer-control { grid-template-columns:1fr auto; min-height:34px; padding:2px 0 2px 9px; font-size:12px; }
 .layer-section .layer-control input { width:14px; height:14px; }
 .map-tools .layer-preset { margin:0; }
+.app { --panel-surface:var(--paper); --panel-edge:#cbd9d0; --panel-control:#fff; --panel-hover:#e4efe7; }
+.app[data-theme=dark] { --panel-edge:#496067; --panel-control:#203239; --panel-hover:#314a50; color-scheme:dark; }
+.app :is(.sidebar,.ops-directory,.ops-bottom,.task-pane,.bottom-dock,.inspector) { background:var(--panel-surface); color:var(--ink); }
+.app :is(.task-dock,.sidebar,.bottom-dock,.inspector,.panel-title,.property-tabs) { border-color:var(--panel-edge); }
+.sidebar :is(.search,.more,.catalog-subtypes button,.layer-preset select) { background:var(--panel-control); border-color:var(--panel-edge); color:var(--ink); }
+.sidebar :is(.search input,.categories button,.result-row,.tabs button,.nearby,.back) { color:var(--ink); border-color:var(--panel-edge); }
+.sidebar :is(.small-label,.group-label,small,.section-label,.sidebar-base) { color:var(--muted); }
+.sidebar :is(.categories button,.result-row,.tabs button):hover,.sidebar :is(.result-row.current,.tabs button.active,.catalog-subtypes button[aria-pressed=true]) { background:var(--panel-hover); color:var(--ink); }
+.app[data-theme=dark] :is(.secondary,.map-loading,.settings-nav,.settings-search,.pack-install input,.data-import :is(input,textarea,select),.ops-bottom :is(input,select),.edit-form :is(input:not([type=color]),textarea),.setting-row select,.map-tools select,.map-tools input,.metro-diagram,.metro-plot,.metro-plot-bar,.metro-date select,.metro-diagram-tools select) { color:var(--ink); background:var(--panel-control); border-color:var(--panel-edge); }
+.app[data-theme=dark] :is(.site-coverage,.task-menu button.active,.task-menu button:hover,.ops-summary,.ops-focus-choice select) { color:var(--ink); background:var(--panel-hover); border-color:var(--panel-edge); }
+.app[data-theme=dark] :is(.property-tabs button,.panel-title,.map-empty,.map-error,.ops-empty,.bottom-tabs button[aria-pressed=true]) { color:var(--ink); }
+.ops-focus-choice { display:grid; gap:4px; }
+.ops-clock-kind { font-size:11px; color:var(--muted); }
+.ops-time-top button[aria-pressed=true] { background:var(--panel-hover); font-weight:700; }
+.ops-bottom .ops-timeline { display:grid; gap:4px; margin:4px 0 7px; padding:3px 0 0; }
+.ops-bottom .ops-timeline input[type=range] { appearance:none; display:block; padding:0; height:18px; border:0; background:transparent; accent-color:#3b8b6e; cursor:pointer; }
+.ops-timeline input::-webkit-slider-runnable-track { height:5px; border-radius:4px; background:linear-gradient(to right,#3b8b6e 0 var(--time-fill),var(--panel-edge) var(--time-fill) 100%); }
+.ops-timeline input::-webkit-slider-thumb { appearance:none; width:13px; height:13px; margin-top:-4px; border-radius:50%; background:#3b8b6e; border:2px solid var(--paper); }
+.ops-timeline-ticks { display:flex; justify-content:space-between; color:var(--muted); font:11px Consolas,monospace; }
+.exchange-progress { display:grid; gap:5px; }
+.exchange-progress progress { width:100%; accent-color:var(--primary); }
+.exchange-archive-actions { display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px solid var(--panel-edge); }
+.manual-download { display:flex; align-items:center; gap:6px; text-decoration:none; border-radius:5px; padding:5px 7px; }
+.app[data-theme=dark] .metro-diagram-scroll svg text { fill:var(--muted); }
+.app[data-theme=dark] .metro-paper { fill:var(--panel-control); }
+.app[data-theme=dark] .metro-band { fill:var(--panel-hover); }
+.app[data-theme=dark] .metro-grid { stroke:var(--panel-edge); }
+.app[data-theme=dark] .metro-time { stroke:#aad2ee; }
 .corridor-work-title,.metro-diagram-head,.metro-diagram-tools { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
 .corridor-work-title { padding:5px 0 9px; border-bottom:1px solid var(--line); }
 .corridor-work-title span { font:11px 'IBM Plex Mono',monospace; color:var(--muted); }

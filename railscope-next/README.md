@@ -55,7 +55,7 @@ python railscope-next/pipelines/enrich_pack.py `
 
 ## 使用
 
-从 **数据 → 导入与导出** 导出当前快照的车站、线路及分期、物理轨道、通道和运行计划。填写或修改 JSON 后可导回同一工作区。入口也提供 CSV、GTFS 时刻表和空白模板。格式、回填规则和命令行导入用法见 [资料导入与导出手册](apps/desktop/src/import-templates/README.md)。
+从 **数据 → 导入与导出** 可以一次导出当前快照中的全部匹配资料，或导出地图上选中的单个对象。填写或修改 JSON 后可导回同一工作区。入口也提供 CSV、GTFS 时刻表和空白模板。[PDF 手册](apps/desktop/src/import-templates/RailScope-资料导入导出手册.pdf) · [Markdown 手册](apps/desktop/src/import-templates/README.md)
 
 在地图左侧打开 **图层**，在 **国家铁路** 和 **城市轨道交通** 分类中分别勾选 **在建线路**。两项默认关闭。地图顶部的 **图层** 提供地图预设和图例。
 

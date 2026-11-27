@@ -4,13 +4,13 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, Crosshair, Download, GitBranch, Pause, Play, Plus, RotateCcw, TrainFront, Upload, X } from 'lucide-react'
 import type { Geometry } from 'geojson'
 import { api, type Entity, type Summary } from './api'
-import type { MapTrain } from './map'
+import type { FocusLevel, MapTrain } from './map'
 import { ControlCorridorEditor } from './corridor-workbench'
 import { MetroDiagram } from './metro-diagram'
 import { OperationsDirectory, networkName, operationLines, type DirectorySelection, type NetworkMode } from './operations-directory'
 import { simulationLevels } from './settings'
 import {
-  chinaDate,corridorKey,datedRunLabel,describeError,formatTime,opsApi,parseTime,runCorridorKey,sourceLabel,stateLabel,trustLabel,
+  chinaDate,chinaWallClock,corridorKey,datedRunLabel,describeError,formatTime,opsApi,parseTime,runCorridorKey,sourceLabel,stateLabel,trustLabel,
   type Clock,type Corridor,type Cycle,type Level,type OperationList,type Provenance,type Run,type RunDetail,type Scenario,
   type ScheduleFormat,type Service,type Simulation,type Stop,type TrainState,
 } from './operations-api'
@@ -20,21 +20,22 @@ export type OperationsMap={
   setTrains:(trains:MapTrain[],selected?:string)=>void
   showPath:(shape:Geometry|null)=>void
   showCorridor:(shape:Geometry|null)=>void
+  setFocus:(level:FocusLevel|undefined,shape:Geometry|null,runs:string[])=>void
   focusTrain:(point:[number,number],follow:boolean)=>void
   revealLayer:(layer:'railTrains'|'metroTrains'|'route'|'corridor')=>void
   stopFollowing:()=>void
 }
 type Props={snapshot?:string; visible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
   openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void;
-  trainLayers:Record<NetworkMode,boolean>;onTrainLayer:(mode:NetworkMode,value:boolean)=>void;
   level:Level;setLevel:(level:Level)=>void}
 const blank:OperationList={corridors:[],services:[],runs:[],dates:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
 const userSource:Provenance={source_kind:'user_defined',source_url_or_reference:'工作区人工录入'}
 const initialScenario:Scenario={id:'',name:'假设性场景',headway_s:120,turnaround_s:900,delays:{}}
 const departure=(run:Run)=>run.stops[0]?.departure_time_s??run.stops[0]?.arrival_time_s??Infinity
+const focusNames:Record<FocusLevel,string>={line:'线路',corridor:'通道',run:'车次',train:'列车'}
 
 export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function OperationsWorkbench(
-  {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,trainLayers,onTrainLayer,level,setLevel},ref
+  {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,level,setLevel},ref
 ){
   const [scope,setScope]=useState<DirectorySelection>({})
   const [popup,setPopup]=useState<'plans'|'scenario'|'new-run'|'run'|'corridor'|'vehicle'>()
@@ -44,7 +45,11 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [editor,setEditor]=useState<Run>()
   const [detail,setDetail]=useState<RunDetail>()
   const [metroAxis,setMetroAxis]=useState<RunDetail>()
-  const [clock,setClock]=useState<Clock>({time_s:28800,rate:1,playing:false})
+  const [simulationClock,setClock]=useState<Clock>({time_s:28800,rate:1,playing:false})
+  const [live,setLive]=useState(false)
+  const [wall,setWall]=useState(chinaWallClock)
+  const clock=live?{...simulationClock,time_s:wall.seconds,playing:false}:simulationClock
+  const [scrub,setScrub]=useState<number>()
   const [scenario,setScenario]=useState(initialScenario)
   const [simulation,setSimulation]=useState<Simulation>()
   const [draftPosition,setDraftPosition]=useState<TrainState>()
@@ -59,6 +64,9 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const [prefill,setPrefill]=useState<{start?:Summary;end?:Summary}>()
   const [corridorDirty,setCorridorDirty]=useState(false)
   const [onlySelected,setOnlySelected]=useState(false)
+  const [focusChoice,setFocusChoice]=useState<'auto'|'network'|FocusLevel>('auto')
+  const [physicalFocus,setPhysicalFocus]=useState(false)
+  const [focusShape,setFocusShape]=useState<Geometry|null>(null)
   const [initialDate,setInitialDate]=useState(true)
   const [bottomTab,setBottomTab]=useState<'table'|'chart'|'metro'|'conflicts'>('chart')
   const [past,setPast]=useState<Run[]>([])
@@ -101,6 +109,17 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const corridorList=data.corridors.filter(item=>item.current_version!==false&&(!item.mode||item.mode===editMode))
   const runIds=useMemo(()=>available.map(run=>run.id),[available])
   const selectedState=simulation?.states.find(state=>state.run_id===selected)
+  const automaticFocus:FocusLevel|undefined=selected?(physicalFocus||follow?'train':'run'):activeCorridor?'corridor':line?'line':undefined
+  const focusOptions:FocusLevel[]=[...(line?['line' as const]:[]),...(activeCorridor?['corridor' as const]:[]),...(selected?['run','train'] as const:[])]
+  const focusLevel=focusChoice==='network'?undefined:focusChoice!=='auto'&&focusOptions.includes(focusChoice)?focusChoice:automaticFocus
+  const focusRuns=useMemo(()=>focusLevel==='train'||focusLevel==='run'?[selected]:
+    focusLevel==='corridor'?scopedRuns.map(run=>run.id):focusLevel==='line'?lineRuns.map(run=>run.id):[],
+    [focusLevel,selected,lineRuns,activeCorridor,scope.corridor])
+  const lastSecond=useMemo(()=>available.reduce((max,run)=>{
+    const stop=run.stops.at(-1)
+    return Math.max(max,stop?.departure_time_s??stop?.arrival_time_s??0)
+  },86400),[available])
+  const timelineEnd=Math.min(604800,Math.max(Math.ceil(lastSecond/3600)*3600,Math.ceil(clock.time_s/3600)*3600))
 
   async function reload() {
     if(!snapshot) return
@@ -124,7 +143,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     requestEpoch.current++
     setSelected('');setEditor(undefined);setDetail(undefined);setCorridor(undefined);setSimulation(undefined)
     setData(blank)
-    propsMap.current.setTrains([]);propsMap.current.showPath(null);propsMap.current.showCorridor(null)
+    propsMap.current.setTrains([]);propsMap.current.showPath(null);propsMap.current.showCorridor(null);propsMap.current.setFocus(undefined,null,[])
   },[snapshot])
   useEffect(()=>{
     void reload().catch(e=>setError(describeError(e)))
@@ -136,10 +155,27 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     void opsApi.getRun(snapshot,selected).then(result=>{
       if(epoch!==requestEpoch.current)return
       setDetail(result)
-      propsMap.current.showPath(result.geometry)
     }).catch(e=>setError(describeError(e)))
     return ()=>{requestEpoch.current++}
   },[snapshot,selected,data])
+  useEffect(()=>{
+    setFocusShape(null)
+    if(!visible||!snapshot||!(focusLevel==='line'||focusLevel==='corridor'))return
+    const latest=new Map<string,Corridor>()
+    for(const path of line?.corridors??[]){
+      if((latest.get(path.id)?.version??0)<path.version)latest.set(path.id,path)
+    }
+    const paths=focusLevel==='corridor'&&activeCorridor?[activeCorridor]:[...latest.values()]
+    let cancelled=false
+    void opsApi.focusGeometry(snapshot,paths).then(shape=>{if(!cancelled)setFocusShape(shape)})
+      .catch(error=>{if(!cancelled)setError(describeError(error))})
+    return ()=>{cancelled=true}
+  },[visible,snapshot,focusLevel,line,activeCorridor])
+  useEffect(()=>{
+    const selectedGeometry=visible&&(focusLevel==='run'||focusLevel==='train'||!focusLevel)?detail?.geometry??null:null
+    propsMap.current.showPath(selectedGeometry)
+    propsMap.current.setFocus(visible?focusLevel:undefined,focusShape,focusRuns)
+  },[visible,focusLevel,focusShape,focusRuns,detail])
   const metroAxisId=line?.mode==='metro'?lineRuns.reduce<Run|undefined>((best,run)=>
     run.status!=='cancelled'&&run.stops.length>(best?.stops.length??1)?run:best,undefined)?.id:undefined
   useEffect(()=>{
@@ -157,23 +193,39 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     }
   },[initialDate,data.dates,date])
   useEffect(()=>{onPlaying(clock.playing)},[clock.playing,onPlaying])
+  useEffect(()=>{
+    if(!live)return
+    const tick=()=>{
+      const now=chinaWallClock()
+      setWall(now)
+      if(dateRef.current!==now.day){setSelected('');setFollow(false);setDate(now.day)}
+    }
+    tick()
+    const timer=window.setInterval(tick,1000)
+    return ()=>window.clearInterval(timer)
+  },[live])
   useEffect(()=>{onDirty(corridorDirty||!!editor)},[corridorDirty,editor,onDirty])
 
   function revealTrain(mode:NetworkMode){propsMap.current.revealLayer(mode==='metro'?'metroTrains':'railTrains')}
   async function control(action:string,value?:number,mode?:NetworkMode){
     try {
-      const next=await opsApi.clock(action,value)
-      if(action==='play'){
-        if(mode)revealTrain(mode)
-        else if(!trainLayers.rail&&!trainLayers.metro){
-          const modes=new Set(available.map(run=>byService.get(run.service_id)?.mode))
-          if(modes.has('rail'))revealTrain('rail')
-          if(modes.has('metro'))revealTrain('metro')
-        }
+      if(live){
+        setLive(false)
+        if(action!=='seek'&&action!=='reset')await opsApi.clock('seek',chinaWallClock().seconds)
       }
+      const next=await opsApi.clock(action,value)
+      if(action==='play'&&mode)revealTrain(mode)
       setClock(next)
     }
     catch(e){setError(describeError(e))}
+  }
+  async function useCurrentTime(){
+    if(live){await control('pause');return}
+    try{
+      setClock(await opsApi.clock('pause'))
+      setInitialDate(false)
+      setLive(true)
+    }catch(error){setError(describeError(error))}
   }
 
   useEffect(()=>{
@@ -182,7 +234,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     let timer:number|null=null
     const step=async()=>{
       try {
-        const time=await opsApi.clock('get')
+        const time=live?{...simulationClock,time_s:chinaWallClock().seconds,playing:false}:await opsApi.clock('get')
         const batches=Array.from({length:Math.ceil(runIds.length/1000)},(_,i)=>runIds.slice(i*1000,(i+1)*1000))
         const results=await Promise.all(batches.map(ids=>opsApi.simulate(snapshot,ids,time.time_s,level,scenario)))
         const result:Simulation={states:results.flatMap(value=>value.states),diagnostics:results.flatMap(value=>value.diagnostics),occupancies:[],conflicts:[]}
@@ -193,7 +245,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
           catch(error){feedback=describeError(error)}
         }
         if(closed)return
-        setClock(time);setSimulation(result)
+        if(!live)setClock(time)
+        setSimulation(result)
         setDraftPosition(draft);setDraftFeedback(feedback)
         const trains:MapTrain[]=result.states.flatMap(state=>{
           if(draft&&state.run_id===editor?.id)return []
@@ -209,12 +262,12 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             bearing:draft.heading_deg??undefined,kind:mode})
         }
         propsMap.current.setTrains(trains,selected)
-        if(time.playing) timer=window.setTimeout(step,230)
+        if(live||time.playing) timer=window.setTimeout(step,live?850:230)
       } catch(e) {if(!closed)setError(describeError(e))}
     }
     void step()
     return ()=>{closed=true;if(timer!=null)window.clearTimeout(timer)}
-  },[snapshot,runIds,selected,level,scenario,byRun,byService,onlySelected,editor,clock.playing,clock.playing?null:clock.time_s,clock.rate])
+  },[snapshot,runIds,selected,level,scenario,byRun,byService,onlySelected,editor,live,simulationClock.playing,simulationClock.playing?null:simulationClock.time_s,simulationClock.rate])
 
   useEffect(()=>{
     if(follow&&visible&&selectedState?.run_id===selected&&selectedState.lon!=null&&selectedState.lat!=null)
@@ -225,7 +278,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   },[visible,follow])
 
   function chooseScope(value:DirectorySelection){
-    setScope(value);setSelected('');setFollow(false)
+    setScope(value);setSelected('');setFollow(false);setPhysicalFocus(false);setFocusChoice('auto')
     const group=groups.find(item=>item.id===value.line)
     setBottomTab(group?.mode==='metro'?'metro':'chart');openBottom()
   }
@@ -239,13 +292,14 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
       if(!run)return
       if(run.service_date!==date)chooseDate(run.service_date)
       changeRun(run.id,run,result?.service?.mode)
+      setPhysicalFocus(true)
     }catch(error){setError(describeError(error))}
   }
   const changeRun=(id:string,run=byRun.get(id),knownMode?:NetworkMode)=>{
     const mode=knownMode??(run&&byService.get(run.service_id)?.mode)
     const key=run?runCorridorKey(run):''
     const group=groups.find(item=>item.corridors.some(value=>corridorKey(value)===key))
-    setScope(group?{line:group.id,corridor:key}:{});setSelected(id);openBottom()
+    setScope(group?{line:group.id,corridor:key}:{});setSelected(id);setPhysicalFocus(false);setFocusChoice('auto');openBottom()
     if(!editor)setBottomTab(mode==='metro'?'metro':'chart')
   }
   const beginEdit=(run:Run)=>{if(!editor||window.confirm(t("以所选车次替换时刻草稿？"))){
@@ -265,7 +319,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const selectClockStart=()=>void control('seek',detail?.chart[0]?.departure_time_s??detail?.chart[0]?.arrival_time_s??28800)
   function chooseDate(day:string){
     if(!day||day===date)return
-    setInitialDate(false);setSelected('');setFollow(false);setAnalysis(undefined);setDate(day)
+    setInitialDate(false);setSelected('');setFollow(false);setAnalysis(undefined);setDate(day);setLive(false)
     void control('pause')
   }
   async function startPlayback(fromDeparture=false){
@@ -329,6 +383,13 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
               <Play size={14}/>{t(activeCorridor?'从此通道开始播放':line?'从此线路开始播放':'播放当日计划')}</button>}
             {line&&<button className="secondary" onClick={()=>chooseScope({})}>{t('返回全网')}</button>}
           </div>
+          {focusOptions.length>0&&<label className="ops-focus-choice">{t("地图焦点")}
+            <select aria-label={t("地图焦点")} value={focusChoice} onChange={event=>setFocusChoice(event.target.value as typeof focusChoice)}>
+              <option value="auto">{t("随选择自动聚焦")}</option>
+              <option value="network">{t("全网 · 不调暗")}</option>
+              {focusOptions.map(item=><option key={item} value={item}>{t(focusNames[item])}</option>)}
+            </select>
+          </label>}
         </div>
         {!detail&&activeCorridor&&<>
           <h3>{activeCorridor.name}</h3><p>{t(trustLabel[activeCorridor.verification_status])} · {activeCorridor.edge_refs.length} {t("段 ·")} {((activeCorridor.edge_refs.at(-1)?.end_distance_m??0)/1000).toFixed(2)} km</p>
@@ -367,6 +428,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
               onClick={()=>{
                 if(selectedState?.lon==null||selectedState.lat==null)return
                 revealTrain(contextMode)
+                setPhysicalFocus(true);setFocusChoice('auto')
                 propsMap.current.focusTrain([selectedState.lon,selectedState.lat],false)
               }}>
               <Crosshair size={14}/>{t("定位列车")}
@@ -481,13 +543,15 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
       {bottomDock&&createPortal(<div hidden={!visible} className="ops-bottom">
       <div className="ops-time-panel">
         <div className="ops-time-top">
-          <strong aria-label={t("运行时钟")}>{formatTime(clock.time_s)}</strong>
+          <strong aria-label={t("运行时钟")}>{formatTime(scrub??clock.time_s)}</strong>
+          <span className="ops-clock-kind">{live?t("北京时间"):t("模拟时间")}</span>
           <button className="icon framed" aria-label={clock.playing?t("暂停模拟"):t("播放模拟")} disabled={!runIds.length&&!editor?.corridor_id}
             onClick={()=>void control(clock.playing?'pause':'play',undefined,selected?contextMode:undefined)}>{clock.playing?<Pause size={16}/>:<Play size={16}/>}</button>
           <select aria-label={t("播放倍率")} value={clock.rate} onChange={e=>void control('rate',Number(e.target.value))}>
             {[.25,.5,1,2,5,10,30,60].map(r=><option key={r} value={r}>{r}×</option>)}
           </select>
           <button className="secondary compact" onClick={()=>void control('reset')}>{t("重置")}</button>
+          <button className="secondary compact" aria-pressed={live} onClick={()=>void useCurrentTime()}>{t("现在")}</button>
         </div>
         <form className="ops-time-seek" onSubmit={e=>{
           e.preventDefault()
@@ -498,11 +562,21 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
           <button className="secondary">{t("跳转")}</button>
         </form>
       </div>
-      <div className="ops-map-controls">
-        <div className="ops-train-layers" role="group" aria-label={t('列车图层')}>
-          <label><input type="checkbox" checked={trainLayers.rail} onChange={event=>onTrainLayer('rail',event.target.checked)}/>{t('国铁列车')}</label>
-          <label><input type="checkbox" checked={trainLayers.metro} onChange={event=>onTrainLayer('metro',event.target.checked)}/>{t('城轨列车')}</label>
+      <div className="ops-timeline">
+        <input type="range" aria-label={t("运行时间轴")} aria-valuetext={formatTime(scrub??clock.time_s)}
+          min={0} max={timelineEnd} step={1} value={scrub??Math.floor(clock.time_s)}
+          style={{'--time-fill':`${100*(scrub??clock.time_s)/timelineEnd}%`} as React.CSSProperties}
+          onChange={event=>setScrub(event.target.valueAsNumber)}
+          onPointerUp={event=>{setScrub(undefined);void control('seek',event.currentTarget.valueAsNumber)}}
+          onPointerCancel={()=>setScrub(undefined)}
+          onKeyUp={event=>{if(scrub!=null){setScrub(undefined);void control('seek',event.currentTarget.valueAsNumber)}}}
+          onBlur={()=>{if(scrub!=null){setScrub(undefined);void control('seek',scrub)}}}/>
+        <div className="ops-timeline-ticks" aria-hidden="true">
+          {[0,.25,.5,.75,1].map(fraction=><span key={fraction}>{formatTime(Math.round(timelineEnd*fraction)).slice(0,-3)}</span>)}
         </div>
+        {live&&!available.length&&<p className="muted">{t("今天没有已导入的运行计划。")}</p>}
+      </div>
+      <div className="ops-map-controls">
         <button className="secondary compact ops-follow" aria-pressed={follow} disabled={!selected} onClick={()=>{
           if(!follow)revealTrain(contextMode)
           setFollow(!follow)

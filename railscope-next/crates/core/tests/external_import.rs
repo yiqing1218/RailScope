@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use railscope_next_core::{Engine, catalog, external_data, operations, workspace};
+use railscope_next_core::{Engine, catalog, exchange, external_data, operations, workspace};
 use serde_json::{Value, json};
 use std::{env, path::PathBuf};
 
@@ -191,5 +191,90 @@ fn external_files_import_atomically_into_the_workspace() -> Result<()> {
         );
         Ok(())
     })?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires the local Shanghai v4 offline pack"]
+fn exchange_archive_exports_all_pages_and_reimports_transactionally() -> Result<()> {
+    use std::{
+        fs::File,
+        io::{Read, Write},
+        sync::atomic::{AtomicBool, Ordering},
+    };
+    use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+    let workspace = tempfile::tempdir()?;
+    let snapshot = "shanghai-osm-202609-v4";
+    let packs = PathBuf::from(env::var("RAILSCOPE_TEST_PACKS")?);
+    let pack = railscope_next_core::pack::Pack::open(&packs.join(snapshot))?;
+    let mut db = rusqlite::Connection::open(workspace.path().join("workspace.sqlite"))?;
+    workspace::initialize(&db)?;
+    operations::initialize(&db)?;
+    let archive = workspace.path().join("stations.zip");
+    let cancelled = AtomicBool::new(false);
+    let scope = exchange::Scope {
+        kind: "station".into(),
+        query: String::new(),
+        parent: None,
+        date: None,
+        format: "json".into(),
+    };
+    let expected: u64 = pack
+        .connection()?
+        .query_row(
+            "SELECT count(*) FROM entity WHERE kind='station'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|n| n as u64)?;
+    let exported = exchange::export_to(&mut db, &pack, &archive, &scope, &cancelled, |_, _| {})?;
+    assert!(exported.documents > 1 && exported.records > 100);
+    assert_eq!(exported.records, expected);
+    let initial = exchange::import_from(&mut db, &pack, &archive, true, &cancelled, |_, _| {})?;
+    assert_eq!(initial.records, expected);
+    assert_eq!(initial.changed, 0);
+
+    let edited = workspace.path().join("edited.zip");
+    let mut original = ZipArchive::new(File::open(&archive)?)?;
+    let mut writer = ZipWriter::new(File::create(&edited)?);
+    let mut first_station = String::new();
+    for i in 0..original.len() {
+        let mut file = original.by_index(i)?;
+        let name = file.name().to_owned();
+        let mut body = Vec::new();
+        file.read_to_end(&mut body)?;
+        if i == 0 {
+            let mut doc: Value = serde_json::from_slice(&body)?;
+            first_station = doc["records"][0]["entity_id"].as_str().unwrap().into();
+            doc["records"][0]["changes"]["note"] = json!("全量导出测试");
+            body = serde_json::to_vec(&doc)?;
+        }
+        writer.start_file(name, SimpleFileOptions::default())?;
+        writer.write_all(&body)?;
+    }
+    writer.finish()?;
+    let stopped = exchange::import_from(&mut db, &pack, &edited, false, &cancelled, |done, _| {
+        if done == 1 {
+            cancelled.store(true, Ordering::Relaxed);
+        }
+    });
+    assert!(stopped.is_err());
+    assert!(
+        workspace::state(&db, snapshot, &first_station)?
+            .value
+            .note
+            .is_empty()
+    );
+    cancelled.store(false, Ordering::Relaxed);
+    let saved = exchange::import_from(&mut db, &pack, &edited, false, &cancelled, |_, _| {})?;
+    assert_eq!(saved.changed, 1);
+    assert_eq!(
+        workspace::state(&db, snapshot, &first_station)?.value.note,
+        "全量导出测试"
+    );
+    assert_eq!(
+        exchange::import_from(&mut db, &pack, &edited, false, &cancelled, |_, _| {})?.changed,
+        0
+    );
     Ok(())
 }

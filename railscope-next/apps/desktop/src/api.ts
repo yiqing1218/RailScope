@@ -69,6 +69,8 @@ export type Route = { edges: string[]; meters: number; verification: string; geo
 export type Visual = Pick<Summary, 'id' | 'render_id' | 'kind' | 'class'> & {
   value: Override; station?: {render_id:number;mode:'rail'|'metro';name:string}|null
 }
+export type ExchangeScope = {kind:string;query?:string;parent?:string;date?:string;format:string}
+export type ExchangeReport = {documents:number;records:number;changed:number;first_date:string|null}
 export type Conflict = { entity: string; source_snapshot: string; reason: string }
 export type Group = { name: string; count: number }
 export type RawSource={ref:string;kind:string;version?:number;tags?:Record<string,string>;license:string;
@@ -92,6 +94,9 @@ export const api = {
     invoke<{records:number;changed:number;preview:boolean}>('import_external_data',{snapshot,content,preview}),
   exportMetadata: (snapshot:string,filter:{kind:string;query?:string;cursor?:string;parent?:string})=>
     invoke<{content:string;count:number;next:string|null}>('export_external_data',{snapshot,filter}),
+  exchangeArchive:(snapshot:string,job:string,scope?:ExchangeScope,preview=false)=>
+    invoke<ExchangeReport|null>('exchange_archive',{snapshot,job,scope:scope??null,preview}),
+  exchangeProgress:(job:string,cancel=false)=>invoke<[number,number]|null>('exchange_job',{job,cancel}),
   lineTracks: (snapshot:string,id:string)=>invoke<unknown[]>('external_line_tracks',{snapshot,id}),
   lineEdit: <T>(snapshot: string, request: LineEditRequest) => invoke<T>('edit_business_line', {snapshot, request}),
   update: (snapshot: string, id: string, expected: number, value: Override) =>
