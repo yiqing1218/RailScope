@@ -1,6 +1,6 @@
 import { t } from './i18n'
 import { invoke } from '@tauri-apps/api/core'
-import type { Geometry, LineString } from 'geojson'
+import type { FeatureCollection, Geometry, LineString, MultiLineString } from 'geojson'
 
 export type Provenance = {
   source_kind: 'demo' | 'user_defined' | 'publisher' | 'gtfs' | 'osm'
@@ -35,10 +35,12 @@ export type Corridor = {
   candidates?: { edge_ids: string[]; meters: number }[]
   intent?: ControlStep[]
   mode?: 'rail' | 'metro'
-  lines?: { id:string; name:string }[]
+  lines?: { id:string; name:string; color?:string|null }[]
   current_version?: boolean
 }
 export const corridorKey=(corridor:{id:string;version:number})=>`${corridor.id}:${corridor.version}`
+export type CorridorMapProperties = Pick<Corridor,'id'|'version'|'name'|'verification_status'> & {mode:'rail'|'metro'}
+export type CorridorMap = FeatureCollection<MultiLineString,CorridorMapProperties>
 export const runCorridorKey=(run:Run)=>run.corridor_id&&run.corridor_version!=null?`${run.corridor_id}:${run.corridor_version}`:''
 export type ControlStep = { node_id:string; line_id:string|null; via_edge?:string|null }
 export type ControlPoint = { id:string; name:string; point:[number,number]; meters?:number; evidence?:string }
@@ -214,6 +216,7 @@ export const opsApi = {
       snapshot,'export_external_plan',{scope,format,service_date,cursor}),
   focusGeometry:(snapshot:string,corridors:Corridor[])=>
     operations<Geometry>(snapshot,'focus_geometry',{corridors:corridors.map(({id,version})=>[id,version])}),
+  mapCorridors:(snapshot:string)=>operations<CorridorMap>(snapshot,'map_corridors'),
   export: (snapshot: string, format: ScheduleFormat, run_ids?: string[]) =>
     operations<{ content: string; format: ScheduleFormat }>(snapshot, 'export_timetable', { format, run_ids }),
   demo: (snapshot:string,corridor:Corridor,origin_station_id:string,destination_station_id:string,service_date:string)=>

@@ -54,7 +54,12 @@ export function OperationsDirectory({groups,runs,services,date,dates,datesByMode
   const activeKey=activeRun?runCorridorKey(activeRun):''
   const activeMode=activeRun?services.get(activeRun.service_id)?.mode:undefined
   const activeGroup=groups.find(group=>group.corridors.some(c=>corridorKey(c)===activeKey))?.id
+  const scopedMode=groups.find(group=>group.id===scope.line)?.mode
   const tree=useRef<HTMLElement>(null)
+  useEffect(()=>{
+    if(!scopedMode||!scope.line||!scope.corridor)return
+    setExpanded(old=>({...old,[scopedMode]:true,[scope.line!]:true,[scope.corridor!]:true}))
+  },[scopedMode,scope.line,scope.corridor])
   useEffect(()=>{
     if(!activeMode||!selected)return
     const inner=activeKey||`unbound-${activeMode}`
@@ -115,7 +120,10 @@ export function OperationsDirectory({groups,runs,services,date,dates,datesByMode
         const unboundOpen=open(`unbound-${mode}`,!!activeRun&&unbound.includes(activeRun))
         if(query&&!branchesShown.length&&!foundUnbound.length)return null
         return <Branch key={mode} name={t(networkName[mode])} icon={<Icon size={15}/>} count={modeRuns.length} open={networkOpen} toggle={()=>toggle(mode,networkOpen)}>
-          {!modeRuns.length&&recent&&recent!==date&&<li><button className="ops-tree-date" onClick={()=>{onScope({});onDate(recent)}}>{t('查看最近计划 · {0}',recent)}</button></li>}
+          {!modeRuns.length&&recent&&recent!==date&&<li><button className="ops-tree-date" onClick={()=>{
+            if(scope.line&&!groups.some(group=>group.id===scope.line&&group.mode===mode))onScope({})
+            onDate(recent)
+          }}>{t('查看最近计划 · {0}',recent)}</button></li>}
           {branchesShown}
           {foundUnbound.length>0&&<Branch name={t('未绑定走行通道')} icon={<GitBranch size={14}/>} count={unbound.length} open={unboundOpen} runList
             toggle={()=>toggle(`unbound-${mode}`,unboundOpen)}>{rows(foundUnbound)}</Branch>}

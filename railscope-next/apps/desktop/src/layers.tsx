@@ -8,7 +8,7 @@ export const layerGroups = [
   ]},
   {name:'国家铁路', items:[
     ['rail','铁路线'],['railConstruction','在建线路'],['railNames','铁路线路名称'],['station','国铁车站圆圈'],['railStationNames','国铁车站名称'],
-    ['facility','站台、站房、站区与股道'],['technical','线路所与道岔'],['signals','信号设备'],['relics','废弃与拆除轨道'],
+    ['facility','站台、站房、站区与股道'],['technical','线路所、运营场站与道岔'],['signals','信号设备'],['relics','废弃与拆除轨道'],
   ]},
   {name:'城市轨道交通', items:[
     ['metro','城市轨道线路'],['metroConstruction','在建线路'],['metroNames','运营线路名称'],['metroStations','城轨车站圆圈'],

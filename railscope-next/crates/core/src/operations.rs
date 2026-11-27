@@ -344,6 +344,7 @@ enum Request {
     FocusGeometry {
         corridors: Vec<(String, u32)>,
     },
+    MapCorridors,
     SeedDemo {
         corridor_id: String,
         version: u32,
@@ -1015,6 +1016,47 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
     let canonical = pack.connection()?;
     let snapshot = pack.manifest.snapshot.as_str();
     match serde_json::from_value::<Request>(request)? {
+        Request::MapCorridors => {
+            let mut query = db.prepare(
+                "SELECT c.payload FROM ops_corridor c
+                 WHERE c.snapshot=? AND c.version=(SELECT max(version) FROM ops_corridor WHERE id=c.id)
+                   AND NOT EXISTS(SELECT 1 FROM ops_corridor_archive a WHERE a.id=c.id)
+                 ORDER BY c.id",
+            )?;
+            let mut rows = query.query([snapshot])?;
+            let mut shapes = HashMap::new();
+            let mut features = Vec::new();
+            let mut find_mode = canonical.prepare("SELECT kind FROM entity WHERE id=?")?;
+            while let Some(row) = rows.next()? {
+                let corridor: Corridor = serde_json::from_str(&row.get::<_, String>(0)?)?;
+                let Some(first) = corridor.edge_refs.first() else {
+                    continue;
+                };
+                let mode: String = find_mode.query_row([&first.edge_id], |r| r.get(0))?;
+                let mut coordinates = Vec::new();
+                for edge in &corridor.edge_refs {
+                    let shape = match shapes.entry(edge.edge_id.as_str().to_owned()) {
+                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            let shape = catalog::geometry(&canonical, &edge.edge_id)?
+                                .filter(|shape| shape["type"] == "LineString")
+                                .context("已保存通道的物理区段缺少线几何")?;
+                            entry.insert(shape["coordinates"].clone())
+                        }
+                    };
+                    let mut points = shape.as_array().context("无效的区段坐标")?.clone();
+                    if !edge.forward {
+                        points.reverse();
+                    }
+                    coordinates.push(points);
+                }
+                features.push(json!({"type":"Feature",
+                    "geometry":{"type":"MultiLineString","coordinates":coordinates},
+                    "properties":{"id":corridor.id,"version":corridor.version,"name":corridor.name,
+                        "mode":mode,"verification_status":corridor.verification_status}}));
+            }
+            Ok(json!({"type":"FeatureCollection","features":features}))
+        }
         Request::FocusGeometry { corridors } => {
             ensure!(corridors.len() <= 256, "线路的通道数量超出地图显示范围");
             let mut edges = HashSet::new();
@@ -1055,27 +1097,41 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
             let mut classify = canonical.prepare("SELECT kind FROM entity WHERE id=?")?;
             let mut find_line = canonical
                 .prepare("SELECT id,name FROM entity WHERE kind='line' AND id=? LIMIT 1")?;
-            let mut find_source_line = canonical
-                .prepare("SELECT id,name FROM entity WHERE kind='line' AND source_ref=? LIMIT 1")?;
+            let mut find_source_line = canonical.prepare(
+                "SELECT id,name FROM entity WHERE kind='line' AND source_ref=?
+                   AND class IN ('railway','subway','light_rail','tram') LIMIT 1",
+            )?;
             let mut find_covering_lines = canonical.prepare(
                 "WITH path(id) AS (SELECT DISTINCT value FROM json_each(?1))
                  SELECT l.id,l.name FROM path
                  CROSS JOIN line_member m ON m.member_id=path.id
                  CROSS JOIN entity l ON l.id=m.line_id AND l.kind='line'
+                 WHERE l.status NOT IN ('construction','planned','disused') AND
+                     ((?2='rail' AND l.class='railway') OR
+                      (?2='metro' AND l.class IN ('subway','light_rail','tram')))
                  GROUP BY l.id HAVING count(DISTINCT path.id)=(SELECT count(*) FROM path) LIMIT 2",
             )?;
-            let mut line_override = db.prepare("SELECT json_extract(payload,'$.name') FROM overrides WHERE snapshot=? AND entity=?")?;
+            let mut line_override = db.prepare(
+                "SELECT json_extract(payload,'$.name'),json_extract(payload,'$.color')
+                 FROM overrides WHERE snapshot=? AND entity=?",
+            )?;
+            let mut line_colour = canonical.prepare(
+                "SELECT json_extract(s.tags,'$.colour') FROM entity l
+                 JOIN source_object s ON s.ref=l.source_ref WHERE l.id=?",
+            )?;
             for payload in payloads {
                 let (payload, current_version) = payload?;
                 let plan: Corridor = serde_json::from_str(&payload)?;
                 let mut corridor = serde_json::to_value(&plan)?;
                 corridor["current_version"] = json!(current_version);
-                if let Some(edge) = plan.edge_refs.first() {
-                    let kind: Option<String> = classify
+                let mode: Option<String> = if let Some(edge) = plan.edge_refs.first() {
+                    classify
                         .query_row([&edge.edge_id], |row| row.get(0))
-                        .optional()?;
-                    corridor["mode"] = json!(kind);
-                }
+                        .optional()?
+                } else {
+                    None
+                };
+                corridor["mode"] = json!(mode);
                 let mut lines = Vec::new();
                 let mut add_line = |key: &str, is_source: bool| -> Result<()> {
                     let query = if is_source {
@@ -1106,10 +1162,10 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
                 {
                     add_line(&plan.provenance.source_url_or_reference, true)?;
                 }
-                if lines.is_empty() && !plan.edge_refs.is_empty() {
+                if plan.intent.is_empty() && lines.is_empty() && !plan.edge_refs.is_empty() {
                     let edges: Vec<_> = plan.edge_refs.iter().map(|edge| &edge.edge_id).collect();
                     let matches = find_covering_lines
-                        .query_map([serde_json::to_string(&edges)?], |row| {
+                        .query_map(params![serde_json::to_string(&edges)?, mode], |row| {
                             Ok((row.get(0)?, row.get(1)?))
                         })?
                         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1120,12 +1176,23 @@ pub fn execute(db: &mut Connection, pack: &Pack, request: Value) -> Result<Value
                 let lines = lines
                     .into_iter()
                     .map(|(id, name)| -> Result<Value> {
-                        let name = line_override
-                            .query_row([snapshot, &id], |row| row.get::<_, Option<String>>(0))
-                            .optional()?
-                            .flatten()
+                        let (edited_name, edited_colour): (Option<String>, Option<String>) =
+                            line_override
+                                .query_row([snapshot, &id], |row| Ok((row.get(0)?, row.get(1)?)))
+                                .optional()?
+                                .unwrap_or_default();
+                        let name = edited_name
+                            .filter(|name| !name.trim().is_empty())
                             .unwrap_or(name);
-                        Ok(json!({"id":id,"name":name}))
+                        let source_colour = line_colour
+                            .query_row([&id], |row| row.get::<_, Option<String>>(0))
+                            .optional()?
+                            .flatten();
+                        let colour = [edited_colour, source_colour]
+                            .into_iter()
+                            .flatten()
+                            .find_map(|value| crate::precision::normalized_colour(&value));
+                        Ok(json!({"id":id,"name":name,"color":colour}))
                     })
                     .collect::<Result<Vec<_>>>()?;
                 corridor["lines"] = json!(lines);

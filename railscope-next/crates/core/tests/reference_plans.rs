@@ -241,6 +241,30 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
         .context("G1 corridor missing from directory")?;
     assert_eq!(g1_path["mode"], "rail");
     assert_eq!(g1_path["lines"][0]["id"], line.id);
+    let map_corridors = || plans(&engine, rail, "map_corridors", json!({}));
+    let inventory = map_corridors()?;
+    let features = inventory["features"].as_array().context("map inventory")?;
+    assert_eq!(features.len(), 7);
+    assert_eq!(
+        features
+            .iter()
+            .filter(|f| f["properties"]["mode"] == "metro")
+            .count(),
+        6
+    );
+    let mapped_g1 = features
+        .iter()
+        .find(|f| f["properties"]["id"] == g1_path["id"])
+        .context("G1 corridor missing from map")?;
+    assert_eq!(mapped_g1["properties"]["version"], g1_path["version"]);
+    assert_eq!(mapped_g1["geometry"]["type"], "MultiLineString");
+    assert_eq!(
+        mapped_g1["geometry"]["coordinates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        g1_path["edge_refs"].as_array().unwrap().len()
+    );
     assert!(
         thursday["corridors"]
             .as_array()
@@ -258,6 +282,14 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
         json!({"corridor":next_version}),
     )?;
     assert_eq!(next["version"], g1_path["version"].as_u64().unwrap() + 1);
+    assert!(
+        map_corridors()?["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["properties"]["id"] == g1_path["id"]
+                && f["properties"]["version"] == next["version"])
+    );
     plans(
         &engine,
         rail,
@@ -273,6 +305,13 @@ fn line7_and_g1_run_on_shared_directed_corridors() -> Result<()> {
         .context("archived version used by G1 is missing from directory")?;
     assert_eq!(pinned["version"], dated["runs"][0]["corridor_version"]);
     assert_eq!(pinned["current_version"], false);
+    assert!(
+        !map_corridors()?["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["properties"]["id"] == g1_path["id"])
+    );
     let export = plans(
         &engine,
         rail,

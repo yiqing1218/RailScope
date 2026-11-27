@@ -216,7 +216,7 @@ impl Pack {
     }
 
     pub fn station_tile(&self, z: u8, x: u32, y: u32) -> Result<Tile> {
-        ensure!((9..=22).contains(&z), "无效车站标记级别");
+        ensure!((7..=22).contains(&z), "无效场站标记级别");
         self.cached_tile(z, x, y, TileMode::Stations)
     }
 
@@ -251,7 +251,7 @@ impl Pack {
         let result: Result<Tile> = if mode != TileMode::Archive {
             (|| {
                 let style_version = match mode {
-                    TileMode::Stations => "v1-station-marks",
+                    TileMode::Stations => "v2-station-and-site-marks",
                     TileMode::Context => "v6-context",
                     _ => "v9-station-labels",
                 };

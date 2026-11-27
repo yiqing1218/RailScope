@@ -392,6 +392,9 @@ fn line_weight(shape: &Geometry, addr: Address) -> f64 {
 pub(crate) fn generate_stations(stations: &Stations, addr: Address) -> Vec<u8> {
     let mut features = Layer::default();
     for station in stations.in_bounds(addr.bounds()) {
+        if addr.z < 9 {
+            break;
+        }
         let id = station.display.render_id;
         let (kind, commands) = geometry(Geometry::Point(station.point), addr);
         let mut attrs = vec![
@@ -445,6 +448,29 @@ pub(crate) fn generate_stations(stations: &Stations, addr: Address) -> Vec<u8> {
     }
     let mut result = Vec::new();
     field(&mut result, 3, &features.encode("stations"));
+    let mut sites = Layer::default();
+    for site in &stations.operating_sites {
+        if addr.z < site.min_zoom {
+            continue;
+        }
+        let (kind, commands) = geometry(Geometry::Point(site.point), addr);
+        if commands.is_empty() {
+            continue;
+        }
+        sites.push(
+            site.render_id,
+            kind,
+            vec![
+                ("rid", Value::UInt(site.render_id)),
+                ("site_role", Value::Text(site.role.into())),
+                ("symbol", Value::Text(site.symbol.into())),
+                ("label", Value::Text(site.label.clone())),
+                ("rank", Value::UInt(u64::from(site.min_zoom))),
+            ],
+            commands,
+        );
+    }
+    field(&mut result, 3, &sites.encode("operating_sites"));
     result
 }
 

@@ -4,28 +4,29 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, Crosshair, Download, GitBranch, Pause, Play, Plus, RotateCcw, TrainFront, Upload, X } from 'lucide-react'
 import type { Geometry } from 'geojson'
 import { api, type Entity, type Summary } from './api'
-import type { FocusLevel, MapTrain } from './map'
+import type { FocusAppearance, FocusLevel, MapTrain } from './map'
 import { ControlCorridorEditor } from './corridor-workbench'
 import { MetroDiagram } from './metro-diagram'
 import { OperationsDirectory, networkName, operationLines, type DirectorySelection, type NetworkMode } from './operations-directory'
 import { simulationLevels } from './settings'
 import {
   chinaDate,chinaWallClock,corridorKey,datedRunLabel,describeError,formatTime,opsApi,parseTime,runCorridorKey,sourceLabel,stateLabel,trustLabel,
-  type Clock,type Corridor,type Cycle,type Level,type OperationList,type Provenance,type Run,type RunDetail,type Scenario,
+  type Clock,type Corridor,type CorridorMap,type Cycle,type Level,type OperationList,type Provenance,type Run,type RunDetail,type Scenario,
   type ScheduleFormat,type Service,type Simulation,type Stop,type TrainState,
 } from './operations-api'
 
-export type OperationsHandle={selectRun:(id:string)=>void;startCorridor:(start?:Summary,end?:Summary)=>void;openScenario:()=>void;pause:()=>void;releaseCamera:()=>void;refresh:(day?:string)=>void}
+export type OperationsHandle={selectRun:(id:string)=>void;selectCorridor:(id:string,version:number)=>void;startCorridor:(start?:Summary,end?:Summary)=>void;openScenario:()=>void;pause:()=>void;releaseCamera:()=>void;refresh:(day?:string)=>void}
 export type OperationsMap={
   setTrains:(trains:MapTrain[],selected?:string)=>void
-  showPath:(shape:Geometry|null)=>void
+  showPath:(shape:Geometry|null,tint?:string)=>void
   showCorridor:(shape:Geometry|null)=>void
-  setFocus:(level:FocusLevel|undefined,shape:Geometry|null,runs:string[])=>void
+  setCorridorInventory:(inventory:CorridorMap|null)=>void
+  setFocus:(level:FocusLevel|undefined,shape:Geometry|null,runs:string[],appearance?:FocusAppearance)=>void
   focusTrain:(point:[number,number],follow:boolean)=>void
   revealLayer:(layer:'railTrains'|'metroTrains'|'route'|'corridor')=>void
   stopFollowing:()=>void
 }
-type Props={snapshot?:string; visible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
+type Props={snapshot?:string; visible:boolean; corridorsVisible:boolean; selection?:Entity; map:OperationsMap; rightDock:HTMLElement|null;bottomDock:HTMLElement|null;
   openBottom:(focus?:boolean)=>void;inspectStop:(id:string)=>void;onPlaying:(playing:boolean)=>void;onDirty:(dirty:boolean)=>void;
   level:Level;setLevel:(level:Level)=>void}
 const blank:OperationList={corridors:[],services:[],runs:[],dates:[],scenarios:[],assignments:[],trainsets:[],stock_types:[],cycles:[]}
@@ -35,7 +36,7 @@ const departure=(run:Run)=>run.stops[0]?.departure_time_s??run.stops[0]?.arrival
 const focusNames:Record<FocusLevel,string>={line:'线路',corridor:'通道',run:'车次',train:'列车'}
 
 export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function OperationsWorkbench(
-  {snapshot,visible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,level,setLevel},ref
+  {snapshot,visible,corridorsVisible,selection,map,rightDock,bottomDock,openBottom,inspectStop,onPlaying,onDirty,level,setLevel},ref
 ){
   const [scope,setScope]=useState<DirectorySelection>({})
   const [popup,setPopup]=useState<'plans'|'scenario'|'new-run'|'run'|'corridor'|'vehicle'>()
@@ -81,6 +82,10 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
 
   useImperativeHandle(ref,()=>({
     selectRun:id=>selectRun(id),
+    selectCorridor:(id,version)=>{
+      const key=corridorKey({id,version})
+      chooseScope({corridor:key,line:groups.find(group=>group.corridors.some(value=>corridorKey(value)===key))?.id})
+    },
     startCorridor:(start,end)=>{if(!corridorDirty||window.confirm(t("以所选对象替换通道草稿？"))){
       const target=start?.kind==='metro'||start?.class==='metro_station'?'metro':'rail'
       setEditMode(target);setCorridor(undefined);setPrefill({start,end});setPopup('corridor')
@@ -97,8 +102,20 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const byService=useMemo(()=>new Map(data.services.map(service=>[service.id,service])),[data.services])
   const available=useMemo(()=>data.runs.filter(run=>run.service_date===date).sort((a,b)=>departure(a)-departure(b)||a.train_number.localeCompare(b.train_number)),[data.runs,date])
   const groups=useMemo(()=>operationLines(data.corridors),[data.corridors])
-  const line=groups.find(group=>group.id===scope.line)
+  const line=scope.corridor
+    ? groups.find(group=>group.corridors.some(value=>corridorKey(value)===scope.corridor))
+    : groups.find(group=>group.id===scope.line)
   const activeCorridor=line?.corridors.find(value=>corridorKey(value)===scope.corridor)
+  const currentCorridorRevision=JSON.stringify(data.corridors
+    .filter(value=>value.current_version!==false).map(corridorKey))
+  useEffect(()=>{
+    propsMap.current.setCorridorInventory(null)
+    if(!snapshot||!corridorsVisible||currentCorridorRevision==='[]')return
+    let active=true
+    void opsApi.mapCorridors(snapshot).then(inventory=>{if(active)propsMap.current.setCorridorInventory(inventory)})
+      .catch(error=>{if(active)setError(describeError(error))})
+    return ()=>{active=false}
+  },[snapshot,corridorsVisible,currentCorridorRevision])
   const lineRuns=useMemo(()=>{
     if(!line)return available
     const keys=new Set(line.corridors.map(corridorKey))
@@ -112,6 +129,12 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   const automaticFocus:FocusLevel|undefined=selected?(physicalFocus||follow?'train':'run'):activeCorridor?'corridor':line?'line':undefined
   const focusOptions:FocusLevel[]=[...(line?['line' as const]:[]),...(activeCorridor?['corridor' as const]:[]),...(selected?['run','train'] as const:[])]
   const focusLevel=focusChoice==='network'?undefined:focusChoice!=='auto'&&focusOptions.includes(focusChoice)?focusChoice:automaticFocus
+  const focusAppearance=useMemo<FocusAppearance>(()=>{
+    const lines=new Map((line?.corridors??[])
+      .flatMap(path=>path.lines??[]).map(value=>[value.id,value.color]))
+    const colors=[...new Set([...lines.values()].filter((value):value is string=>!!value))]
+    return {lineIds:[...lines.keys()],tint:colors.length===1?colors[0]:undefined}
+  },[line])
   const focusRuns=useMemo(()=>focusLevel==='train'||focusLevel==='run'?[selected]:
     focusLevel==='corridor'?scopedRuns.map(run=>run.id):focusLevel==='line'?lineRuns.map(run=>run.id):[],
     [focusLevel,selected,lineRuns,activeCorridor,scope.corridor])
@@ -173,9 +196,9 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   },[visible,snapshot,focusLevel,line,activeCorridor])
   useEffect(()=>{
     const selectedGeometry=visible&&(focusLevel==='run'||focusLevel==='train'||!focusLevel)?detail?.geometry??null:null
-    propsMap.current.showPath(selectedGeometry)
-    propsMap.current.setFocus(visible?focusLevel:undefined,focusShape,focusRuns)
-  },[visible,focusLevel,focusShape,focusRuns,detail])
+    propsMap.current.showPath(selectedGeometry,focusAppearance.tint)
+    propsMap.current.setFocus(visible?focusLevel:undefined,focusShape,focusRuns,focusAppearance)
+  },[visible,focusLevel,focusShape,focusRuns,detail,focusAppearance])
   const metroAxisId=line?.mode==='metro'?lineRuns.reduce<Run|undefined>((best,run)=>
     run.status!=='cancelled'&&run.stops.length>(best?.stops.length??1)?run:best,undefined)?.id:undefined
   useEffect(()=>{
@@ -278,6 +301,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
   },[visible,follow])
 
   function chooseScope(value:DirectorySelection){
+    propsMap.current.showCorridor(null)
     setScope(value);setSelected('');setFollow(false);setPhysicalFocus(false);setFocusChoice('auto')
     const group=groups.find(item=>item.id===value.line)
     setBottomTab(group?.mode==='metro'?'metro':'chart');openBottom()
@@ -296,10 +320,10 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     }catch(error){setError(describeError(error))}
   }
   const changeRun=(id:string,run=byRun.get(id),knownMode?:NetworkMode)=>{
+    propsMap.current.showCorridor(null)
     const mode=knownMode??(run&&byService.get(run.service_id)?.mode)
     const key=run?runCorridorKey(run):''
-    const group=groups.find(item=>item.corridors.some(value=>corridorKey(value)===key))
-    setScope(group?{line:group.id,corridor:key}:{});setSelected(id);setPhysicalFocus(false);setFocusChoice('auto');openBottom()
+    setScope(key?{corridor:key}:{});setSelected(id);setPhysicalFocus(false);setFocusChoice('auto');openBottom()
     if(!editor)setBottomTab(mode==='metro'?'metro':'chart')
   }
   const beginEdit=(run:Run)=>{if(!editor||window.confirm(t("以所选车次替换时刻草稿？"))){
@@ -370,7 +394,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
     <div className="panel-title"><TrainFront size={17}/><h2>{t("运行目录")}</h2></div>
     {!snapshot?<p className="ops-message">{t("请先加载交通数据包。")}</p>:<>
       <OperationsDirectory groups={groups} runs={available} services={byService} date={date} dates={data.dates} datesByMode={data.dates_by_mode}
-        selected={selected} scope={scope} onDate={chooseDate} onScope={chooseScope} onRun={run=>changeRun(run.id,run)}/>
+        selected={selected} scope={{line:line?.id,corridor:scope.corridor}} onDate={chooseDate} onScope={chooseScope} onRun={run=>changeRun(run.id,run)}/>
       {rightDock&&createPortal(<div hidden={!visible} className="ops-pane ops-inspection">
         {!popup&&error&&<p role="alert" className="error-text ops-message">{error}</p>}
         {!popup&&notice&&<p role="status" className="success ops-message">{notice}</p>}
@@ -405,7 +429,8 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
           <h3>{detail.run.train_number}</h3>
           <p className="muted">{detail.run.service_date} · {detail.run.time_zone} {t("· 计划版本")} {detail.run.plan_version}</p>
           <dl className="ops-relationship">
-            <dt>{t('线路')}</dt><dd>{line?<button className="station-link" onClick={()=>chooseScope({line:line.id})}>{line.name}</button>:t('线路待归属')}</dd>
+            <dt>{t('线路')}</dt><dd>{line&&activeCorridor?.lines?.length?<button className="station-link" onClick={()=>chooseScope({line:line.id})}>
+              {activeCorridor.lines.map(item=>item.name).join(' → ')}</button>:t('线路待归属')}</dd>
             <dt>{t('通道')}</dt><dd>{detail.corridor&&line?<button className="station-link" onClick={()=>chooseScope({line:line.id,corridor:corridorKey(detail.corridor!)})}>
               {detail.corridor.name} · v{detail.corridor.version}</button>:detail.corridor?.name??t('未绑定走行通道')}</dd>
             <dt>{t('车次')}</dt><dd>{detail.run.train_number} · {detail.chart[0]?.station_name??'—'} → {detail.chart.at(-1)?.station_name??'—'}</dd>
@@ -422,7 +447,7 @@ export const OperationsWorkbench=forwardRef<OperationsHandle,Props>(function Ope
             <button className="secondary" onClick={()=>beginEdit(detail.run)}>{t("编辑时刻")}</button>
             <button className="secondary" onClick={selectClockStart}><RotateCcw size={14}/>{t("跳到发车")}</button>
             <button className="secondary" disabled={!detail.geometry} onClick={()=>{
-              propsMap.current.revealLayer('route');propsMap.current.showPath(detail.geometry)
+              propsMap.current.revealLayer('route');propsMap.current.showPath(detail.geometry,focusAppearance.tint)
             }}><GitBranch size={14}/>{t("高亮通道")}</button>
             <button className="secondary" disabled={selectedState?.lon==null||selectedState.lat==null}
               onClick={()=>{

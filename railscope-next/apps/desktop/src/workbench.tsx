@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { createPortal } from 'react-dom'
 import { api, type Bounds, type BusinessLineList, type Conflict, type Inspection, type Override, type Pack, type RawSource, type Route, type Stats, type Summary, type Visual, type Workspace } from './api'
 import { Catalog, PackInstall, PackMenu, className, kindNames, statusName } from './catalog'
-import { MapController, type MapTheme } from './map'
+import { corridorColors, MapController, type MapTheme } from './map'
 import { LayerPreset, defaultLayers as defaults, type LayerGroup, type Visibility } from './layers'
 import { metrics, recordQuery, recordSelection, startMetrics } from './metrics'
 import { OperationsWorkbench, type OperationsHandle } from './operations-workbench'
@@ -109,6 +109,7 @@ export function App() {
     setTrains: (...args:Parameters<MapController['setTrains']>)=>controller.current?.setTrains(...args),
     showPath: (...args:Parameters<MapController['setTrainPath']>)=>controller.current?.setTrainPath(...args),
     showCorridor: (...args:Parameters<MapController['setCorridorPath']>)=>controller.current?.setCorridorPath(...args),
+    setCorridorInventory: (...args:Parameters<MapController['setCorridorInventory']>)=>controller.current?.setCorridorInventory(...args),
     setFocus: (...args:Parameters<MapController['setOperationFocus']>)=>controller.current?.setOperationFocus(...args),
     focusTrain: (...args:Parameters<MapController['focusTrain']>)=>controller.current?.focusTrain(...args),
     revealLayer: (layer:'railTrains'|'metroTrains'|'route'|'corridor')=>setVisibility(old=>old[layer]?old:{...old,[layer]:true}),
@@ -128,7 +129,10 @@ export function App() {
       }, () => setView(controller.current?.view()), setMapError, id=>{
         setMode('operations')
         if(id!=='draft-preview')operations.current?.selectRun(id)
-      },()=>operations.current?.releaseCamera())
+      },()=>operations.current?.releaseCamera(),(id,version)=>{
+        setMode('operations')
+        operations.current?.selectCorridor(id,version)
+      })
       controller.current = map
       const observer=new ResizeObserver(()=>map.map.resize())
       if(mapPanel.current)observer.observe(mapPanel.current)
@@ -179,8 +183,9 @@ export function App() {
     const id=entity?.kind==='line'?entity.id:memberships.length===1?memberships[0]:undefined
     if(!active||!id){controller.current?.setOperationFocus(undefined,null,[]);return}
     let cancelled=false
-    void api.geometry(active.snapshot,id).then(geometry=>{
-      if(!cancelled)controller.current?.setOperationFocus(geometry?'line':undefined,geometry,[],!!geometry)
+    void Promise.all([api.geometry(active.snapshot,id),entity?.id===id?details:api.entity(active.snapshot,id)]).then(([geometry,line])=>{
+      const tint=line?.workspace.value.color||line?.entity.tags.colour
+      if(!cancelled)controller.current?.setOperationFocus(geometry?'line':undefined,geometry,[],{lineIds:[id],tint},!!geometry)
     }).catch(error=>{if(!cancelled)setDetailError(String(error))})
     return ()=>{cancelled=true;controller.current?.setOperationFocus(undefined,null,[])}
   },[mode,details?.entity,active])
@@ -378,7 +383,7 @@ export function App() {
         group={group} setGroup={setGroup} view={view?.bounds} visibility={visibility}
         workspaceChange={workspaceChange}
         onLayer={onLayer} onPreset={onPreset} /></div>
-      <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'}
+      <OperationsWorkbench ref={operations} key={active?.snapshot} snapshot={active?.snapshot} visible={mode==='operations'} corridorsVisible={visibility.corridor}
         selection={details?.entity} map={operationsMap} rightDock={rightDock} bottomDock={bottomDock} openBottom={openBottom}
         inspectStop={id=>void api.entity(active!.snapshot,id).then(result=>select(id,result.entity)).catch(error=>setDetailError(String(error)))}
         onPlaying={setSimulationPlaying} onDirty={setOperationsDirty} level={level} setLevel={setLevel}/>
@@ -548,6 +553,8 @@ function MapLegend({views}:{views:TrackViews}) {
   const items: [string,string][] = themed?.entries.length ? [...themed.entries.map(([,name,color]):[string,string]=>[name,color]),[t("未知／缺失"),missingColor]]
     : Object.entries(tracks).filter(([key])=>key.startsWith('rail_')||key.startsWith('track_')).map(([, [name,color]])=>[name,color])
   return <ul className="map-legend-list">
+    <li><i style={{borderTop:`2px dashed ${corridorColors.rail}`}}/>{t("国铁通道")}</li>
+    <li><i style={{borderTop:`2px dashed ${corridorColors.metro}`}}/>{t("城轨通道")}</li>
     {items.map(([name,color])=><li key={name}><i style={{backgroundColor:color}}/>{t(name)}</li>)}
     {views.rail==='lifecycle'&&Object.entries(lifecycles).map(([key,[name,opacity,,dash]])=><li key={key}>
       <i style={{borderTop:`2px ${dash?'dashed':'solid'} currentColor`,opacity}}/>{t(name)}</li>)}

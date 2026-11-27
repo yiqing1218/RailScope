@@ -44,7 +44,7 @@ export const sites = {
   rail_crossover_site: ['渡线所', 13, `<path d="M5 5 L19 19 M19 5 L5 19" fill="none" stroke="#806C58" stroke-width="2.5" stroke-linecap="round"/>`],
   rail_spur_junction_site: ['专用线接入所', 13, `<path d="M12 4 L21 20 L3 20 Z" fill="none" stroke="#806C58" stroke-width="2" stroke-linejoin="round"/>`],
   rail_site_unknown: ['未分类运营地点', 13, `<rect x="6.5" y="6.5" width="11" height="11" rx="1" fill="none" stroke="#8D959C" stroke-width="1.5"/>`],
-  switch_detail: ['道岔', 17, `<circle cx="12" cy="12" r="4.1" fill="#596B78" stroke="#F8FAF7" stroke-width="1.5"/>`],
+  switch_detail: ['道岔', 16, `<circle cx="12" cy="12" r="4.1" fill="#596B78" stroke="#F8FAF7" stroke-width="1.5"/>`],
   level_crossing_detail: ['平交道口', 16, `<rect x="4" y="7" width="16" height="10" rx="3" fill="#FBF4E4" stroke="#80502B" stroke-width="1.3"/><path d="M10 9.5v5m4-5v5" stroke="#80502B" stroke-width="1.65" stroke-linecap="round"/>`],
   railway_crossing_detail: ['轨道菱形交叉', 16, `<path d="M5 12 H19 M12 5 V19" fill="none" stroke="#56616D" stroke-width="2" stroke-linecap="round"/>`],
   signal_detail: ['信号机', 17, `<path d="M12 17V9" stroke="#596579" stroke-width="2"/><circle cx="12" cy="7" r="3" fill="#596579"/>`],
@@ -105,7 +105,8 @@ export const siteSymbol: ExpressionSpecification = ['case',['==',['get','class']
   'station_building','station_building','rail_site_unknown']]]
 
 export const siteIcon: ExpressionSpecification = ['match',['get','site_role'],
-  'junction','rail_junction_site','marshalling','rail_marshalling_site','yard','rail_yard_site','depot','rail_depot_site',siteSymbol]
+  'junction',['match',siteSymbol,['rail_crossover_site','rail_spur_junction_site'],siteSymbol,'rail_junction_site'],
+  'marshalling','rail_marshalling_site','yard','rail_yard_site','depot','rail_depot_site',siteSymbol]
 
 export const lifecycle: ExpressionSpecification = ['coalesce',['get','life'], ['match',['get','status'],
   'operating','active','planned','proposed','construction','construction','disused','disused','unknown']]

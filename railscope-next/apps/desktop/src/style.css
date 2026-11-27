@@ -392,6 +392,9 @@ summary { cursor: pointer; color: #3b575c; }
 .map-legend-list { list-style:none; padding:4px 0; margin:0;display:grid;gap:5px;max-height:38vh;overflow:auto; }
 .map-legend-list li { display:flex;align-items:center;gap:6px;font-size:11px; }
 .map-legend-list i,.map-legend-list img { display:inline-block;width:18px;height:14px;flex:none;object-fit:contain; }
+.corridor-popup { display:grid; gap:6px; max-height:220px; overflow:auto; padding-right:8px; }
+.corridor-popup .station-link { text-align:left; overflow-wrap:anywhere; }
+.maplibregl-popup-content:has(.corridor-popup) { background:var(--paper); color:var(--ink); }
 @media(max-width:1050px) {
   .top { grid-template-columns:155px minmax(0,1fr) auto;padding:0 9px; }
   .top nav button { padding-inline:7px; }

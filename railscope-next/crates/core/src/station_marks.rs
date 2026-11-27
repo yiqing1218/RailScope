@@ -1,5 +1,5 @@
 //! Display anchors for stations. Every original entity remains in the catalogue and graph.
-use crate::cartography::classify;
+use crate::cartography::{classify, site_role};
 use anyhow::Result;
 use geo::{InteriorPoint, Point};
 use geozero::{ToGeo, wkb::Wkb};
@@ -42,12 +42,22 @@ pub(crate) struct Station {
     rail_ref: String,
 }
 
+pub(crate) struct OperatingSite {
+    pub(crate) render_id: u64,
+    pub(crate) point: Point,
+    pub(crate) label: String,
+    pub(crate) role: &'static str,
+    pub(crate) symbol: &'static str,
+    pub(crate) min_zoom: u8,
+}
+
 #[derive(Default)]
 pub(crate) struct Stations {
     marks: Vec<Station>,
     owners: HashMap<u64, usize>,
     labels: HashMap<String, Vec<usize>>,
     by_longitude: Vec<usize>,
+    pub(crate) operating_sites: Vec<OperatingSite>,
 }
 
 impl Stations {
@@ -125,9 +135,9 @@ impl Stations {
             ));
         }
         candidates.sort_by_key(|(priority, _)| *priority);
-        Ok(Self::from_candidates(
-            candidates.into_iter().map(|(_, station)| station),
-        ))
+        let mut result = Self::from_candidates(candidates.into_iter().map(|(_, station)| station));
+        result.operating_sites = load_operating_sites(db)?;
+        Ok(result)
     }
 
     fn from_candidates(candidates: impl IntoIterator<Item = Station>) -> Self {
@@ -227,6 +237,82 @@ impl Stations {
                 .is_some_and(|indices| indices.iter().any(|&i| nearby(self.marks[i].point, point)))
         })
     }
+}
+
+fn load_operating_sites(db: &Connection) -> Result<Vec<OperatingSite>> {
+    let mut query = db.prepare(
+        "SELECT e.render_id,e.kind,e.class,e.status,e.name,e.verification,s.tags,g.wgs84_wkb
+         FROM entity e CROSS JOIN source_object s ON s.ref=e.source_ref
+         CROSS JOIN geometry g ON g.entity_id=e.id
+         WHERE (e.kind='station' OR (e.kind='facility' AND e.class IN
+             ('junction','crossover','spur_junction','signal_box','yard','depot','workshop',
+              'engine_shed','station_area','station_building','railway_land')))
+           AND g.wgs84_wkb IS NOT NULL ORDER BY e.render_id",
+    )?;
+    let mut candidates = Vec::new();
+    let mut rows = query.query([])?;
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get(1)?;
+        let class: String = row.get(2)?;
+        let status: String = row.get(3)?;
+        let name: String = row.get(4)?;
+        let verified = row.get::<_, String>(5)? == "verified";
+        let tags: serde_json::Value = serde_json::from_str(&row.get::<_, String>(6)?)?;
+        let symbol = classify(&tags, &kind, &class, &status, verified).render_class;
+        let Some((role, evidence)) = site_role(&tags, &kind, &class, &name, symbol) else {
+            continue;
+        };
+        if !matches!(role, "junction" | "marshalling" | "yard" | "depot") {
+            continue;
+        }
+        let render_id = row.get::<_, i64>(0)? as u64;
+        let shape = Wkb(row.get::<_, Vec<u8>>(7)?).to_geo()?;
+        let Some(point) = shape.interior_point() else {
+            continue;
+        };
+        let named = ["name:zh", "name", "ref"].iter().any(|key| {
+            tags[*key]
+                .as_str()
+                .is_some_and(|value| !value.trim().is_empty())
+        });
+        let label = if named { name } else { String::new() };
+        let min_zoom = match (role, label.is_empty()) {
+            ("junction" | "marshalling", false) => 7,
+            (_, false) => 9,
+            _ => 11,
+        };
+        candidates.push((
+            (
+                evidence != "OSM 场站标签",
+                !matches!(shape, geo::Geometry::Point(_)),
+                render_id,
+            ),
+            OperatingSite {
+                render_id,
+                point,
+                label,
+                role,
+                symbol,
+                min_zoom,
+            },
+        ));
+    }
+    candidates.sort_unstable_by_key(|(priority, _)| *priority);
+    let mut sites = Vec::new();
+    let mut named = HashMap::<(&str, String), Vec<Point>>::new();
+    for (_, site) in candidates {
+        if !site.label.is_empty() {
+            let points = named
+                .entry((site.role, label_key(&site.label)))
+                .or_default();
+            if points.iter().any(|point| nearby(*point, site.point)) {
+                continue;
+            }
+            points.push(site.point);
+        }
+        sites.push(site);
+    }
+    Ok(sites)
 }
 
 #[cfg(test)]

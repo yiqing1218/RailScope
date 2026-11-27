@@ -4,10 +4,12 @@ import type { Feature, Geometry, Point } from 'geojson'
 import { type Bounds, type Kind, type Pack, type Summary, type Visual, tileTemplate } from './api'
 import { defaultTrackViews, facilityStyles, lifecycle, lifecycles, metroColor, metroStationSymbols, nationalStationSymbols, nonRailStationNames, railPaint, siteIcon, sites, siteSymbol, stationColors, svgSymbol, trackProperty, type TrackViews } from './cartography'
 import { defaultLayers, type Visibility, type LayerGroup } from './layers'
+import { corridorKey, trustLabel, type CorridorMap, type CorridorMapProperties } from './operations-api'
 
 export type MapTheme = 'light' | 'color' | 'dark' | 'transport'
 export type MapTrain = { id:string; label:string; point:[number,number]; bearing?:number; kind:'rail'|'metro' }
 export type FocusLevel = 'line'|'corridor'|'run'|'train'
+export type FocusAppearance = {lineIds:string[]; tint?:string}
 const colors = { rail: '#DF4244', metro: metroColor, road: '#9f771f', station: '#314C65', facility: '#627880', poi: '#9f771f' }
 const vectorSources = {
   rail: 'rail', metro: 'metro', road: 'road', station: 'points', poi: 'points', facility: 'facilities',
@@ -16,6 +18,7 @@ const selection = '#3178C6'
 type SelectableKind = Exclude<Kind, 'line'>
 
 const trackLayers = (kind: 'rail' | 'metro') => Object.keys(lifecycles).map(life=>`${kind}-${life}`)
+const railwayLayers = [...trackLayers('rail'),...trackLayers('metro')]
 const constructionNames = ['rail-construction-names','metro-construction-names']
 const lineLabels = ['rail-line-names','metro-line-names',...constructionNames]
 const facilityLayers = Object.keys(facilityStyles).flatMap(key=>[`area-${key}`,`line-${key}`])
@@ -32,7 +35,9 @@ const labelLayers = [...lineLabels,'road-names',...stationLabels,'facility-label
 const trainKinds=['rail','metro'] as const
 const trainMarkers=trainKinds.map(mode=>`${mode}-train-marker`)
 const trainLabels=trainKinds.map(mode=>`${mode}-train-label`)
-const overlays=[...trainMarkers,...trainLabels,'train-route','corridor-route','operation-focus','exact-point','exact-line','exact-area',editId]
+const corridorInventory = 'saved-corridors'
+export const corridorColors = {rail:'#7550b9',metro:'#05887e'}
+const overlays=[...trainMarkers,...trainLabels,'train-route','corridor-route',corridorInventory,'operation-focus','exact-point','exact-line','exact-area',editId]
 const layerIds: Record<LayerGroup, string[]> = {
   geography:['land','base-green','base-water','base-water-line','base-buildings','base-road',...contextGeography.map(id=>`context-${id}`)],
   boundaries:['base-admin','context-base-admin'],
@@ -44,7 +49,7 @@ const layerIds: Record<LayerGroup, string[]> = {
   railConstruction:['rail-construction',constructionNames[0]],metroConstruction:['metro-construction',constructionNames[1]],
   interchanges:[],metroFacilities:['metro-entrances','metro-site-fill','metro-site-outline'],
   road:['road-plan','road'],roadNames:['road-names'],roadSites:['poi','poi-area'],
-  route:['train-route'],corridor:['corridor-route','operation-focus'],railTrains:[trainMarkers[0],trainLabels[0]],metroTrains:[trainMarkers[1],trainLabels[1]],edit:['exact-point','exact-line','exact-area',editId],
+  route:['train-route'],corridor:[corridorInventory,'corridor-route','operation-focus'],railTrains:[trainMarkers[0],trainLabels[0]],metroTrains:[trainMarkers[1],trainLabels[1]],edit:['exact-point','exact-line','exact-area',editId],
 }
 const interactiveLayers = [editId,...Object.values(layerIds).flat().filter(id=>!baseLayers.includes(id)&&!overlays.includes(id)&&id!=='poi-labels').reverse()]
 const siteSymbols=[...stationModes.flatMap(mode=>[`${mode}-stations`,`${mode}-edited-stations`]),...stationLabels,'operating-site-symbols','operating-site-labels']
@@ -80,11 +85,13 @@ export class MapController {
   private operationLevel?:FocusLevel
   private mapLineFocus=false
   private operationRuns = new Set<string>()
+  private focusedLines: string[] = []
   private latestTrains:{trains:MapTrain[];selected?:string}={trains:[]}
   private unmutedPaint = new Map<string,Record<string,number|ExpressionSpecification>>()
+  private corridorPopup?:maplibre.Popup
 
   constructor(element: HTMLElement, onPick: (id: number | null) => void, onMove: () => void, onError: (error: string) => void,
-    onTrainPick?: (id: string) => void, onManualMove?:()=>void) {
+    onTrainPick?: (id: string) => void, onManualMove?:()=>void, onCorridorPick?:(id:string,version:number)=>void) {
     this.map = new maplibre.Map({
       container: element, center: [106, 33], zoom: 3.7, maxZoom: 22,
       dragRotate: false, pitchWithRotate: false, renderWorldCopies: false,
@@ -96,6 +103,7 @@ export class MapController {
           exact: { type: 'geojson', data: { ...empty, features: [] } },
           'train-path': { type: 'geojson', data: { ...empty, features: [] } },
           'corridor-path': { type: 'geojson', data: { ...empty, features: [] } },
+          [corridorInventory]: { type: 'geojson', data: { ...empty, features: [] } },
           'operation-focus': { type:'geojson',data:{ ...empty,features:[] } },
           trains: { type: 'geojson', data: { ...empty, features: [] } },
           [editId]: { type: 'geojson', promoteId: 'rid', data: { ...empty, features: [] } },
@@ -127,8 +135,43 @@ export class MapController {
         layers: interactiveLayers.filter(id => this.map.getLayer(id)),
       })
       const eligible=hits.filter(hit=>typeof hit.id==='number'&&!hit.state?.relocated)
-      const picked = eligible.find(hit=>hit.layer.id===editId||siteSymbols.includes(hit.layer.id))
-        ??eligible.find(hit=>hit.layer.type!=='fill')??eligible[0]
+      const point = eligible.find(hit=>hit.layer.id===editId||siteSymbols.includes(hit.layer.id)||hit.geometry.type==='Point')
+      const picked = point??eligible.find(hit=>hit.layer.type!=='fill')??eligible[0]
+      if (!point && onCorridorPick && this.map.getLayer(corridorInventory)) {
+        const matches = this.map.queryRenderedFeatures([[x-4,y-4],[x+4,y+4]],{layers:[corridorInventory]})
+        const paths = new Map<string,CorridorMapProperties>()
+        for (const hit of matches) {
+          const path=hit.properties as CorridorMapProperties
+          paths.set(corridorKey(path),path)
+        }
+        if (paths.size) {
+          this.corridorPopup?.remove()
+          const content=document.createElement('div')
+          content.className='corridor-popup'
+          const title=document.createElement('strong')
+          title.textContent=t('共享通道')
+          content.append(title)
+          for (const path of paths.values()) {
+            const row=document.createElement('button')
+            row.type='button'
+            row.className='station-link'
+            row.textContent=`${path.name} · v${path.version} · ${t(trustLabel[path.verification_status])}`
+            row.onclick=()=>{this.corridorPopup?.remove();onCorridorPick(path.id,path.version)}
+            content.append(row)
+          }
+          if (typeof picked?.id==='number') {
+            const id=picked.id
+            const track=document.createElement('button')
+            track.type='button'
+            track.className='station-link'
+            track.textContent=t('查看下方地图对象')
+            track.onclick=()=>{this.corridorPopup?.remove();this.selectFeature(picked);onPick(id)}
+            content.append(track)
+          }
+          this.corridorPopup=new maplibre.Popup({maxWidth:'340px'}).setLngLat(event.lngLat).setDOMContent(content).addTo(this.map)
+          return
+        }
+      }
       this.selectFeature(picked)
       onPick(typeof picked?.id === 'number' ? picked.id : null)
     })
@@ -151,7 +194,10 @@ export class MapController {
     if (generation !== this.generation) return
     const changingPack = this.packId !== pack.snapshot
     const picked = changingPack ? undefined : this.selected
-    if (changingPack) this.clearSelection()
+    if (changingPack) {
+      this.clearSelection()
+      this.corridorPopup?.remove()
+    }
     this.packId = pack.snapshot
     this.visualState = []
     this.unmutedPaint.clear()
@@ -176,7 +222,7 @@ export class MapController {
       attribution: '© OpenStreetMap contributors · ODbL 1.0',
     })
     this.map.addSource(stationSource, {
-      type:'vector', tiles:[`${tileTemplate(pack.snapshot)}/stations`], minzoom:9, maxzoom:22, promoteId:'rid',
+      type:'vector', tiles:[`${tileTemplate(pack.snapshot)}/stations`], minzoom:7, maxzoom:22, promoteId:'rid',
     })
     if (pack.source_schema >= 3) {
       this.map.addSource('context', {
@@ -225,13 +271,17 @@ export class MapController {
     this.map.addLayer({ id: 'exact-point', source: 'exact', type: 'circle', filter: ['==', ['geometry-type'], 'Point'],
       paint: { 'circle-radius': 7, 'circle-color': selection, 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' } })
     this.map.addLayer({id:'train-route',source:'train-path',type:'line',
-      paint:{'line-color':'#775bd7','line-width':3.1,'line-opacity':0.75}})
+      paint:{'line-color':['to-color',['get','tint'],'#775bd7'],'line-width':4,'line-opacity':.94}})
+    this.map.addLayer({id:corridorInventory,source:corridorInventory,type:'line',layout:{'line-join':'round'},
+      paint:{'line-color':['match',['get','mode'],'metro',corridorColors.metro,corridorColors.rail],
+        'line-width':['interpolate',['linear'],['zoom'],4,2,10,3,16,4.5],
+        'line-dasharray':[2.4,1.2],'line-opacity':.86}},'train-route')
     this.map.addLayer({id:'corridor-route',source:'corridor-path',type:'line',
       layout:{'line-cap':'round','line-join':'round'},
       paint:{'line-color':'#26798c','line-width':4.25,'line-opacity':.83}})
     this.map.addLayer({id:'operation-focus',source:'operation-focus',type:'line',
       layout:{'line-cap':'round','line-join':'round'},
-      paint:{'line-color':'#218697','line-width':4.5,'line-opacity':.94}},'train-route')
+      paint:{'line-color':['to-color',['get','tint'],'#218697'],'line-width':4.5,'line-opacity':.94}},'train-route')
     for(const [i,mode] of trainKinds.entries()){
       const filter:ExpressionSpecification=['==',['get','kind'],mode]
       this.map.addLayer({id:trainMarkers[i],source:'trains',type:'circle',filter,
@@ -313,18 +363,19 @@ export class MapController {
         'circle-stroke-color':'#fff','circle-stroke-width':1,'circle-opacity':relocated,'circle-stroke-opacity':relocated}})
     for (const id of ['facility-symbols','operating-site-symbols','metro-entrances','signal-symbols']) {
       const scale = ['/', ['coalesce',['get','size_pct'],100], 100] as ExpressionSpecification
-      this.map.addLayer({id,type:'symbol',source:'transport','source-layer':'facilities',minzoom:id==='signal-symbols'?17:id==='operating-site-symbols'?11:6,
-        ...(id==='operating-site-symbols'?{filter:operatingSite}:{}),
+      const site = id==='operating-site-symbols'
+      this.map.addLayer({id,type:'symbol',source:site?stationSource:'transport','source-layer':site?'operating_sites':'facilities',
+        minzoom:id==='signal-symbols'?17:site?7:6,
         layout:{'icon-image':siteIcon,'icon-size':['interpolate',['linear'],['zoom'],6,['*',.55,scale],14,scale,18,['*',1.05,scale]],
-          'icon-allow-overlap':false,'icon-padding':1},
+          'icon-allow-overlap':site,'icon-padding':1},
         paint:{'icon-opacity':relocated}})
     }
     for (const [id,layer,field,minzoom, filter] of [
       ['poi-labels','points','label',13,isOtherPlace],
       ['facility-labels','facilities','label',11,['in',siteSymbol,['literal',['switch_detail','railway_crossing_detail']]]],
-      ['operating-site-labels','facilities','label',11,operatingSite],
+      ['operating-site-labels','operating_sites','label',7,['!=',['get','label'],'']],
     ] as const) {
-      this.map.addLayer({id,type:'symbol',source:'transport','source-layer':layer,minzoom,
+      this.map.addLayer({id,type:'symbol',source:layer==='operating_sites'?stationSource:'transport','source-layer':layer,minzoom,
         filter:['all',filter as ExpressionSpecification,['has',field]],layout:{'text-field':['get',field],'text-font':['Microsoft YaHei UI'],
           'text-size':field==='label'?12:10,
           ...(field==='label'?{'text-variable-anchor':['top','bottom','right','left'],'text-radial-offset':.85,'text-padding':4}:{'text-anchor':'left','text-offset':[1,0]}),
@@ -420,9 +471,7 @@ export class MapController {
 
   setTrackViews(views: TrackViews) {
     this.trackViews = views
-    for (const id of trackLayers('rail')) {
-      if (this.map.getLayer(id)) this.map.setPaintProperty(id,'line-color',color(railPaint(views.rail)))
-    }
+    this.updateRailwayColors()
     this.setZoomFilters(true)
     this.refreshVisibility()
   }
@@ -496,23 +545,50 @@ export class MapController {
     }))})
   }
 
-  setOperationFocus(level:FocusLevel|undefined,geometry:Geometry|null,runs:string[],mapLine=false) {
-    const changed=level!==this.operationLevel
+  setOperationFocus(level:FocusLevel|undefined,geometry:Geometry|null,runs:string[],appearance?:FocusAppearance,mapLine=false) {
+    const ids=level?appearance?.lineIds??[]:[]
+    const changed=level!==this.operationLevel || ids.join('/')!==this.focusedLines.join('/')
     const visibilityChanged=this.mapLineFocus!==mapLine
     this.mapLineFocus=mapLine
     this.operationLevel=level
+    this.focusedLines=ids
     this.operationRuns=new Set(runs)
     const source=this.map.getSource('operation-focus') as GeoJSONSource|undefined
-    source?.setData({type:'FeatureCollection',features:level&&geometry?[{type:'Feature',geometry,properties:{}}]:[]})
+    source?.setData({type:'FeatureCollection',features:level&&geometry?[{type:'Feature',geometry,properties:{tint:appearance?.tint??null}}]:[]})
     if(changed)this.applyFocusPaint()
     if(visibilityChanged)this.refreshVisibility()
     this.setTrains(this.latestTrains.trains,this.latestTrains.selected)
+  }
+
+  private focusedMetroService(index:number):ExpressionSpecification {
+    return ['in',['get',`service${index+1}`],['literal',this.focusedLines]]
+  }
+
+  private updateRailwayColors() {
+    const muted='#707976'
+    for (const id of railwayLayers) {
+      if(!this.map.getLayer(id))continue
+      const normal=color(id.startsWith('rail-')?railPaint(this.trackViews.rail):trackProperty(1))
+      this.map.setPaintProperty(id,'line-color',this.operationLevel?muted:normal)
+    }
+    stripes.forEach((id,index)=>{
+      if(!this.map.getLayer(id))return
+      const normal=color(this.metroColor(`service${index+1}`,['metro_color','metro_secondary','metro_tertiary'][index]))
+      this.map.setPaintProperty(id,'line-color',this.operationLevel
+        ? ['case',this.focusedMetroService(index),normal,muted] : normal)
+    })
   }
 
   private applyFocusPaint() {
     const factor=this.operationLevel?{line:.46,corridor:.34,run:.25,train:.18}[this.operationLevel]:1
     const opacity={line:['line-opacity'],fill:['fill-opacity'],circle:['circle-opacity','circle-stroke-opacity'],
       symbol:['text-opacity','icon-opacity']} as const
+    this.updateRailwayColors()
+    if(this.map.getLayer(corridorInventory)) {
+      this.map.setPaintProperty(corridorInventory,'line-opacity',factor===1?.86:.18)
+      this.map.setPaintProperty(corridorInventory,'line-color',factor===1
+        ? ['match',['get','mode'],'metro',corridorColors.metro,corridorColors.rail] : '#707976')
+    }
     for(const layer of this.map.getStyle()?.layers??[]) {
       if(!('source' in layer)||!['transport','context',stationSource].includes(layer.source))continue
       if(!(layer.type in opacity))continue
@@ -526,16 +602,18 @@ export class MapController {
         }
         this.unmutedPaint.set(layer.id,original)
       }
+      const stripe=stripes.indexOf(layer.id)
       for(const [key,value] of Object.entries(original)){
-        this.map.setPaintProperty(layer.id,key,factor===1?value:['*',value,factor])
+        const scale:ExpressionSpecification|number=stripe>=0?['case',this.focusedMetroService(stripe),1,factor]:factor
+        this.map.setPaintProperty(layer.id,key,factor===1?value:['*',value,scale])
       }
     }
     if(factor===1)this.unmutedPaint.clear()
   }
 
-  setTrainPath(geometry: Geometry | null) {
+  setTrainPath(geometry: Geometry | null,tint?:string) {
     const source=this.map.getSource('train-path') as GeoJSONSource | undefined
-    source?.setData({type:'FeatureCollection',features:geometry?[{type:'Feature',geometry,properties:{}}]:[]})
+    source?.setData({type:'FeatureCollection',features:geometry?[{type:'Feature',geometry,properties:{tint:tint??null}}]:[]})
   }
 
   focusTrain(point:[number,number], follow:boolean) {
@@ -573,6 +651,7 @@ export class MapController {
   }
 
   private refreshVisibility() {
+    if(!this.visibility.corridor)this.corridorPopup?.remove()
     if (this.map.getLayer('metro-stations')) {
       this.map.setPaintProperty('metro-stations','circle-radius',this.visibility.interchanges
         ? ['case',['==',['get','interchange'],1],6,4] : 4)
@@ -615,11 +694,13 @@ export class MapController {
     if (!this.map.getSource('transport')) return
     const target = (visual: Visual) => ({ source: 'transport', sourceLayer: vectorSources[visual.kind as SelectableKind], id: visual.render_id })
     const marker = (id:number) => ({source:stationSource,sourceLayer:'stations',id})
+    const operatingSite = (id:number) => ({source:stationSource,sourceLayer:'operating_sites',id})
     for (const old of this.visualState.filter(visual=>visual.kind!=='line')) {
       this.map.removeFeatureState(target(old), 'color')
       this.map.removeFeatureState(target(old), 'relocated')
       this.map.removeFeatureState(target(old), 'width')
       this.map.removeFeatureState(target(old), 'opacity')
+      if(old.kind==='station'||old.kind==='facility')this.map.removeFeatureState(operatingSite(old.render_id),'relocated')
       if(old.station) {
         this.map.removeFeatureState(marker(old.station.render_id),'color')
         this.map.removeFeatureState(marker(old.station.render_id),'relocated')
@@ -635,11 +716,10 @@ export class MapController {
       const { color, point, width, opacity } = visual.value
       this.map.setFeatureState(target(visual), { ...(color && { color }), ...(point && { relocated: true }),
         ...(width!=null&&{width}),...(opacity!=null&&{opacity}) })
+      if(point&&(visual.kind==='station'||visual.kind==='facility'))this.map.setFeatureState(operatingSite(visual.render_id),{relocated:true})
       if(visual.station)this.map.setFeatureState(marker(visual.station.render_id), {color:color||null,relocated:!!point})
     }
-    stripes.forEach((id,index)=>{
-      if(this.map.getLayer(id)) this.map.setPaintProperty(id,'line-color',color(this.metroColor(`service${index+1}`,['metro_color','metro_secondary','metro_tertiary'][index])))
-    })
+    this.updateRailwayColors()
     const names=this.visualState.filter(item=>item.value.name)
     for(const id of [...lineLabels,'road-names','rail-station-names','metro-station-names','facility-labels','operating-site-labels','poi-labels']){
       if(!this.map.getLayer(id))continue
@@ -692,6 +772,11 @@ export class MapController {
       }
     }
     if(bounds[0]<=bounds[2])this.fit(bounds,15)
+  }
+
+  setCorridorInventory(inventory:CorridorMap|null) {
+    const source=this.map.getSource(corridorInventory) as GeoJSONSource|undefined
+    source?.setData(inventory??{type:'FeatureCollection',features:[]})
   }
 
   destroy() {
