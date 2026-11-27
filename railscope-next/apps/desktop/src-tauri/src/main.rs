@@ -444,6 +444,13 @@ fn tile(engine: &Engine, path: &str) -> Result<(Arc<[u8]>, &'static str)> {
             "overview_context",
         ));
     }
+    if let [snapshot, z, x, y, "stations"] = parts.as_slice() {
+        let pack = engine.for_tile(snapshot).context("inactive snapshot")?;
+        return Ok((
+            pack.station_tile(z.parse()?, x.parse()?, y.parse()?)?,
+            "station_marks",
+        ));
+    }
     let (snapshot, z, x, y, archive) = match parts.as_slice() {
         [snapshot, z, x, y] => (snapshot, z, x, y, false),
         [snapshot, z, x, y, "archive"] => (snapshot, z, x, y, true),

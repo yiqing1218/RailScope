@@ -15,9 +15,9 @@ test('default railway colors, Z14 widths and lifecycle patterns', () => {
 
 test('station symbols and source-geometry layers have independent display rules', () => {
   assert.match(sites.rail_station_unknown[2], /^<circle .*stroke="#314C65"/)
-  assert.match(sites.rail_station_passenger[2], /fill="#314C65"/)
-  assert.match(sites.rail_halt[2], /r="3.5" fill="#62758B"/)
-  assert.match(sites.metro_interchange[2], /r="9.5".*r="3.5"/)
+  assert.equal(sites.rail_station_passenger[2], sites.rail_station_unknown[2])
+  assert.equal(sites.rail_halt[2], sites.rail_station_unknown[2])
+  assert.match(sites.metro_interchange[2], /^<circle [^>]*r="6"[^>]*\/>$/)
   assert.match(sites.rail_yard_site[2], /width="22" height="16".*M5 9 H19 M5 12 H19 M5 15 H19/)
   assert.match(sites.rail_crossover_site[2], /M5 5 L19 19 M19 5 L5 19.*#806C58/)
   assert.match(sites.switch_detail[2], /^<circle /)

@@ -135,7 +135,7 @@ try {
     assert.equal(await checked('铁路线'),true)
     assert.equal(await checked('铁路线路名称'),false)
     await click(key('城轨车站名称'))
-    assert.equal(await checked('城轨车站符号'),true)
+    assert.equal(await checked('城轨车站圆圈'),true)
     assert.equal(await checked('城轨车站名称'),false)
     await evaluate('window.savedCanvas=document.querySelector(".maplibregl-canvas")')
     await nav('运行')

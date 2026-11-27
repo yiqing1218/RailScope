@@ -1,4 +1,4 @@
-use crate::{precision, tile_cache::DiskTiles};
+use crate::{precision, station_marks::Stations, tile_cache::DiskTiles};
 use anyhow::{Context, Result, ensure};
 use flate2::read::GzDecoder;
 use lru::LruCache;
@@ -23,6 +23,7 @@ enum TileMode {
     Archive,
     Detail,
     Context,
+    Stations,
 }
 type TileKey = (u8, u32, u32, TileMode);
 type Tile = Arc<[u8]>;
@@ -113,6 +114,7 @@ pub struct Pack {
     archive: PmTilesReader<File>,
     cache: Mutex<TileCache>,
     disk: Option<Arc<DiskTiles>>,
+    stations: Mutex<Option<Arc<Stations>>>,
     work: [Mutex<()>; 32],
 }
 
@@ -156,6 +158,7 @@ impl Pack {
                 stats: TileStats::default(),
             }),
             disk,
+            stations: Mutex::new(None),
             work: std::array::from_fn(|_| Mutex::new(())),
         };
         let connection = pack.connection()?;
@@ -212,6 +215,21 @@ impl Pack {
         self.cached_tile(z, x, y, TileMode::Context)
     }
 
+    pub fn station_tile(&self, z: u8, x: u32, y: u32) -> Result<Tile> {
+        ensure!((9..=22).contains(&z), "无效车站标记级别");
+        self.cached_tile(z, x, y, TileMode::Stations)
+    }
+
+    pub(crate) fn stations(&self) -> Result<Arc<Stations>> {
+        let mut cached = self.stations.lock().unwrap();
+        if let Some(stations) = cached.as_ref() {
+            return Ok(stations.clone());
+        }
+        let stations = Arc::new(Stations::load(&self.connection()?)?);
+        *cached = Some(stations.clone());
+        Ok(stations)
+    }
+
     fn cached_tile(&self, z: u8, x: u32, y: u32, mode: TileMode) -> Result<Tile> {
         let coord = TileCoord::new(z, x, y)?;
         let key = (z, x, y, mode);
@@ -232,10 +250,10 @@ impl Pack {
         let mut disk_hit = false;
         let result: Result<Tile> = if mode != TileMode::Archive {
             (|| {
-                let style_version = if mode == TileMode::Context {
-                    "v6-context"
-                } else {
-                    "v8-construction-labels"
+                let style_version = match mode {
+                    TileMode::Stations => "v1-station-marks",
+                    TileMode::Context => "v6-context",
+                    _ => "v9-station-labels",
                 };
                 let cache_key = format!(
                     "{style_version}:{}:{z}/{x}/{y}",
@@ -247,12 +265,17 @@ impl Pack {
                     disk_hit = true;
                     return Ok(Arc::from(tile));
                 }
-                let db = self.connection()?;
                 let address = precision::Address::new(z, x, y)?;
-                let data = if mode == TileMode::Context {
-                    precision::generate_context(&db, address)?
-                } else {
-                    precision::generate(&db, address)?
+                let data = match mode {
+                    TileMode::Stations => {
+                        precision::generate_stations(self.stations()?.as_ref(), address)
+                    }
+                    TileMode::Context => precision::generate_context(&self.connection()?, address)?,
+                    _ => precision::generate_with_stations(
+                        &self.connection()?,
+                        address,
+                        self.stations()?.as_ref(),
+                    )?,
                 };
                 if let Some(disk) = &self.disk
                     && let Err(error) = disk.put(&cache_key, &data)

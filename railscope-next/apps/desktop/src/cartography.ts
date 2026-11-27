@@ -26,13 +26,17 @@ export const lifecycles = {
   unknown: ['待核验', .70, 3, null],
 } as const
 
+export const stationColors = {rail:'#314C65',metro:tracks.metro_track[1]} as const
+const stationCircle = (mode:keyof typeof stationColors, radius=4) =>
+  `<circle cx="12" cy="12" r="${radius}" fill="#fff" stroke="${stationColors[mode]}" stroke-width="1.8"/>`
+
 export const sites = {
-  rail_station_passenger: ['铁路客运站', 9, `<circle cx="12" cy="12" r="4.5" fill="#314C65" stroke="#FFFFFF" stroke-width="1.2"/>`],
-  rail_station_unknown: ['铁路车站（未分类）', 9, `<circle cx="12" cy="12" r="4" fill="#F9FCFC" stroke="#314C65" stroke-width="1.6"/>`],
-  metro_station: ['地铁站', 9, `<circle cx="12" cy="12" r="6.5" fill="#169CA0" stroke="#FFFFFF" stroke-width="1"/>`],
-  metro_interchange: ['地铁换乘站', 7, `<circle cx="12" cy="12" r="9.5" fill="none" stroke="#169CA0" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="#169CA0"/>`],
-  rail_halt: ['乘降所', 11, `<circle cx="12" cy="12" r="3.5" fill="#62758B"/>`],
-  tram_stop: ['有轨电车站', 11, `<circle cx="12" cy="12" r="5.5" fill="none" stroke="#5C9A70" stroke-width="2"/>`],
+  rail_station_passenger: ['铁路客运站', 9, stationCircle('rail')],
+  rail_station_unknown: ['铁路车站（未分类）', 9, stationCircle('rail')],
+  metro_station: ['地铁站', 9, stationCircle('metro')],
+  metro_interchange: ['地铁换乘站', 7, stationCircle('metro',6)],
+  rail_halt: ['乘降所', 11, stationCircle('rail')],
+  tram_stop: ['有轨电车站', 11, stationCircle('metro')],
   rail_yard_site: ['车场／货场', 11, `<rect x="1" y="4" width="22" height="16" rx="2" fill="none" stroke="#8B775C" stroke-width="1.7"/><path d="M5 9 H19 M5 12 H19 M5 15 H19" fill="none" stroke="#8B775C" stroke-width="1.2"/>`],
   rail_depot_site: ['车辆段／基地', 11, `<path d="M3 20V9l9-6 9 6v11Z" fill="#f9fcf9" stroke="#2c7666" stroke-width="2"/><path d="M8 20v-8h8v8" fill="none" stroke="#2c7666" stroke-width="1.8"/>`],
   rail_marshalling_site: ['编组站', 11, `<circle cx="12" cy="12" r="9" fill="#fffaf0" stroke="#9a6035" stroke-width="2"/><path d="M6 16h12M9 16v-4l5-5M13 16v-4l4-4" fill="none" stroke="#9a6035" stroke-width="1.6"/>`],

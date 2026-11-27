@@ -7,12 +7,12 @@ export const layerGroups = [
     ['villages','乡镇与村庄名'],['localNames','普通道路名'],['localPoi','普通兴趣点名'],
   ]},
   {name:'国家铁路', items:[
-    ['rail','铁路线'],['railConstruction','在建线路'],['railNames','铁路线路名称'],['station','国铁车站符号'],['railStationNames','国铁车站名称'],
+    ['rail','铁路线'],['railConstruction','在建线路'],['railNames','铁路线路名称'],['station','国铁车站圆圈'],['railStationNames','国铁车站名称'],
     ['facility','站台、站房、站区与股道'],['technical','线路所与道岔'],['signals','信号设备'],['relics','废弃与拆除轨道'],
   ]},
   {name:'城市轨道交通', items:[
-    ['metro','城市轨道线路'],['metroConstruction','在建线路'],['metroNames','运营线路名称'],['metroStations','城轨车站符号'],
-    ['metroStationNames','城轨车站名称'],['interchanges','换乘标志'],['metroFacilities','出入口与城轨设施'],
+    ['metro','城市轨道线路'],['metroConstruction','在建线路'],['metroNames','运营线路名称'],['metroStations','城轨车站圆圈'],
+    ['metroStationNames','城轨车站名称'],['interchanges','突出显示换乘站'],['metroFacilities','出入口与城轨设施'],
   ]},
   {name:'高速公路', items:[
     ['road','高速公路线路'],['roadNames','公路编号与名称'],['roadSites','服务区与交通设施'],

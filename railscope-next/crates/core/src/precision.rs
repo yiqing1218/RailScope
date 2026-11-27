@@ -1,6 +1,7 @@
 //! Spatially indexed, lossless-source high zoom MVT generation.
+use crate::station_marks::Stations;
 use anyhow::{Context, Result, ensure};
-use geo::{BooleanOps, Coord, Geometry, LineString, Polygon, Rect};
+use geo::{BooleanOps, Coord, Geometry, InteriorPoint, LineString, Polygon, Rect};
 use geozero::{ToGeo, wkb::Wkb};
 use rusqlite::{Connection, params};
 use std::collections::{BTreeMap, HashMap};
@@ -388,7 +389,81 @@ fn line_weight(shape: &Geometry, addr: Address) -> f64 {
         .sum::<f64>()
 }
 
+pub(crate) fn generate_stations(stations: &Stations, addr: Address) -> Vec<u8> {
+    let mut features = Layer::default();
+    for station in stations.in_bounds(addr.bounds()) {
+        let id = station.display.render_id;
+        let (kind, commands) = geometry(Geometry::Point(station.point), addr);
+        let mut attrs = vec![
+            ("rid", Value::UInt(id)),
+            ("mode", Value::Text(station.display.mode.into())),
+            ("min_z", Value::UInt(station.min_zoom)),
+            ("rank", Value::UInt(station.min_zoom.saturating_sub(8))),
+            ("label", Value::Text(station.display.name.clone())),
+            ("interchange", Value::UInt(u64::from(station.interchange))),
+        ];
+        if !station.line_rids.is_empty() {
+            let ids = station
+                .line_rids
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            attrs.push(("line_rids", Value::Text(format!(",{ids},"))));
+        }
+        if let Some((peer, zoom)) = station.rail_peer {
+            attrs.push(("rail_peer", Value::UInt(peer)));
+            attrs.push(("rail_peer_z", Value::UInt(zoom)));
+        }
+        if let Some(business) = station.business {
+            attrs.push((
+                "business",
+                Value::Text(
+                    match business {
+                        "passenger" => "客",
+                        "freight" => "货",
+                        _ => "客货",
+                    }
+                    .into(),
+                ),
+            ));
+        }
+        if let Some(technical) = station.technical {
+            attrs.push((
+                "technical",
+                Value::Text(
+                    match technical {
+                        "marshalling" => "编",
+                        "district" => "区",
+                        _ => "中",
+                    }
+                    .into(),
+                ),
+            ));
+        }
+        features.push(id, kind, attrs, commands);
+    }
+    let mut result = Vec::new();
+    field(&mut result, 3, &features.encode("stations"));
+    result
+}
+
+fn administrative_place(class: &str) -> bool {
+    matches!(
+        class,
+        "city" | "county" | "province" | "state" | "district" | "borough"
+    )
+}
+
 pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
+    generate_with_stations(connection, addr, &Stations::load(connection)?)
+}
+
+pub(crate) fn generate_with_stations(
+    connection: &Connection,
+    addr: Address,
+    stations: &Stations,
+) -> Result<Vec<u8>> {
     let [west, south, east, north] = addr.bounds();
     let mut query=connection.prepare(
         "SELECT e.id,e.render_id,e.kind,e.class,e.status,e.name,g.wgs84_wkb,src.tags,e.verification FROM spatial s
@@ -449,6 +524,13 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
         let shape = Wkb(bytes)
             .to_geo()
             .with_context(|| format!("无效 WKB · {id}"))?;
+        let duplicate = (kind == "poi"
+            || kind == "station" && stations.display(id).is_none()
+            || layer == "base_place" && !administrative_place(&category))
+            && !name.is_empty()
+            && shape
+                .interior_point()
+                .is_some_and(|point| stations.repeats_station_name(&name, point));
         let rail_priority = match category.as_str() {
             "high_speed" => 0,
             "conventional" => 1,
@@ -476,7 +558,10 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             ("status", Value::Text(status.clone())),
         ];
         let source = row.get::<_, Option<String>>(7)?;
-        let mut point_label = name.as_str();
+        let mut point_label = if duplicate { "" } else { name.as_str() };
+        if duplicate {
+            attrs.push(("station_duplicate", Value::UInt(1)));
+        }
         if let Some(source) = &source {
             let tags = serde_json::from_str(source)?;
             let verified = row.get::<_, String>(8)? == "verified";
@@ -702,12 +787,18 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             let shape = Wkb(row.get::<_, Vec<u8>>(4)?)
                 .to_geo()
                 .with_context(|| format!("无效底图 WKB · {id}"))?;
+            let class: String = row.get(2)?;
+            let name: String = row.get(3)?;
+            let duplicate = layer == "base_place"
+                && !administrative_place(&class)
+                && !name.is_empty()
+                && shape
+                    .interior_point()
+                    .is_some_and(|point| stations.repeats_station_name(&name, point));
             let (shape_kind, commands) = geometry(shape, addr);
             if commands.is_empty() {
                 continue;
             }
-            let class: String = row.get(2)?;
-            let name: String = row.get(3)?;
             if layer == "base_place"
                 && addr.z < 11
                 && !matches!(
@@ -734,7 +825,13 @@ pub fn generate(connection: &Connection, addr: Address) -> Result<Vec<u8>> {
             layers.entry(layer).or_default().push(
                 id,
                 shape_kind,
-                vec![("class", Value::Text(class)), ("label", Value::Text(name))],
+                vec![
+                    ("class", Value::Text(class)),
+                    (
+                        "label",
+                        Value::Text(if duplicate { String::new() } else { name }),
+                    ),
+                ],
                 commands,
             );
         }

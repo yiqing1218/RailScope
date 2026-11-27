@@ -66,7 +66,9 @@ export type Filter = { kind?: Kind; classes?: string[]; parent?: string; query: 
 export type Stats = { hits: number; misses: number; evictions: number; bytes: number; read_micros: number; pending: number;
   disk_hits: number; precise_tiles: number; precise_micros: number }
 export type Route = { edges: string[]; meters: number; verification: string; geometry: Geometry | null }
-export type Visual = Pick<Summary, 'id' | 'render_id' | 'kind' | 'class'> & { value: Override }
+export type Visual = Pick<Summary, 'id' | 'render_id' | 'kind' | 'class'> & {
+  value: Override; station?: {render_id:number;mode:'rail'|'metro';name:string}|null
+}
 export type Conflict = { entity: string; source_snapshot: string; reason: string }
 export type Group = { name: string; count: number }
 export type RawSource={ref:string;kind:string;version?:number;tags?:Record<string,string>;license:string;

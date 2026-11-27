@@ -265,6 +265,7 @@ pub struct Visual {
     pub render_id: i64,
     pub kind: String,
     pub class: String,
+    pub(crate) station: Option<crate::station_marks::Display>,
     pub value: Override,
 }
 
@@ -279,6 +280,7 @@ pub fn visuals(db: &Connection, pack: &Pack, after: Option<&str>) -> Result<Vec<
     let mut base = canonical.prepare("SELECT render_id,kind,class FROM entity WHERE id=?")?;
     let mut rows = modified.query(params![pack.manifest.snapshot, after])?;
     let mut output = Vec::new();
+    let stations = pack.stations()?;
     while let Some(row) = rows.next()? {
         let id: String = row.get(0)?;
         let text: String = row.get(1)?;
@@ -289,6 +291,7 @@ pub fn visuals(db: &Connection, pack: &Pack, after: Option<&str>) -> Result<Vec<
             output.push(Visual {
                 id,
                 render_id,
+                station: stations.display(render_id as u64).cloned(),
                 kind,
                 class,
                 value: serde_json::from_str(&text)?,
